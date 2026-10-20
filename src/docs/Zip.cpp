@@ -1,6 +1,8 @@
 #include "docs/Zip.h"
 #include "docs/Bytes.h"
 
+// miniz without its zlib-style aliases (compress, Byte...), which would clash with zlib, used by QPDF.
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
 #include <miniz.h>
 
 #include <cstring>

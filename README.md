@@ -5,7 +5,7 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 | Hold | Wheel | Slices so far |
 |---|---|---|
-| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
+| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown, DOCX, EPUB, HTML. Images: PDF (one PDF from all of them). Documents (DOCX, Markdown, HTML, TXT, RTF, RTFD, Pages): DOCX, PDF, Markdown, HTML, EPUB, TXT. Spreadsheets (XLSX, XLS, ODS, CSV, TSV): XLSX, ODS, CSV, TSV, PDF. Subtitles (SRT, VTT): SRT, VTT, TXT. With Office or LibreOffice installed: Exact PDF of Word, Excel and PowerPoint files, and (PowerPoint) PNG or JPG slides |
 | Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB. PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF |
 | Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share |
 
@@ -24,6 +24,11 @@ can be cancelled there. It starts with Windows and lives in the tray.
 
 Video and audio go through a bundled, unmodified LGPL build of [FFmpeg](https://ffmpeg.org) that
 ShiftDrop runs as a separate process, restricted to local files (no network access).
+
+Documents, spreadsheets and subtitles are converted by ShiftDrop's own code (with miniz, pugixml and
+md4c); documents become PDFs through Windows' built-in "Microsoft Print to PDF". Nothing from
+Microsoft Office or LibreOffice is bundled: when one is installed, ShiftDrop drives it for the exact
+PDF and slide-picture slices, invisibly, and closes it again.
 
 - Plan, REA stages, parity map, decisions and open questions: [docs/PLAN.md](docs/PLAN.md)
 - Build, run and the manual test checklist: [docs/TESTING.md](docs/TESTING.md)

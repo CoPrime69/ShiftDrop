@@ -24,6 +24,9 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
 find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+find_package(miniz CONFIG REQUIRED)    # ZIP containers: DOCX, XLSX, ODS, EPUB (MIT)
+find_package(pugixml CONFIG REQUIRED)  # XML of those containers (MIT)
+find_package(md4c CONFIG REQUIRED)     # Markdown parsing, CommonMark + GitHub tables (MIT)
 # QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
 # linker must be able to find them in vcpkg's lib folder.
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
@@ -94,6 +97,32 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
+  # Documents, spreadsheets, subtitles and the Office bridge (M11)
+  src/docs/Bytes.cpp
+  src/docs/DocModel.cpp
+  src/docs/DocsModule.cpp
+  src/docs/Docx.cpp
+  src/docs/Epub.cpp
+  src/docs/Html.cpp
+  src/docs/Markdown.cpp
+  src/docs/PageLayout.cpp
+  src/docs/Pages.cpp
+  src/docs/Paper.cpp
+  src/docs/PdfPrint.cpp
+  src/docs/PdfSource.cpp
+  src/docs/PlainText.cpp
+  src/docs/Rtf.cpp
+  src/docs/Zip.cpp
+  src/sheets/Ods.cpp
+  src/sheets/SheetsModule.cpp
+  src/sheets/Workbook.cpp
+  src/sheets/Xls.cpp
+  src/sheets/Xlsx.cpp
+  src/subtitles/Subtitles.cpp
+  src/subtitles/SubtitlesModule.cpp
+  src/officebridge/OfficeBridge.cpp
+  src/officebridge/OfficeCom.cpp
+  src/officebridge/OfficeModule.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -105,7 +134,11 @@ target_link_libraries(shiftdrop_core PUBLIC
   WebP::webp
   qpdf::libqpdf
   ZLIB::ZLIB
+  miniz::miniz
+  pugixml::pugixml
+  md4c::md4c
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
+  dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
@@ -181,6 +214,10 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
+    tests/DocsTests.cpp
+    tests/SheetsTests.cpp
+    tests/SubtitlesTests.cpp
+    tests/OfficeTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)
