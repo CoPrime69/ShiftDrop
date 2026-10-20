@@ -40,6 +40,21 @@ namespace sd
             return child.size() >= prefix.size() && SamePath(child.substr(0, prefix.size()), prefix);
         }
 
+        // The shell reports long paths ("C:\Users\runneradmin\..."), while a path we were handed can use
+        // 8.3 short names ("C:\Users\RUNNER~1\..."); compare in the long form. Only works while the item exists.
+        std::wstring LongPath(const std::wstring& path)
+        {
+            const DWORD n = GetLongPathNameW(path.c_str(), nullptr, 0);
+            if (n == 0)
+                return path;
+            std::wstring out(n, L'\0');
+            const DWORD written = GetLongPathNameW(path.c_str(), out.data(), n);
+            if (written == 0 || written >= n)
+                return path;
+            out.resize(written);
+            return out;
+        }
+
         std::wstring PathOf(IShellItem* item)
         {
             wil::unique_cotaskmem_string path;
@@ -137,11 +152,14 @@ namespace sd
     }
 
     std::vector<MoveOutcome> MoveToFolder(const Recipe& recipe, const std::vector<std::wstring>& sources,
-                                          const std::wstring& folder, HistoryStore* history, int64_t& runId)
+                                          const std::wstring& folderIn, HistoryStore* history, int64_t& runId)
     {
         const auto started = std::chrono::steady_clock::now();
         std::vector<MoveOutcome> outcomes(sources.size());
         std::vector<int64_t> itemIds(sources.size(), 0);
+        std::vector<std::wstring> longSources(sources.size());
+        const std::wstring longFolder = LongPath(folderIn);
+        const std::wstring& folder = longFolder;
         runId = history ? history->BeginRun(recipe, static_cast<int>(sources.size())) : 0;
 
         ComPtr<IFileOperation> op;
@@ -164,14 +182,15 @@ namespace sd
             out.source = sources[i];
             if (history)
                 itemIds[i] = history->BeginItem(runId, out.source, L"");
-            const auto parent = std::filesystem::path(out.source).parent_path().wstring();
+            longSources[i] = LongPath(out.source);
+            const auto parent = std::filesystem::path(longSources[i]).parent_path().wstring();
             if (SamePath(parent, folder))
             {
                 out.skipped = true;
                 out.error = L"already in that folder";
                 continue;
             }
-            if (SamePath(out.source, folder) || IsInside(folder, out.source))
+            if (SamePath(longSources[i], folder) || IsInside(folder, longSources[i]))
             {
                 out.error = L"a folder can't be moved into itself";
                 continue;
@@ -198,14 +217,15 @@ namespace sd
             if (advised)
                 op->Unadvise(cookie);
 
-            for (auto& out : outcomes)
+            for (size_t i = 0; i < outcomes.size(); ++i)
             {
+                auto& out = outcomes[i];
                 if (out.skipped || !out.error.empty())
                     continue;
                 bool reported = false;
                 for (const auto& e : sink ? sink->entries : std::vector<MoveSink::Entry>{})
                 {
-                    if (!SamePath(e.source, out.source))
+                    if (!SamePath(e.source, longSources[i]))
                         continue;   // a file inside a moved folder
                     reported = true;
                     if (SUCCEEDED(e.hr) && !e.destination.empty())
