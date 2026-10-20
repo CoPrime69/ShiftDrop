@@ -111,19 +111,19 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Start a big batch, kill ShiftDrop from Task Manager mid-way, start it again: no `.sdpart` files remain; the log says "recovery: removed leftover staging file"; History shows the run as Interrupted
 
 ### L. Wheel redesign and top panel
-- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice; Explorer's thumbnail disappears while you are over the wheel and comes back when you leave it
+- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice
 - [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
-- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions and their keys, Convert highlighted
+- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl**, then **Alt**: the wheel turns to Tools, then File actions, and the panel's highlight slides along
-- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel (wraps round); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
-- [ ] Over the wheel Explorer's drag picture stays with its full name, with no "+ Copy" badge and no mouse pointer
+- [ ] When the wheel opens, Explorer's drag picture fades away and the wheel takes its place (no picture or name over the wheel, no mouse pointer); it comes back when you drag off the wheel. The file's own icon staying where it was is Windows: a drag only copies until you drop
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling does not stop on the all-dimmed wheels
+- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -260,7 +260,100 @@ Inspector
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
 
-### P. Documents, spreadsheets, subtitles, Office bridge (M11)
+### T. Video and audio tools (M9, M10)
+Have ffmpeg in place (`scripts/get-ffmpeg.ps1`), a phone video with sound (1080p, 20–60 s), a second clip of another size, a video with no sound, a stereo song with cover art, and a mono voice memo.
+
+The wheel:
+- [ ] Drag a video and hold **Ctrl**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim…**, **Crop…**, **Speed…**, **Join…**, **Frames…**, **Split…**, **Redact…** on two rings
+- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim…**, **Channels…**, **Bleep…**, **Visualizer…**; a photo gets none of these
+
+The editor window (try with each tool):
+- [ ] Drop the video on **Trim…**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
+- [ ] The tabs at the top read Trim, Crop, Speed, Join, Frames, Split, Redact (for a song: Trim, Channels, Bleep, Visualizer). Clicking one, or Ctrl+1 to Ctrl+7, switches tool without reloading the file, and the window title follows. Confirming runs the tool chosen last: History and the output name say so ("clip (speed…)")
+- [ ] Turn the mouse wheel over the timeline: it zooms around the cursor with sharper thumbnails; **0** shows the whole clip; drag the thin bar under the timeline to scroll
+- [ ] Type `0:05.5` in the time field and press Enter: the playhead jumps there; text that is not a time stays red
+- [ ] ← and → step one frame (Shift: one second); Space plays with sound and the playhead follows; Space again stops
+- [ ] Tab walks through the tabs, the transport buttons, the options and the footer with a visible focus ring; arrow keys change a focused choice; Enter is the main button; Esc closes and nothing is written
+- [ ] With two monitors at different scaling, drag the window from one to the other: text and lines stay sharp and the layout scales
+
+Video tools:
+- [ ] **Trim**: drag the handles, or press I and O at the playhead, or type in From and To; "Play the kept part" (Shift+Space) plays only that. Exact gives `clip (trimmed).mp4` that starts and ends on those frames; Fast is instant, and its start can move back to a keyframe
+- [ ] **Crop**: drag on the picture, then drag the edges and corners; 16:9, 9:16, 1:1, 4:5, Original and Free keep the shape; type a Width (the height follows). The result has exactly that size and keeps the sound
+- [ ] **Speed**: pick 0.5× or 2×, or type 1.8 or 180%; Space previews at that speed with the pitch kept. 2× halves the length; the silent video works too
+- [ ] **Join**: drop three clips on **Join…**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
+- [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
+- [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
+- [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
+- [ ] Drop three videos on **Crop…**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
+
+Audio tools:
+- [ ] **Normalize** a quiet song: the top panel says "Loudness −3x.x → −16.0 LUFS"; normalizing the result again says "already at −16.0 LUFS" and writes nothing
+- [ ] **Trim** on the waveform with the handles or I and O; "Also trim silence at both ends" cuts the quiet lead-in of the voice memo
+- [ ] **Channels**: Make mono, Swap left and right, and the Left and Right volume sliders; while playing, A switches between the original and the result. On a mono file "Make mono" changes nothing and the main button is off
+- [ ] **Bleep**: drag across the waveform to mark two parts (M adds one at the playhead); a 1 kHz tone or silence; Space plays with the bleeps, A compares with the original
+- [ ] **Visualizer** (tab in the song's editor): Landscape, Portrait or Square; the moving waveform, or a still picture (the cover art, or one you choose); the MP4 has the song's sound and length
+
+Always:
+- [ ] Cancel (×) in the top panel during a long render: nothing is left in the folder (no `.sdpart`)
+- [ ] An `.mp4` that holds only sound, dropped with a real video on **Crop…**: its page says "This file has no video to edit." and Skip moves on; the other video is still cropped
+- [ ] Undo from History removes the outputs (a frames or split folder goes with all its files)
+
+Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
+```json
+{ "id": "normalize-14", "label": "−14 LUFS", "description": "Normalize Volume for streaming", "ring": "tools", "suffix": "normalized",
+  "icon": "E767", "steps": [ { "action": "audio.normalize", "params": { "target": -14 } } ] }
+```
+```json
+{ "id": "speed-2x", "label": "2× speed", "description": "Twice as fast, same pitch", "ring": "tools", "icon": "EC4A",
+  "steps": [ { "action": "video.speed", "params": { "factor": 2, "ask": false } } ] }
+```
+- [ ] After a restart a song's Tools wheel also has **−14 LUFS** and a video's **2× speed**; both run at once with no window (the speed one names its output `clip (2x).mp4`)
+
+### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
+Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
+
+Canvas (Crop or Redact)
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Crop**: an editor opens in the app's colours (follows Windows light/dark), the photo fits the window and is upright
+- [ ] Mouse wheel zooms around the pointer; **Ctrl+0** fits, **Ctrl+1** shows 100 %; the zoom chip at the bottom toggles between them; at high zoom pixels stay sharp (not blurred)
+- [ ] Hold **Space** and drag, or drag with the middle button: the picture pans
+- [ ] Move the window to a monitor with another scale: text, handles and lines stay crisp and the same size
+- [ ] **Ctrl+Z** / **Ctrl+Y** (and the toolbar arrows) undo and redo every change, including side-panel changes
+- [ ] **Esc** closes without writing anything; **Enter** applies (when a number box is not being edited)
+- [ ] The PNG with transparency shows a checkerboard behind it
+
+Crop
+- [ ] Drag a box: the outside is darkened, a "W × H" tag shows the size in real pixels, the thirds grid shows (toggle in the panel)
+- [ ] Drag the edges and corners; hold **Shift** to keep the shape; arrows nudge by one pixel, Shift+arrows by ten
+- [ ] Aspect ratio Free, Original, 1:1, 4:5, 3:2, 16:9, 9:16 and Custom (type W and H): the box changes to the shape and stays inside the picture
+- [ ] Type an exact Width and Height in pixels: the output is exactly that size
+- [ ] Rotate left / right turns the picture; Straighten (slider or typed degrees) tilts it and the box stays inside the picture
+- [ ] Apply: `photo (cropped).jpg` appears next to the photo, the original is untouched; cropping again makes `photo (cropped 2).jpg`
+- [ ] Open the cropped JPG's Properties > Details: camera, date and location are kept (Crop is not a privacy tool; use Share-safe for that), the size is the new size, it opens upright everywhere
+- [ ] PNG stays PNG, WebP stays WebP
+- [ ] Drop five photos of different sizes on Crop: the editor shows the first one and the panel says "The other 4 images" with Centred / Same place; Apply makes five cropped copies, each with the first one's shape (centred, or in the same place); with an exact size set, each is that size where it fits
+
+Redact Photos
+- [ ] Drop the screenshot on **Redact**: drag over the email: a black cover appears; drag several more; click one to select, Ctrl+click to select more, Del removes them
+- [ ] Switch a selected cover to Blur and to Pixelate; switch Solid's colour to white and to a custom colour (colour picker)
+- [ ] Find > Personal details: the email, phone and card number get suggested covers labelled with what they are; Find > All text covers every line; "Keep all" / "Remove all" work
+- [ ] Drop the group photo, Find > Faces: each face gets a cover (or a line says face detection is not available)
+- [ ] Apply: `screenshot (redacted).png`; zoom in on it: the covered parts are gone (solid is exactly the chosen colour); Properties > Details shows no camera, date or GPS
+- [ ] On a PC with no OCR language installed, the Find section says how to add one
+
+Share-safe
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Share-safe**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
+- [ ] The top panel says something like "Removed GPS, camera, 14 fields"; `photo (share-safe).jpg` has no GPS, camera or date in Properties > Details, and still opens upright
+- [ ] Drop the screenshot on Share-safe: a "Review before sharing" editor opens with covers on the email, phone and card number; remove one, add one, Apply: the result says "Covered N details · …"
+- [ ] Esc in the review window saves nothing
+- [ ] Drop the phone video on Share-safe: `video (share-safe).mp4` plays the same, is about the same size (no re-encode), and its location and creation date are gone (Inspect on it shows no GPS / location tag)
+- [ ] Drop an already clean file (a Share-safe output): it is skipped with "already clean"
+
+Remove metadata (File-actions wheel, **Alt**)
+- [ ] Drop the phone photo on **Remove metadata**: `photo (no metadata).jpg`, no editor, the result line lists what went
+- [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
+- [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
+
+### U. Documents, spreadsheets, subtitles, Office bridge (M11)
 Have ready: a Word document with headings, a bulleted and a numbered list, a table, a link and a
 picture (`report.docx`); a Markdown file (`notes.md`); an RTF saved from WordPad with a picture; an
 RTFD package from a Mac (a folder ending in `.rtfd`); an old `.pages` file; a text PDF; an Excel
@@ -373,8 +466,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.1.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.5.0.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)

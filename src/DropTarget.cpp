@@ -3,7 +3,6 @@
 #include "Log.h"
 
 #include <shellapi.h>
-#include <shlguid.h>   // CLSID_DragDropHelper
 #include <wil/resource.h>
 
 namespace sd
@@ -50,8 +49,9 @@ namespace sd
 
     DropTarget::DropTarget(HWND hwnd, IDropSink* sink) : m_hwnd(hwnd), m_sink(sink)
     {
-        // Optional: without it the drag picture is simply not shown over the wheel.
-        CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_helper));
+        // No drag-image helper: Explorer's drag picture shows only over windows that use one, so it
+        // fades away as soon as the wheel opens and the wheel takes its place.
+        // Creating CLSID_DragDropHelper into m_helper here would bring the picture back over the wheel.
     }
 
     STDMETHODIMP DropTarget::DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect)
