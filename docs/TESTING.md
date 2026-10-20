@@ -281,7 +281,7 @@ Crop
 - [ ] Apply: `photo (cropped).jpg` appears next to the photo, the original is untouched; cropping again makes `photo (cropped 2).jpg`
 - [ ] Open the cropped JPG's Properties > Details: camera, date and location are kept (Crop is not a privacy tool; use Share-safe for that), the size is the new size, it opens upright everywhere
 - [ ] PNG stays PNG, WebP stays WebP
-- [ ] Drop five photos of different sizes on Crop: the panel says "The other 4 images" with Centred / Same place; PgUp/PgDn show each one with the box; Apply makes five cropped copies
+- [ ] Drop five photos of different sizes on Crop: the editor shows the first one and the panel says "The other 4 images" with Centred / Same place; Apply makes five cropped copies, each with the first one's shape (centred, or in the same place); with an exact size set, each is that size where it fits
 
 Redact Photos
 - [ ] Drop the screenshot on **Redact**: drag over the email: a black cover appears; drag several more; click one to select, Ctrl+click to select more, Del removes them
