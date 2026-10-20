@@ -29,7 +29,9 @@ namespace sd
         constexpr float kOpenMs = 420.f;       // spring; it looks settled after about half of this
         constexpr float kFadeInMs = 120.f;
         constexpr float kSwitchMs = 260.f;
-        constexpr float kCloseMs = 140.f;
+        constexpr float kCloseMs = 200.f;
+        constexpr float kAwayTauMs = 50.f;     // approach for the fade as the cursor heads out of the wheel
+        constexpr float kAwayFade = 0.45f;     // opacity lost at the window edge (never 0: drops still land)
         constexpr float kHotTauMs = 42.f;      // exponential approach for hover highlights
         constexpr UINT_PTR kTimerFrame = 1;
     }
@@ -71,7 +73,7 @@ namespace sd
         m_textFamily = TextFamily(m_dwrite.Get());
         m_iconFamily = IconFamily(m_dwrite.Get());
 
-        m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), this);
+        m_dropTarget = Microsoft::WRL::Make<DropTarget>(this);
         const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get());
         if (FAILED(hr))
         {
@@ -185,6 +187,8 @@ namespace sd
         m_lastPt = screenPt;
         m_openT = 0.f;
         m_switchT = 1.f;
+        m_away = m_awayTarget = 0.f;
+        m_dropped = false;
         Render();
         // Topmost above other topmost windows, without activation.
         SetWindowPos(m_hwnd.get(), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -242,16 +246,36 @@ namespace sd
         // (negative delta) moves to the next wheel, like moving down a list.
         m_scrollAccum += wheelDelta;
         const int n = static_cast<int>(m_rings.size());
+        // Wheels with nothing for these files are skipped, so scrolling only visits useful ones.
+        const auto next = [&](int step) {
+            for (int i = 1, r = m_ring; i < n; ++i)
+            {
+                r = (r + step + n) % n;
+                if (HasActions(r))
+                    return r;
+            }
+            return (m_ring + step + n) % n;   // nothing applies anywhere: plain order
+        };
         while (m_scrollAccum <= -WHEEL_DELTA)
         {
             m_scrollAccum += WHEEL_DELTA;
-            SwitchTo((m_ring + 1) % n, 1);
+            if (const int r = next(1); r != m_ring)
+                SwitchTo(r, 1);
         }
         while (m_scrollAccum >= WHEEL_DELTA)
         {
             m_scrollAccum -= WHEEL_DELTA;
-            SwitchTo((m_ring + n - 1) % n, -1);
+            if (const int r = next(-1); r != m_ring)
+                SwitchTo(r, -1);
         }
+    }
+
+    bool Overlay::HasActions(int ring) const
+    {
+        if (m_files.empty() || !m_provider)
+            return true;   // probe: the files are not known yet
+        const auto content = m_provider(m_files, ring);
+        return std::any_of(content.slices.begin(), content.slices.end(), [](const WheelSlice& s) { return s.enabled; });
     }
 
     void Overlay::SwitchTo(int ring, int direction)
@@ -317,6 +341,9 @@ namespace sd
             if (std::abs(target - m_hotT[i]) < 0.004f)
                 m_hotT[i] = target;
         }
+        m_away += (m_awayTarget - m_away) * (1.f - std::exp(-dt / kAwayTauMs));
+        if (std::abs(m_awayTarget - m_away) < 0.004f)
+            m_away = m_awayTarget;
         if (m_mode == Mode::Closing)
         {
             m_closeT = std::min(1.f, m_closeT + dt / kCloseMs);
@@ -336,7 +363,7 @@ namespace sd
 
     bool Overlay::Settled() const
     {
-        if (m_mode == Mode::Closing || m_openT < 1.f || m_switchT < 1.f)
+        if (m_mode == Mode::Closing || m_openT < 1.f || m_switchT < 1.f || m_away != m_awayTarget)
             return false;
         for (size_t i = 0; i < m_hotT.size(); ++i)
             if (m_hotT[i] != (static_cast<int>(i) == m_hot && m_content.slices[i].enabled ? 1.f : 0.f))
@@ -385,6 +412,17 @@ namespace sd
         }
         const bool opening = m_mode == Mode::Probe;
         m_files = files;
+        if (opening && m_rings[static_cast<size_t>(m_ring)].fallThrough && !HasActions(m_ring))
+        {
+            for (int r = 0; r < static_cast<int>(m_rings.size()); ++r)
+                if (r != m_ring && HasActions(r))
+                {
+                    log::Info(L"overlay: nothing on {} applies; opening {}", m_rings[static_cast<size_t>(m_ring)].title,
+                              m_rings[static_cast<size_t>(r)].title);
+                    m_ring = r;
+                    break;
+                }
+        }
         m_content = m_provider ? m_provider(files, m_ring) : WheelContent{};
         m_hotT.assign(m_content.slices.size(), 0.f);
         m_tileCache.clear();
@@ -408,6 +446,15 @@ namespace sd
         m_lastPt = pt;
         const int hot = HitTest(pt);
         SetHot(hot);
+        // Heading out past the tiles, the wheel fades a little with distance, so leaving it is a
+        // gradual hand-off rather than a sudden disappearance at the window edge.
+        const float d = std::hypot(static_cast<float>(pt.x - m_origin.x) - m_c.x, static_cast<float>(pt.y - m_origin.y) - m_c.y);
+        const float away = std::clamp((d - m_tileOut) / (kMarginDip * m_scale), 0.f, 1.f);
+        if (std::abs(away - m_awayTarget) > 0.01f)
+        {
+            m_awayTarget = away;
+            Animate();
+        }
 #if SHIFTDROP_M0
         return hot != kOutside ? SafeEffect(allowed) : DROPEFFECT_NONE;
 #else
@@ -431,6 +478,7 @@ namespace sd
     void Overlay::OnDrop(const std::vector<std::wstring>& files, POINT pt)
     {
         m_inDrag = false;
+        m_dropped = true;
         const int hot = HitTest(pt);
         // The drop is handed over before the wheel starts closing, so whoever listens to `hidden`
         // already knows something was dropped.
@@ -697,8 +745,10 @@ namespace sd
         const float s = m_scale;
         // Opening springs from 86% with a slight overshoot; closing shrinks a little while it fades.
         float zoom = m_motion ? 0.86f + 0.14f * Spring(m_openT) : 1.f;
+        zoom *= 1.f - 0.03f * m_away;
         if (m_mode == Mode::Closing)
-            zoom *= 1.f - 0.04f * EaseOutCubic(m_closeT);
+            // After a drop it settles in place; when the cursor left, it shrinks away a bit more.
+            zoom *= 1.f - (m_dropped ? 0.04f : 0.1f) * EaseOutCubic(m_closeT);
         m_rt->SetTransform(D2D1::Matrix3x2F::Scale(zoom, zoom, m_c));
 
         // An almost invisible disc under everything keeps the gaps between tiles hit-testable, so the
@@ -798,9 +848,9 @@ namespace sd
         if (m_mode == Mode::Wheel && m_motion)
             // Never fully transparent while it takes drops: the layered hit test ignores pixels that
             // end up with alpha 0.
-            opacity = std::max(0.1f, EaseOutCubic(m_openT * kOpenMs / kFadeInMs));
+            opacity = std::max(0.1f, EaseOutCubic(m_openT * kOpenMs / kFadeInMs)) * (1.f - kAwayFade * m_away);
         else if (m_mode == Mode::Closing)
-            opacity = 1.f - EaseOutCubic(m_closeT);
+            opacity = (1.f - kAwayFade * m_away) * (1.f - EaseOutCubic(m_closeT));
         m_canvas->End(m_hwnd.get(), m_origin, opacity);
         m_rt = nullptr;
     }
