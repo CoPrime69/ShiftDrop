@@ -2,6 +2,7 @@
 #include "Brand.h"
 #include "Log.h"
 #include "Utf.h"
+#include "sandbox/MediaSandbox.h"
 
 #include <windows.h>
 #include <wil/resource.h>
@@ -95,8 +96,19 @@ namespace sd
             result.error = L"the media engine (ffmpeg.exe) is missing; reinstall " SD_NAME;
             return result;
         }
+        // S6: with [Sandbox] Media=1, a run that reads one file into our staging output works on
+        // handles inside the AppContainer (sandbox/MediaSandbox.h). Any other run is unchanged.
+        sandbox::MediaJail jail;
+        bool jailed = false;
+        if (sandbox::MediaSandboxEnabled())
+        {
+            std::wstring why;
+            jailed = jail.Prepare(args, why);
+            if (!jailed)
+                log::Info(L"ffmpeg: not sandboxed: {}", why);
+        }
         std::wstring commandLine = QuoteArg(m_exe);
-        for (const auto& a : args)
+        for (const auto& a : jailed ? jail.Args() : args)
             commandLine += L' ' + QuoteArg(a);
 
         // Pipes for the child's stdout (progress) and stderr (log). Only the child's ends are
@@ -113,54 +125,29 @@ namespace sd
         SetHandleInformation(errRead.get(), HANDLE_FLAG_INHERIT, 0);
         wil::unique_hfile nul(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit, OPEN_EXISTING, 0, nullptr));
 
-        HANDLE inherited[] = { nul.get(), outWrite.get(), errWrite.get() };
-        SIZE_T attrSize = 0;
-        InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
-        std::vector<char> attrBuffer(attrSize);
-        auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuffer.data());
-        if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) ||
-            !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+        // Exactly these handles are inherited (a handle list), so handles from other threads' work
+        // never leak into ffmpeg. sandbox::Launch starts it suspended, puts it in a kill-on-close job
+        // (closing `job` on return, or Windows if we die, ends ffmpeg) and only then lets it run.
+        sandbox::LaunchSpec spec;
+        spec.exe = m_exe;
+        spec.commandLine = commandLine;
+        spec.inherit = { nul.get(), outWrite.get(), errWrite.get() };
+        spec.stdIn = nul.get();
+        spec.stdOut = outWrite.get();
+        spec.stdErr = errWrite.get();
+        spec.appContainer = jailed;
+        // A jailed run also gets a memory cap, no child processes and no UI access; a normal run keeps
+        // the plain kill-on-close job it always had.
+        spec.limits = jailed ? sandbox::Limits{ 8ull << 30, 0, true, true } : sandbox::Limits{ 0, 0, false, false };
+        if (jailed && !jail.Open(spec, result.error))
+            return result;
+        auto child = sandbox::Launch(spec);
+        if (!child)
         {
-            result.error = L"cannot set up the ffmpeg process";
+            result.error = std::format(L"cannot start ffmpeg: {}", child.error);
             return result;
         }
-        auto deleteAttrs = wil::scope_exit([&] { DeleteProcThreadAttributeList(attrs); });
-
-        STARTUPINFOEXW si{};
-        si.StartupInfo.cb = sizeof(si);
-        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-        si.StartupInfo.hStdInput = nul.get();
-        si.StartupInfo.hStdOutput = outWrite.get();
-        si.StartupInfo.hStdError = errWrite.get();
-        si.lpAttributeList = attrs;
-
-        // Kill-on-close job: closing `job` (on return, or by Windows if we die) ends ffmpeg.
-        wil::unique_handle job(CreateJobObjectW(nullptr, nullptr));
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if (!job || !SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
-        {
-            result.error = L"cannot create a job object for ffmpeg";
-            return result;
-        }
-
-        // Suspended until it is in the job, so it cannot outlive us even for a moment.
-        PROCESS_INFORMATION pi{};
-        if (!CreateProcessW(m_exe.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
-                            CREATE_SUSPENDED | CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                            nullptr, nullptr, &si.StartupInfo, &pi))
-        {
-            result.error = std::format(L"cannot start ffmpeg ({})", GetLastError());
-            return result;
-        }
-        wil::unique_handle process(pi.hProcess), thread(pi.hThread);
-        if (!AssignProcessToJobObject(job.get(), process.get()))
-        {
-            TerminateProcess(process.get(), 1);
-            result.error = L"cannot put ffmpeg in a job object";
-            return result;
-        }
-        ResumeThread(thread.get());
+        wil::unique_handle process = std::move(child.process), job = std::move(child.job);
         // Our copies of the child's ends: closed now, so the reads below end when ffmpeg exits.
         outWrite.reset();
         errWrite.reset();

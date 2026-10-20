@@ -260,6 +260,35 @@ Inspector
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
 
+### P. Archives and the sandbox (M7)
+
+Prepare a folder `Photos` with a few pictures, a subfolder and a file with a non-English name
+(for example `Müller 日本.txt`); a ZIP, a TAR.GZ, a 7z and a RAR made elsewhere (7-Zip or WinRAR);
+a password-protected ZIP; and an old ZIP made on a non-UTF-8 system if you have one.
+
+Compress
+- [ ] Drag `Photos`, hold **Alt**, drop on **Zip**: `Photos (zipped).zip` appears next to the folder; open it in Explorer: the subfolder, the non-English name and the dates are all there
+- [ ] Select three files in one folder, Alt-drag them onto **Zip**: one ZIP named after their folder holding the three files
+- [ ] Drag `Photos`, hold **Shift**: the Convert wheel shows ZIP, TAR.GZ and 7z; **TAR.GZ** makes `Photos (archived).tar.gz`, **7z** makes `Photos (archived).7z`; both open in 7-Zip with the same files
+- [ ] Zip a folder of a few GB: the top panel's progress moves smoothly; press × halfway: no `.zip` and no `.sdpart` file is left
+
+Extract and convert
+- [ ] Shift-drag each archive (ZIP, TAR.GZ, 7z, RAR): the wheel shows Extract, ZIP, TAR.GZ, 7z (on a ZIP, TAR.GZ or 7z its own format is dimmed)
+- [ ] **Extract** on each: a folder `name (extracted)` next to it with the same files, names and dates; an archive holding one top-level folder doesn't add an extra folder level
+- [ ] The old non-UTF-8 ZIP: accented names come out right (not `M├╝ller`)
+- [ ] **ZIP** on the RAR and the 7z: `name (converted).zip` with the same contents
+- [ ] The password-protected ZIP on Extract: the top panel says it is password-protected; nothing is created
+- [ ] A big archive on Extract, × halfway: no folder and no `.sdpart` is left next to it
+- [ ] Undo the last extract from History: the folder goes to the Recycle Bin
+
+Sandbox
+- [ ] Extract an archive, then open `%LOCALAPPDATA%\ShiftDrop\logs`: no "sandbox:" warning line
+- [ ] While a large extract runs, Process Explorer (or Task Manager > Details, column "Integrity level") shows `ShiftDropWorker.exe` at **AppContainer**, under ShiftDrop.exe, and it disappears when the job ends
+- [ ] Kill ShiftDrop.exe in Task Manager during a large extract: ShiftDropWorker.exe ends at once
+- [ ] Set `[Sandbox] Archives=0` in `settings.ini`, restart, extract: it still works, and the worker shows integrity level Medium
+- [ ] Optional (open question 16), on a PC with a GPU: set `[Sandbox] Media=1`, restart, convert a video to MP4 and compress one (GPU encoder in use): both work, ffmpeg.exe shows **AppContainer** in Process Explorer; note any failure and the log lines
+- [ ] Uninstall: the AppContainer profile is removed (`%LOCALAPPDATA%\Packages\shiftdrop.sandbox` is gone)
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)

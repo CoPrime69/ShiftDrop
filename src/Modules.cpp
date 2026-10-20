@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "archive/ArchiveModule.h"
 #include "inspect/InspectModule.h"
 #include "shelf/ShelfModule.h"
 #include "pdf/PdfModule.h"
@@ -13,6 +14,7 @@ namespace sd
             inspect::Module(),   // Tools: Inspect (metadata, M4)
             ShelfModule(),   // Float shelf (file action), src/shelf
             pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
+            archive::Module(),   // Zip, Extract, convert archives; parsed in the sandboxed worker (src/archive, src/sandbox)
         };
         return modules;
     }

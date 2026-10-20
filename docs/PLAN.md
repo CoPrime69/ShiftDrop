@@ -173,7 +173,7 @@ Each milestone, at a glance:
 | M4 (delivered, except DirectComposition) | Know before you drop (S1) | Keyboard model, metadata inspector |
 | M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
-| M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
+| M7 (delivered; WASM plugins designed only, see docs/plugins.md) | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
 | **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
 | **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
 | **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
@@ -343,7 +343,7 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 | | PDF → PPTX | one page image per slide | M11 |
 | Spreadsheets | XLSX, ODS, CSV, TSV; PDF export; XLS input | libxlsxwriter, pugixml, libxls; plain-table PDF; Office bridge for faithful PDF | M11 |
 | Subtitles | SRT, VTT; TXT export | our code | M11 |
-| Archives | ZIP, TAR, GZIP; RAR input | libarchive (reads RAR/RAR5 under BSD, no unRAR licence) | M7 |
+| Archives | ZIP, TAR, GZIP; RAR input | libarchive (reads RAR/RAR5 under BSD, no unRAR licence) | Done (M7): ZIP, TAR.GZ, 7z written; ZIP, TAR, TGZ, GZ, 7z, RAR/RAR5 read |
 
 "275 conversion paths" is a count of input × output pairs, not a list we can check item by item; the
 table above covers every format the spec names.
@@ -429,7 +429,7 @@ question 1).
 | Edit: strip metadata | M2 (outputs carry none), verified scrub in M6 |
 | Edit: remove background | **Dropped**: needs an ML model, excluded by your no-models rule |
 | Alt = File actions: copy path, duplicate | M2 (plus Copy, Move, Terminal) |
-| File actions: zip / unzip | M7 |
+| File actions: zip / unzip | Done (M7) |
 | File actions: rename pattern | M12 |
 | Configurable modifier keys, never Win | INI today (M0); per-wheel keys in M2; settings UI in M12 |
 | Multiple files; mixed types show only common actions | Done (M1) |
@@ -440,7 +440,7 @@ question 1).
 | Settings window | M12 |
 | Light / dark theme | Done for the wheel (M1); settings window follows it in M12 |
 | Acrylic / Mica glass look | Translucent fill now; real backdrop spike in M4 |
-| No network calls, no telemetry | True today; enforced in CI from M2, proven by the sandbox in M7 |
+| No network calls, no telemetry | Enforced in CI from M2; archive parsing proven sealed (no files, no network) by the M7 sandbox tests |
 | Background job queue with cancellation and progress | Done (M1, worker pool); progress within a file and a cancel button in the top panel in M3a |
 | Logs in %LOCALAPPDATA%\ShiftDrop\logs | Done (M0) |
 | Per-monitor DPI, Explorer move/copy semantics, elevated windows, browsers, hook timeouts | Handled or documented in Stage 4 (M0/M1) |
@@ -529,6 +529,17 @@ question 1).
 | 2026-10-20 | M5: Merge PDFs and Organize PDF Pages ask first, in small windows of their own (Direct2D, light/dark, keyboard: Alt+arrows move, R / Shift+R rotate, Ctrl+D duplicates, Delete, Ctrl+Z, Enter, Esc). Organize keeps the first PDF's outline and metadata | The same editor step the video tools use; the page plan travels in the recipe's params |
 | 2026-10-20 | M5: the WinRT code (Windows.Data.Pdf, Windows.Media.Ocr, share sheet) and the editor windows are object libraries that plug into the core through small hooks; the core and its tests build without them | Unit tests run anywhere; tests that need Windows' renderer or OCR skip themselves where they are missing |
 | 2026-10-20 | M5: an engine can give the top panel its own line for a single result ("Copied 214 words", "2.1 MB to 840 KB (61% smaller)"); a result that is not a file (Copy text) doesn't say "Saved next to the originals" | Copy text writes nothing to disk; for Compress the size saved is what people want to see |
+| 2026-10-20 | M7: archives through libarchive (BSD-2) built without GPL parts and without crypto: zip, tar, 7z, RAR/RAR5 readers; gzip, bzip2, xz/lzma and zstd filters | One library for every format; RAR is read under BSD with no unRAR licence |
+| 2026-10-20 | M7: archive parsing runs in a separate small worker, `engines\ShiftDropWorker.exe`, started in an AppContainer with no capabilities (handles passed with PROC_THREAD_ATTRIBUTE_HANDLE_LIST) inside a kill-on-close job (2 GiB memory, 2 h CPU, one process, no UI). It gets only the archive's read handle and a pipe; it streams entries back and **the app creates every file** after checking each name and size again | A parser bug in hostile input reaches neither the person's files nor the network. A separate exe keeps the sandboxed code small, needs no change to ShiftDrop.exe's start-up, and gets the same CI import check |
+| 2026-10-20 | M7: when AppContainer is unavailable (old or locked-down Windows, Wine) the worker runs as a plain child in the same job, with one log line; with no worker exe at all, archives are read in-process, also logged. `[Sandbox] Archives=0` in settings.ini turns the AppContainer off | Archives still work everywhere; the log says how they ran |
+| 2026-10-20 | M7: extraction safety: an absolute path, drive letter, UNC path or `..` anywhere refuses the **whole** archive; symlinks, devices and FIFOs are skipped (counted in the result); hard links to an entry inside are copied; forbidden characters become `_`, device names (CON, NUL, ...) get a `_` prefix, trailing dots and spaces go; names that differ only in case become "name (2)" | A half-extracted hostile archive is worse than none; Windows names must not change meaning |
+| 2026-10-20 | M7: bomb limits: 64 GiB uncompressed in total, 1,000,000 entries, and after the first 1 GiB no more than 2000 times the archive's size; a declared size that doesn't match the data fails | Real archives stay far below; a bomb stops early with nothing left behind |
+| 2026-10-20 | M7: names: ZIP written with the UTF-8 flag; read with the UTF-8 flag honoured and the OEM code page (CP437 on most systems) for old ZIPs without it; tar/7z names are Unicode already. Timestamps are kept both ways (files and folders) | Names from Mac, Linux and old Windows zips come out right |
+| 2026-10-20 | M7: Extract writes a folder "name (extracted)" next to the archive through StagedOutput's folder mode; a single top-level folder inside is flattened into it; a raw .gz extracts to its one file. Encrypted archives are refused with a clear message ("this archive is password-protected; protected archives can't be opened yet") | One drop leaves one thing next to the original, as for PDF pages |
+| 2026-10-20 | M7: wheels: Zip is the 8th slice of the File-actions wheel (one ZIP of everything dropped, named after the single item or after their parent folder); folders get ZIP / TAR.GZ / 7z on the Convert wheel; archives get Extract / ZIP / TAR.GZ / 7z on the Convert wheel (their own format dimmed). Suffixes "zipped", "archived", "extracted", "converted" | Zip is a file action people expect next to Copy and Move; repacking is a conversion |
+| 2026-10-20 | M7: StagedOutput takes an optional `OutputPlace` (folder + stem) so a batch output can be named after the folder rather than the first file | "Photos.zip" for a drop of everything in Photos, not "IMG_0001 (zipped).zip" |
+| 2026-10-20 | M7: ffmpeg can run in the same AppContainer (`[Sandbox] Media=1`): the input and the staging output go in as inherited CRT descriptors (`-i fd:` / `fd:`, `-protocol_whitelist fd`), with a read-back handle for MP4 faststart. Runs that name any other file (subtitles, LUTs, two-pass logs, image sequences, concat) stay outside, logged. **Off by default** | The tests prove every built-in media recipe works this way on the CPU encoders, but GPU encoders (NVENC, Quick Sync, AMF) and `-hwaccel auto` inside an AppContainer can't be checked on CI (no GPU) and need driver access a capability-less container may not get |
+| 2026-10-20 | M7: plugins are WebAssembly modules, one per action, interpreted inside the same sandbox worker, described by a JSON manifest (docs/plugins.md). Design only in M7 | Two walls (WASM and AppContainer) around third-party code; the app keeps all file work |
 
 ## Open questions
 
@@ -547,6 +558,10 @@ question 1).
 13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
 14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
 15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
+16. M7: Media sandbox: on a PC with an NVIDIA, Intel or AMD GPU, set `[Sandbox] Media=1` and run TESTING.md section P's media steps. If GPU encoding works inside the AppContainer, it can default to on.
+17. M7: Password-protected archives are refused. Should Extract ask for the password (the worker would get it over its pipe), or is refusing fine?
+18. M7: Zip on several files from different folders is named after the first item's parent folder. Good, or always "Archive.zip"?
+19. M7: Should the Convert wheel also offer TAR (no compression) and TAR.XZ, or are ZIP / TAR.GZ / 7z enough?
 
 ## Sources
 
