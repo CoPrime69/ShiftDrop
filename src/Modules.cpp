@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "pdf/PdfModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
@@ -7,6 +8,7 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
+            pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
         };
         return modules;
     }
