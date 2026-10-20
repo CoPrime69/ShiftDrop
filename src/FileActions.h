@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
+#include <wil/resource.h>
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,4 +20,13 @@ namespace sd
         std::wstring message;
     };
     FileActionResult RunInstantFileAction(std::string_view actionId, const std::vector<std::wstring>& files, HWND owner);
+
+    // A feature module's own instant file action (the Float shelf's "file.float"), run by
+    // RunInstantFileAction on the UI thread. An empty function removes it.
+    using InstantFileAction = std::function<FileActionResult(const std::vector<std::wstring>& files, HWND owner)>;
+    void SetInstantFileAction(std::string actionId, InstantFileAction run);
+
+    // A CF_HDROP block (DROPFILES followed by the wide paths), as the clipboard and drag and drop
+    // expect it. Null if out of memory.
+    wil::unique_hglobal MakeDropFiles(const std::vector<std::wstring>& files);
 }
