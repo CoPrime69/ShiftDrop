@@ -13,7 +13,7 @@ namespace sd::hook
         struct State
         {
             HWND notify = nullptr;
-            UINT vk = VK_SHIFT;
+            UINT keys[3] = { VK_SHIFT, 0, 0 };
             int dragCx = 4, dragCy = 4;
             UINT downMsg = WM_LBUTTONDOWN, upMsg = WM_LBUTTONUP;
             bool down = false;
@@ -50,10 +50,17 @@ namespace sd::hook
                         PostMessageW(s.notify, msg::DragBegin, 0, msg::PackPoint(m->pt));
                     }
                     // GetAsyncKeyState reads the physical key state right now; it is cheap and lock-free.
-                    if (s.dragging && !s.armed && (GetAsyncKeyState(static_cast<int>(s.vk)) & 0x8000))
+                    if (s.dragging && !s.armed)
                     {
-                        s.armed = true;
-                        PostMessageW(s.notify, msg::DragArm, s.vk, msg::PackPoint(m->pt));
+                        for (const UINT vk : s.keys)
+                        {
+                            if (vk && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000))
+                            {
+                                s.armed = true;
+                                PostMessageW(s.notify, msg::DragArm, vk, msg::PackPoint(m->pt));
+                                break;
+                            }
+                        }
                     }
                 }
                 else if (msgId == s.upMsg)
@@ -68,10 +75,14 @@ namespace sd::hook
         }
     }
 
-    bool Install(HWND notify, UINT triggerVk)
+    bool Install(HWND notify, const UINT (&keys)[3])
     {
         s.notify = notify;
-        s.vk = triggerVk;
+        for (int i = 0; i < 3; ++i)
+            s.keys[i] = keys[i];
+        // Start the watchdog's clock now; otherwise its first check sees "no events since boot".
+        s.lastTime = GetTickCount();
+        GetCursorPos(&s.lastPt);
         // Read once here so the callback never calls into user32 for them.
         // (These are system-DPI values; a few pixels of difference on other monitors does not matter.)
         s.dragCx = GetSystemMetrics(SM_CXDRAG);

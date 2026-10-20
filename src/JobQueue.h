@@ -9,15 +9,17 @@
 
 namespace sd
 {
-    // A small worker pool. Tasks run on background threads (each with COM initialised as MTA, which
-    // WIC needs) and never on the UI thread. Destroying the queue asks running tasks to stop through
+    // A small worker pool. Tasks run on background threads and never on the UI thread. Each thread
+    // initialises COM in the apartment the queue was made for: MTA for converters (WIC is free-threaded),
+    // STA for shell work (IFileOperation is only supported on STA threads). Destroying the queue asks running tasks to stop through
     // their stop_token, drops tasks still waiting, and joins the threads.
     class JobQueue
     {
     public:
         using Task = std::function<void(std::stop_token)>;
 
-        explicit JobQueue(unsigned threads);
+        enum class Apartment { Mta, Sta };
+        explicit JobQueue(unsigned threads, Apartment apartment = Apartment::Mta);
         ~JobQueue();
         JobQueue(const JobQueue&) = delete;
         JobQueue& operator=(const JobQueue&) = delete;
@@ -27,6 +29,8 @@ namespace sd
 
     private:
         void Run(std::stop_token stop);
+
+        Apartment m_apartment;
 
         mutable std::mutex m_mutex;
         std::condition_variable_any m_cv;
