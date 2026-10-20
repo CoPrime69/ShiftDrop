@@ -2,8 +2,9 @@
 #include "Log.h"
 #include "keyboard/WheelRequest.h"
 
-// shlobj.h first: it brings in the COM headers (objbase.h) that exdisp.h needs but doesn't include,
-// and WIN32_LEAN_AND_MEAN keeps windows.h from including them.
+// ole2.h first: WIN32_LEAN_AND_MEAN leaves it out of windows.h, and exdisp.h needs its COM
+// definitions (`interface`, IDispatch) already in place.
+#include <ole2.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <exdisp.h>
