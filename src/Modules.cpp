@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "inspect/InspectModule.h"
+#include "shelf/ShelfModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
@@ -9,6 +10,7 @@ namespace sd
     {
         static const std::vector<FeatureModule> modules = {
             inspect::Module(),   // Tools: Inspect (metadata, M4)
+            ShelfModule(),   // Float shelf (file action), src/shelf
         };
         return modules;
     }
