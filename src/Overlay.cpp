@@ -1,13 +1,10 @@
 #include "Brand.h"
 #include "Overlay.h"
 #include "Log.h"
-#include "DragImage.h"
-#include "Thumbnail.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <thread>
 
 using Microsoft::WRL::ComPtr;
 using namespace sd::theme;
@@ -38,10 +35,8 @@ namespace sd
         constexpr float kHotTauMs = 42.f;      // exponential approach for hover highlights
         constexpr UINT_PTR kTimerFrame = 1;
 
-        constexpr float kDragImageDip = 96.f;     // our replacement drag picture's thumbnail, like Explorer's
         // Private messages to the overlay window.
-        constexpr UINT kMsgThumbnail = WM_APP + 1;    // wParam: request number, lParam: theme::Pixels* (receiver owns)
-        constexpr UINT kMsgHideCursor = WM_APP + 2;   // after DragEnter has returned to the drag source
+        constexpr UINT kMsgHideCursor = WM_APP + 1;   // after DragEnter has returned to the drag source
     }
 
     Overlay::Overlay(HINSTANCE instance, std::vector<WheelRing> rings, ContentProvider provider, DropHandler onDrop, Events events)
@@ -124,19 +119,6 @@ namespace sd
             if (self && wParam == kTimerFrame)
                 self->OnFrame();
             return 0;
-        case kMsgThumbnail:
-        {
-            std::unique_ptr<theme::Pixels> pixels(reinterpret_cast<theme::Pixels*>(lParam));
-            if (self && wParam == self->m_thumbRequest && self->m_inDrag && self->m_dropTarget && self->m_files.size() == 1)
-            {
-                const bool name = self->m_appearance.itemName == NameDisplay::OneLine;
-                const auto& path = self->m_files.front();
-                const auto slash = path.find_last_of(L"\\/");
-                ReplaceDragImage(self->m_dropTarget->Data(), *pixels, name ? path.substr(slash == std::wstring::npos ? 0 : slash + 1) : L"",
-                                 self->m_scale, self->m_d2d.Get(), self->m_dwrite.Get(), self->m_textFamily);
-            }
-            return 0;
-        }
         case kMsgHideCursor:
             if (self && self->m_inDrag && self->m_mode == Mode::Wheel && self->m_appearance.hideCursor)
                 self->m_cursor.Hide();
@@ -215,7 +197,6 @@ namespace sd
         m_switchT = 1.f;
         m_away = m_awayTarget = 0.f;
         m_dropped = false;
-        ++m_thumbRequest;
         Render();
         // Topmost above other topmost windows, without activation.
         SetWindowPos(m_hwnd.get(), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -458,10 +439,6 @@ namespace sd
         if (opening)
         {
             m_openT = m_motion ? 0.f : 1.f;
-            // Explorer's drag picture shows the name wrapped over two lines; for one line or none we
-            // redraw the picture (one file only: several files show a stack and a count, no name).
-            if (files.size() == 1 && m_appearance.itemName != NameDisplay::Full)
-                RequestThumbnail(files.front());
             if (m_appearance.hideCursor)
                 PostMessageW(m_hwnd.get(), kMsgHideCursor, 0, 0);   // not inside DragEnter: the source is waiting on us
         }
@@ -865,23 +842,6 @@ namespace sd
         }
         DrawCentre();
 #endif
-    }
-
-    void Overlay::RequestThumbnail(const std::wstring& path)
-    {
-        const unsigned request = ++m_thumbRequest;
-        const int px = static_cast<int>(std::lround(kDragImageDip * m_scale));
-        // A detached thread: the shell may take a moment (decoding a large photo) and the drag must not
-        // wait for it. The pixels come back in a posted message; if the window is gone by then, the post
-        // fails and they are freed here.
-        std::thread([hwnd = m_hwnd.get(), path, px, request] {
-            const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE);
-            auto pixels = std::make_unique<theme::Pixels>(LoadThumbnail(path, px));
-            if (SUCCEEDED(co))
-                CoUninitialize();
-            if (!pixels->px.empty() && PostMessageW(hwnd, kMsgThumbnail, request, reinterpret_cast<LPARAM>(pixels.get())))
-                pixels.release();
-        }).detach();
     }
 
     void Overlay::Render()

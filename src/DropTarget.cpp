@@ -1,5 +1,5 @@
 #include "DropTarget.h"
-#include "DragImage.h"
+#include "DropDescription.h"
 #include "Log.h"
 
 #include <shellapi.h>
