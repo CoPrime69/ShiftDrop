@@ -279,7 +279,7 @@ Crop
 - [ ] Type an exact Width and Height in pixels: the output is exactly that size
 - [ ] Rotate left / right turns the picture; Straighten (slider or typed degrees) tilts it and the box stays inside the picture
 - [ ] Apply: `photo (cropped).jpg` appears next to the photo, the original is untouched; cropping again makes `photo (cropped 2).jpg`
-- [ ] Open the cropped JPG's Properties > Details: camera and date are kept, the size is the new size, it opens upright everywhere
+- [ ] Open the cropped JPG's Properties > Details: camera, date and location are kept (Crop is not a privacy tool; use Share-safe for that), the size is the new size, it opens upright everywhere
 - [ ] PNG stays PNG, WebP stays WebP
 - [ ] Drop five photos of different sizes on Crop: the panel says "The other 4 images" with Centred / Same place; PgUp/PgDn show each one with the box; Apply makes five cropped copies
 
