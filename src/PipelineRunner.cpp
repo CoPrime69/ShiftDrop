@@ -17,10 +17,39 @@ namespace sd
     PipelineRunner::PipelineRunner(std::shared_ptr<const ImageCodecs> codecs, HistoryStore* history, std::shared_ptr<const FfmpegEngine> media)
         : m_codecs(std::move(codecs)), m_history(history), m_media(std::move(media))
     {
+        m_engines = MakeModuleEngines(EngineServices{ m_history, m_media });
+    }
+
+    const IEngine* PipelineRunner::EngineFor(const Recipe& recipe) const
+    {
+        for (const auto& e : m_engines)
+            if (e->Handles(recipe))
+                return e.get();
+        return nullptr;
+    }
+
+    JobLane PipelineRunner::Lane(const Recipe& recipe) const
+    {
+        if (const auto* e = EngineFor(recipe))
+            return e->Lane(recipe);
+        return recipe.IsMedia() ? JobLane::Media : JobLane::Pool;
+    }
+
+    ItemResult PipelineRunner::RunBatch(const Recipe& recipe, int64_t runId, const std::vector<std::wstring>& sources, std::stop_token stop,
+                                        const std::function<void(double)>& progress) const
+    {
+        const auto* e = EngineFor(recipe);
+        if (!e || !e->IsBatch(recipe))
+            return ItemResult{ false, false, {}, L"not a batch action", 0 };
+        if (stop.stop_requested())
+            return ItemResult{ false, true, {}, L"cancelled", 0 };
+        return e->RunBatch(recipe, runId, sources, stop, progress);
     }
 
     bool PipelineRunner::Applies(const Recipe& recipe, const std::wstring& path) const
     {
+        if (const auto* e = EngineFor(recipe))
+            return e->Applies(recipe, path);
         if (recipe.IsFileAction())
             return true;
         const auto ext = LowerExtension(path);
@@ -33,6 +62,8 @@ namespace sd
 
     bool PipelineRunner::Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const
     {
+        if (const auto* e = EngineFor(recipe))
+            return e->Accepts(recipe, path, why);
         if (recipe.IsFileAction())
         {
             const DWORD attributes = GetFileAttributesW(path.c_str());
@@ -98,6 +129,8 @@ namespace sd
 
     bool PipelineRunner::IsNoOp(const Recipe& recipe, const std::wstring& path) const
     {
+        if (const auto* e = EngineFor(recipe))
+            return e->IsNoOp(recipe, path);
         const auto ext = LowerExtension(path);
         if (const auto* media = recipe.MediaFormat())
             return IsAlreadyMediaFormat(*media, ext);
@@ -142,6 +175,8 @@ namespace sd
             return result;
         }
 
+        if (const auto* e = EngineFor(recipe))
+            return e->Run(recipe, runId, source, stop, progress);
         if (recipe.IsFileAction())
             return RunDuplicate(recipe, runId, source, elapsedMs);
         if (recipe.IsMedia())
@@ -379,7 +414,7 @@ namespace sd
             return;
         for (const auto& item : m_history->RecoverInterrupted())
         {
-            if (!item.staging.empty() && DeleteFileW(item.staging.c_str()))
+            if (!item.staging.empty() && RemoveStaging(item.staging))
                 log::Warn(L"recovery: removed leftover staging file {}", item.staging);
             else
                 log::Warn(L"recovery: run {} item for {} was interrupted", item.runId, item.source);

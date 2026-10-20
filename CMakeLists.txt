@@ -43,11 +43,13 @@ add_library(shiftdrop_core STATIC
   src/JobQueue.cpp
   src/Log.cpp
   src/Media.cpp
+  src/Modules.cpp
   src/OutputPath.cpp
   src/PipelineRunner.cpp
   src/Recipe.cpp
   src/RecipeStore.cpp
   src/Settings.cpp
+  src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
 )
