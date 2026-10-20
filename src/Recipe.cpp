@@ -2,6 +2,7 @@
 #include "Utf.h"
 
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <format>
 
@@ -79,7 +80,7 @@ namespace sd
             return false;
         }
 
-        static const char* const kKnown[] = { "$schema", "id", "label", "description", "ring", "suffix", "steps" };
+        static const char* const kKnown[] = { "$schema", "id", "label", "description", "ring", "suffix", "icon", "steps" };
         for (const auto& [key, _] : doc.items())
         {
             bool known = false;
@@ -131,6 +132,19 @@ namespace sd
                 return false;
             }
             r.ring = ring;
+        }
+        if (doc.contains("icon"))
+        {
+            // A Segoe Fluent Icons code point in hex ("E7AD"), drawn above the slice's label.
+            unsigned code = 0;
+            const std::string icon = doc["icon"].is_string() ? doc["icon"].get<std::string>() : "";
+            const auto r2 = std::from_chars(icon.data(), icon.data() + icon.size(), code, 16);
+            if (icon.empty() || r2.ec != std::errc{} || r2.ptr != icon.data() + icon.size() || code < 0xE000 || code > 0xF8FF)
+            {
+                error = "icon: expected a Segoe Fluent Icons code point in hex, like \"E7AD\"";
+                return false;
+            }
+            r.icon = static_cast<wchar_t>(code);
         }
         if (doc.contains("suffix"))
         {
@@ -205,7 +219,7 @@ namespace sd
             }
 
             const bool last = i + 1 == steps.size();
-            if (desc->kind == StepKind::FileAction || desc->kind == StepKind::MediaEncode)
+            if (desc->kind == StepKind::FileAction || desc->kind == StepKind::MediaEncode || desc->kind == StepKind::Engine)
             {
                 if (steps.size() != 1)
                 {
@@ -241,6 +255,8 @@ namespace sd
             doc["description"] = Narrow(description);
         doc["ring"] = ring;
         doc["suffix"] = Narrow(suffix);
+        if (icon)
+            doc["icon"] = std::format("{:04X}", static_cast<unsigned>(icon));
         doc["steps"] = nlohmann::json::array();
         for (const auto& s : steps)
             doc["steps"].push_back({ { "action", s.action }, { "params", s.params } });

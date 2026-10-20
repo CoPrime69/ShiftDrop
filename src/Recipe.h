@@ -23,6 +23,7 @@ namespace sd
         std::wstring description;
         std::string ring = "convert";   // which wheel shows it: "convert" (Shift), "tools" (Ctrl), "files" (Alt)
         std::wstring suffix = L"converted";   // output "name (suffix).ext"
+        wchar_t icon = 0;            // optional Segoe Fluent Icons glyph for the slice ("icon": "E7AD")
         std::vector<RecipeStep> steps;
         bool builtIn = false;
         std::wstring sourcePath;     // file it came from; empty for built-ins

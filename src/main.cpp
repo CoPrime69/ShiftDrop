@@ -130,6 +130,8 @@ namespace sd
         };
         [[maybe_unused]] Look SliceLook(const Recipe& recipe)   // unused in the M0 build
         {
+            if (recipe.icon)
+                return { recipe.icon };   // the recipe names its own (feature modules, user recipes)
             if (recipe.IsSingleEncode() || recipe.IsMedia() || recipe.steps.empty())
                 return {};
             const auto& step = recipe.steps.front();
@@ -738,6 +740,16 @@ namespace sd
                     return;
                 }
             }
+            if (const auto* engine = m_runner->EngineFor(*recipe); engine && engine->NeedsEditor(*recipe))
+            {
+                // Trim, crop, annotate...: the engine's window asks first, then the batch runs with the
+                // user's choices in the recipe's params.
+                m_island->HideSwitcher();
+                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files, [this](Recipe adjusted, std::vector<std::wstring> files) {
+                    StartBatch(adjusted, std::move(files));
+                });
+                return;
+            }
             StartBatch(*recipe, std::move(drop.files));
 #endif
         }
@@ -759,8 +771,38 @@ namespace sd
             // The panel's × stops this batch: the file in progress is abandoned (its staging file
             // deleted) and the rest are skipped. Files already finished stay.
             m_island->ShowProgress(verb + L"\u2026", files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
-            // Video and audio go through the media queue, one file at a time; images use every worker.
-            JobQueue& queue = recipe.IsMedia() ? *m_mediaJobs : *m_jobs;
+            // Video and audio go through the media queue, one file at a time; images use every worker;
+            // shell work goes to the STA thread. A batch action (join, merge, zip) is one job for all files.
+            const JobLane lane = m_runner->Lane(recipe);
+            JobQueue& queue = lane == JobLane::Media ? *m_mediaJobs : lane == JobLane::Shell ? *m_shellJobs : *m_jobs;
+            if (const auto* engine = m_runner->EngineFor(recipe); engine && engine->IsBatch(recipe))
+            {
+                state->result.files.resize(1);
+                state->result.files[0].source = files.front();
+                state->remaining = 1;
+                queue.Submit([state, runner = m_runner.get(), history = m_history.get(), files, token = state->result.token](std::stop_token stop) {
+                    std::stop_callback onShutdown(stop, [&] { state->cancel.request_stop(); });
+                    const auto progress = [&](double fraction) {
+                        const auto at = static_cast<int>(fraction * 1000.0);
+                        if (at != state->lastPermille.exchange(at))
+                            PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(at));
+                    };
+                    auto result = runner->RunBatch(state->recipe, state->result.runId, files, state->cancel.get_token(), progress);
+                    if (result.ok)
+                        log::Info(L"job: {} file(s) -> {}", files.size(), result.output);
+                    else
+                        log::Warn(L"job: batch of {} {}: {}", files.size(), result.skipped ? L"skipped" : L"failed", result.error);
+                    if (history)
+                        history->FinishRun(state->result.runId);
+                    auto done = std::make_unique<BatchResult>(std::move(state->result));
+                    done->files[0].result = std::move(result);
+                    done->cancelled = state->cancel.stop_requested();
+                    PostBatch(state->notify, std::move(done));
+                });
+                m_island->ShowProgress(std::format(L"{}: {}\u2026", recipe.label, Count(files.size(), L"file")), 1,
+                                       [cancel = state->cancel]() mutable { cancel.request_stop(); });
+                return;
+            }
             for (size_t i = 0; i < files.size(); ++i)
             {
                 state->result.files[i].source = files[i];

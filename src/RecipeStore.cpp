@@ -1,4 +1,5 @@
 #include "RecipeStore.h"
+#include "Engine.h"
 #include "Log.h"
 #include "Utf.h"
 
@@ -55,6 +56,7 @@ namespace sd
             recipe["steps"] = nlohmann::json::array({ step });
             all.push_back(std::move(recipe));
         }
+        AppendModuleRecipes(all);   // each feature module's own slices (Modules.cpp)
         return all.dump();
     }
 
