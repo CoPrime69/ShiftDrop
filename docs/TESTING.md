@@ -309,6 +309,14 @@ Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 ```
 - [ ] After a restart a song's Tools wheel also has **−14 LUFS** and a video's **2× speed**; both run at once with no window (the speed one names its output `clip (2x).mp4`)
 
+### R. Reduce size
+- [ ] Drag a 3 MB photo, press Shift and scroll to **Reduce size** (Convert, Tools, Reduce size, File actions): eight slices, −90% to −20%; the centre shows "3 MB" (the photo's size)
+- [ ] Hover **−90%**: the centre shows "≈ 307 KB" with "was 3 MB" under it; moving to **−50%** changes it to "≈ 1.5 MB"
+- [ ] Drop on **−90%**: `photo (reduced).jpg` appears, at most 10% of the original size (WebP stays WebP; PNG becomes JPEG); if quality alone cannot get there the picture is made smaller too
+- [ ] The same with a video (MP4 out, at most the shown size) and a song (M4A out)
+- [ ] A PDF of scans on **−70%**: `(reduced).pdf` at most 30% of the size; a PDF of mostly text gets as small as it can and the panel says it could not get smaller; one that cannot shrink at all leaves no file
+- [ ] Three files: the centre shows their total size, and hovering shows the total they come out at
+
 ### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
 

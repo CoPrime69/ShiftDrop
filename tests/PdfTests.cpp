@@ -471,6 +471,31 @@ TEST(PdfCompress, ShrinksPicturesAndNeverKeepsABiggerFile)
         EXPECT_FALSE(e.path().wstring().ends_with(L".sdpart")) << e.path();
 }
 
+TEST(PdfCompress, ReduceSizeStepsDownToTheTarget)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    const auto big = dir / L"big.pdf";
+    {
+        ImagePdfBuilder b(big);
+        ImageSource src;
+        src.pixels = Pattern(600, 600, true);
+        src.dpiX = src.dpiY = 300;
+        std::wstring error;
+        ASSERT_TRUE(b.AddPage(src, nullptr, error));
+        ASSERT_TRUE(b.Finish(error));
+    }
+    const auto& reduce = recipes.Get("reduce-pdf-90");
+    EXPECT_EQ(reduce.ring, "reduce");
+    const auto result = runner.Run(reduce, 0, big, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"big (reduced).pdf");
+    EXPECT_LE(SizeOf(result.output), SizeOf(big) / 10);
+    for (const auto& e : std::filesystem::directory_iterator(dir.path()))
+        EXPECT_FALSE(e.path().wstring().ends_with(L".sdpart")) << e.path();
+}
+
 // ---- Text ---------------------------------------------------------------------------------------
 
 TEST(PdfText, GlyphNames)
