@@ -2,7 +2,6 @@
 #include "Log.h"
 
 #include <shellapi.h>
-#include <shlguid.h>   // CLSID_DragDropHelper
 #include <wil/resource.h>
 
 namespace sd
@@ -47,44 +46,29 @@ namespace sd
         return files;
     }
 
-    DropTarget::DropTarget(HWND hwnd, IDropSink* sink) : m_hwnd(hwnd), m_sink(sink)
+    DropTarget::DropTarget(IDropSink* sink) : m_sink(sink)
     {
-        // Optional: without the helper the thumbnail simply stays where the source draws it.
-        CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_helper));
     }
 
     STDMETHODIMP DropTarget::DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect)
     {
         // Reading CF_HDROP here (not only at Drop) lets the wheel show only the actions these files support.
         const auto files = ReadDroppedFiles(data);
-        POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
+        const POINT p{ pt.x, pt.y };
         m_accepting = m_sink->OnDragEnter(files, p);
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
-        if (m_helper)
-        {
-            m_helper->DragEnter(m_hwnd, data, &p, *effect);
-            if (m_accepting)
-                m_helper->Show(FALSE);
-        }
         return S_OK;
     }
 
     STDMETHODIMP DropTarget::DragOver(DWORD, POINTL pt, DWORD* effect)
     {
-        POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
+        const POINT p{ pt.x, pt.y };
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
-        if (m_helper)
-            m_helper->DragOver(&p, *effect);
         return S_OK;
     }
 
     STDMETHODIMP DropTarget::DragLeave()
     {
-        if (m_helper)
-        {
-            m_helper->Show(TRUE);   // the thumbnail follows the cursor again outside the wheel
-            m_helper->DragLeave();
-        }
         m_accepting = false;
         m_sink->OnDragLeave();
         return S_OK;
@@ -92,12 +76,10 @@ namespace sd
 
     STDMETHODIMP DropTarget::Drop(IDataObject* data, DWORD, POINTL pt, DWORD* effect)
     {
-        POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
+        const POINT p{ pt.x, pt.y };
         const bool accepting = m_accepting;
         m_accepting = false;
         *effect = accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
-        if (m_helper)
-            m_helper->Drop(data, &p, *effect);
 
         // The drag source (e.g. Explorer) is blocked inside DoDragDrop until we return, so Drop only
         // reads the paths and hands them on; conversion runs on the job queue.

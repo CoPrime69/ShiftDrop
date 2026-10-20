@@ -41,6 +41,9 @@ namespace sd
         std::wstring title;   // "Convert"
         std::wstring key;     // "Shift"; empty when no key opens it (still reachable by scrolling)
         wchar_t icon = 0;
+        // Opened by this wheel's key but nothing on it applies to the dragged files (a PDF on the image
+        // Convert wheel): open the first wheel that has something instead.
+        bool fallThrough = false;
     };
 
     // The radial menu: a topmost, non-activating, layered popup centred on the cursor.
@@ -106,6 +109,7 @@ namespace sd
         int HitTest(POINT screenPt) const;
         void SetHot(int hot);
         void SwitchTo(int ring, int direction);
+        bool HasActions(int ring) const;   // any enabled slice for m_files
         void BeginClose();
         void OnFrame();
         bool Settled() const;
@@ -172,6 +176,8 @@ namespace sd
         bool m_motion = true;         // Windows' animation effects setting
         ULONGLONG m_lastFrame = 0;
         float m_openT = 1.f, m_switchT = 1.f, m_closeT = 0.f;
+        float m_away = 0.f, m_awayTarget = 0.f;   // cursor past the tiles toward the window edge: the wheel fades
+        bool m_dropped = false;                   // closing after a drop (not because the cursor left)
         int m_switchDir = 1;
         std::vector<float> m_hotT;
 
