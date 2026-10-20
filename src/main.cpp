@@ -940,6 +940,8 @@ namespace sd
                 }
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
+                else if (total == 1 && !batch->files[0].result.note.empty())
+                    sub = batch->files[0].result.note;   // an engine's own line (Normalize: loudness before and after)
                 else
                     sub = L"Saved next to the originals \u00b7 Undo from History";
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;

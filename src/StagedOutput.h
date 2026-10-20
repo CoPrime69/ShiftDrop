@@ -17,6 +17,7 @@ namespace sd
         std::wstring output;
         std::wstring error;
         uint64_t size = 0;
+        std::wstring note;   // optional line for the result panel, e.g. the loudness before and after
     };
 
     // One output of one source, written the safe way (OutputPath.h, ADR 0003) and recorded in
