@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "shelf/ShelfModule.h"
 #include "mediaeditor/MediaToolsModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
@@ -8,6 +9,7 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
+            ShelfModule(),   // Float shelf (file action), src/shelf
             MediaToolsModule(),   // video tools (M9) and audio tools (M10)
         };
         return modules;

@@ -23,7 +23,8 @@ namespace sd
     // While a wheel is open it shows every wheel, the one you are on, its key and that scrolling
     // switches. After a drop it turns into the job's progress and then its result: a success tucks
     // itself away after two seconds, a failure stays until clicked. Clicking a result shows the
-    // files in Explorer.
+    // files in Explorer; a result with files can also be dragged straight into another app, put on
+    // the Float shelf or copied to the clipboard (ResultActions).
     //
     // A layered, topmost, non-activating window like the wheel. It is click-through
     // (WS_EX_TRANSPARENT) except while it shows a result, so it never gets in the way of the
@@ -32,6 +33,16 @@ namespace sd
     {
     public:
         enum class Outcome { Success, Partial, Failure };
+
+        // Convert-and-carry: what a finished job's result offers besides showing the files (a click).
+        // Each is optional; the code behind them lives with the Float shelf (src/shelf).
+        struct ResultActions
+        {
+            std::function<void()> drag;              // the result was dragged: drag the outputs out (modal)
+            std::function<std::wstring()> toShelf;   // the Float button; returns the line shown afterwards
+            std::function<std::wstring()> copy;      // the Copy button; returns the line shown afterwards
+            bool Any() const { return drag || toShelf || copy; }
+        };
 
         Island(HINSTANCE instance, std::vector<WheelRing> rings, std::function<void()> onClick);
         ~Island();
@@ -48,7 +59,9 @@ namespace sd
         void ShowProgress(const std::wstring& title, size_t total, std::function<void()> onCancel = {});
         // Files finished so far; a fraction moves the bar within the current file (video, audio).
         void SetProgress(double done);
-        void ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle);
+        // With `actions`, the result can be dragged out and has Float and Copy buttons; it stays while
+        // the mouse is over it.
+        void ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle, ResultActions actions = {});
 
     private:
         enum class State { Hidden, Switcher, Progress, Result };
@@ -63,6 +76,10 @@ namespace sd
         float ContentWidth() const;
         float ContentHeight() const;
         void OnMouse(UINT msg, POINT pt);
+        void OnResultMouse(UINT msg, POINT pt);
+        int ActionAt(POINT pt) const;                 // index into m_actionRects, or -1
+        size_t ActionCount() const;
+        std::wstring ResultLine() const;              // the subtitle, or a hint while hovered
 
         Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight,
                                                              DWRITE_TEXT_ALIGNMENT align) const;
@@ -86,7 +103,7 @@ namespace sd
         std::unique_ptr<Canvas> m_canvas;
         ID2D1RenderTarget* m_rt = nullptr;   // valid between Canvas::Begin and End
         std::wstring m_textFamily, m_iconFamily;
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_keyFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont;
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_keyFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont, m_actionFont;
         float m_fontScale = 0.f;
 
         // Layout, window pixels.
@@ -115,6 +132,15 @@ namespace sd
         bool m_cancelled = false;             // × clicked: shows "Cancelling…" until the result arrives
         bool m_tracking = false;              // TrackMouseEvent armed for WM_MOUSELEAVE
         Outcome m_outcome = Outcome::Success;
+        ResultActions m_actions;                // carry: drag out, Float, Copy (empty for most results)
+        D2D1_RECT_F m_actionRects[2]{};         // Float, Copy buttons in window pixels, set by DrawResult
+        bool m_actionDone[2]{};                 // clicked: shows a tick
+        int m_actionHover = -1;
+        int m_pressAction = -1;                 // the button the press started on, or -1 (the chip itself)
+        bool m_pressed = false;
+        POINT m_pressPt{};
+        bool m_resultHover = false;             // the mouse is over the result: it stays
+        bool m_carrying = false;                // a drag of the outputs is in progress
 
         // Animation.
         bool m_animating = false;

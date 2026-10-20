@@ -6,8 +6,8 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 | Hold | Wheel | Slices so far |
 |---|---|---|
 | Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA |
-| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50% |
-| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate |
+| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB; for video and audio Compress, 50% size, Under 10 MB, Under 25 MB |
+| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app) |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
 Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top

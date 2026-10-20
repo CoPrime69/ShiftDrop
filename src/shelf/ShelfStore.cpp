@@ -1,0 +1,228 @@
+#include "shelf/ShelfStore.h"
+#include "Log.h"
+#include "Utf.h"
+
+#include <windows.h>
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <sstream>
+
+namespace sd::shelf
+{
+    std::string ToJson(const SavedShelf& shelf)
+    {
+        nlohmann::json j = nlohmann::json::object();
+        j["version"] = 1;
+        j["items"] = nlohmann::json::array();
+        for (const auto& item : shelf.items)
+            j["items"].push_back(Narrow(item));
+        j["edge"] = EdgeName(shelf.edge);
+        if (shelf.x && shelf.y)
+        {
+            j["x"] = *shelf.x;
+            j["y"] = *shelf.y;
+        }
+        return j.dump(2);
+    }
+
+    bool FromJson(std::string_view text, SavedShelf& shelf)
+    {
+        const auto j = nlohmann::json::parse(text, nullptr, false);
+        if (j.is_discarded() || !j.is_object())
+            return false;
+        SavedShelf out;
+        if (const auto items = j.find("items"); items != j.end() && items->is_array())
+            for (const auto& item : *items)
+                if (item.is_string() && !item.get<std::string>().empty())
+                    out.items.push_back(Widen(item.get<std::string>()));
+        if (const auto edge = j.find("edge"); edge != j.end() && edge->is_string())
+            out.edge = EdgeFromName(edge->get<std::string>());
+        const auto x = j.find("x"), y = j.find("y");
+        if (x != j.end() && y != j.end() && x->is_number_integer() && y->is_number_integer())
+        {
+            out.x = x->get<int>();
+            out.y = y->get<int>();
+        }
+        shelf = std::move(out);
+        return true;
+    }
+
+    bool Save(const std::wstring& path, const SavedShelf& shelf)
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+        const auto temp = path + L".tmp";
+        {
+            std::ofstream out(std::filesystem::path(temp), std::ios::binary | std::ios::trunc);
+            out << ToJson(shelf);
+            if (!out.flush())
+                return false;
+        }
+        // Our own state file, so replacing it is right (outputs are never replaced; see StagedOutput).
+        if (!MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            log::Warn(L"shelf: could not save {} ({})", path, GetLastError());
+            DeleteFileW(temp.c_str());
+            return false;
+        }
+        return true;
+    }
+
+    SavedShelf Load(const std::wstring& path)
+    {
+        SavedShelf shelf;
+        std::ifstream in(std::filesystem::path(path), std::ios::binary);
+        if (!in)
+            return shelf;
+        std::stringstream text;
+        text << in.rdbuf();
+        if (!FromJson(text.str(), shelf))
+            log::Warn(L"shelf: {} is not a shelf file; starting empty", path);
+        return shelf;
+    }
+
+    bool SamePath(std::wstring_view a, std::wstring_view b)
+    {
+        if (a.size() != b.size())
+            return false;
+        std::wstring x(a), y(b);
+        std::replace(x.begin(), x.end(), L'/', L'\\');
+        std::replace(y.begin(), y.end(), L'/', L'\\');
+        return CompareStringOrdinal(x.c_str(), static_cast<int>(x.size()), y.c_str(), static_cast<int>(y.size()), TRUE) == CSTR_EQUAL;
+    }
+
+    size_t AddToTop(std::vector<std::wstring>& items, const std::vector<std::wstring>& added, size_t limit)
+    {
+        const auto in = [](const std::vector<std::wstring>& list, const std::wstring& path) {
+            return std::any_of(list.begin(), list.end(), [&](const std::wstring& p) { return SamePath(p, path); });
+        };
+        std::vector<std::wstring> result;
+        size_t fresh = 0;
+        for (const auto& path : added)
+        {
+            if (path.empty() || in(result, path))
+                continue;
+            if (!in(items, path))
+                ++fresh;
+            result.push_back(path);
+        }
+        for (auto& path : items)
+            if (!in(result, path))
+                result.push_back(std::move(path));
+        if (result.size() > limit)
+            result.resize(limit);
+        items = std::move(result);
+        return fresh;
+    }
+
+    size_t RemoveIf(std::vector<std::wstring>& items, const std::function<bool(const std::wstring&)>& gone)
+    {
+        const auto before = items.size();
+        std::erase_if(items, gone);
+        return before - items.size();
+    }
+
+    void Selection::Resize(size_t count)
+    {
+        m_flags.resize(count, false);
+        if (m_anchor >= count)
+            m_anchor = count ? count - 1 : 0;
+    }
+
+    void Selection::Click(size_t index, bool ctrl, bool shift)
+    {
+        if (index >= m_flags.size())
+            return;
+        if (shift)
+        {
+            if (!ctrl)
+                std::fill(m_flags.begin(), m_flags.end(), false);
+            const size_t lo = std::min(m_anchor, index), hi = std::max(m_anchor, index);
+            for (size_t i = lo; i <= hi && i < m_flags.size(); ++i)
+                m_flags[i] = true;
+            return;
+        }
+        if (ctrl)
+            m_flags[index] = !m_flags[index];
+        else
+        {
+            std::fill(m_flags.begin(), m_flags.end(), false);
+            m_flags[index] = true;
+        }
+        m_anchor = index;
+    }
+
+    void Selection::SelectAll()
+    {
+        std::fill(m_flags.begin(), m_flags.end(), true);
+    }
+
+    void Selection::Clear()
+    {
+        std::fill(m_flags.begin(), m_flags.end(), false);
+    }
+
+    size_t Selection::Count() const
+    {
+        return static_cast<size_t>(std::count(m_flags.begin(), m_flags.end(), true));
+    }
+
+    std::vector<size_t> Selection::Indices() const
+    {
+        std::vector<size_t> out;
+        for (size_t i = 0; i < m_flags.size(); ++i)
+            if (m_flags[i])
+                out.push_back(i);
+        return out;
+    }
+
+    void Selection::Erase(size_t index)
+    {
+        if (index >= m_flags.size())
+            return;
+        m_flags.erase(m_flags.begin() + static_cast<std::ptrdiff_t>(index));
+        if (m_anchor > index)
+            --m_anchor;
+        Resize(m_flags.size());
+    }
+
+    std::vector<size_t> Selection::DragSet(size_t pressed) const
+    {
+        if (IsSelected(pressed))
+            return Indices();
+        return { pressed };
+    }
+
+    std::vector<size_t> Selection::HandleSet() const
+    {
+        if (Count() > 0)
+            return Indices();
+        std::vector<size_t> all(m_flags.size());
+        for (size_t i = 0; i < all.size(); ++i)
+            all[i] = i;
+        return all;
+    }
+
+    std::wstring CountText(size_t count)
+    {
+        return count == 1 ? std::wstring(L"1 item") : std::format(L"{} items", count);
+    }
+
+    std::wstring SizeText(unsigned long long bytes)
+    {
+        if (bytes < 1024)
+            return bytes == 1 ? std::wstring(L"1 byte") : std::format(L"{} bytes", bytes);
+        const double kb = static_cast<double>(bytes) / 1024.0;
+        if (kb < 1024.0)
+            return std::format(L"{:.0f} KB", kb);
+        const double mb = kb / 1024.0;
+        if (mb < 1024.0)
+            return mb < 10.0 ? std::format(L"{:.1f} MB", mb) : std::format(L"{:.0f} MB", mb);
+        const double gb = mb / 1024.0;
+        return std::format(L"{:.1f} GB", gb);
+    }
+}
