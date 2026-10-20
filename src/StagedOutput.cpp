@@ -32,18 +32,26 @@ namespace sd
         }
     }
 
-    StagedOutput::StagedOutput(HistoryStore* history, int64_t runId, const std::wstring& source, bool folder)
-        : m_history(history), m_source(source), m_folder(folder), m_started(GetTickCount64())
+    StagedOutput::StagedOutput(HistoryStore* history, int64_t runId, const std::wstring& source, bool folder, const OutputPlace& place)
+        : m_history(history), m_source(source), m_namedAfter(source), m_folder(folder), m_started(GetTickCount64())
     {
+        if (!place.folder.empty() || !place.stem.empty())
+        {
+            // OutputPath names outputs after a path's folder and stem; a made-up path with a dummy
+            // extension gives exactly the stem asked for, dots and all ("photos.2024").
+            const std::filesystem::path src(source);
+            const auto dir = place.folder.empty() ? src.parent_path() : std::filesystem::path(place.folder);
+            m_namedAfter = (dir / ((place.stem.empty() ? src.stem().wstring() : place.stem) + L".x")).wstring();
+        }
         if (folder)
         {
-            if (!CreateStagingFolder(source, m_path))
+            if (!CreateStagingFolder(m_namedAfter, m_path))
                 m_error = std::format(L"cannot write next to the source: {}", HResultText(HRESULT_FROM_WIN32(GetLastError())));
         }
         else
         {
             Microsoft::WRL::ComPtr<IStream> reserve;   // reserves a unique name; closed so the engine can open it
-            if (const HRESULT hr = CreateStaging(source, m_path, reserve); FAILED(hr))
+            if (const HRESULT hr = CreateStaging(m_namedAfter, m_path, reserve); FAILED(hr))
             {
                 m_path.clear();
                 m_error = std::format(L"cannot write next to the source: {}", HResultText(hr));
@@ -71,7 +79,7 @@ namespace sd
         if (m_path.empty())
             return Fail(m_error.empty() ? L"no staging output" : m_error);
         std::wstring finalPath;
-        if (const HRESULT hr = CommitStaging(m_path, m_source, suffix, extension, finalPath); FAILED(hr))
+        if (const HRESULT hr = CommitStaging(m_path, m_namedAfter, suffix, extension, finalPath); FAILED(hr))
             return Fail(std::format(L"commit: {}", HResultText(hr)));
         m_done = true;
         result.ok = true;

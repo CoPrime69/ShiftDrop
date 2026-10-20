@@ -34,6 +34,7 @@
 #include "keyboard/ShellVerb.h"
 #include "keyboard/WheelRequest.h"
 #include "preview/PreviewCard.h"
+#include "sandbox/Sandbox.h"
 #include "shelf/ShelfWindow.h"
 
 #include <windows.h>
@@ -1144,6 +1145,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         {
             sd::startup::Disable();
             sd::shellverb::Unregister();
+            sd::sandbox::RemoveProfile();   // the sandbox's AppContainer profile (S6)
         }
         return quit ? 0 : 1;
     }

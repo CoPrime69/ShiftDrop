@@ -5,9 +5,9 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 | Hold | Wheel | Slices so far |
 |---|---|---|
-| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
+| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them). Archives (ZIP, TAR, TGZ, GZ, 7z, RAR): Extract, ZIP, TAR.GZ, 7z. Folders: ZIP, TAR.GZ, 7z |
 | Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB. PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF |
-| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share |
+| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Zip (one ZIP of everything dropped) |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
 Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top
@@ -25,9 +25,16 @@ can be cancelled there. It starts with Windows and lives in the tray.
 Video and audio go through a bundled, unmodified LGPL build of [FFmpeg](https://ffmpeg.org) that
 ShiftDrop runs as a separate process, restricted to local files (no network access).
 
+Archives are read by [libarchive](https://libarchive.org) inside a separate worker,
+`engines\ShiftDropWorker.exe`, that runs in a Windows AppContainer with no capabilities: it can't
+open your files or reach the network, it only gets the archive it reads, and ShiftDrop checks every
+name before writing anything. Archives with `..` or absolute paths are refused, links are skipped,
+and zip bombs stop at a size limit.
+
 - Plan, REA stages, parity map, decisions and open questions: [docs/PLAN.md](docs/PLAN.md)
 - Build, run and the manual test checklist: [docs/TESTING.md](docs/TESTING.md)
 - Writing recipes: [docs/recipes.md](docs/recipes.md)
+- Plugin design (not built yet): [docs/plugins.md](docs/plugins.md)
 - Design decisions: [docs/adr/](docs/adr/)
 
 ## Install
@@ -58,7 +65,7 @@ ctest --preset x64-release
 shiftdrop/
 ├─ CMakeLists.txt          shiftdrop_core (static lib), ShiftDrop.exe, shiftdrop_tests
 ├─ CMakePresets.json       x64-release, x64-release-m0, test preset
-├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, gtest
+├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, qpdf, zlib, libarchive, gtest
 ├─ .github/workflows/ci.yml  build, unit tests, no-network imports check, installer + smoke test
 ├─ installer/ShiftDrop.iss  per-user Inno Setup installer
 ├─ scripts/                get-ffmpeg, check-imports, make-notices, test-installer
@@ -82,6 +89,8 @@ shiftdrop/
    ├─ Undo, FileMove       undo to the Recycle Bin or back to the original place; Move to…
    ├─ FileActions          clipboard copy, copy path, terminal
    ├─ JobQueue             worker pool (MTA) and the shell thread (STA)
+   ├─ archive/             Zip, Extract and repack (libarchive), entry checks, the worker's read job
+   ├─ sandbox/             AppContainer + job launcher, the worker exe, the ffmpeg jail
    ├─ Settings, Startup    settings.ini, start with Windows
    └─ Log, Brand, Utf, Messages, resource, ShiftDrop.rc, app.manifest
 ```

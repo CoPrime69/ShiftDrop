@@ -35,10 +35,20 @@ namespace sd
     // A folder output (frames of a video, pages of a PDF) passes `folder = true`: Path() is then a new
     // empty staging folder to fill. Folders are not hashed; Undo moves them to the Recycle Bin as is.
     // The destructor deletes the staging file or folder unless Commit succeeded.
+    //
+    // An output not named after its source (a zip of several files, named after their folder;
+    // "photos.tar.gz" extracted to "photos (extracted)") passes `place`: the folder it goes in and the
+    // name before " (suffix)". History still records `source`.
+    struct OutputPlace
+    {
+        std::wstring folder;   // empty: the source's folder
+        std::wstring stem;     // empty: the source's name without its extension
+    };
+
     class StagedOutput
     {
     public:
-        StagedOutput(HistoryStore* history, int64_t runId, const std::wstring& source, bool folder = false);
+        StagedOutput(HistoryStore* history, int64_t runId, const std::wstring& source, bool folder = false, const OutputPlace& place = {});
         ~StagedOutput();
         StagedOutput(const StagedOutput&) = delete;
         StagedOutput& operator=(const StagedOutput&) = delete;
@@ -57,6 +67,7 @@ namespace sd
 
         HistoryStore* m_history;
         std::wstring m_source;
+        std::wstring m_namedAfter;   // whose folder and stem name the output: m_source unless placed
         bool m_folder;
         std::wstring m_path;
         std::wstring m_error;
