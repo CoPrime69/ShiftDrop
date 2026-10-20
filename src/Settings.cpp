@@ -47,9 +47,11 @@ namespace sd
     Settings LoadSettings()
     {
         const auto path = SettingsPath();
-        if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+        wchar_t probe[2]{};
+        if (!GetPrivateProfileStringW(L"Gesture", nullptr, L"", probe, ARRAYSIZE(probe), path.c_str()))
         {
-            // First run: write the defaults so the user can see what is configurable.
+            // First run (the installer may already have written [Startup]): write the defaults so the
+            // user can see what is configurable.
             WritePrivateProfileStringW(L"Gesture", L"Convert", L"Shift", path.c_str());
             WritePrivateProfileStringW(L"Gesture", L"Tools", L"Ctrl", path.c_str());
             WritePrivateProfileStringW(L"Gesture", L"Files", L"Alt", path.c_str());

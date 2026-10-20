@@ -178,7 +178,7 @@ Each milestone, at a glance:
 | **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
 | **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
 | **M11 (new)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/PPTX/TXT/MD |
-| M12 (was M8) | Polish, release and showcase | Settings window, installer, real toasts |
+| M12 (was M8) | Polish, release and showcase | Settings window, real toasts, winget and a portable zip (the installer itself shipped with M2) |
 
 Each milestone in detail:
 
@@ -289,7 +289,7 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 **M12. Polish, release and showcase (was M8)**
 - Signed build (if a certificate is chosen), winget, screen reader support, benchmarks, README.
 - **(spec)** Settings window: keys per wheel, enabled actions, output naming, theme override, and the terminal to open (Windows Terminal, PowerShell, cmd, or a custom command; Tangerine offers Terminal or iTerm2).
-- **(spec)** A rename-pattern file action, real toasts with "Open folder", and an Inno Setup installer plus a portable zip. (Start at login moved to M2.)
+- **(spec)** A rename-pattern file action, real toasts with "Open folder", and a portable zip. (Start at login and the Inno Setup installer moved to M2.)
 
 ### Parity map: interaction model
 
@@ -471,6 +471,7 @@ question 1).
 | 2026-10-20 | Start with Windows lands in M2: an HKCU Run value, on at first run, tray toggle; the choice is kept in settings.ini so "off" stays off, and Windows' own Startup-apps switch is left alone | Prakhar wants it in the tray at startup; HKCU needs no admin |
 | 2026-10-20 | Move to… and Undo use IFileOperation on a dedicated STA thread; the move never overwrites (shell renames on collision) and its undo moves items back, refused if the original place is taken | IFileOperation is STA-only; moving across drives and moving folders need the shell |
 | 2026-10-20 | The Ctrl wheel is called Tools (recipe ring id "tools") | Matches the Mac app's tools wheel |
+| 2026-10-20 | Every CI build produces a per-user Inno Setup installer (no admin, no Visual Studio, no VC++ redistributable thanks to the static CRT); CI installs, upgrades and uninstalls it on a clean runner; a `v*` tag publishes it as a GitHub Release. Unsigned for now, so SmartScreen asks once | Prakhar: anyone must be able to install and run it; moved forward from M12 |
 
 ## Open questions
 

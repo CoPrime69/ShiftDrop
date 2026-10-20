@@ -155,3 +155,29 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Drag an attachment from Outlook, a file from 7-Zip, a file from VS Code's explorer: note which show the wheel
 - [ ] In `settings.ini`, set `Convert=Ctrl` and `Tools=Shift`, quit and start it again: the wheels swap keys. Set a key to `None`: that wheel never opens
 - [ ] Left-handed mouse (swap buttons in Settings): does the gesture still work?
+
+## 5. Installer
+
+CI builds `ShiftDrop-Setup-<version>.exe` on every push and runs `scripts/test-installer.ps1` against
+it. To build it yourself after section 2, with [Inno Setup 6.3+](https://jrsoftware.org/isinfo.php)
+installed:
+
+```powershell
+./scripts/make-notices.ps1
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.2.0.exe
+```
+
+### K. Install, upgrade, uninstall (on a PC without Visual Studio)
+
+1. Run the setup. SmartScreen may warn (unsigned): **More info**, **Run anyway**. No UAC prompt appears.
+2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
+   sign in to Windows". Finish with "Launch ShiftDrop" ticked: the tray icon appears.
+3. Start menu has ShiftDrop. Settings > Apps lists ShiftDrop with its version.
+4. Run the same setup again while ShiftDrop is running: no "close the app" error; the old copy exits
+   and the new one starts. The startup checkbox is not shown (your tray-menu choice is kept).
+5. Untick "Start with Windows" in the tray menu, run the setup again, sign out and in: ShiftDrop does
+   not start.
+6. Uninstall from Settings > Apps while it runs: the tray icon goes away, the folder and Start menu
+   entry are removed, `HKCU\…\Run` has no ShiftDrop value, and `%LOCALAPPDATA%\ShiftDrop` is still there.
+
