@@ -171,7 +171,7 @@ Each milestone, at a glance:
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
 | M3 (three PRs: M3a, M3b, M3c) | Fit to… (S2), media engine | M3a: all audio/video formats, progress and cancel. M3b: Compress, Fit to…, carry, clipboard. M3c: Float shelf |
 | M4 | Know before you drop (S1) | Keyboard model, metadata inspector |
-| M5 | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
+| M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
 | **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
@@ -222,19 +222,19 @@ The full list:
   - A "ShiftDrop…" entry in the right-click menu does the same.
 - **(parity)** Tool 2, **Edit Metadata**, part 1: an inspector that reads metadata and groups fields by file, track and chapter, with search.
 
-**M5. Text from anything (S4) and the PDF engine**
-- Windows OCR to the clipboard; searchable PDF.
-- PDF engine:
+**M5. Text from anything (S4) and the PDF engine** (delivered, except AVIF, HEIC and SVG)
+- [x] Windows OCR to the clipboard; searchable PDF.
+- [x] PDF engine:
   - Windows.Data.Pdf renders pages.
-  - PDFium (BSD/Apache) extracts text.
+  - Text comes from our own reader of the pages' text operators, built on QPDF's content-stream parser (not PDFium; see the decisions log).
   - QPDF (Apache-2.0) restructures files.
   - Our own writer creates image PDFs.
-- **(parity)** PDF → JPG/PNG: all pages, 300 DPI by default. Images → PDF. PDF → TXT and Markdown, using the text layer, with OCR when a page has none.
-- **(parity)** Tool 21, **Merge PDFs**: starts in the order Explorer gave us; drag to reorder.
-- **(parity)** Tool 22, **Organize PDF Pages**: a page grid to reorder, rotate, duplicate and remove pages.
-- **(parity)** Compress for PDF.
-- **(parity)** AVIF in and out (libavif with aom/dav1d, BSD). HEIC (see exclusions). SVG input via lunasvg (MIT).
-- **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
+- [x] **(parity)** PDF → JPG/PNG: all pages, 300 DPI by default. Images → PDF. PDF → TXT and Markdown, using the text layer, with OCR when a page has none.
+- [x] **(parity)** Tool 21, **Merge PDFs**: starts in the order Explorer gave us; drag to reorder.
+- [x] **(parity)** Tool 22, **Organize PDF Pages**: a page grid to reorder, rotate, duplicate and remove pages.
+- [x] **(parity)** Compress for PDF.
+- [ ] **(parity)** AVIF in and out (libavif with aom/dav1d, BSD). HEIC (see exclusions). SVG input via lunasvg (MIT). Not done in M5; still open.
+- [x] **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
 
 **M6. Share-safe (S5) and the image canvas**
 - Verified metadata scrub, and rule-based PII redaction with a review step.
@@ -322,14 +322,14 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 |---|---|---|---|
 | Images | JPG, PNG, TIFF, BMP | WIC | Done (M1) |
 | | WebP | libwebp | M2 |
-| | AVIF | libavif + aom/dav1d | M5 |
-| | HEIC | Windows' HEIF codec when installed; see exclusions | M5 (partial) |
-| | SVG (input only) | lunasvg | M5 |
-| | PDF export | our PDF writer | M5 |
+| | AVIF | libavif + aom/dav1d | M5 (not done yet) |
+| | HEIC | Windows' HEIF codec when installed; see exclusions | M5 (not done yet) |
+| | SVG (input only) | lunasvg | M5 (not done yet) |
+| | PDF export | our PDF writer | Done (M5) |
 | Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | LGPL ffmpeg (LAME, native AAC, Vorbis, Opus) | M3 |
 | Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 export | LGPL ffmpeg. H.264/HEVC via the GPU encoder or Windows' Media Foundation encoder; WebM via libvpx/AV1 | M3 |
-| PDF | JPG, PNG (all pages, 300 DPI) | Windows.Data.Pdf | M5 |
-| | TXT, MD | PDFium text, OCR fallback | M5 |
+| PDF | JPG, PNG (all pages, 300 DPI) | Windows.Data.Pdf | Done (M5) |
+| | TXT, MD | text layer (QPDF content-stream parser), Windows OCR fallback | Done (M5) |
 | | EPUB, DOCX | reflowed text and images (our writer); faithful DOCX via Word if installed | M11 |
 | | PPTX | one page image per slide (our writer) | M11 |
 | | XLSX | **Deferred** (see exclusions) | — |
@@ -352,7 +352,7 @@ table above covers every format the spec names.
 
 | # | Tool | Milestone | Notes |
 |---|---|---|---|
-| 1 | Compress | M3 (images, media), M5 (PDF) | Target size, percentage, preset, resize |
+| 1 | Compress | M3 (images, media), M5 (PDF, done) | Target size, percentage, preset, resize |
 | 2 | Edit Metadata | M4 (inspect, search), M6 (edit, remove) | Grouped by file / track / chapter |
 | 3 | Edit Photos | M8 | Dehaze, clarity, grain and noise reduction are classic filters, no models |
 | 4 | Annotate Photos | M8 | |
@@ -372,8 +372,8 @@ table above covers every format the spec names.
 | 18 | Trim Audio | M10 | |
 | 19 | Convert Audio Channels | M10 | |
 | 20 | Bleep Audio | M10 | |
-| 21 | Merge PDFs | M5 | |
-| 22 | Organize PDF Pages | M5 | |
+| 21 | Merge PDFs | Done (M5) | |
+| 22 | Organize PDF Pages | Done (M5) | |
 
 Tangerine advertises 26 tools but names 22. The other four are not planned or guessed at (open
 question 1).
@@ -511,14 +511,23 @@ question 1).
 | 2026-10-20 | Carry from the top panel: a result with outputs can be dragged straight into any app, and has a pin (Float) and a copy button; it stays while hovered and for 5 s instead of 2 | Convert-and-carry without a separate chip window; the buttons make it discoverable |
 | 2026-10-20 | Drop to clipboard is a Copy button (and Ctrl+C on the shelf), not a global Ctrl+C while the result shows | The panel never has the keyboard; grabbing Ctrl+C from every app for a few seconds would eat real copies |
 | 2026-10-20 | Copy puts CF_HDROP + "Preferred DropEffect: copy" on the clipboard at once; for a single image the picture follows a moment later as "PNG" (keeps transparency) and CF_DIB (flattened on white), only if nothing else was copied meanwhile | Paste in Explorer gets the file, paste in a chat or document gets the picture; decoding big photos stays off the UI thread |
+| 2026-10-20 | M5: PDF text comes from our own reader of the pages' text operators, on QPDF's content-stream parser: ToUnicode maps, WinAnsi / MacRoman / Standard encodings with /Differences, /Widths and /W. A page with fewer than 8 visible characters counts as a scan and goes to Windows OCR | vcpkg has no PDFium port (PDFium builds with Chromium's own toolchain), and Windows.Data.Pdf has no text API. QPDF is already here for merge and organize; ordinary PDFs read well and OCR covers the rest |
+| 2026-10-20 | M5: Searchable PDF = an invisible text layer (render mode 3) over the page picture, in a glyphless Type0 font (Identity-H, codes are UTF-16 units, identity ToUnicode, every glyph 500/1000 em, stretched to each word's box with Tz) | Any language Windows OCR reads survives copy and paste; nothing to embed, so the file barely grows |
+| 2026-10-20 | M5: Images → PDF makes one page per image at the image's own DPI (96 when it has none). JPEGs pass through unchanged (DCTDecode; EXIF orientation by the page's drawing matrix); others are lossless Flate with a PNG predictor and a soft mask for transparency | No quality loss, small files, photos the right way up |
+| 2026-10-20 | M5: Compress PDF re-encodes 8-bit Gray/RGB pictures as JPEG at the preset's quality, scaled down to the preset's DPI where they are stored larger than they are drawn; masks, alpha and unusual colour spaces are left alone; a picture is replaced only when the new one is at least 10% smaller; object streams on. A result that isn't smaller is skipped | Same "never bigger" rule as image and media Compress; nothing that could change how a page looks is touched |
+| 2026-10-20 | M5: PDF → images makes one file per page; more than one page goes into a folder "name (pages)" holding "name page 01.png" and so on | One drop leaves one thing next to the original; pages sort in order |
+| 2026-10-20 | M5: Share opens the Windows share sheet from the engine's editor step (UI thread), owned by a hidden 1 × 1 window; only a failure runs a batch, to show why in the top panel | The share sheet must come from a window on the UI thread; no new core hook was needed |
+| 2026-10-20 | M5: Merge PDFs and Organize PDF Pages ask first, in small windows of their own (Direct2D, light/dark, keyboard: Alt+arrows move, R / Shift+R rotate, Ctrl+D duplicates, Delete, Ctrl+Z, Enter, Esc). Organize keeps the first PDF's outline and metadata | The same editor step the video tools use; the page plan travels in the recipe's params |
+| 2026-10-20 | M5: the WinRT code (Windows.Data.Pdf, Windows.Media.Ocr, share sheet) and the editor windows are object libraries that plug into the core through small hooks; the core and its tests build without them | Unit tests run anywhere; tests that need Windows' renderer or OCR skip themselves where they are missing |
+| 2026-10-20 | M5: an engine can give the top panel its own line for a single result ("Copied 214 words", "2.1 MB to 840 KB (61% smaller)"); a result that is not a file (Copy text) doesn't say "Saved next to the originals" | Copy text writes nothing to disk; for Compress the size saved is what people want to see |
 | 2026-10-20 | All eleven video and audio tools that need a choice share one editor window (`src/mediaeditor`): Direct2D at the window's DPI, light/dark and accent aware, keyboard-usable, with a preview or waveform, a zoomable filmstrip timeline, typed timecodes and the tool's options on the right. Engines and the editor's maths are in `shiftdrop_core` (`src/videotools`, `src/audiotools`); the window is in the app and registers itself with `EditorApi` from a static initializer | The tools differ only in their options and overlays; one window keeps them consistent. The tests link the engines without any UI, and a build without the window says so instead of crashing |
 | 2026-10-20 | The Tools wheel keeps its eight-slice limit: a video gets Compress, 50% size, Under 10 MB, Under 25 MB, Trim…, Crop…, Join…, Split…; a song gets the four Compress slices, Normalize, Trim…, Channels…, Bleep…. The editor has a tool bar (tabs, Ctrl+1…Ctrl+7) with every tool of its kind, so Speed, Frames, Redact and Visualizer are one click away, and confirming runs the tool chosen last under its own recipe (name, suffix, History) | Seven video tools and four Compress presets do not fit eight slices, and smaller labels stop being readable. A recipe file that reuses a slice's id swaps that slice for another tool or preset |
 | 2026-10-20 | Per-file choices (a trim range, crop box, redaction areas, frame marks) travel as `params.perFile[path]` and are merged by `ParamsForFile` before each file runs; the whole drop stays one batch with one History run | The pipeline, history and undo stay unchanged: one recipe per drop |
 | 2026-10-20 | Preview frames, filmstrip thumbnails, waveforms and playback sound come from the bundled ffmpeg (separate processes on the editor's own threads), not Media Foundation; quick frames seek to the keyframe before the time and use `-fps_mode passthrough` | One decoder for every format the tools accept (MKV, WebM, AVI included) and the same frames the render will use. Without passthrough the keyframe before the time came out with a negative timestamp and was dropped |
 | 2026-10-20 | Playback is XAudio2 2.9, loaded at run time from System32 (`LoadLibraryExW` + `XAudio2Create`), fed 48 kHz stereo chunks decoded ahead by ffmpeg with the tool's filter (speed, channels, bleeps), so A/B compare plays the real result; with no sound device a timer clock moves the playhead | No new import in the exe, and no audio device is needed to edit |
 | 2026-10-20 | Redact Video blurs with `gblur` and covers with `drawbox`, each area enabled only for its own time range; the bundled build has no `boxblur` | `boxblur` is GPL and not in our LGPL ffmpeg |
-| 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::note`). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
-| 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, `H264QualityArgs` in Media, `ItemResult::note`, and one line in main.cpp that shows a single file's note in the result panel | A trim or speed change is not as long as its input, and Normalize's levels are the answer the user wants |
+| 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::message`, from M5). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
+| 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, and Media exposes `H264QualityArgs` | A trim, a speed change or a join is not as long as its input; the tools reuse the H.264 encoder choice instead of their own |
 
 ## Open questions
 
@@ -534,9 +543,12 @@ question 1).
 10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
 11. Float shelf: should dragging a file out of the shelf remove it from the shelf (like a tray you empty) or keep it (current)? And should a renamed file follow its new name instead of leaving the shelf?
 12. Should the tray menu get a "Show Float shelf" entry (it hides itself when empty, and Float on any file brings it back)?
-13. Tools wheel for video: Trim, Crop, Join and Split have slices, and Speed, Frames and Redact are tabs in the editor. Is that the right four? For a song: Normalize (−16 LUFS), Trim, Channels and Bleep, with the Visualizer as a tab. Or should the wheel get a second page (a "More…" slice) once M8 photo tools also need room?
-14. Normalize defaults to −16 LUFS (podcasts, speech). Music for streaming is usually −14 LUFS. Which default, and should the slice open a small chooser instead?
-15. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
+13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
+14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
+15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
+16. Tools wheel for video: Trim, Crop, Join and Split have slices, and Speed, Frames and Redact are tabs in the editor. Is that the right four? For a song: Normalize (−16 LUFS), Trim, Channels and Bleep, with the Visualizer as a tab. Or should the wheel get a second page (a "More…" slice) once M8 photo tools also need room?
+17. Normalize defaults to −16 LUFS (podcasts, speech). Music for streaming is usually −14 LUFS. Which default, and should the slice open a small chooser instead?
+18. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
 
 ## Sources
 

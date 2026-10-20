@@ -134,8 +134,8 @@ namespace sd::audiotools
             if (result.ok)
             {
                 const auto after = ParseLoudnorm(log);
-                result.note = LoudnessNote(loudness->inputI, after && !after->silent ? after->outputI : target.integrated);
-                log::Info(L"audio: normalized {}: {}", source, result.note);
+                result.message = L"Loudness " + LoudnessNote(loudness->inputI, after && !after->silent ? after->outputI : target.integrated);
+                log::Info(L"audio: normalized {}: {}", source, result.message);
             }
             return result;
         }
