@@ -64,6 +64,10 @@ add_library(shiftdrop_core STATIC
   src/inspect/Metadata.cpp
   src/inspect/MetadataReader.cpp
   src/inspect/ProbeReport.cpp
+  src/shelf/Carry.cpp
+  src/shelf/ShelfGeometry.cpp
+  src/shelf/ShelfModule.cpp
+  src/shelf/ShelfStore.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -92,6 +96,7 @@ add_executable(ShiftDrop WIN32
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
   src/inspect/InspectorWindow.cpp
+  src/shelf/ShelfWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -125,6 +130,7 @@ if(SHIFTDROP_TESTS)
     tests/KeyboardTests.cpp
     tests/PreviewTests.cpp
     tests/InspectTests.cpp
+    tests/ShelfTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
