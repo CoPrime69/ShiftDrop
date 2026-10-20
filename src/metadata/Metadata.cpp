@@ -394,13 +394,34 @@ namespace sd::metadata
             return 1;
         }
 
-        // WIC's path of that orientation entry, e.g. "/app1/ifd/{ushort=274}".
-        bool IsOrientationPath(const std::wstring& path)
+        // The WIC paths an orientation-only EXIF block shows up as: the block and its first IFD as
+        // readers ("/app1", "/app1/{ushort=0}" or "/app1/ifd") and the orientation entry itself
+        // ("/app1/{ushort=0}/{ushort=274}"). Any other entry in that IFD is a path of its own, so it
+        // is still caught.
+        bool IsOrientationPath(const std::wstring& path, bool reader)
         {
-            std::wstring lower = path;
-            for (auto& c : lower)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return lower.ends_with(L"/ifd/{ushort=274}") && lower.find(L"/exif") == std::wstring::npos && lower.find(L"/gps") == std::wstring::npos;
+            std::vector<std::wstring> segments;
+            for (size_t start = 0; start < path.size();)
+            {
+                size_t end = path.find(L'/', start + 1);
+                if (end == std::wstring::npos)
+                    end = path.size();
+                std::wstring segment = Lower(path.substr(start, end - start));
+                if (segment.starts_with(L"/"))
+                    segment.erase(0, 1);
+                if (segment.starts_with(L"["))   // "[0]app1"
+                    segment.erase(0, std::min(segment.size(), segment.find(L']') + 1));
+                segments.push_back(std::move(segment));
+                start = end;
+            }
+            if (segments.empty() || (segments[0] != L"app1" && segments[0] != L"exif"))
+                return false;
+            const auto isIfd = [](const std::wstring& s) { return s == L"ifd" || s == L"{ushort=0}"; };
+            if (segments.size() == 1)
+                return reader;
+            if (segments.size() == 2)
+                return reader && isIfd(segments[1]);
+            return segments.size() == 3 && !reader && isIfd(segments[1]) && segments[2] == L"{ushort=274}";
         }
 
         HRESULT WriteReencoded(const std::wstring& source, const std::wstring& target, const Inventory& before, ScrubReport& report,
@@ -607,6 +628,7 @@ namespace sd::metadata
             return v;
         }
         // 1. Our own parse of the container.
+        bool orientationOnly = false;   // an EXIF block holding only the orientation, which a clean copy keeps
         const Container container = DetectContainer(Bytes(bytes));
         std::vector<Block> blocks;
         if (container == Container::Tiff)
@@ -619,7 +641,10 @@ namespace sd::metadata
             for (const auto& b : blocks)
             {
                 if (b.kind == BlockKind::Exif && OrientationOnly(Bytes(bytes).subspan(b.payload, b.payloadSize)))
+                {
+                    orientationOnly = true;
                     continue;
+                }
                 if (IsPersonal(b.kind))
                     v.leftovers.push_back(Widen(b.name));
                 else if (b.kind == BlockKind::Jfif && b.payloadSize >= 14 && bytes[b.payload + 12] * bytes[b.payload + 13] > 0)
@@ -629,8 +654,10 @@ namespace sd::metadata
         else if (container != Container::Unknown)
             v.leftovers.push_back(L"the file's structure is damaged");
         // 2. Every path WIC's metadata readers expose.
-        v.wicChecked = WalkFile(path, [&](const std::wstring& full, const PROPVARIANT&) {
-            if (IsPersonalWicPath(full) && !IsOrientationPath(full) && std::find(v.leftovers.begin(), v.leftovers.end(), full) == v.leftovers.end())
+        v.wicChecked = WalkFile(path, [&](const std::wstring& full, const PROPVARIANT& value) {
+            if (orientationOnly && IsOrientationPath(full, value.vt == VT_UNKNOWN))
+                return;
+            if (IsPersonalWicPath(full) && std::find(v.leftovers.begin(), v.leftovers.end(), full) == v.leftovers.end())
                 v.leftovers.push_back(full);
         });
         // 3. The picture still opens.
