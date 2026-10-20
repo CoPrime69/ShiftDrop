@@ -269,16 +269,22 @@ namespace sd
             return nullptr;
         if (steps.back().action == "image.compress")
         {
-            // WebP stays WebP; everything else becomes JPEG, the format every upload box takes.
+            // WebP and AVIF stay themselves (JPEG would come out bigger); everything else becomes JPEG,
+            // the format every upload box takes.
             const auto* own = FormatOfExtension(ext);
-            return own && std::string_view(own->id) == "webp" ? own : FindImageFormat("jpg");
+            const bool keep = own && (std::string_view(own->id) == "webp" || std::string_view(own->id) == "avif");
+            return keep ? own : FindImageFormat("jpg");
         }
         if (steps.back().action != "image.encode")
             return nullptr;
         const auto formatId = steps.back().params.value("format", std::string{});
         if (formatId == "same")
         {
+            // Formats nothing can write back become PNG (every pixel kept); HEIC, which needs Windows'
+            // optional encoder, becomes JPG, so a rotated iPhone photo stays a small photo everywhere.
             const auto* own = FormatOfExtension(ext);
+            if (own && own->windowsCodec)
+                return FindImageFormat("jpg");
             return own ? own : FindImageFormat("png");
         }
         return FindImageFormat(formatId);

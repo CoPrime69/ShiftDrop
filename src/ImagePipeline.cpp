@@ -1,4 +1,5 @@
 #include "ImagePipeline.h"
+#include "ImageHooks.h"
 #include "Log.h"
 #include "OutputPath.h"
 
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <cwctype>
 #include <format>
@@ -396,15 +398,66 @@ namespace sd
         };
         enumerate(WICDecoder, decoders, true);
         enumerate(WICEncoder, encoders, false);
-        m_summary = L"decoders:" + decoders.str() + L"\n    WebP [.webp] (libwebp)\n  encoders:" + encoders.str() +
-                    L"\n    WebP (libwebp)";
+        m_summary = L"decoders:" + decoders.str() + L"\n    WebP [.webp] (libwebp)";
+        // The format hooks (src/formats) read their own extensions, whether or not WIC has a codec.
+        for (const auto* hook : ImageFormatHooks())
+        {
+            const auto exts = hook->DecodedExtensions();
+            for (const auto& ext : exts)
+            {
+                m_decodable.insert(ext);
+                m_summary += L"\n    " + ext + L" (built in)";
+            }
+        }
+        m_summary += L"\n  encoders:" + encoders.str() + L"\n    WebP (libwebp)";
+        for (const auto* hook : ImageFormatHooks())
+        {
+            if (const char* id = hook->EncodedFormat())
+            {
+                std::wstring why;
+                const bool ok = hook->CanEncode(&why);
+                m_summary += L"\n    " + std::wstring(id, id + strlen(id)) + (ok ? L" (built in or Windows codec)" : L" unavailable: " + why);
+            }
+        }
     }
 
     bool ImageCodecs::CanDecode(const std::wstring& ext) const { return m_decodable.contains(ext); }
 
-    bool ImageCodecs::CanEncode(const ImageFormatInfo&) const
+    bool ImageCodecs::IsImage(const std::wstring& ext) const
     {
-        return true;   // PNG/JPG/TIFF/BMP are always in WIC; WebP is libwebp
+        if (CanDecode(ext))
+            return true;
+        for (const auto* hook : ImageFormatHooks())
+            if (hook->CodecHint(ext, nullptr, nullptr))
+                return true;
+        return false;
+    }
+
+    std::wstring ImageCodecs::WhyNotDecodable(const std::wstring& ext) const
+    {
+        std::wstring why;
+        for (const auto* hook : ImageFormatHooks())
+            if (hook->CodecHint(ext, nullptr, &why))
+                return why;
+        return std::format(L"no image decoder for '{}' on this PC", ext);
+    }
+
+    std::wstring ImageCodecs::MissingCodecLabel(const std::wstring& ext) const
+    {
+        std::wstring label;
+        if (!CanDecode(ext))
+            for (const auto* hook : ImageFormatHooks())
+                if (hook->CodecHint(ext, &label, nullptr))
+                    return label;
+        return {};
+    }
+
+    bool ImageCodecs::CanEncode(const ImageFormatInfo& format, std::wstring* why) const
+    {
+        // PNG/JPG/TIFF/BMP are always in WIC and WebP is libwebp; the rest ask their hook.
+        if (const auto* hook = EncodeHookFor(format.id))
+            return hook->CanEncode(why);
+        return true;
     }
 
     HRESULT RunImageRecipe(const Recipe& recipe, const std::wstring& source, IStream* out, std::stop_token stop,
@@ -428,7 +481,18 @@ namespace sd
         ComPtr<IWICBitmapSource> pixels;
         ComPtr<IWICBitmapFrameDecode> frame;
         double dpiX = 0, dpiY = 0;
-        if (LowerExtension(source) == L".webp")
+        const auto sourceExt = LowerExtension(source);
+        if (const auto* hook = DecodeHookFor(sourceExt))
+        {
+            // AVIF, SVG (src/formats): decoded whole and upright, so no EXIF step below.
+            std::wstring why;
+            if (const HRESULT hr = hook->Decode(factory.Get(), source, stop, pixels, why); FAILED(hr))
+            {
+                error = why.empty() ? std::format(L"decode: {}", HResultText(hr)) : L"decode: " + why;
+                return hr;
+            }
+        }
+        else if (sourceExt == L".webp")
         {
             if (const HRESULT hr = DecodeWebP(factory.Get(), source, pixels); FAILED(hr))
                 return fail(hr, L"decode");
@@ -436,12 +500,22 @@ namespace sd
         else
         {
             ComPtr<IWICBitmapDecoder> decoder;
+            // A file that needs an optional Windows codec (HEIC) says which one when it won't open.
+            const auto failDecode = [&](HRESULT hr) {
+                for (const auto* hook : ImageFormatHooks())
+                    if (std::wstring why; hook->CodecHint(sourceExt, nullptr, &why))
+                    {
+                        error = std::format(L"decode: {} ({})", why, HResultText(hr));
+                        return hr;
+                    }
+                return fail(hr, L"decode");
+            };
             if (const HRESULT hr = factory->CreateDecoderFromFilename(source.c_str(), nullptr, GENERIC_READ,
                                                                       WICDecodeMetadataCacheOnDemand, &decoder);
                 FAILED(hr))
-                return fail(hr, L"decode");
+                return failDecode(hr);
             if (const HRESULT hr = decoder->GetFrame(0, &frame); FAILED(hr))
-                return fail(hr, L"decode");
+                return failDecode(hr);
             frame->GetResolution(&dpiX, &dpiY);
             pixels = frame;
         }
@@ -534,7 +608,16 @@ namespace sd
 
         const auto& last = recipe.steps.back();
         const float quality = static_cast<float>(last.params.value("quality", 90));
+        const auto* encodeHook = EncodeHookFor(format->id);
+        if (std::wstring why; encodeHook && !encodeHook->CanEncode(&why))
+        {
+            error = why;
+            return E_NOTIMPL;
+        }
+        std::wstring hookError;
         const auto encode = [&](IWICBitmapSource* src, float q, IStream* to) {
+            if (encodeHook)   // AVIF, HEIC (src/formats)
+                return encodeHook->Encode(factory.Get(), src, static_cast<int>(q), to, hookError);
             return std::string_view(format->id) == "webp" ? EncodeWebP(src, q, to)
                                                           : EncodeWic(factory.Get(), src, *format, q, dpiX, dpiY, to);
         };
@@ -547,7 +630,12 @@ namespace sd
             return out->Commit(STGC_DEFAULT);
         }
         if (const HRESULT hr = encode(pixels.Get(), quality, out); FAILED(hr))
-            return fail(hr, L"encode");
+        {
+            if (hookError.empty())
+                return fail(hr, L"encode");
+            error = L"encode: " + hookError;
+            return hr;
+        }
         return out->Commit(STGC_DEFAULT);
     }
 

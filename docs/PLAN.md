@@ -171,7 +171,7 @@ Each milestone, at a glance:
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
 | M3 (three PRs: M3a, M3b, M3c) | Fit to… (S2), media engine | M3a: all audio/video formats, progress and cancel. M3b: Compress, Fit to…, carry, clipboard. M3c: Float shelf |
 | M4 (delivered, except DirectComposition) | Know before you drop (S1) | Keyboard model, metadata inspector |
-| M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
+| M5 (delivered) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
 | **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
@@ -222,7 +222,7 @@ The full list:
   - A "ShiftDrop…" entry in the right-click menu does the same.
 - **(parity)** Tool 2, **Edit Metadata**, part 1: an inspector that reads metadata and groups fields by file, track and chapter, with search.
 
-**M5. Text from anything (S4) and the PDF engine** (delivered, except AVIF, HEIC and SVG)
+**M5. Text from anything (S4) and the PDF engine** (delivered)
 - [x] Windows OCR to the clipboard; searchable PDF.
 - [x] PDF engine:
   - Windows.Data.Pdf renders pages.
@@ -233,7 +233,7 @@ The full list:
 - [x] **(parity)** Tool 21, **Merge PDFs**: starts in the order Explorer gave us; drag to reorder.
 - [x] **(parity)** Tool 22, **Organize PDF Pages**: a page grid to reorder, rotate, duplicate and remove pages.
 - [x] **(parity)** Compress for PDF.
-- [ ] **(parity)** AVIF in and out (libavif with aom/dav1d, BSD). HEIC (see exclusions). SVG input via lunasvg (MIT). Not done in M5; still open.
+- [x] **(parity)** AVIF in and out (libavif: dav1d decodes, aom encodes; BSD). HEIC in and out through Windows' own HEIF codec when it is installed, otherwise the slices are dimmed with what to install (see exclusions). SVG and SVGZ input via lunasvg (MIT), drawn at the SVG's own size or 1024 px on the long side, transparency kept. Code in `src/formats`, plugged into the image pipeline through `ImageHooks.h`.
 - [x] **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
 
 **M6. Share-safe (S5) and the image canvas**
@@ -322,9 +322,9 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 |---|---|---|---|
 | Images | JPG, PNG, TIFF, BMP | WIC | Done (M1) |
 | | WebP | libwebp | M2 |
-| | AVIF | libavif + aom/dav1d | M5 (not done yet) |
-| | HEIC | Windows' HEIF codec when installed; see exclusions | M5 (not done yet) |
-| | SVG (input only) | lunasvg | M5 (not done yet) |
+| | AVIF | libavif: dav1d decodes, aom encodes | Done (M5) |
+| | HEIC | Windows' HEIF codec when installed; see exclusions | Done (M5) |
+| | SVG (input only) | lunasvg | Done (M5) |
 | | PDF export | our PDF writer | Done (M5) |
 | Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | LGPL ffmpeg (LAME, native AAC, Vorbis, Opus) | M3 |
 | Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 export | LGPL ffmpeg. H.264/HEVC via the GPU encoder or Windows' Media Foundation encoder; WebM via libvpx/AV1 | M3 |
@@ -407,7 +407,7 @@ question 1).
 | PDF → XLSX | **Deferred** | No offline library extracts tables reliably; a wrong table is worse than none. Revisit after M11 |
 | PPT/PPTX rendering | Only with PowerPoint or LibreOffice installed | Rendering slides needs a full layout engine; we use the user's own Office instead of bundling one |
 | Text clippings input | **Excluded** | macOS-only format, never found on Windows |
-| HEIC output | Only when Windows' HEIF and HEVC extensions are installed | The open HEVC encoder (x265) is GPL. HEIC input also works through libheif + libde265 (LGPL, shipped as a separate DLL) |
+| HEIC input and output | Only when Windows' "HEIF Image Extensions" (and, for HEVC pictures, "HEVC Video Extensions") are installed; otherwise the slices are dimmed and say what to install | The open HEVC encoder (x265) is GPL; libheif + libde265 (LGPL) would mean shipping and maintaining another DLL for something Windows does itself |
 | H.264 / HEVC video | GPU encoder or Windows' Media Foundation encoder | x264/x265 are GPL and can't go in the LGPL build |
 | RAR | Extract only | Creating RAR files needs RARLAB's tools |
 | AirDrop | Windows share sheet | AirDrop doesn't exist on Windows |
@@ -420,7 +420,7 @@ question 1).
 | Original spec item | Status |
 |---|---|
 | Shift during a drag shows a wheel at the cursor; drop on a slice; Esc or release elsewhere cancels | Done (M0/M1) |
-| Convert: PNG / JPG / BMP / TIFF | Done (M1); WebP in M2; AVIF / HEIC in M5 |
+| Convert: PNG / JPG / BMP / TIFF | Done (M1); WebP in M2; AVIF, HEIC and SVG input done (M5) |
 | Convert: MP4 / MOV / WEBM / GIF, MP3 / WAV / M4A / FLAC | M3 |
 | Convert: PDF ↔ images | M5 |
 | Ctrl = Edit: resize, rotate | M2 |

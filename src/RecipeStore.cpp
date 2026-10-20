@@ -20,6 +20,8 @@ namespace sd
   { "id": "to-png",  "label": "PNG",  "description": "PNG, lossless",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
   { "id": "to-jpg",  "label": "JPG",  "description": "JPEG, quality 92",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
   { "id": "to-webp", "label": "WebP", "description": "WebP, quality 85", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
+  { "id": "to-avif", "label": "AVIF", "description": "AVIF, quality 60", "steps": [ { "action": "image.encode", "params": { "format": "avif", "quality": 60 } } ] },
+  { "id": "to-heic", "label": "HEIC", "description": "HEIC, quality 80, through Windows' HEIF codec", "steps": [ { "action": "image.encode", "params": { "format": "heic", "quality": 80 } } ] },
   { "id": "to-tiff", "label": "TIFF", "description": "TIFF, lossless", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
   { "id": "to-bmp",  "label": "BMP",  "description": "Bitmap, uncompressed",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
 

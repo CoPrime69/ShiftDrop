@@ -1,4 +1,5 @@
 #include "preview/Predictor.h"
+#include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
@@ -66,6 +67,15 @@ namespace sd::preview
         // Size, EXIF orientation and the metadata worth naming, from the file's header (no pixels).
         bool ReadImageFacts(const std::wstring& path, Size2& upright, MetadataFacts& meta)
         {
+            // AVIF, SVG (src/formats): the hook reads the size from the header; outputs carry no metadata anyway.
+            if (const auto* hook = DecodeHookFor(LowerExtension(path)))
+            {
+                uint32_t w = 0, h = 0;
+                if (!hook->ReadSize(path, w, h))
+                    return false;
+                upright = Size2{ w, h };
+                return true;
+            }
             if (LowerExtension(path) == L".webp")
             {
                 wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr));

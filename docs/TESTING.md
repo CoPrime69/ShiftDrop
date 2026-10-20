@@ -260,6 +260,40 @@ Inspector
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
 
+### P. AVIF, HEIC and SVG (M5)
+Have ready: a large phone photo (JPG), a transparent PNG logo, an `.avif` from a phone or a website
+(Chrome: right-click an image on a site that serves AVIF > Save image as), an iPhone `.heic`, and three
+SVGs: one with `width`/`height` (most exported logos), one with only a `viewBox` (most icon sets), and
+one with text in it. Check Settings > Apps > Installed apps for **HEIF Image Extensions** and **HEVC
+Video Extensions** first, and note which are installed.
+
+AVIF
+- [ ] Drag the photo, hold **Shift**: **AVIF** sits next to WebP; hovering it shows "AVIF, quality 60" and a predicted size on the card
+- [ ] Drop on AVIF: `photo (converted).avif` appears within a few seconds (a 12 MP photo); it is clearly smaller than the JPG and looks the same at 100% zoom
+- [ ] Open the result in Edge or Chrome (drag it into a tab) and in the Photos app: both show it the right way up and with the right colours
+- [ ] The transparent PNG on AVIF: the result keeps the transparency (check in a browser on a dark page)
+- [ ] Drag the downloaded `.avif`: the Convert wheel offers PNG, JPG, WebP, TIFF, BMP, PDF (AVIF is dimmed: it already is one); PNG works, also on a PC without the AV1 Video Extension
+- [ ] The `.avif` on **Ctrl** > Rotate: the result is an `.avif`, turned; on Compress: an `.avif` again (or "already compressed" when it can't get smaller)
+- [ ] Ten photos on AVIF at once: the top panel shows progress, the PC stays usable, Cancel stops the rest
+
+HEIC
+- [ ] With both extensions installed: the iPhone `.heic` on PNG and JPG works; the photo is upright
+- [ ] With both installed: the photo (JPG) on **HEIC** gives `photo (converted).heic`, which Photos opens
+- [ ] The `.heic` on Ctrl > Rotate: the result is a JPG (on purpose: it opens everywhere)
+- [ ] Without HEVC Video Extensions (uninstall it, or use a PC that lacks it): the HEIC slice is dimmed; the log line `wheel: nothing applies` / the slice's reason says to install "HEVC Video Extensions"; the other slices still work
+- [ ] Without HEIF Image Extensions: dragging the `.heic` dims every Convert slice and the centre says "Needs HEIF Image Extensions"; the HEIC slice for a JPG is dimmed with "install HEIF Image Extensions and HEVC Video Extensions"
+- [ ] Install the missing extension and restart ShiftDrop: the slices come back
+
+SVG
+- [ ] The SVG with a size on PNG: the PNG has exactly the SVG's width and height, transparent around the drawing
+- [ ] The viewBox-only SVG on PNG: 1024 px on its long side, sharp edges, transparent background
+- [ ] The SVG with text on PNG: the text is drawn (Arial / Segoe UI / Times look-alikes), not missing
+- [ ] SVG on JPG: white background where the SVG is transparent; on WebP and AVIF: transparency kept
+- [ ] SVG on **PDF** (Convert wheel): a one-page PDF with the drawing; several SVGs together give one page each
+- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 1024×512)
+- [ ] An `.svgz` (gzipped SVG) works the same as `.svg`
+- [ ] A broken SVG (rename a `.txt` to `.svg`): the job fails with "not a readable SVG" and leaves nothing behind
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
