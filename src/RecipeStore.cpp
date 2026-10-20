@@ -37,7 +37,7 @@ namespace sd
     "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "compress-image", "label": "Compress", "description": "Smaller JPEG or WebP, quality 75", "ring": "tools", "suffix": "compressed",
+  { "id": "compress-image", "label": "Compress", "description": "Smaller JPEG (WebP and AVIF stay), quality 75", "ring": "tools", "suffix": "compressed",
     "steps": [ { "action": "image.compress", "params": { "quality": 75 } } ] },
   { "id": "image-under-1mb", "label": "Under 1 MB", "description": "Best quality that fits in 1 MB", "ring": "tools", "suffix": "compressed",
     "steps": [ { "action": "image.compress", "params": { "maxKB": 1024 } } ] },

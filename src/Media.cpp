@@ -119,6 +119,11 @@ namespace sd
         return L"libopenh264";
     }
 
+    std::vector<std::wstring> H264QualityArgs(H264Encoder encoder, int cq, int64_t fallbackBps)
+    {
+        return H264Args(encoder, cq, fallbackBps);
+    }
+
     const std::vector<MediaFormatInfo>& MediaFormats()
     {
         // Wheel order: video formats, then audio. MP3 is offered for both (audio from a video).

@@ -324,7 +324,7 @@ namespace sd
 #if SHIFTDROP_M0
             constexpr const wchar_t* kBuild = L"M0 placeholder build";
 #else
-            constexpr const wchar_t* kBuild = L"M3 build";
+            constexpr const wchar_t* kBuild = L"Version " SD_VERSION;
 #endif
             if (IsElevated())
             {
@@ -711,6 +711,8 @@ namespace sd
                 const auto look = SliceLook(*recipe);
                 // A slice dimmed for a reason (HEIC without Windows' codec) carries that reason as its detail.
                 std::wstring detail = !all && !reason.empty() ? reason : recipe->description.empty() ? recipe->label : recipe->description;
+                if (!all && !reason.empty())
+                    log::Info(L"wheel: '{}' dimmed: {}", recipe->label, reason);
                 content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror, std::move(detail) });
                 anyEnabled |= all && anyToDo;
             }
