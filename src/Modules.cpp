@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "shelf/ShelfModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
@@ -7,6 +8,7 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
+            ShelfModule(),   // Float shelf (file action), src/shelf
         };
         return modules;
     }

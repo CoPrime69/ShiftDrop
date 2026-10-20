@@ -40,6 +40,15 @@ namespace sd
         constexpr wchar_t kGlyphOpen = 0xE8A7;      // OpenInNewWindow
         constexpr wchar_t kGlyphClose = 0xE8BB;     // ChromeClose (the cancel ×)
         constexpr float kCancelDip = 26.f;          // the × button's diameter
+
+        // Carry (a result with output files).
+        constexpr ULONGLONG kCarryMs = 5000;        // a success that can be carried stays a little longer
+        constexpr float kActionDip = 28.f;          // Float and Copy buttons
+        constexpr float kActionGapDip = 6.f;
+        constexpr wchar_t kGlyphPin = 0xE718;       // Pin (Float shelf)
+        constexpr wchar_t kGlyphCopy = 0xE8C8;      // Copy
+        constexpr const wchar_t* kHintDrag = L"Drag into any app, or click to show in Explorer";
+        constexpr const wchar_t* kHintActions[2] = { L"Keep on the Float shelf", L"Copy to the clipboard" };
     }
 
     Island::Island(HINSTANCE instance, std::vector<WheelRing> rings, std::function<void()> onClick)
@@ -84,20 +93,18 @@ namespace sd
             return MA_NOACTIVATE;
         case WM_NCHITTEST:
             return HTCLIENT;   // transparent pixels around the panel are already click-through
+        case WM_LBUTTONDOWN:
         case WM_LBUTTONUP:
-            if (self && self->m_state == State::Result)
-            {
-                if (self->m_onClick)
-                    self->m_onClick();
-                self->Retract();
-            }
-            else if (self)
-                self->OnMouse(msg, POINT{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
-            return 0;
         case WM_MOUSEMOVE:
         case WM_MOUSELEAVE:
-            if (self)
+            if (self && self->m_state == State::Result && !self->m_retracting)
+                self->OnResultMouse(msg, POINT{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+            else if (self && msg != WM_LBUTTONDOWN)
                 self->OnMouse(msg, POINT{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+            return 0;
+        case WM_CAPTURECHANGED:
+            if (self)
+                self->m_pressed = false;
             return 0;
         case WM_SETCURSOR:
             // A hand over the result (it opens Explorer) and over the ×; an arrow on the rest of the progress pill.
@@ -294,8 +301,116 @@ namespace sd
         }
     }
 
-    void Island::ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle)
+    // ---- Carry: drag the result out, Float, Copy -----------------------------------------------
+
+    size_t Island::ActionCount() const
     {
+        return m_actions.toShelf || m_actions.copy ? 2 : 0;   // the pair is laid out together
+    }
+
+    int Island::ActionAt(POINT pt) const
+    {
+        const std::function<std::wstring()>* fns[2] = { &m_actions.toShelf, &m_actions.copy };
+        for (int i = 0; i < static_cast<int>(ActionCount()); ++i)
+        {
+            const auto& r = m_actionRects[i];
+            if (*fns[i] && pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom)
+                return i;
+        }
+        return -1;
+    }
+
+    std::wstring Island::ResultLine() const
+    {
+        if (m_actionHover >= 0 && !m_actionDone[m_actionHover])
+            return kHintActions[m_actionHover];
+        if (m_resultHover && m_actions.drag && !m_actionDone[0] && !m_actionDone[1])
+            return kHintDrag;
+        return m_subtitle;
+    }
+
+    void Island::OnResultMouse(UINT msg, POINT pt)
+    {
+        if (msg == WM_MOUSELEAVE)
+        {
+            m_tracking = false;
+            m_resultHover = false;
+            m_actionHover = -1;
+            Animate();
+            return;
+        }
+        if (!m_tracking)
+        {
+            TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, m_hwnd.get(), 0 };
+            m_tracking = TrackMouseEvent(&tme) != FALSE;
+        }
+        const int over = ActionAt(pt);
+        if (!m_resultHover || over != m_actionHover)
+        {
+            m_resultHover = true;
+            m_actionHover = over;
+            Animate();
+        }
+
+        switch (msg)
+        {
+        case WM_LBUTTONDOWN:
+            m_pressed = true;
+            m_pressPt = pt;
+            m_pressAction = over;
+            SetCapture(m_hwnd.get());
+            break;
+        case WM_MOUSEMOVE:
+            // Past the system drag distance on the chip itself: carry the outputs into another app.
+            if (m_pressed && m_pressAction < 0 && m_actions.drag &&
+                (std::abs(pt.x - m_pressPt.x) > GetSystemMetrics(SM_CXDRAG) || std::abs(pt.y - m_pressPt.y) > GetSystemMetrics(SM_CYDRAG)))
+            {
+                m_pressed = false;
+                ReleaseCapture();
+                m_carrying = true;
+                const auto drag = m_actions.drag;   // a copy: the callback may show a new result
+                drag();
+                m_carrying = false;
+                Retract();
+            }
+            break;
+        case WM_LBUTTONUP:
+        {
+            const bool pressed = m_pressed;
+            m_pressed = false;
+            ReleaseCapture();
+            if (!pressed)
+                break;
+            if (m_pressAction >= 0)
+            {
+                // A button: run it if the mouse is still on it, and say what happened.
+                if (over == m_pressAction && !m_actionDone[over])
+                {
+                    const auto fn = over == 0 ? m_actions.toShelf : m_actions.copy;
+                    m_subtitle = fn();
+                    m_actionDone[over] = true;
+                    m_resultSince = GetTickCount64();
+                    Animate();
+                }
+                break;
+            }
+            if (m_onClick)
+                m_onClick();
+            Retract();
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    void Island::ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle, ResultActions actions)
+    {
+        m_actions = std::move(actions);
+        m_actionDone[0] = m_actionDone[1] = false;
+        m_actionHover = m_pressAction = -1;
+        m_pressed = false;
+        m_resultHover = false;
         m_outcome = outcome;
         m_onCancel = nullptr;   // the job is over
         m_cancelled = false;
@@ -371,7 +486,9 @@ namespace sd
 
         if (m_state == State::Result && !m_retracting)
         {
-            const ULONGLONG limit = m_outcome == Outcome::Success ? kSuccessMs : kFailureMs;
+            if (m_resultHover || m_carrying)
+                m_resultSince = now;   // never tucks away from under the mouse
+            const ULONGLONG limit = m_outcome != Outcome::Success ? kFailureMs : m_actions.Any() ? kCarryMs : kSuccessMs;
             if (now - m_resultSince >= limit)
             {
                 Retract();
@@ -425,9 +542,18 @@ namespace sd
                 w += kCancelDip * s + 10.f * s;
             break;
         default:
-            w = 14.f * s + 32.f * s + 12.f * s +
-                std::max(TextWidth(m_title, m_titleFont.Get()), TextWidth(m_subtitle, m_subFont.Get())) + 20.f * s + 20.f * s + 12.f * s;
+        {
+            float text = std::max(TextWidth(m_title, m_titleFont.Get()), TextWidth(m_subtitle, m_subFont.Get()));
+            if (m_actions.Any())
+            {
+                // Room for the hints too, so the panel does not jump when the mouse arrives.
+                text = std::max({ text, TextWidth(kHintDrag, m_subFont.Get()), TextWidth(kHintActions[0], m_subFont.Get()),
+                                  TextWidth(kHintActions[1], m_subFont.Get()) });
+                text += static_cast<float>(ActionCount()) * (kActionDip + kActionGapDip) * s;
+            }
+            w = 14.f * s + 32.f * s + 12.f * s + text + 20.f * s + 20.f * s + 12.f * s;
             break;
+        }
         }
         return std::min(std::round(w + 2.f * inset), std::round(kMaxWidthDip * s));
     }
@@ -464,8 +590,9 @@ namespace sd
         m_subFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_statusIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_BOLD, C);
         m_cancelFont = MakeFormat(m_iconFamily, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
+        m_actionFont = MakeFormat(m_iconFamily, 12.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
         (void)R;
-        return m_tabFont && m_tabIconFont && m_keyFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont;
+        return m_tabFont && m_tabIconFont && m_keyFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont && m_actionFont;
     }
 
     float Island::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
@@ -624,14 +751,37 @@ namespace sd
 
         const float tx = box.left + 14.f * s + 32.f * s + 12.f * s;
         const float right = box.right - 20.f * s - 12.f * s;
-        if (m_subtitle.empty())
+        // Float and Copy, just left of the "open" glyph.
+        float textRight = right;
+        if (const size_t n = ActionCount())
         {
-            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top, right, box.bottom), m_palette.panelText, alpha);
+            const float d = kActionDip * s, gap = kActionGapDip * s;
+            const std::function<std::wstring()>* fns[2] = { &m_actions.toShelf, &m_actions.copy };
+            const wchar_t glyphs[2] = { kGlyphPin, kGlyphCopy };
+            float x = right - static_cast<float>(n) * (d + gap);
+            textRight = x - 4.f * s;
+            for (size_t i = 0; i < n; ++i, x += d + gap)
+            {
+                m_actionRects[i] = D2D1::RectF(x, cy - d / 2.f, x + d, cy + d / 2.f);
+                if (!*fns[i])
+                    continue;
+                const bool hover = m_actionHover == static_cast<int>(i), done = m_actionDone[i];
+                const auto c2 = D2D1::Point2F(x + d / 2.f, cy);
+                m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
+                                  Brush(done ? WithAlpha(m_palette.ok, 0.22f) : hover ? m_palette.accent : m_palette.keycap, alpha).Get());
+                const wchar_t g2[2]{ done ? kGlyphCheck : glyphs[i], 0 };
+                Text(g2, m_actionFont.Get(), m_actionRects[i], done ? m_palette.ok : hover ? m_palette.textOnAccent : m_palette.panelText, alpha);
+            }
+        }
+        const auto line = ResultLine();
+        if (line.empty())
+        {
+            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top, textRight, box.bottom), m_palette.panelText, alpha);
         }
         else
         {
-            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 6.f * s, right, cy + 2.f * s), m_palette.panelText, alpha);
-            Text(m_subtitle, m_subFont.Get(), D2D1::RectF(tx, cy + 1.f * s, right, box.bottom - 6.f * s), m_palette.panelTextDim, alpha);
+            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 6.f * s, textRight, cy + 2.f * s), m_palette.panelText, alpha);
+            Text(line, m_subFont.Get(), D2D1::RectF(tx, cy + 1.f * s, textRight, box.bottom - 6.f * s), m_palette.panelTextDim, alpha);
         }
         const wchar_t open[2]{ kGlyphOpen, 0 };
         Text(open, m_tabIconFont.Get(), D2D1::RectF(right, box.top, box.right - 8.f * s, box.bottom), m_palette.panelTextDim, alpha);
