@@ -78,8 +78,16 @@ namespace sd
         return m_h264;
     }
 
+    MediaInfo FfmpegEngine::Probe(const std::wstring& input) const
+    {
+        std::vector<std::string> log;
+        std::stop_source never;
+        Run(ProbeArgs(input), nullptr, never.get_token(), &log);   // exits with 1 by design: no output was named
+        return ParseMediaInfo(log);
+    }
+
     FfmpegEngine::Result FfmpegEngine::Run(const std::vector<std::wstring>& args, const std::function<void(double)>& progress,
-                                           std::stop_token stop) const
+                                           std::stop_token stop, std::vector<std::string>* log) const
     {
         Result result;
         if (m_exe.empty())
@@ -168,6 +176,8 @@ namespace sd
                 tail.emplace_back(line);
                 if (tail.size() > 12)
                     tail.pop_front();
+                if (log && log->size() < 400)
+                    log->emplace_back(line);
             });
         });
         std::jthread outReader([&] {
