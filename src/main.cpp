@@ -906,8 +906,9 @@ namespace sd
                 if (f.result.ok)
                 {
                     ++ok;
-                    outputs.push_back(f.result.output);
-                    details += FileName(f.result.output) + L"\n";
+                    if (!f.result.output.empty())   // empty: the result is not a file (Copy text)
+                        outputs.push_back(f.result.output);
+                    details += (f.result.output.empty() ? f.result.message : FileName(f.result.output)) + L"\n";
                 }
                 else
                 {
@@ -939,6 +940,9 @@ namespace sd
                             : std::format(L"Moved {} of {} to {}", ok, total, batch->label);
                 break;
             }
+            // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
+            if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
+                title = batch->files[0].result.message;
             if (batch->token == m_islandBatch)
             {
                 // The panel: one line on what happened, one on where (or what went wrong first).
@@ -954,7 +958,7 @@ namespace sd
                 }
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
-                else
+                else if (!outputs.empty())
                     sub = L"Saved next to the originals \u00b7 Undo from History";
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
                 if (batch->cancelled)
