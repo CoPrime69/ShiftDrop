@@ -282,12 +282,12 @@ namespace sd::preview
         }
         else
         {
-            const auto small = SampleRecipe(recipe, kSmallSample), large = SampleRecipe(recipe, kLargeSample);
-            const double p1 = OutputDimensions(small, f.upright).Pixels(), p2 = OutputDimensions(large, f.upright).Pixels();
-            const auto b1 = EncodedBytes(small, path, stop);
+            const auto lowRes = SampleRecipe(recipe, kSmallSample), highRes = SampleRecipe(recipe, kLargeSample);
+            const double p1 = OutputDimensions(lowRes, f.upright).Pixels(), p2 = OutputDimensions(highRes, f.upright).Pixels();
+            const auto b1 = EncodedBytes(lowRes, path, stop);
             if (stop.stop_requested())
                 return std::nullopt;
-            const auto b2 = EncodedBytes(large, path, stop);
+            const auto b2 = EncodedBytes(highRes, path, stop);
             e.bytes = Extrapolate(static_cast<double>(b2), p2, pixels, FitExponent(static_cast<double>(b1), p1, static_cast<double>(b2), p2));
         }
         if (stop.stop_requested() || e.bytes == 0)
