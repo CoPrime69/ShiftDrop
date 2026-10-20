@@ -3,6 +3,8 @@
 
 namespace sd
 {
+    void RegisterModuleActions(ActionRegistry& registry);   // Modules.cpp
+
     const std::vector<ImageFormatInfo>& ImageFormats()
     {
         static const std::vector<ImageFormatInfo> formats = {
@@ -100,6 +102,7 @@ namespace sd
             "image.encode", L"Encode", StepKind::ImageEncode,
             { ParamSpec{ "format", ParamType::Enum, 0, 0, formatIds, "png" },
               ParamSpec{ "quality", ParamType::Int, 1, 100, {}, 90 } } });
+        RegisterModuleActions(*this);
     }
 
     const ActionDescriptor* ActionRegistry::Find(std::string_view id) const
