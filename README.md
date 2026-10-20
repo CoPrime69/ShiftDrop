@@ -6,13 +6,17 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 | Hold | Wheel | Slices so far |
 |---|---|---|
 | Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA |
-| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50% |
+| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Inspect (every metadata field, searchable) |
 | Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
 Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top
 of the screen shows which wheel you are on, then the job's progress and result. The tray menu sets the
 size (Auto adapts to your screen) and the style (Solid or Glass).
+
+Arrow keys pick a slice and Enter runs it, mid-drag. Without dragging, press Ctrl+Shift+Space on
+Explorer's selection, or right-click > ShiftDrop…, and the wheel opens on those files. While a slice
+is highlighted, a card under the wheel predicts the result: format, size, name and what changes.
 
 Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
 run is in History, and any run can be undone. Long jobs show their progress in the top panel and

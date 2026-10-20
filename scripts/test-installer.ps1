@@ -16,6 +16,9 @@ function Check([bool]$ok, [string]$what) {
     Write-Host "ok: $what"
 }
 function RunValue { (Get-ItemProperty $runKey -Name ShiftDrop -ErrorAction SilentlyContinue).ShiftDrop }
+# The right-click entry ('*' is a real key name here, hence -LiteralPath).
+$verbKey = 'HKCU:\Software\Classes\*\shell\ShiftDrop\command'
+function VerbCommand { (Get-ItemProperty -LiteralPath $verbKey -ErrorAction SilentlyContinue).'(default)' }
 function Install([string]$name) {
     $p = Start-Process $Setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$logDir\$name.log`"" -Wait -PassThru
     Check ($p.ExitCode -eq 0) "$name exits 0 (got $($p.ExitCode))"
@@ -37,6 +40,8 @@ Check (Test-Path (Join-Path $app 'engines\FFMPEG-SOURCE.txt')) 'ffmpeg source po
 Check (Test-Path $shortcut) 'Start menu shortcut'
 Check ((RunValue) -eq "`"$exe`" --autostart") 'Run value points at the installed exe'
 Check ((Get-Content $settings -Raw) -match 'StartWithWindows=1') 'choice saved as on'
+Check ((VerbCommand) -eq "`"$exe`" --wheel `"%1`"") 'right-click entry points at the installed exe'
+Check (Test-Path -LiteralPath 'HKCU:\Software\Classes\Directory\shell\ShiftDrop\command') 'right-click entry for folders'
 
 # Upgrade over a running copy: Setup must ask it to quit, then replace the exe.
 $running = Start-Process $exe -PassThru
@@ -68,6 +73,7 @@ Check (WaitFor { -not (Test-Path $exe) } 60) 'exe removed'
 Check (WaitFor { -not (Test-Path (Join-Path $app 'engines\ffmpeg.exe')) } 30) 'ffmpeg removed'
 Check (-not (Test-Path $shortcut)) 'shortcut removed'
 Check ($null -eq (RunValue)) 'Run value removed'
+Check (-not (Test-Path -LiteralPath 'HKCU:\Software\Classes\*\shell\ShiftDrop')) 'right-click entry removed'
 if ($running) { Check (WaitFor { $running.HasExited } 5) 'uninstall quit the running copy' }
 Check (Test-Path $settings) 'user settings kept'
 Write-Host 'installer smoke test passed'
