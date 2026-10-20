@@ -8,3 +8,6 @@
 #define IDM_HISTORY     40003
 #define IDM_OPEN_RECIPES 40004
 #define IDM_START_WITH_WINDOWS 40005
+// Size and Style submenus: base + the WheelSize / Style value (see Settings.h)
+#define IDM_SIZE_BASE   40010
+#define IDM_STYLE_BASE  40020

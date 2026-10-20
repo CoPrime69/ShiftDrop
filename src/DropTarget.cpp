@@ -49,7 +49,7 @@ namespace sd
 
     DropTarget::DropTarget(HWND hwnd, IDropSink* sink) : m_hwnd(hwnd), m_sink(sink)
     {
-        // Optional: if the helper is unavailable we just lose the drag thumbnail.
+        // Optional: without the helper the thumbnail simply stays where the source draws it.
         CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_helper));
     }
 
@@ -61,7 +61,11 @@ namespace sd
         m_accepting = m_sink->OnDragEnter(files, p);
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
         if (m_helper)
+        {
             m_helper->DragEnter(m_hwnd, data, &p, *effect);
+            if (m_accepting)
+                m_helper->Show(FALSE);
+        }
         return S_OK;
     }
 
@@ -77,7 +81,10 @@ namespace sd
     STDMETHODIMP DropTarget::DragLeave()
     {
         if (m_helper)
+        {
+            m_helper->Show(TRUE);   // the thumbnail follows the cursor again outside the wheel
             m_helper->DragLeave();
+        }
         m_accepting = false;
         m_sink->OnDragLeave();
         return S_OK;

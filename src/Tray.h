@@ -1,4 +1,6 @@
 #pragma once
+#include "Settings.h"
+
 #include <windows.h>
 #include <shellapi.h>
 
@@ -17,7 +19,7 @@ namespace sd
         void Remove();
         void SetTip(std::wstring_view tip);
         void Balloon(std::wstring_view title, std::wstring_view text, DWORD infoFlags = NIIF_INFO);
-        void ShowMenu(POINT anchor, bool startWithWindows);   // WM_COMMAND with IDM_* goes to the owner window
+        void ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance);   // WM_COMMAND with IDM_* goes to the owner window
 
     private:
         NOTIFYICONDATAW Base(UINT flags) const;

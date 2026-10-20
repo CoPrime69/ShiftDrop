@@ -12,6 +12,8 @@
 //   DragBegin  primary button held and moved past SM_CXDRAG/SM_CYDRAG
 //   DragArm    ...and a trigger modifier is down (GetAsyncKeyState), once per press
 //   DragEnd    primary button released after a drag
+//   WheelScroll  mouse wheel turned while *flag (CaptureWheelWhile) is true; the event is swallowed
+//              so the window under the wheel does not scroll at the same time
 // No allocation, no locks, no I/O inside the callback.
 namespace sd::hook
 {
@@ -27,4 +29,7 @@ namespace sd::hook
     void SetArmed(bool armed); // the UI marks/clears the arm, e.g. modifier pressed while the mouse is still
     DWORD LastEventTime();     // MSLLHOOKSTRUCT::time of the last event seen (GetTickCount base)
     POINT LastPoint();
+    // While *flag is true, wheel events go to us instead of the window under the cursor. The flag
+    // must outlive the hook (the overlay owns it; the hook is uninstalled first).
+    void CaptureWheelWhile(const bool* flag);
 }
