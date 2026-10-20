@@ -102,8 +102,8 @@ namespace sd
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
-        // Size and Style submenus, each with a radio-style check on the current choice.
-        wil::unique_hmenu size(CreatePopupMenu()), style(CreatePopupMenu());
+        // Size, Style and item-name submenus, each with a radio-style check on the current choice.
+        wil::unique_hmenu size(CreatePopupMenu()), style(CreatePopupMenu()), name(CreatePopupMenu());
         const wchar_t* sizes[] = { L"Auto (fits the screen)", L"Small", L"Medium", L"Large" };
         for (int i = 0; i < 4; ++i)
             AppendMenuW(size.get(), MF_STRING, IDM_SIZE_BASE + i, sizes[i]);
@@ -111,9 +111,15 @@ namespace sd
         AppendMenuW(style.get(), MF_STRING, IDM_STYLE_BASE + 0, L"Solid");
         AppendMenuW(style.get(), MF_STRING, IDM_STYLE_BASE + 1, L"Glass");
         CheckMenuRadioItem(style.get(), IDM_STYLE_BASE, IDM_STYLE_BASE + 1, IDM_STYLE_BASE + static_cast<UINT>(appearance.style), MF_BYCOMMAND);
+        const wchar_t* names[] = { L"One line", L"Full", L"None" };
+        for (int i = 0; i < 3; ++i)
+            AppendMenuW(name.get(), MF_STRING, IDM_NAME_BASE + i, names[i]);
+        CheckMenuRadioItem(name.get(), IDM_NAME_BASE, IDM_NAME_BASE + 2, IDM_NAME_BASE + static_cast<UINT>(appearance.itemName), MF_BYCOMMAND);
         // The menu takes ownership of submenus appended with MF_POPUP and destroys them with itself.
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(size.release()), L"Size");
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(style.release()), L"Style");
+        AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(name.release()), L"Dragged item name");
+        AppendMenuW(menu.get(), MF_STRING | (appearance.hideCursor ? MF_CHECKED : MF_UNCHECKED), IDM_HIDE_CURSOR, L"Hide cursor over the wheel");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING | (startWithWindows ? MF_CHECKED : MF_UNCHECKED), IDM_START_WITH_WINDOWS, L"Start with Windows");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);

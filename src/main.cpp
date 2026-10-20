@@ -446,6 +446,14 @@ namespace sd
                 m_appearance.style = static_cast<Style>(id - IDM_STYLE_BASE);
                 ApplyAppearance();
                 break;
+            case IDM_NAME_BASE + 0: case IDM_NAME_BASE + 1: case IDM_NAME_BASE + 2:
+                m_appearance.itemName = static_cast<NameDisplay>(id - IDM_NAME_BASE);
+                ApplyAppearance();
+                break;
+            case IDM_HIDE_CURSOR:
+                m_appearance.hideCursor = !m_appearance.hideCursor;
+                ApplyAppearance();
+                break;
             case IDM_HISTORY:
                 if (!m_history)
                     m_tray.Balloon(SD_NAME, L"History is unavailable: the history database could not be opened. See the log.", NIIF_WARNING);
