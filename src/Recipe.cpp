@@ -2,6 +2,7 @@
 #include "Utf.h"
 
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <format>
 
@@ -79,7 +80,7 @@ namespace sd
             return false;
         }
 
-        static const char* const kKnown[] = { "$schema", "id", "label", "description", "ring", "suffix", "steps" };
+        static const char* const kKnown[] = { "$schema", "id", "label", "description", "ring", "suffix", "icon", "steps" };
         for (const auto& [key, _] : doc.items())
         {
             bool known = false;
@@ -131,6 +132,19 @@ namespace sd
                 return false;
             }
             r.ring = ring;
+        }
+        if (doc.contains("icon"))
+        {
+            // A Segoe Fluent Icons code point in hex ("E7AD"), drawn above the slice's label.
+            unsigned code = 0;
+            const std::string icon = doc["icon"].is_string() ? doc["icon"].get<std::string>() : "";
+            const auto r2 = std::from_chars(icon.data(), icon.data() + icon.size(), code, 16);
+            if (icon.empty() || r2.ec != std::errc{} || r2.ptr != icon.data() + icon.size() || code < 0xE000 || code > 0xF8FF)
+            {
+                error = "icon: expected a Segoe Fluent Icons code point in hex, like \"E7AD\"";
+                return false;
+            }
+            r.icon = static_cast<wchar_t>(code);
         }
         if (doc.contains("suffix"))
         {
@@ -205,11 +219,11 @@ namespace sd
             }
 
             const bool last = i + 1 == steps.size();
-            if (desc->kind == StepKind::FileAction)
+            if (desc->kind == StepKind::FileAction || desc->kind == StepKind::MediaEncode || desc->kind == StepKind::Engine)
             {
                 if (steps.size() != 1)
                 {
-                    error = where + ": a file action must be the recipe's only step";
+                    error = std::format("{}: {} must be the recipe's only step", where, desc->kind == StepKind::FileAction ? "a file action" : step.action);
                     return false;
                 }
                 r.steps.push_back(std::move(step));
@@ -217,12 +231,12 @@ namespace sd
             }
             if (desc->kind == StepKind::ImageEncode && !last)
             {
-                error = where + ": image.encode must be the last step";
+                error = std::format("{}: {} must be the last step", where, step.action);
                 return false;
             }
             if (last && desc->kind != StepKind::ImageEncode)
             {
-                error = where + ": the last step must be image.encode";
+                error = where + ": the last step must be image.encode (or image.compress)";
                 return false;
             }
             r.steps.push_back(std::move(step));
@@ -241,6 +255,8 @@ namespace sd
             doc["description"] = Narrow(description);
         doc["ring"] = ring;
         doc["suffix"] = Narrow(suffix);
+        if (icon)
+            doc["icon"] = std::format("{:04X}", static_cast<unsigned>(icon));
         doc["steps"] = nlohmann::json::array();
         for (const auto& s : steps)
             doc["steps"].push_back({ { "action", s.action }, { "params", s.params } });
@@ -249,7 +265,15 @@ namespace sd
 
     const ImageFormatInfo* Recipe::OutputFormatFor(const std::wstring& ext) const
     {
-        if (steps.empty() || steps.back().action != "image.encode")
+        if (steps.empty())
+            return nullptr;
+        if (steps.back().action == "image.compress")
+        {
+            // WebP stays WebP; everything else becomes JPEG, the format every upload box takes.
+            const auto* own = FormatOfExtension(ext);
+            return own && std::string_view(own->id) == "webp" ? own : FindImageFormat("jpg");
+        }
+        if (steps.back().action != "image.encode")
             return nullptr;
         const auto formatId = steps.back().params.value("format", std::string{});
         if (formatId == "same")
@@ -258,5 +282,24 @@ namespace sd
             return own ? own : FindImageFormat("png");
         }
         return FindImageFormat(formatId);
+    }
+}
+
+namespace sd
+{
+    const MediaFormatInfo* Recipe::MediaFormat() const
+    {
+        return IsMedia() && steps[0].action == "media.convert" ? FindMediaFormat(steps[0].params.value("format", std::string{})) : nullptr;
+    }
+
+    std::wstring Recipe::OutputExtensionFor(const std::wstring& ext) const
+    {
+        if (const auto* media = MediaFormat())
+            return media->extension;
+        if (IsMediaCompress())
+            return MediaKindOfExtension(ext) == MediaKind::Audio ? L".m4a" : L".mp4";
+        if (const auto* image = OutputFormatFor(ext))
+            return image->extension;
+        return {};
     }
 }

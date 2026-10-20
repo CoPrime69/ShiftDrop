@@ -1,7 +1,10 @@
 #include "Action.h"
+#include "Media.h"
 
 namespace sd
 {
+    void RegisterModuleActions(ActionRegistry& registry);   // Modules.cpp
+
     const std::vector<ImageFormatInfo>& ImageFormats()
     {
         static const std::vector<ImageFormatInfo> formats = {
@@ -74,10 +77,32 @@ namespace sd
         m_actions.push_back(ActionDescriptor{ "file.copy_path", L"Copy path", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.terminal", L"Terminal", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.duplicate", L"Duplicate", StepKind::FileAction, {} });
+        std::vector<std::string> mediaIds;
+        for (const auto& f : MediaFormats())
+            mediaIds.emplace_back(f.id);
+        m_actions.push_back(ActionDescriptor{
+            "media.convert", L"Convert media", StepKind::MediaEncode,
+            { ParamSpec{ "format", ParamType::Enum, 0, 0, mediaIds, "mp4" } } });
+        // Compress and Fit to… for video (H.264/AAC MP4) and audio (AAC M4A). With targetMB or percent
+        // the result is guaranteed to be at most that size; with neither, a quality preset.
+        m_actions.push_back(ActionDescriptor{
+            "media.compress", L"Compress media", StepKind::MediaEncode,
+            { ParamSpec{ "targetMB", ParamType::Number, 0, 100000, {}, 0 },
+              ParamSpec{ "percent", ParamType::Int, 0, 99, {}, 0 },        // of the source's size
+              ParamSpec{ "maxHeight", ParamType::Int, 0, 4320, {}, 1080 } } });   // 0 = keep
+
+        // The image counterpart: JPEG (WebP stays WebP), at `quality`, or at the best quality that fits
+        // maxKB / percent of the source, shrinking the picture only if even low quality is too big.
+        m_actions.push_back(ActionDescriptor{
+            "image.compress", L"Compress", StepKind::ImageEncode,
+            { ParamSpec{ "maxKB", ParamType::Int, 0, 10'000'000, {}, 0 },
+              ParamSpec{ "percent", ParamType::Int, 0, 99, {}, 0 },
+              ParamSpec{ "quality", ParamType::Int, 1, 100, {}, 75 } } });
         m_actions.push_back(ActionDescriptor{
             "image.encode", L"Encode", StepKind::ImageEncode,
             { ParamSpec{ "format", ParamType::Enum, 0, 0, formatIds, "png" },
               ParamSpec{ "quality", ParamType::Int, 1, 100, {}, 90 } } });
+        RegisterModuleActions(*this);
     }
 
     const ActionDescriptor* ActionRegistry::Find(std::string_view id) const

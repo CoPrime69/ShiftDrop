@@ -19,7 +19,7 @@ namespace sd
         const Recipe* Find(std::string_view id) const;
         const std::vector<std::wstring>& Errors() const { return m_errors; }   // one line per broken file
 
-        static const char* BuiltInJson();   // exposed for tests
+        static std::string BuiltInJson();    // a JSON array; exposed for tests
         static const char* ExampleJson();
 
     private:
