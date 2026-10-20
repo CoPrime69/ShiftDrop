@@ -2,6 +2,7 @@
 #include "Hash.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
+#include "Utf.h"
 #include "Undo.h"
 
 using namespace sd;
@@ -48,7 +49,7 @@ TEST(Pipeline, WebReadyIsOneStepWithNoLeftovers)
 
     std::vector<ItemResult> results;
     const auto run = f.Run("web-ready", { source }, &results);
-    ASSERT_TRUE(results[0].ok) << std::string(results[0].error.begin(), results[0].error.end());
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
     EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"photo (converted).webp");
     EXPECT_EQ(run.status, status::Done);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
@@ -71,7 +72,7 @@ TEST(Pipeline, RotateKeepsFormatAndSwapsSize)
     ASSERT_HRESULT_SUCCEEDED(WritePng(source, 40, 30));
     std::vector<ItemResult> results;
     f.Run("rotate-right", { source }, &results);
-    ASSERT_TRUE(results[0].ok) << std::string(results[0].error.begin(), results[0].error.end());
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
     EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"tall (edited).png");
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(results[0].output, w, h));
@@ -142,7 +143,7 @@ TEST(Undo, RecyclesOutputs)
     ASSERT_TRUE(results[0].ok);
 
     const auto report = UndoRun(*f.history, run, nullptr);
-    ASSERT_TRUE(report.ok) << std::string(report.message.begin(), report.message.end());
+    ASSERT_TRUE(report.ok) << Narrow(report.message);
     EXPECT_EQ(report.recycled, 1);
     EXPECT_FALSE(std::filesystem::exists(results[0].output));
     EXPECT_TRUE(std::filesystem::exists(a));
@@ -164,8 +165,8 @@ TEST(Move, MovesRenamesOnCollisionAndUndoes)
     int64_t runId = 0;
     const auto outcomes = MoveToFolder(f.recipes.Get("move"), { a, folder }, target, f.history.get(), runId);
     ASSERT_EQ(outcomes.size(), 2u);
-    ASSERT_TRUE(outcomes[0].ok) << std::string(outcomes[0].error.begin(), outcomes[0].error.end());
-    ASSERT_TRUE(outcomes[1].ok);
+    ASSERT_TRUE(outcomes[0].ok) << Narrow(outcomes[0].error);
+    ASSERT_TRUE(outcomes[1].ok) << Narrow(outcomes[1].error);
     EXPECT_FALSE(std::filesystem::exists(a));
     EXPECT_EQ(ReadAll(target + L"\\a.txt"), "already there");          // never overwritten
     EXPECT_NE(outcomes[0].destination, target + L"\\a.txt");            // renamed instead
@@ -175,7 +176,7 @@ TEST(Move, MovesRenamesOnCollisionAndUndoes)
     const auto run = f.history->RecentRuns(1)[0];
     EXPECT_TRUE(IsMoveRun(run));
     const auto report = UndoRun(*f.history, run, nullptr);
-    ASSERT_TRUE(report.ok) << std::string(report.message.begin(), report.message.end());
+    ASSERT_TRUE(report.ok) << Narrow(report.message);
     EXPECT_EQ(report.movedBack, 2);
     EXPECT_EQ(ReadAll(a), "mine");
     EXPECT_TRUE(std::filesystem::exists(folder + L"\\inside.txt"));
@@ -206,7 +207,7 @@ TEST(Move, UndoRefusedWhenOriginalPlaceIsTaken)
     WriteText(a, "mine");
     int64_t runId = 0;
     const auto outcomes = MoveToFolder(f.recipes.Get("move"), { a }, target, f.history.get(), runId);
-    ASSERT_TRUE(outcomes[0].ok);
+    ASSERT_TRUE(outcomes[0].ok) << Narrow(outcomes[0].error);
     WriteText(a, "a new file with the old name");
     const auto report = UndoRun(*f.history, f.history->RecentRuns(1)[0], nullptr);
     EXPECT_FALSE(report.ok);

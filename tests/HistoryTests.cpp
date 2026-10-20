@@ -1,5 +1,6 @@
 #include "HistoryStore.h"
 #include "TestUtil.h"
+#include "Utf.h"
 
 using namespace sd;
 using namespace sd::test;
@@ -10,7 +11,7 @@ namespace
     {
         std::wstring error;
         auto store = HistoryStore::Open(dir / L"history.db", error);
-        EXPECT_TRUE(store) << std::string(error.begin(), error.end());
+        EXPECT_TRUE(store) << Narrow(error);
         return store;
     }
 }
