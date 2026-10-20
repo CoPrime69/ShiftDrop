@@ -110,7 +110,9 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
-- [ ] Over the wheel there is no drag thumbnail and no "+ Copy" label; they return once you drag off the wheel
+- [ ] Over the wheel the drag picture stays, its name is on one line ending in "…", and there is no "+ Copy" badge and no mouse pointer
+- [ ] Tray menu > **Dragged item name** > Full: Explorer's own two-line name; None: just the picture. **Hide cursor over the wheel** unticked: the pointer stays visible
+- [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
 - [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p

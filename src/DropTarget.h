@@ -32,20 +32,25 @@ namespace sd
         : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropTarget>
     {
     public:
-        explicit DropTarget(IDropSink* sink);
+        DropTarget(HWND hwnd, IDropSink* sink);
 
         STDMETHOD(DragEnter)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
         STDMETHOD(DragOver)(DWORD keyState, POINTL pt, DWORD* effect) override;
         STDMETHOD(DragLeave)() override;
         STDMETHOD(Drop)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
 
+        // The drag's data object while files are over the wheel (between DragEnter and DragLeave or
+        // Drop), for adjusting the drag picture (DragImage.h); null otherwise.
+        IDataObject* Data() const { return m_data.Get(); }
+
     private:
+        HWND m_hwnd;
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
-        // Deliberately no IDropTargetHelper. Explorer's drag thumbnail and its "+ Copy" label are only
-        // drawn over windows that report the drag to that helper, so leaving it out hides both while
-        // the cursor is over the wheel (they sat on the centre and covered the top slices). They come
-        // back as soon as the cursor is over any other window.
+        Microsoft::WRL::ComPtr<IDataObject> m_data;
+        // The shell's drag-image helper keeps Explorer's drag picture visible while the pointer is
+        // over the wheel. Without it the picture vanishes as soon as the wheel appears.
+        Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
     };
 
     // Reads CF_HDROP from a data object. Returns an empty vector if the format is not present.
