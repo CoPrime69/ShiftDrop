@@ -79,6 +79,25 @@ add_library(shiftdrop_core STATIC
   src/shelf/ShelfGeometry.cpp
   src/shelf/ShelfModule.cpp
   src/shelf/ShelfStore.cpp
+  src/canvas/Covers.cpp
+  src/canvas/Editor.cpp
+  src/canvas/Geometry.cpp
+  src/canvas/Raster.cpp
+  src/canvas/RegionTool.cpp
+  src/canvas/Regions.cpp
+  src/crop/CropEngine.cpp
+  src/crop/CropMath.cpp
+  src/crop/CropTool.cpp
+  src/imagetools/ImageToolsModule.cpp
+  src/metadata/Container.cpp
+  src/metadata/Exif.cpp
+  src/metadata/MediaMetadata.cpp
+  src/metadata/Metadata.cpp
+  src/redact/Pii.cpp
+  src/redact/RedactEngine.cpp
+  src/redact/RedactTool.cpp
+  src/redact/Vision.cpp
+  src/sharesafe/ShareSafeEngine.cpp
   # PDF module (M5): plain C++ and QPDF; the WinRT and UI parts are in the libraries below
   src/pdf/ImagePdf.cpp
   src/pdf/PageRenderer.cpp
@@ -96,6 +115,17 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
+  # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
+  src/mediaeditor/EditorApi.cpp
+  src/mediaeditor/EditorLayout.cpp
+  src/mediaeditor/MediaProbe.cpp
+  src/mediaeditor/MediaTools.cpp
+  src/mediaeditor/MediaToolsModule.cpp
+  src/mediaeditor/Timeline.cpp
+  src/videotools/VideoEngine.cpp
+  src/videotools/VideoTools.cpp
+  src/audiotools/AudioEngine.cpp
+  src/audiotools/AudioTools.cpp
   # Image formats beyond WIC (AVIF, SVG, HEIC through Windows' codec), plugged into ImagePipeline
   src/formats/Avif.cpp
   src/formats/Formats.cpp
@@ -125,6 +155,7 @@ add_library(shiftdrop_winrt OBJECT
   src/pdf/WinPdfRenderer.cpp
   src/ocr/WinOcr.cpp
   src/share/WinShare.cpp
+  src/redact/WinFaces.cpp
 )
 target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
 target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
@@ -155,6 +186,13 @@ add_executable(ShiftDrop WIN32
   src/preview/PreviewCard.cpp
   src/inspect/InspectorWindow.cpp
   src/shelf/ShelfWindow.cpp
+  # The video and audio tools' timeline editor (registers itself with mediaeditor/EditorApi)
+  src/mediaeditor/EditorUi.cpp
+  src/mediaeditor/EditorWindow.cpp
+  src/mediaeditor/EditorTools.cpp
+  src/mediaeditor/MediaLoader.cpp
+  src/mediaeditor/Playback.cpp
+  src/canvas/EditorWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -191,6 +229,12 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
+    tests/VideoToolsTests.cpp
+    tests/AudioToolsTests.cpp
+    tests/CanvasTests.cpp
+    tests/CropTests.cpp
+    tests/RedactTests.cpp
+    tests/ShareSafeTests.cpp
     tests/FormatsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
