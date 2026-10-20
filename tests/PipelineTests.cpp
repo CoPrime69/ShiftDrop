@@ -215,3 +215,50 @@ TEST(Move, UndoRefusedWhenOriginalPlaceIsTaken)
     EXPECT_EQ(ReadAll(a), "a new file with the old name");
     EXPECT_EQ(ReadAll(outcomes[0].destination), "mine");
 }
+
+TEST(Compress, QualitySearchFindsTheHighestFit)
+{
+    int calls = 0;
+    const auto linear = [&](int q) { ++calls; return static_cast<int64_t>(q) * 1000; };
+    EXPECT_EQ(BestQualityUnder(55'500, 40, 92, linear), 55);
+    EXPECT_LE(calls, 7);   // a binary search, not a scan
+    EXPECT_EQ(BestQualityUnder(39'000, 40, 92, linear), -1);
+    EXPECT_EQ(BestQualityUnder(1'000'000, 40, 92, linear), 92);
+    EXPECT_NEAR(ShrinkFactor(250, 1000), 0.46, 1e-9);   // half the side length, minus the margin
+    EXPECT_DOUBLE_EQ(ShrinkFactor(0, 1000), 1.0);
+}
+
+TEST(Pipeline, CompressFitsTheTargetAndShrinksOnlyWhenNeeded)
+{
+    Fixture f;
+    const auto source = f.dir / L"photo.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(source, 1600, 1200, true));
+
+    std::vector<ItemResult> results;
+    f.Run("image-under-1mb", { source }, &results);
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
+    EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"photo (compressed).jpg");
+    EXPECT_LE(std::filesystem::file_size(results[0].output), 1024u * 1024u);
+    UINT w = 0, h = 0;
+    ASSERT_TRUE(ImageSize(results[0].output, w, h));
+    EXPECT_EQ(w, 1600u);   // fits at full size, so it is not scaled
+
+    // A target too small for any quality at full size: the picture is scaled down to fit.
+    Recipe tiny;
+    std::string error;
+    ASSERT_TRUE(ParseRecipe(R"({ "id": "tiny", "label": "Tiny", "ring": "tools", "suffix": "tiny",
+                                 "steps": [ { "action": "image.compress", "params": { "maxKB": 30 } } ] })",
+                            f.recipes.registry, tiny, error)) << error;
+    const auto runId = f.history->BeginRun(tiny, 1);
+    const auto small = f.runner->Run(tiny, runId, source, std::stop_token{});
+    ASSERT_TRUE(small.ok) << Narrow(small.error);
+    EXPECT_LE(std::filesystem::file_size(small.output), 30u * 1024u);
+    ASSERT_TRUE(ImageSize(small.output, w, h));
+    EXPECT_LT(w, 1600u);
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+
+    // Already under the target: refused, nothing written.
+    const auto again = f.runner->Run(f.recipes.Get("image-under-1mb"), runId, small.output, std::stop_token{});
+    EXPECT_FALSE(again.ok);
+    EXPECT_EQ(Narrow(again.error), "already under 1 MB");
+}

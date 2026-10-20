@@ -498,6 +498,10 @@ question 1).
 | 2026-10-20 | Each wheel shows only the recipes meant for the dragged files: video formats for videos, audio formats for audio, image formats for images (MP3 for both video and audio); a mix gets what fits all of them | Prakhar: the first wheel should already be the right one for the file type |
 | 2026-10-20 | The top panel's progress moves within a file for video and audio (percentage for a single file) and has a × that cancels the batch: the file in progress is abandoned and its staging file deleted, finished files stay | Long jobs need a way out; nothing half-written is ever left next to the originals |
 | 2026-10-20 | The installer grows from about 2.5 MB to about 45 MB because of ffmpeg.exe | Video and audio need it; a download-on-first-use engine would be a network call, which the offline rule forbids |
+| 2026-10-20 | Convert copies the streams a container can hold (H.264/HEVC + AAC/MP3 into MP4/MOV, anything into MKV, ...) instead of re-encoding; it probes the file first and falls back to a re-encode if the copy fails. Re-encodes decode on the GPU (`-hwaccel auto`) and use faster encoder presets | Prakhar: fast conversion. A phone video to MP4 takes a second instead of a minute, with no quality loss |
+| 2026-10-20 | Compress and Fit to size (tool 1): images search the JPEG/WebP quality (binary search, 40–92) for the best fit and shrink the picture only when even 40 is too big; media plans video/audio bitrates and height from the duration (0.08 bits per pixel per frame ladder) and retries up to 3 times. Neither ever keeps a result over the target, and a no-target preset must come out smaller than the source | A target size is a promise: "under 10 MB" must be under 10 MB. Presets: images Compress, Under 1 MB; video and audio Compress (up to 1080p), 50% size, Under 10 MB (chat apps), Under 25 MB (email) |
+| 2026-10-20 | The H.264 encoder test runs on the media thread right after start | The first video conversion no longer waits about a second for it |
+| 2026-10-20 | Features are built as modules (docs/modules.md): one `FeatureModule` per area in `src/<area>/`, plugged in through `src/Modules.cpp`, with an `IEngine` that runs its recipes and `StagedOutput` for every output | Lets several milestones be built at the same time without touching each other, and keeps every output crash-safe and undoable |
 
 ## Open questions
 
@@ -510,7 +514,7 @@ question 1).
 7. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 8. Multi-page TIFF / animated GIF: M1 converts the first frame only. Convert all pages/frames later?
 9. Hotkey for "open the wheel on Explorer's selection" (Tangerine's Enter on a file): is Ctrl+Shift+Space a good default?
-10. Converting a video to MP4/MOV/MKV re-encodes at good quality (constant quality on GPUs, 8 Mbit/s otherwise), so files can grow. Shrinking is M3b's Compress. Fine, or should Convert keep the size close to the original?
+10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
 
 ## Sources
 

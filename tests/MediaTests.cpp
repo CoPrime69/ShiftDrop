@@ -335,3 +335,30 @@ TEST(MediaEngine, CancelStopsFfmpegAndLeavesNothing)
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
     EXPECT_EQ(CountFiles(dir, L".webm"), 0u);
 }
+
+TEST(MediaEngine, CompressKeepsUnderTheTarget)
+{
+    const auto engine = Engine();
+    if (!engine->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    TempDir dir;
+    Recipes recipes(dir);
+    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
+    // A big, noisy source (near-lossless MPEG-4 of random noise), so there is something to squeeze.
+    const auto source = dir / L"big.avi";
+    std::stop_source never;
+    ASSERT_TRUE(engine->Run({ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"nullsrc=s=640x360:r=25:d=6,geq=random(1)*255:128:128",
+                              L"-f", L"lavfi", L"-i", L"sine=d=6", L"-c:v", L"mpeg4", L"-q:v", L"2", L"-c:a", L"pcm_s16le", L"-shortest",
+                              L"-y", L"-f", L"avi", source }, nullptr, never.get_token()).ok);
+    const auto sourceBytes = std::filesystem::file_size(source);
+
+    const auto half = runner.Run(recipes.Get("media-half"), 0, source, std::stop_token{});
+    ASSERT_TRUE(half.ok) << Narrow(half.error);
+    EXPECT_EQ(std::filesystem::path(half.output).filename(), L"big (compressed).mp4");
+    EXPECT_LE(std::filesystem::file_size(half.output), sourceBytes / 2);
+
+    const auto preset = runner.Run(recipes.Get("compress-media"), 0, source, std::stop_token{});
+    ASSERT_TRUE(preset.ok) << Narrow(preset.error);
+    EXPECT_LT(std::filesystem::file_size(preset.output), sourceBytes);
+    EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
+}

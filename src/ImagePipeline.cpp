@@ -3,6 +3,7 @@
 #include "OutputPath.h"
 
 #include <propvarutil.h>
+#include <shlwapi.h>
 #include <wincodec.h>
 #include <wil/resource.h>
 #include <wil/result_macros.h>
@@ -12,6 +13,8 @@
 #include <webp/encode.h>
 
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <cwctype>
 #include <format>
 #include <initializer_list>
@@ -213,6 +216,115 @@ namespace sd
             RETURN_IF_FAILED(frame->WriteSource(source.Get(), nullptr));
             RETURN_IF_FAILED(frame->Commit());
             return encoder->Commit();
+        }
+
+        int64_t FileBytes(const std::wstring& path)
+        {
+            WIN32_FILE_ATTRIBUTE_DATA data{};
+            if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
+                return 0;
+            return (static_cast<int64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+        }
+
+        int64_t StreamBytes(IStream* stream)
+        {
+            STATSTG stat{};
+            return SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) ? static_cast<int64_t>(stat.cbSize.QuadPart) : -1;
+        }
+
+        HRESULT CopyStream(IStream* from, IStream* to)
+        {
+            RETURN_IF_FAILED(from->Seek({}, STREAM_SEEK_SET, nullptr));
+            ULARGE_INTEGER all;
+            all.QuadPart = ~0ull;
+            return from->CopyTo(to, all, nullptr, nullptr);
+        }
+
+        using EncodeFn = std::function<HRESULT(IWICBitmapSource*, float, IStream*)>;
+
+        // image.compress: with no target, one encode at `quality` that must come out smaller than the
+        // source. With maxKB or percent, the highest quality (40..92) that fits; if even quality 40 is too
+        // big, the picture is scaled down and searched again (at most 4 times). Never writes a result over
+        // the target. The pixels are decoded once into memory first, so every try only re-encodes.
+        HRESULT CompressToTarget(IWICImagingFactory* factory, IWICBitmapSource* pixels, const nlohmann::json& params, float quality,
+                                 int64_t sourceBytes, const EncodeFn& encode, IStream* out, std::stop_token stop, std::wstring& error)
+        {
+            const int maxKB = params.value("maxKB", 0);
+            const int percent = params.value("percent", 0);
+            const int64_t target = maxKB > 0 ? static_cast<int64_t>(maxKB) * 1024 : percent > 0 ? sourceBytes * percent / 100 : 0;
+            if (maxKB > 0 && sourceBytes > 0 && sourceBytes <= target)
+            {
+                error = maxKB % 1024 == 0 ? std::format(L"already under {} MB", maxKB / 1024) : std::format(L"already under {} KB", maxKB);
+                return E_ABORT;
+            }
+
+            ComPtr<IWICBitmap> decoded;   // decode once; each try below only encodes
+            RETURN_IF_FAILED(factory->CreateBitmapFromSource(pixels, WICBitmapCacheOnLoad, &decoded));
+            ComPtr<IWICBitmapSource> current = decoded;
+            const auto encodeToMemory = [&](IWICBitmapSource* src, int q, ComPtr<IStream>& mem) -> int64_t {
+                mem.Attach(SHCreateMemStream(nullptr, 0));
+                if (!mem || FAILED(encode(src, static_cast<float>(q), mem.Get())))
+                    return -1;
+                return StreamBytes(mem.Get());
+            };
+
+            if (target <= 0)
+            {
+                ComPtr<IStream> mem;
+                const int64_t got = encodeToMemory(current.Get(), static_cast<int>(quality), mem);
+                if (got < 0)
+                {
+                    error = L"encode failed";
+                    return E_FAIL;
+                }
+                if (sourceBytes > 0 && got >= sourceBytes)
+                {
+                    error = L"already compressed: the result was not smaller";
+                    return E_ABORT;
+                }
+                return CopyStream(mem.Get(), out);
+            }
+
+            for (int shrink = 0; shrink <= 4; ++shrink)
+            {
+                if (stop.stop_requested())
+                    return HRESULT_FROM_WIN32(ERROR_CANCELLED);
+                ComPtr<IStream> best;
+                int64_t smallest = -1;
+                const int q = BestQualityUnder(target, 40, 92, [&](int tryQ) {
+                    ComPtr<IStream> mem;
+                    const int64_t got = encodeToMemory(current.Get(), tryQ, mem);
+                    if (got >= 0 && got <= target)
+                        best = mem;   // the search only moves up after a fit, so the last fit is the best
+                    if (got >= 0 && (smallest < 0 || got < smallest))
+                        smallest = got;
+                    return got;
+                });
+                if (q >= 0 && best)
+                {
+                    UINT w = 0, h = 0;
+                    current->GetSize(&w, &h);
+                    log::Info(L"image: compress fit at quality {} and {}x{} ({} bytes, target {})", q, w, h, StreamBytes(best.Get()), target);
+                    return CopyStream(best.Get(), out);
+                }
+                if (smallest < 0)
+                {
+                    error = L"encode failed";
+                    return E_FAIL;
+                }
+                UINT w = 0, h = 0;
+                current->GetSize(&w, &h);
+                const double k = ShrinkFactor(target, smallest);
+                const UINT nw = static_cast<UINT>(w * k), nh = static_cast<UINT>(h * k);
+                if (nw < 16 || nh < 16)
+                    break;
+                ComPtr<IWICBitmapScaler> scaler;
+                RETURN_IF_FAILED(factory->CreateBitmapScaler(&scaler));
+                RETURN_IF_FAILED(scaler->Initialize(decoded.Get(), nw, nh, WICBitmapInterpolationModeHighQualityCubic));
+                current = scaler;
+            }
+            error = L"could not get under the target size";
+            return E_ABORT;
         }
     }
 
@@ -420,12 +532,54 @@ namespace sd
         if (stop.stop_requested())
             return HRESULT_FROM_WIN32(ERROR_CANCELLED);
 
-        const float quality = static_cast<float>(recipe.steps.back().params.value("quality", 90));
-        const HRESULT hr = std::string_view(format->id) == "webp"
-                               ? EncodeWebP(pixels.Get(), quality, out)
-                               : EncodeWic(factory.Get(), pixels.Get(), *format, quality, dpiX, dpiY, out);
-        if (FAILED(hr))
+        const auto& last = recipe.steps.back();
+        const float quality = static_cast<float>(last.params.value("quality", 90));
+        const auto encode = [&](IWICBitmapSource* src, float q, IStream* to) {
+            return std::string_view(format->id) == "webp" ? EncodeWebP(src, q, to)
+                                                          : EncodeWic(factory.Get(), src, *format, q, dpiX, dpiY, to);
+        };
+        if (last.action == "image.compress")
+        {
+            if (const HRESULT hr = CompressToTarget(factory.Get(), pixels.Get(), last.params, quality, FileBytes(source), encode, out,
+                                                    stop, error);
+                FAILED(hr))
+                return hr;
+            return out->Commit(STGC_DEFAULT);
+        }
+        if (const HRESULT hr = encode(pixels.Get(), quality, out); FAILED(hr))
             return fail(hr, L"encode");
         return out->Commit(STGC_DEFAULT);
+    }
+
+    int BestQualityUnder(int64_t target, int low, int high, const std::function<int64_t(int)>& sizeAt)
+    {
+        // Size grows with quality (near enough for JPEG and WebP), so a binary search finds the highest
+        // quality that fits in about log2(high - low) encodes.
+        int best = -1;
+        while (low <= high)
+        {
+            const int q = (low + high) / 2;
+            const int64_t got = sizeAt(q);
+            if (got < 0)
+                return -1;
+            if (got <= target)
+            {
+                best = q;
+                low = q + 1;
+            }
+            else
+            {
+                high = q - 1;
+            }
+        }
+        return best;
+    }
+
+    double ShrinkFactor(int64_t target, int64_t got)
+    {
+        // Bytes scale roughly with pixel count, so each side shrinks by the square root, with a margin.
+        if (got <= 0 || target <= 0)
+            return 1.0;
+        return std::clamp(std::sqrt(static_cast<double>(target) / static_cast<double>(got)) * 0.92, 0.1, 0.95);
     }
 }
