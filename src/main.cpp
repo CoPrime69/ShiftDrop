@@ -4,6 +4,8 @@
 //   UI thread    hidden main window, tray icon, overlay, WH_MOUSE_LL hook, OLE drop target, history
 //                window, clipboard file actions (STA)
 //   workers      JobQueue threads (MTA) that run recipes and PostMessage results back
+//   media worker one JobQueue thread for video and audio: ffmpeg already uses every core, so files
+//                go one at a time (each in its own ffmpeg process, see Ffmpeg.h)
 //   shell worker one STA thread for IFileOperation work (Move to…)
 #include "Brand.h"
 #include "DropTarget.h"
@@ -17,6 +19,7 @@
 #include "Messages.h"
 #include "MouseHook.h"
 #include "OutputPath.h"
+#include "Island.h"
 #include "Overlay.h"
 #include "PipelineRunner.h"
 #include "RecipeStore.h"
@@ -65,6 +68,8 @@ namespace sd
             BatchKind kind = BatchKind::Convert;
             std::wstring label;    // recipe label, or the destination folder's name for a move
             int64_t runId = 0;     // history run (0 when history is unavailable)
+            uint64_t token = 0;    // which batch, so its progress and result reach the top panel
+            bool cancelled = false;
             std::vector<FileOutcome> files;
         };
 
@@ -75,6 +80,8 @@ namespace sd
             std::mutex mutex;
             BatchResult result;
             std::atomic<size_t> remaining{ 0 };
+            std::stop_source cancel;          // the top panel's ×; also requested when the app shuts down
+            std::atomic<int> lastPermille{ -1 };   // throttles progress posts to whole tenths of a percent
         };
 
         struct PendingDrop
@@ -82,6 +89,12 @@ namespace sd
             std::vector<std::wstring> files;
             std::string recipeId;
         };
+
+        // "1 file", "3 files".
+        std::wstring Count(size_t n, const wchar_t* noun)
+        {
+            return n == 1 ? std::format(L"1 {}", noun) : std::format(L"{} {}s", n, noun);
+        }
 
         std::wstring FileName(const std::wstring& path)
         {
@@ -108,6 +121,39 @@ namespace sd
         }
 
         // Opens Explorer on the folder of the first path with every path from that folder selected.
+        // A slice's icon (a Segoe Fluent Icons / MDL2 code point). Single-step conversions show only
+        // their format name, which says it best; everything else gets an icon above its label.
+        struct Look
+        {
+            wchar_t icon = 0;
+            bool mirror = false;
+        };
+        [[maybe_unused]] Look SliceLook(const Recipe& recipe)   // unused in the M0 build
+        {
+            if (recipe.icon)
+                return { recipe.icon };   // the recipe names its own (feature modules, user recipes)
+            if (recipe.IsSingleEncode() || recipe.IsMedia() || recipe.steps.empty())
+                return {};
+            const auto& step = recipe.steps.front();
+            const auto& a = step.action;
+            if (a == "image.rotate")
+            {
+                // Rotate (clockwise arrow); counter-clockwise is the same glyph mirrored.
+                const auto degrees = step.params.value("degrees", std::string("90"));
+                return { 0xE7AD, degrees == "270" };
+            }
+            if (a == "image.flip") return { 0xE8AB };              // Switch (two arrows)
+            if (a == "image.scale") return { 0xE73F };             // BackToWindow (shrink)
+            if (a == "image.resize") return { 0xE740 };            // FullScreen (fit)
+            if (a == "image.strip_metadata") return { 0xE72E };    // Lock
+            if (a == "file.copy") return { 0xE8C8 };               // Copy
+            if (a == "file.move") return { 0xE8DE };               // MoveToFolder
+            if (a == "file.copy_path") return { 0xE71B };          // Link
+            if (a == "file.terminal") return { 0xE756 };           // CommandPrompt
+            if (a == "file.duplicate") return { 0xE8A5 };          // Document
+            return { 0xE9F5 };                                     // Processing (a generic recipe)
+        }
+
         void RevealInExplorer(const std::vector<std::wstring>& paths)
         {
             if (paths.empty())
@@ -176,20 +222,54 @@ namespace sd
             m_history = HistoryStore::Open(log::AppDataFolder() + L"\\history.db", dbError);
             if (!m_history)
                 log::Error(L"history: {} (conversions still work, but without history or undo)", dbError);
-            m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get());
+            m_media = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
+            if (m_media->Available())
+                log::Info(L"media: ffmpeg at {}", m_media->Path());
+            else
+                log::Warn(L"media: engines\\ffmpeg.exe not found next to " SD_NAME L".exe; video and audio slices are disabled");
+            m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get(), m_media);
             m_runner->RecoverInterrupted();
 
             const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u);
             m_jobs = std::make_unique<JobQueue>(threads);
+            m_mediaJobs = std::make_unique<JobQueue>(1);
             m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
-            log::Info(L"jobs: {} worker thread(s) + 1 shell thread", threads);
+            log::Info(L"jobs: {} worker thread(s) + 1 media thread + 1 shell thread", threads);
+            // The H.264 encoder test (a few tiny encodes, about a second) runs now, on the media thread,
+            // instead of delaying the first video conversion.
+            if (m_media->Available())
+                m_mediaJobs->Submit([media = m_media](std::stop_token) { media->H264(); });
 
+            std::vector<WheelRing> rings;
+#if !SHIFTDROP_M0
+            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), Folder.
+            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE8B7 };
+            for (int i = 0; i < kRingCount; ++i)
+                rings.push_back(WheelRing{ RingTitle(static_cast<Ring>(i)), m_settings.keys[i] ? m_settings.keyNames[i] : L"",
+                                           kRingIcons[i], static_cast<Ring>(i) == Ring::Convert });
+#endif
+            m_appearance = LoadAppearance();
+            m_island = std::make_unique<Island>(m_instance, rings, [this] { RevealInExplorer(m_lastOutputs); });
+            if (!m_island->Create())
+                return false;
+            m_island->SetAppearance(m_appearance);
+
+            Overlay::Events events;
+            events.shown = [this](int ring, HMONITOR monitor) { m_island->ShowSwitcher(ring, monitor); };
+            // After a drop the panel turns into the job's progress instead (RunPendingDrop).
+            events.hidden = [this] {
+                if (m_pendingDrops.empty())
+                    m_island->HideSwitcher();
+            };
+            events.ringChanged = [this](int ring) { m_island->SetRing(ring); };
             m_overlay = std::make_unique<Overlay>(
-                m_instance,
-                [this](const std::vector<std::wstring>& files) { return ContentFor(files); },
-                [this](std::vector<std::wstring> files, std::wstring actionId) { HandleDrop(std::move(files), std::move(actionId)); });
+                m_instance, std::move(rings),
+                [this](const std::vector<std::wstring>& files, int ring) { return ContentFor(files, static_cast<Ring>(ring)); },
+                [this](std::vector<std::wstring> files, std::wstring actionId) { HandleDrop(std::move(files), std::move(actionId)); },
+                std::move(events));
             if (!m_overlay->Create())
                 return false;
+            m_overlay->SetAppearance(m_appearance);
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
@@ -202,12 +282,13 @@ namespace sd
                 m_tray.Balloon(SD_NAME, L"Could not install the mouse hook. See the log.", NIIF_ERROR);
                 return false;
             }
+            hook::CaptureWheelWhile(m_overlay->ScrollCaptureFlag());
             SetTimer(m_hwnd.get(), kTimerWatchdog, 3000, nullptr);
 
 #if SHIFTDROP_M0
             constexpr const wchar_t* kBuild = L"M0 placeholder build";
 #else
-            constexpr const wchar_t* kBuild = L"M2 build";
+            constexpr const wchar_t* kBuild = L"M3 build";
 #endif
             if (IsElevated())
             {
@@ -293,6 +374,10 @@ namespace sd
             case msg::DragEnd:
                 OnDragEnd();
                 return 0;
+            case msg::WheelScroll:
+                if (m_overlay)
+                    m_overlay->OnScroll(static_cast<short>(LOWORD(wParam)));
+                return 0;
             case WM_TIMER:
                 OnTimer(wParam);
                 return 0;
@@ -305,8 +390,16 @@ namespace sd
             case msg::RunDrop:
                 RunPendingDrop();
                 return 0;
+            case msg::BatchProgress:
+                if (wParam == m_islandBatch)
+                    m_island->SetProgress(static_cast<double>(lParam) / 1000.0);
+                return 0;
             case msg::AnotherInstance:
                 m_tray.Balloon(SD_NAME, L"" SD_NAME L" is already running.");
+                return 0;
+            case msg::QuitRequest:
+                log::Info(L"quit requested by another process (installer or uninstaller)");
+                DestroyWindow(hwnd);
                 return 0;
             case WM_COMMAND:
                 OnCommand(LOWORD(wParam));
@@ -316,6 +409,7 @@ namespace sd
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
                 m_jobs.reset();        // stops and joins workers; results still in flight are freed (see PostBatch)
+                m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
                 m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
                 m_historyWindow.reset();
                 m_overlay.reset();
@@ -334,6 +428,17 @@ namespace sd
             }
         }
 
+        // Takes effect the next time the wheel or the panel appears.
+        void ApplyAppearance()
+        {
+            SaveAppearance(m_appearance);
+            m_overlay->SetAppearance(m_appearance);
+            m_island->SetAppearance(m_appearance);
+            const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
+            log::Info(L"appearance: size {}, style {}", sizes[static_cast<int>(m_appearance.size)],
+                      m_appearance.style == Style::Glass ? L"glass" : L"solid");
+        }
+
         void OnCommand(UINT id)
         {
             switch (id)
@@ -350,6 +455,18 @@ namespace sd
                 break;
             case IDM_START_WITH_WINDOWS:
                 startup::SetChoice(!startup::Choice());
+                break;
+            case IDM_SIZE_BASE + 0: case IDM_SIZE_BASE + 1: case IDM_SIZE_BASE + 2: case IDM_SIZE_BASE + 3:
+                m_appearance.size = static_cast<WheelSize>(id - IDM_SIZE_BASE);
+                ApplyAppearance();
+                break;
+            case IDM_STYLE_BASE + 0: case IDM_STYLE_BASE + 1:
+                m_appearance.style = static_cast<Style>(id - IDM_STYLE_BASE);
+                ApplyAppearance();
+                break;
+            case IDM_HIDE_CURSOR:
+                m_appearance.hideCursor = !m_appearance.hideCursor;
+                ApplyAppearance();
                 break;
             case IDM_HISTORY:
                 if (!m_history)
@@ -378,10 +495,11 @@ namespace sd
             const int ring = RingOfKey(vk);
             if (ring < 0 || !m_overlay || m_overlay->IsVisible())
                 return;
-            // The ring is fixed for this showing; the overlay asks ContentFor() once OLE's DragEnter
-            // tells it which files are being dragged. (Switching wheels mid-drag comes in M4.)
-            m_ring = static_cast<Ring>(ring);
-            m_overlay->ShowProbe(pt);
+            // The overlay asks ContentFor() once OLE's DragEnter tells it which files are being
+            // dragged. Keys already down now must not count as "pressed again" to switch wheels.
+            for (int i = 0; i < kRingCount; ++i)
+                m_keyDown[i] = IsDown(m_settings.keys[i]);
+            m_overlay->ShowProbe(pt, ring);
         }
 
         void OnDragEnd()
@@ -404,6 +522,24 @@ namespace sd
             }
         }
 
+        static bool IsDown(UINT vk)
+        {
+            return vk && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000);
+        }
+
+        // While a wheel is open, pressing another wheel's key switches to it (holding the first key
+        // or not). Only a fresh press counts, so the key that opened the wheel can stay held.
+        void SwitchOnKeyPress()
+        {
+            for (int i = 0; i < kRingCount; ++i)
+            {
+                const bool down = IsDown(m_settings.keys[i]);
+                if (down && !m_keyDown[i])
+                    m_overlay->SetRing(i);
+                m_keyDown[i] = down;
+            }
+        }
+
         // The first wheel key that is held down right now, or 0.
         UINT HeldKey() const
         {
@@ -420,6 +556,11 @@ namespace sd
                 if (!hook::IsDragging())
                 {
                     KillTimer(m_hwnd.get(), kTimerPoll);
+                    return;
+                }
+                if (m_overlay->IsVisible())
+                {
+                    SwitchOnKeyPress();
                     return;
                 }
                 const UINT held = HeldKey();
@@ -468,45 +609,90 @@ namespace sd
 
         // ---- Wheel content and drops ---------------------------------------------------------------
 
-        WheelContent ContentFor(const std::vector<std::wstring>& files) const
+        WheelContent ContentFor(const std::vector<std::wstring>& files, [[maybe_unused]] Ring ring) const
         {
             WheelContent content;
-            const auto count = files.size() == 1 ? std::wstring(L"1 file") : std::format(L"{} files", files.size());
-            content.centerText = std::format(L"{}\n{}", RingTitle(m_ring), count);
+            content.centerText = files.size() == 1 ? std::wstring(L"1 file") : std::format(L"{} files", files.size());
 #if !SHIFTDROP_M0
-            const char* ringId = RingId(m_ring);
-            std::wstring firstReason;
-            bool anyEnabled = false;
+            const char* ringId = RingId(ring);
+            // Each wheel shows the recipes meant for these files: video formats for videos, image formats
+            // for photos. With nothing meant for all of them (a photo and a video), the ones meant for
+            // some; with nothing meant for any (a PDF), all of them, disabled, so the wheel still says
+            // what it does.
+            std::vector<const Recipe*> forAll, forAny, onRing;
             for (const auto& recipe : m_recipes.All())
             {
                 if (recipe.ring != ringId)
                     continue;
+                onRing.push_back(&recipe);
+                const auto applies = [&](const std::wstring& f) { return m_runner->Applies(recipe, f); };
+                if (std::all_of(files.begin(), files.end(), applies))
+                    forAll.push_back(&recipe);
+                else if (std::any_of(files.begin(), files.end(), applies))
+                    forAny.push_back(&recipe);
+            }
+            const bool meantForThese = !forAll.empty();
+            if (forAll.empty())
+                forAll.insert(forAll.end(), forAny.begin(), forAny.end());
+            const auto& shown = forAll.empty() ? onRing : forAll;
+
+            std::wstring firstReason;
+            bool anyEnabled = false;
+            for (const Recipe* recipe : shown)
+            {
                 if (content.slices.size() == kMaxSlices)
                 {
-                    log::Warn(L"wheel: more than {} recipes on the {} wheel; '{}' and later ones are not shown",
-                              kMaxSlices, RingTitle(m_ring), recipe.label);
+                    log::Warn(L"wheel: more than {} recipes fit these files on the {} wheel; '{}' and later ones are not shown",
+                              kMaxSlices, RingTitle(ring), recipe->label);
                     break;
                 }
                 // Mixed selections only get recipes every file supports. A slice is also disabled when
                 // it would do nothing for every file (to PNG on PNGs).
                 std::wstring reason;
                 const bool all = std::all_of(files.begin(), files.end(),
-                                             [&](const std::wstring& f) { return m_runner->Accepts(recipe, f, &reason); });
+                                             [&](const std::wstring& f) { return m_runner->Accepts(*recipe, f, &reason); });
                 const bool anyToDo = std::any_of(files.begin(), files.end(),
-                                                 [&](const std::wstring& f) { return !m_runner->IsNoOp(recipe, f); });
+                                                 [&](const std::wstring& f) { return !m_runner->IsNoOp(*recipe, f); });
                 if (!all && firstReason.empty())
                     firstReason = reason;
-                content.slices.push_back(WheelSlice{ recipe.label, Widen(recipe.id), all && anyToDo });
+                const auto look = SliceLook(*recipe);
+                content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror,
+                                                     recipe->description.empty() ? recipe->label : recipe->description });
                 anyEnabled |= all && anyToDo;
             }
             if (!anyEnabled && !firstReason.empty())
             {
                 log::Info(L"wheel: nothing applies: {}", firstReason);
-                if (m_ring != Ring::Files)
-                    content.centerText = files.size() == 1 ? L"Not an image" : L"Not all images";
+                if (ring != Ring::Files)
+                    content.centerText = NothingHereText(files);
+                content.explains = meantForThese;   // e.g. video formats for a video, but no engine
             }
 #endif
             return content;
+        }
+
+        // The wheel's centre when none of its slices can take the dragged files.
+        std::wstring NothingHereText(const std::vector<std::wstring>& files) const
+        {
+            bool video = false, audio = false, other = false;
+            for (const auto& f : files)
+            {
+                switch (MediaKindOfExtension(LowerExtension(f)))
+                {
+                case MediaKind::Video: video = true; break;
+                case MediaKind::Audio: audio = true; break;
+                default: other = true; break;
+                }
+            }
+            if ((video || audio) && !m_media->Available())
+                return L"Media engine missing";
+            if (int(video) + int(audio) + int(other) > 1)
+                return L"Mixed files";
+            if (video)
+                return L"Not for videos";
+            if (audio)
+                return L"Not for audio";
+            return files.size() == 1 ? L"Not an image" : L"Not all images";
         }
 
         // Called from inside OLE's IDropTarget::Drop, while Explorer's drag loop waits for us. Queue the
@@ -531,17 +717,22 @@ namespace sd
             std::wstring list;
             for (const auto& f : drop.files)
                 list += FileName(f) + L"\n";
-            m_lastOutputs = drop.files;   // clicking the notification reveals the dropped files
-            m_tray.Balloon(std::format(L"Dropped {} file(s)", drop.files.size()), list);
+            m_lastOutputs = drop.files;   // clicking the panel reveals the dropped files
+            m_island->ShowResult(Island::Outcome::Success, std::format(L"Dropped {}", Count(drop.files.size(), L"file")),
+                                 FileName(drop.files.front()));
 #else
             const Recipe* recipe = m_recipes.Find(drop.recipeId);
             if (!recipe)
+            {
+                m_island->HideSwitcher();
                 return;
+            }
             if (recipe->IsFileAction())
             {
                 const auto& action = recipe->steps[0].action;
                 if (action == "file.move")
                 {
+                    m_island->HideSwitcher();   // the folder picker comes first
                     StartMove(*recipe, std::move(drop.files));
                     return;
                 }
@@ -549,9 +740,19 @@ namespace sd
                 {
                     // Copy, Copy path, Terminal: instant, nothing written to disk, so no history.
                     const auto r = RunInstantFileAction(action, drop.files, m_hwnd.get());
-                    m_tray.Balloon(recipe->label, r.message, r.ok ? NIIF_INFO : NIIF_WARNING);
+                    m_island->ShowResult(r.ok ? Island::Outcome::Success : Island::Outcome::Failure, r.message, {});
                     return;
                 }
+            }
+            if (const auto* engine = m_runner->EngineFor(*recipe); engine && engine->NeedsEditor(*recipe))
+            {
+                // Trim, crop, annotate...: the engine's window asks first, then the batch runs with the
+                // user's choices in the recipe's params.
+                m_island->HideSwitcher();
+                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files, [this](Recipe adjusted, std::vector<std::wstring> files) {
+                    StartBatch(adjusted, std::move(files));
+                });
+                return;
             }
             StartBatch(*recipe, std::move(drop.files));
 #endif
@@ -565,13 +766,63 @@ namespace sd
             state->result.kind = recipe.IsFileAction() ? BatchKind::Duplicate : recipe.ring == RingId(Ring::Convert) ? BatchKind::Convert : BatchKind::Tools;
             state->result.label = recipe.label;
             state->result.runId = m_history ? m_history->BeginRun(recipe, static_cast<int>(files.size())) : 0;
+            state->result.token = m_islandBatch = m_nextBatch++;
             state->result.files.resize(files.size());
             state->remaining = files.size();
+            const auto verb = state->result.kind == BatchKind::Convert ? std::format(L"Converting {} to {}", Count(files.size(), L"file"), recipe.label)
+                              : state->result.kind == BatchKind::Duplicate ? std::format(L"Duplicating {}", Count(files.size(), L"file"))
+                                                                           : std::format(L"{}: {}", recipe.label, Count(files.size(), L"file"));
+            // The panel's × stops this batch: the file in progress is abandoned (its staging file
+            // deleted) and the rest are skipped. Files already finished stay.
+            m_island->ShowProgress(verb + L"\u2026", files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
+            // Video and audio go through the media queue, one file at a time; images use every worker;
+            // shell work goes to the STA thread. A batch action (join, merge, zip) is one job for all files.
+            const JobLane lane = m_runner->Lane(recipe);
+            JobQueue& queue = lane == JobLane::Media ? *m_mediaJobs : lane == JobLane::Shell ? *m_shellJobs : *m_jobs;
+            if (const auto* engine = m_runner->EngineFor(recipe); engine && engine->IsBatch(recipe))
+            {
+                state->result.files.resize(1);
+                state->result.files[0].source = files.front();
+                state->remaining = 1;
+                queue.Submit([state, runner = m_runner.get(), history = m_history.get(), files, token = state->result.token](std::stop_token stop) {
+                    std::stop_callback onShutdown(stop, [&] { state->cancel.request_stop(); });
+                    const auto progress = [&](double fraction) {
+                        const auto at = static_cast<int>(fraction * 1000.0);
+                        if (at != state->lastPermille.exchange(at))
+                            PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(at));
+                    };
+                    auto result = runner->RunBatch(state->recipe, state->result.runId, files, state->cancel.get_token(), progress);
+                    if (result.ok)
+                        log::Info(L"job: {} file(s) -> {}", files.size(), result.output);
+                    else
+                        log::Warn(L"job: batch of {} {}: {}", files.size(), result.skipped ? L"skipped" : L"failed", result.error);
+                    if (history)
+                        history->FinishRun(state->result.runId);
+                    auto done = std::make_unique<BatchResult>(std::move(state->result));
+                    done->files[0].result = std::move(result);
+                    done->cancelled = state->cancel.stop_requested();
+                    PostBatch(state->notify, std::move(done));
+                });
+                m_island->ShowProgress(std::format(L"{}: {}\u2026", recipe.label, Count(files.size(), L"file")), 1,
+                                       [cancel = state->cancel]() mutable { cancel.request_stop(); });
+                return;
+            }
             for (size_t i = 0; i < files.size(); ++i)
             {
                 state->result.files[i].source = files[i];
-                m_jobs->Submit([state, runner = m_runner.get(), history = m_history.get(), i, source = files[i]](std::stop_token stop) {
-                    auto result = runner->Run(state->recipe, state->result.runId, source, stop);
+                queue.Submit([state, runner = m_runner.get(), history = m_history.get(), i, source = files[i], total = files.size(),
+                              token = state->result.token](std::stop_token stop) {
+                    // Shutting down stops the batch the same way the × does.
+                    std::stop_callback onShutdown(stop, [&] { state->cancel.request_stop(); });
+                    // Within-file progress (media only): finished files plus this one's fraction, in
+                    // thousandths of a file, posted when it moves by a tenth of a percent of the batch.
+                    const auto progress = [&](double fraction) {
+                        const size_t finished = total - state->remaining.load();
+                        const auto at = static_cast<int>((static_cast<double>(finished) + fraction) * 1000.0);
+                        if (at / static_cast<int>(total) != state->lastPermille.exchange(at / static_cast<int>(total)))
+                            PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(at));
+                    };
+                    auto result = runner->Run(state->recipe, state->result.runId, source, state->cancel.get_token(), progress);
                     if (result.ok)
                         log::Info(L"job: {} -> {}", source, result.output);
                     else
@@ -580,13 +831,17 @@ namespace sd
                         std::scoped_lock lock(state->mutex);
                         state->result.files[i].result = std::move(result);
                     }
-                    if (state->remaining.fetch_sub(1) == 1)   // last file of the batch
+                    const size_t left = state->remaining.fetch_sub(1) - 1;
+                    if (left > 0)
+                        PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>((total - left) * 1000));
+                    else   // last file of the batch
                     {
                         if (history)
                             history->FinishRun(state->result.runId);
                         std::unique_ptr<BatchResult> done;
                         {
                             std::scoped_lock lock(state->mutex);
+                            state->result.cancelled = state->cancel.stop_requested();
                             done = std::make_unique<BatchResult>(std::move(state->result));
                         }
                         PostBatch(state->notify, std::move(done));
@@ -605,14 +860,18 @@ namespace sd
                 return;
             }
             m_tray.SetTip(std::format(L"" SD_NAME L": moving {} item(s)...", files.size()));
+            const uint64_t token = m_islandBatch = m_nextBatch++;
+            m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FileName(folder).empty() ? folder : FileName(folder)),
+                                   files.size());
             m_shellJobs->Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
-                                 history = m_history.get()](std::stop_token) {
+                                 history = m_history.get(), token](std::stop_token) {
                 int64_t runId = 0;
                 const auto outcomes = MoveToFolder(recipe, files, folder, history, runId);
                 auto done = std::make_unique<BatchResult>();
                 done->kind = BatchKind::Move;
                 done->label = FileName(folder).empty() ? folder : FileName(folder);   // "D:\" has no file name
                 done->runId = runId;
+                done->token = token;
                 for (const auto& o : outcomes)
                 {
                     ItemResult r;
@@ -655,24 +914,55 @@ namespace sd
             switch (batch->kind)
             {
             case BatchKind::Convert:
-                title = all ? std::format(L"Converted {} file(s) to {}", ok, batch->label)
+                title = all ? std::format(L"{} converted to {}", Count(ok, L"file"), batch->label)
                             : std::format(L"{} of {} converted to {}", ok, total, batch->label);
                 break;
             case BatchKind::Tools:
-                title = all ? std::format(L"{}: {} file(s) done", batch->label, ok)
+                title = all ? std::format(L"{}: {} done", batch->label, Count(ok, L"file"))
                             : std::format(L"{}: {} of {} done", batch->label, ok, total);
                 break;
             case BatchKind::Duplicate:
-                title = all ? std::format(L"Duplicated {} file(s)", ok) : std::format(L"Duplicated {} of {}", ok, total);
+                title = all ? std::format(L"Duplicated {}", Count(ok, L"file")) : std::format(L"Duplicated {} of {}", ok, total);
                 break;
             case BatchKind::Move:
-                title = all ? std::format(L"Moved {} item(s) to {}", ok, batch->label)
+                title = all ? std::format(L"Moved {} to {}", Count(ok, L"item"), batch->label)
                             : std::format(L"Moved {} of {} to {}", ok, total, batch->label);
                 break;
             }
-            if (ok > 0 && m_history)
-                details += L"Undo: tray menu > History";
-            m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
+            if (batch->token == m_islandBatch)
+            {
+                // The panel: one line on what happened, one on where (or what went wrong first).
+                std::wstring sub;
+                if (failed || skipped)
+                {
+                    for (const auto& f : batch->files)
+                        if (!f.result.ok)
+                        {
+                            sub = std::format(L"{}: {}", FileName(f.source), f.result.error);
+                            break;
+                        }
+                }
+                else if (batch->kind == BatchKind::Move)
+                    sub = L"Undo from History in the tray menu";
+                else
+                    sub = L"Saved next to the originals \u00b7 Undo from History";
+                auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
+                if (batch->cancelled)
+                {
+                    // Asked for, so not a failure: say what is left on disk.
+                    outcome = Island::Outcome::Partial;
+                    title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
+                    sub = ok == 0 ? L"Nothing was saved" : L"Finished files are saved next to the originals";
+                }
+                m_island->ShowResult(outcome, title, sub);
+            }
+            else
+            {
+                // A later job owns the panel; this one reports the old way.
+                if (ok > 0 && m_history)
+                    details += L"Undo: tray menu > History";
+                m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
+            }
             log::Info(L"batch (run {}): {} ok, {} skipped, {} failed", batch->runId, ok, skipped, failed);
             if (m_historyWindow)
                 m_historyWindow->Refresh();
@@ -688,7 +978,7 @@ namespace sd
             case WM_CONTEXTMENU:
             case NIN_SELECT:
             case NIN_KEYSELECT:
-                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled());
+                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled(), m_appearance);
                 break;
             case NIN_BALLOONUSERCLICK:
                 RevealInExplorer(m_lastOutputs);
@@ -711,21 +1001,74 @@ namespace sd
         RecipeStore m_recipes;
         std::shared_ptr<const ImageCodecs> m_codecs;
         std::unique_ptr<HistoryStore> m_history;
+        std::shared_ptr<const FfmpegEngine> m_media;
         std::unique_ptr<PipelineRunner> m_runner;
         std::unique_ptr<JobQueue> m_jobs;
+        std::unique_ptr<JobQueue> m_mediaJobs;
         std::unique_ptr<JobQueue> m_shellJobs;
+        Appearance m_appearance;
+        std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it
         std::unique_ptr<Overlay> m_overlay;
+        uint64_t m_nextBatch = 1;
+        uint64_t m_islandBatch = 0;          // the batch whose progress the top panel shows
         std::unique_ptr<HistoryWindow> m_historyWindow;
-        Ring m_ring = Ring::Convert;
+        bool m_keyDown[kRingCount]{};   // wheel keys' state at the last poll, to see fresh presses
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
         POINT m_watchdogPt{};
     };
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int)
+namespace sd
 {
-    const bool autostart = commandLine && wcsstr(commandLine, sd::startup::kAutostartArg) != nullptr;
+    namespace
+    {
+        // Used by the installer: "--quit" before replacing the files, "--uninstall" before removing them.
+        constexpr wchar_t kQuitArg[] = L"--quit";
+        constexpr wchar_t kUninstallArg[] = L"--uninstall";
+
+        bool HasArg(const wchar_t* arg)
+        {
+            int argc = 0;
+            wil::unique_hlocal_ptr<PWSTR> argv(CommandLineToArgvW(GetCommandLineW(), &argc));
+            if (!argv)
+                return false;
+            for (int i = 1; i < argc; ++i)
+                if (CompareStringOrdinal(argv.get()[i], -1, arg, -1, TRUE) == CSTR_EQUAL)
+                    return true;
+            return false;
+        }
+
+        // Asks the copy running in this logon session to exit and waits for it, so its exe can be
+        // replaced or deleted. Returns false only if it is still running after the wait.
+        bool QuitRunningInstance()
+        {
+            HWND other = FindWindowW(kMainClass, nullptr);
+            if (!other)
+                return true;
+            DWORD pid = 0;
+            GetWindowThreadProcessId(other, &pid);
+            // SYNCHRONIZE is all WaitForSingleObject needs; same user, so no elevation is involved.
+            wil::unique_handle process(OpenProcess(SYNCHRONIZE, FALSE, pid));
+            PostMessageW(other, msg::QuitRequest, 0, 0);
+            // Shutdown waits for a move in progress (IFileOperation can't stop halfway), hence the margin.
+            return !process || WaitForSingleObject(process.get(), 15000) == WAIT_OBJECT_0;
+        }
+    }
+}
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
+    if (sd::HasArg(sd::kQuitArg) || sd::HasArg(sd::kUninstallArg))
+    {
+        const bool quit = sd::QuitRunningInstance();
+        // Uninstalling also removes the Run value, wherever it points; settings and history are kept.
+        if (sd::HasArg(sd::kUninstallArg))
+            sd::startup::Disable();
+        return quit ? 0 : 1;
+    }
+
+    const bool autostart = sd::HasArg(sd::startup::kAutostartArg);
     // Single instance per logon session. Read GetLastError immediately: CreateMutexW returns a valid
     // handle to the existing mutex and reports ERROR_ALREADY_EXISTS.
     HANDLE rawMutex = CreateMutexW(nullptr, FALSE, sd::kMutexName);

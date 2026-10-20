@@ -22,6 +22,7 @@ namespace sd::hook
             POINT downPt{};
             POINT lastPt{};
             DWORD lastTime = 0;
+            const bool* captureWheel = nullptr;
         };
         State s;
         wil::unique_hhook g_hook;
@@ -63,6 +64,12 @@ namespace sd::hook
                         }
                     }
                 }
+                else if (msgId == WM_MOUSEWHEEL && s.captureWheel && *s.captureWheel)
+                {
+                    // The high word of mouseData is the signed delta (WHEEL_DELTA = 120 per notch).
+                    PostMessageW(s.notify, msg::WheelScroll, HIWORD(m->mouseData), 0);
+                    return 1;   // swallowed: nothing else sees this wheel event
+                }
                 else if (msgId == s.upMsg)
                 {
                     if (s.dragging)
@@ -70,7 +77,7 @@ namespace sd::hook
                     s.down = s.dragging = s.armed = false;
                 }
             }
-            // Always pass the event on. We only observe; swallowing input here would break the drag itself.
+            // Pass everything else on. We only observe; swallowing buttons or moves would break the drag.
             return CallNextHookEx(nullptr, code, wParam, lParam);
         }
     }
@@ -114,4 +121,5 @@ namespace sd::hook
     void SetArmed(bool armed) { s.armed = armed; }
     DWORD LastEventTime() { return s.lastTime; }
     POINT LastPoint() { return s.lastPt; }
+    void CaptureWheelWhile(const bool* flag) { s.captureWheel = flag; }
 }

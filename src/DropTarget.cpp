@@ -1,4 +1,5 @@
 #include "DropTarget.h"
+#include "DropDescription.h"
 #include "Log.h"
 
 #include <shellapi.h>
@@ -49,7 +50,7 @@ namespace sd
 
     DropTarget::DropTarget(HWND hwnd, IDropSink* sink) : m_hwnd(hwnd), m_sink(sink)
     {
-        // Optional: if the helper is unavailable we just lose the drag thumbnail.
+        // Optional: without it the drag picture is simply not shown over the wheel.
         CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_helper));
     }
 
@@ -60,6 +61,12 @@ namespace sd
         POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
         m_accepting = m_sink->OnDragEnter(files, p);
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
+        if (m_accepting)
+        {
+            m_data = data;
+            // No "+ Copy" badge under the drag picture: the wheel says what will happen.
+            SetDropDescription(data, DROPIMAGE_NOIMAGE);
+        }
         if (m_helper)
             m_helper->DragEnter(m_hwnd, data, &p, *effect);
         return S_OK;
@@ -78,6 +85,9 @@ namespace sd
     {
         if (m_helper)
             m_helper->DragLeave();
+        if (m_data)
+            SetDropDescription(m_data.Get(), DROPIMAGE_INVALID);   // other windows get their usual badge
+        m_data.Reset();
         m_accepting = false;
         m_sink->OnDragLeave();
         return S_OK;
@@ -91,6 +101,7 @@ namespace sd
         *effect = accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
         if (m_helper)
             m_helper->Drop(data, &p, *effect);
+        m_data.Reset();
 
         // The drag source (e.g. Explorer) is blocked inside DoDragDrop until we return, so Drop only
         // reads the paths and hands them on; conversion runs on the job queue.

@@ -169,8 +169,8 @@ Each milestone, at a glance:
 |---|---|---|
 | M0/M1 (delivered) | Gesture, wheel, WIC images | Shift wheel, batches, output next to the source |
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
-| M3 | Fit to… (S2), media engine | All audio/video formats, Compress, Float shelf |
-| M4 | Know before you drop (S1) | Keyboard model, switching wheels mid-drag, metadata inspector |
+| M3 (three PRs: M3a, M3b, M3c) | Fit to… (S2), media engine | M3a: all audio/video formats, progress and cancel. M3b: Compress, Fit to…, carry, clipboard. M3c: Float shelf |
+| M4 | Know before you drop (S1) | Keyboard model, metadata inspector |
 | M5 | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
@@ -178,7 +178,7 @@ Each milestone, at a glance:
 | **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
 | **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
 | **M11 (new)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/PPTX/TXT/MD |
-| M12 (was M8) | Polish, release and showcase | Settings window, installer, real toasts |
+| M12 (was M8) | Polish, release and showcase | Settings window, real toasts, winget and a portable zip (the installer itself shipped with M2) |
 
 Each milestone in detail:
 
@@ -194,6 +194,15 @@ Each milestone in detail:
 - File actions in M2: Copy (to the clipboard), **Move** (pick a folder, then move the originals; this replaces the earlier "Cut"), Copy Path (one per line), Terminal, and Duplicate (ours). File actions also accept folders and mixed selections.
 
 **M3. Fit to… (S2) and the media engine**
+
+Split into three pull requests so each one can be tried by hand:
+- **M3a (this PR): media engine and conversions.** Bundled LGPL ffmpeg.exe run as a sandbox-friendly
+  child process, video and audio formats on the Convert wheel (only the formats that fit the dragged
+  files), per-file progress and a cancel button in the top panel.
+- **M3b:** Fit to… target sizes, Compress (tool 1), convert-and-carry and drop to clipboard.
+- **M3c:** the Float shelf.
+
+The full list:
 - sd-media worker plus LGPL ffmpeg.
 - Target-size presets for images, video and PDF, with GPU encoders and a software fallback.
 - Convert-and-carry chip, drop to clipboard, tray progress and cancel.
@@ -208,7 +217,6 @@ Each milestone in detail:
 - The overlay moves to DirectComposition, which is where the real acrylic spike happens.
 - **(parity)** Keyboard model:
   - While the wheel is open, the arrow keys move between slices, Enter applies and Esc cancels.
-  - Pressing another wheel's key mid-drag switches to that wheel (Tangerine: Command/Control).
 - **(parity)** "Enter on a file opens the format menu" can't be done the same way: Enter in Explorer opens the file and we can't take it over. Closest alternatives:
   - A configurable global hotkey (default Ctrl+Shift+Space) opens the wheel for Explorer's current selection.
   - A "ShiftDrop…" entry in the right-click menu does the same.
@@ -289,7 +297,7 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 **M12. Polish, release and showcase (was M8)**
 - Signed build (if a certificate is chosen), winget, screen reader support, benchmarks, README.
 - **(spec)** Settings window: keys per wheel, enabled actions, output naming, theme override, and the terminal to open (Windows Terminal, PowerShell, cmd, or a custom command; Tangerine offers Terminal or iTerm2).
-- **(spec)** A rename-pattern file action, real toasts with "Open folder", and an Inno Setup installer plus a portable zip. (Start at login moved to M2.)
+- **(spec)** A rename-pattern file action, real toasts with "Open folder", and a portable zip. (Start at login and the Inno Setup installer moved to M2.)
 
 ### Parity map: interaction model
 
@@ -303,7 +311,7 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 | 6 | Wheel stays open until drop or cancel | Stays open after the key is released; see open question 2 for leaving the wheel | Done (M1) |
 | 7 | Enter / arrows / Esc | Esc done; arrows and Enter | M4 |
 | 8 | Enter on a file opens the format menu | Not possible in Explorer; hotkey on Explorer's selection, plus a right-click entry | M4 |
-| 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag | M4 |
+| 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag; turning the mouse wheel also steps through the wheels | Done (wheel redesign) |
 | 10 | Batches | Same; mixed drops show only the actions every file supports | Done (M1) |
 | 11 | Output saved next to the original | Same, never overwrites, crash-safe, undoable | Done (M1), M2 |
 | 12 | File actions work on folders, mixed selections, files with no tools | Same | M2 |
@@ -433,7 +441,7 @@ question 1).
 | Light / dark theme | Done for the wheel (M1); settings window follows it in M12 |
 | Acrylic / Mica glass look | Translucent fill now; real backdrop spike in M4 |
 | No network calls, no telemetry | True today; enforced in CI from M2, proven by the sandbox in M7 |
-| Background job queue with cancellation and progress | Done (M1, worker pool); tray cancel + progress in M3 |
+| Background job queue with cancellation and progress | Done (M1, worker pool); progress within a file and a cancel button in the top panel in M3a |
 | Logs in %LOCALAPPDATA%\ShiftDrop\logs | Done (M0) |
 | Per-monitor DPI, Explorer move/copy semantics, elevated windows, browsers, hook timeouts | Handled or documented in Stage 4 (M0/M1) |
 | Packaging: MSIX or Inno Setup + portable zip | M12 (Inno Setup + portable zip; MSIX later) |
@@ -471,6 +479,29 @@ question 1).
 | 2026-10-20 | Start with Windows lands in M2: an HKCU Run value, on at first run, tray toggle; the choice is kept in settings.ini so "off" stays off, and Windows' own Startup-apps switch is left alone | Prakhar wants it in the tray at startup; HKCU needs no admin |
 | 2026-10-20 | Move to… and Undo use IFileOperation on a dedicated STA thread; the move never overwrites (shell renames on collision) and its undo moves items back, refused if the original place is taken | IFileOperation is STA-only; moving across drives and moving folders need the shell |
 | 2026-10-20 | The Ctrl wheel is called Tools (recipe ring id "tools") | Matches the Mac app's tools wheel |
+| 2026-10-20 | Every CI build produces a per-user Inno Setup installer (no admin, no Visual Studio, no VC++ redistributable thanks to the static CRT); CI installs, upgrades and uninstalls it on a clean runner; a `v*` tag publishes it as a GitHub Release. Unsigned for now, so SmartScreen asks once | Prakhar: anyone must be able to install and run it; moved forward from M12 |
+| 2026-10-20 | Wheel redesign: separate rounded tiles with icons, the hovered tile lifts in the Windows accent colour, the centre shows the count and the hovered slice's detail, spring open and a rotate-crossfade when switching wheels | Prakhar found the M2 wheel shabby; Open-Tangerine is a visual reference only (GPL-3.0, nothing copied) |
+| 2026-10-20 | Switching wheels mid-drag moves forward from M4: press another wheel's key, or scroll (the mouse hook swallows wheel events only while the wheel is open) | Prakhar: people should not have to remember the keys |
+| 2026-10-20 | A top panel hangs from the top centre of the cursor's monitor: wheel tabs while a wheel is open, then the job's progress and result (success tucks away after 2 s, failure stays until clicked; click shows the files). Replaces the tray balloon for jobs started from the wheel | Windows has no notch; same role as Tangerine's notch panel |
+| 2026-10-20 | Tray menu Size (Auto, Small, Medium, Large) and Style (Solid, Glass). Auto scales with the monitor's height (1080p = 1.0, clamped 0.9–1.3) on top of its DPI | Prakhar: it must fit 1080p and 2K screens, with a manual choice. Glass is a blurred screen snapshot, since true acrylic is not available to layered windows |
+| 2026-10-20 | Over the wheel: Explorer's drag picture stays, without the "+ Copy" badge (drop description DROPIMAGE_NOIMAGE); the centre answers COPY | Prakhar: the picture shows what is dragged, but "Copy" is misleading. A "not allowed" cursor the moment the wheel opens looked broken. Releasing on the centre still cancels |
+| 2026-10-20 | Explorer's drag picture is never redrawn: its full name always shows | Prakhar tried a one-line redraw (IDragSourceHelper::InitializeFromBitmap); the picture vanished on his PC, and he chose Explorer's full name with no setting |
+| 2026-10-20 | Tray "Hide cursor over the wheel" (default on): AttachThreadInput to the drag source's thread + ShowCursor(FALSE), undone on leave/drop/close | The pointer belongs to the drag source during a drag; sharing its input state is the only way to hide it. Windows keeps each thread's part of the display count, so detaching (or our thread ending) always gives the pointer back |
+| 2026-10-20 | Shift opens the best wheel for the files: if nothing on Convert applies (a PDF today), the first wheel that has something opens instead. Scrolling skips wheels with nothing for the files; Ctrl and Alt still open their own wheel | Prakhar: fewer scrolls, the right options at once. As PDF (M5) and media (M3) conversions land, Shift opens them for those files |
+| 2026-10-20 | Leaving the wheel: it fades with distance past the tiles, then shrinks and fades out over 200 ms | Prakhar: the exit felt abrupt |
+| 2026-10-20 | M3 ships as three PRs: M3a media conversions + progress + cancel, M3b Fit to… / Compress / carry / clipboard, M3c Float shelf | Small milestones, each testable by hand |
+| 2026-10-20 | Media engine = BtbN's win64 **LGPL** FFmpeg build (n8.1.3), shipped unmodified as `engines\ffmpeg.exe`, pinned by URL + SHA-256 in `scripts/get-ffmpeg.ps1`; licence and source pointer installed beside it. ffprobe is not shipped (the duration comes from ffmpeg's own log) | LGPL keeps ShiftDrop's own licence free; no x264/x265 (GPL). One exe instead of two saves ~130 MB unpacked |
+| 2026-10-20 | ffmpeg runs as a child process: no console, below-normal priority, only its pipes and NUL inherited, in a kill-on-close job object (cancel, exit or crash never leaves it running), and `-protocol_whitelist file` so it can only read local files | Offline guarantee and clean cancel; a separate process is also the first step toward S6's sealed engines |
+| 2026-10-20 | H.264 encoder chosen once per run of the app by test-encoding a few black frames: NVIDIA NVENC, Intel Quick Sync, AMD AMF, Windows Media Foundation, then OpenH264 (always works) | GPU encoders are fast and leave the CPU free, but each needs its vendor's GPU and driver |
+| 2026-10-20 | Video and audio run one file at a time on their own worker; images keep the parallel pool | ffmpeg already uses every core; two at once would only fight |
+| 2026-10-20 | MKV copies the streams (no re-encode, instant, lossless) and falls back to H.264/AAC if a stream doesn't fit Matroska. Odd video sizes lose one pixel (crop) for 4:2:0 encoders. GIF: 12 fps, up to 480 px wide, palette made for the clip | Fast where possible, never fails on odd phone-video sizes, GIFs that look good and stay small |
+| 2026-10-20 | Each wheel shows only the recipes meant for the dragged files: video formats for videos, audio formats for audio, image formats for images (MP3 for both video and audio); a mix gets what fits all of them | Prakhar: the first wheel should already be the right one for the file type |
+| 2026-10-20 | The top panel's progress moves within a file for video and audio (percentage for a single file) and has a × that cancels the batch: the file in progress is abandoned and its staging file deleted, finished files stay | Long jobs need a way out; nothing half-written is ever left next to the originals |
+| 2026-10-20 | The installer grows from about 2.5 MB to about 45 MB because of ffmpeg.exe | Video and audio need it; a download-on-first-use engine would be a network call, which the offline rule forbids |
+| 2026-10-20 | Convert copies the streams a container can hold (H.264/HEVC + AAC/MP3 into MP4/MOV, anything into MKV, ...) instead of re-encoding; it probes the file first and falls back to a re-encode if the copy fails. Re-encodes decode on the GPU (`-hwaccel auto`) and use faster encoder presets | Prakhar: fast conversion. A phone video to MP4 takes a second instead of a minute, with no quality loss |
+| 2026-10-20 | Compress and Fit to size (tool 1): images search the JPEG/WebP quality (binary search, 40–92) for the best fit and shrink the picture only when even 40 is too big; media plans video/audio bitrates and height from the duration (0.08 bits per pixel per frame ladder) and retries up to 3 times. Neither ever keeps a result over the target, and a no-target preset must come out smaller than the source | A target size is a promise: "under 10 MB" must be under 10 MB. Presets: images Compress, Under 1 MB; video and audio Compress (up to 1080p), 50% size, Under 10 MB (chat apps), Under 25 MB (email) |
+| 2026-10-20 | The H.264 encoder test runs on the media thread right after start | The first video conversion no longer waits about a second for it |
+| 2026-10-20 | Features are built as modules (docs/modules.md): one `FeatureModule` per area in `src/<area>/`, plugged in through `src/Modules.cpp`, with an `IEngine` that runs its recipes and `StagedOutput` for every output | Lets several milestones be built at the same time without touching each other, and keeps every output crash-safe and undoable |
 
 ## Open questions
 
@@ -483,6 +514,7 @@ question 1).
 7. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 8. Multi-page TIFF / animated GIF: M1 converts the first frame only. Convert all pages/frames later?
 9. Hotkey for "open the wheel on Explorer's selection" (Tangerine's Enter on a file): is Ctrl+Shift+Space a good default?
+10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
 
 ## Sources
 

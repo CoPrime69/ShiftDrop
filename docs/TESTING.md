@@ -1,6 +1,6 @@
 # Build, run and manual test checklist
 
-Covers M0, M1 and M2. Section 3 (M2) is new; sections A to E are the M0/M1 checks.
+Covers M0 to M3a. Section M (video and audio) is new; sections A to E are the M0/M1 checks.
 
 ## 1. One-time setup (PowerShell)
 
@@ -25,9 +25,10 @@ Open **Developer PowerShell for VS 2022** (so `cmake` and MSVC are on PATH):
 cd C:\dev\shiftdrop
 git pull
 
+./scripts/get-ffmpeg.ps1            # once: the pinned LGPL ffmpeg.exe into build\engines (170 MB download, SHA-256 checked)
 cmake --preset x64-release          # first run builds wil, sqlite3, nlohmann-json, libwebp, gtest (a few minutes)
 cmake --build --preset x64-release
-ctest --preset x64-release          # unit tests
+ctest --preset x64-release          # unit tests (the MediaEngine ones run the real ffmpeg.exe)
 .\build\x64-release\Release\ShiftDrop.exe
 
 # M0 build (placeholder circle; every drop only logs + notifies)
@@ -55,6 +56,14 @@ mkdir C:\temp\sd-target -Force
 ```
 
 Also put a PNG with transparency and a phone photo taken in portrait orientation in that folder.
+
+For section M, make a test video and song with the bundled ffmpeg (or use your own):
+
+```powershell
+$ff = "$env:LOCALAPPDATA\Programs\ShiftDrop\engines\ffmpeg.exe"   # or .\build\engines\ffmpeg.exe
+& $ff -f lavfi -i testsrc=s=1281x721:r=30:d=20 -f lavfi -i sine=f=440:d=20 -c:v mpeg4 -c:a pcm_s16le -shortest C:\temp\sd\clip.avi
+& $ff -f lavfi -i sine=f=440:d=20 C:\temp\sd\song.wav
+```
 
 ## 3. M2 checklist
 
@@ -100,6 +109,55 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Untick Start with Windows: the Run value is gone; restarting ShiftDrop does not turn it back on
 - [ ] Tray menu > **Open recipes folder**: `web-ready.json` is there. Copy it to `mine.json`, change `"id"` to `"mine"`, `"label"` to `"Mine"` and the quality to `140`; quit from the tray and start it again: a warning names `mine.json` and the quality field; fix it to `60` and start it again: a "Mine" slice appears on the Convert wheel
 - [ ] Start a big batch, kill ShiftDrop from Task Manager mid-way, start it again: no `.sdpart` files remain; the log says "recovery: removed leftover staging file"; History shows the run as Interrupted
+
+### L. Wheel redesign and top panel
+- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice; Explorer's thumbnail disappears while you are over the wheel and comes back when you leave it
+- [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
+- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions and their keys, Convert highlighted
+- [ ] Still dragging, press **Ctrl**, then **Alt**: the wheel turns to Tools, then File actions, and the panel's highlight slides along
+- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel (wraps round); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
+- [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
+- [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
+- [ ] Over the wheel Explorer's drag picture stays with its full name, with no "+ Copy" badge and no mouse pointer
+- [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
+- [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
+- [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
+- [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
+- [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
+- [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
+- [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
+
+### M. Video and audio (M3a)
+- [ ] The log at startup says `media: ffmpeg at …\engines\ffmpeg.exe`
+- [ ] Drag `clip.avi` (or a phone video) and hold **Shift**: the Convert wheel shows MP4, MOV, MKV, WebM, AVI, WMV, GIF and MP3; AVI is dimmed (already AVI); no image formats
+- [ ] Drag `song.wav` and hold **Shift**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA; WAV is dimmed
+- [ ] Drag a video and a song together: only MP3 is offered
+- [ ] Drag a photo and a video together: the wheel shows image and video formats, all dimmed, centre "Mixed files"
+- [ ] Drop the video on **MP4**: the top panel shows "Converting 1 file to MP4…" with a percentage that climbs and a bar that moves smoothly; then "1 file converted to MP4"; `clip (converted).mp4` plays in the Films & TV / Media Player app, picture not stretched
+- [ ] The log names the H.264 encoder once (`ffmpeg: H.264 encoder h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_mf` / `libopenh264`). Task Manager shows `ffmpeg.exe` under ShiftDrop while it runs, at below-normal priority, and no console window ever appears
+- [ ] Drop on **GIF**: an animated GIF, at most 480 px wide, that loops
+- [ ] Drop on **MKV**: done almost instantly (streams copied), and the result plays
+- [ ] Drop the song on each audio format: every result plays; **MP3** from the video gives just its sound
+- [ ] Drop a long video (a few minutes) on **WebM**, then click the **×** in the top panel: it says "Cancelling…", then "Cancelled" / "Nothing was saved"; no `.sdpart` or `.webm` file is left in the folder and `ffmpeg.exe` is gone from Task Manager
+- [ ] Drop three videos on MP4 and cancel during the second: "Cancelled after 1 of 3", the first output stays
+- [ ] Quit ShiftDrop from the tray during a long conversion: `ffmpeg.exe` ends at once and no `.sdpart` is left
+- [ ] Tray > History: the conversion is listed; Undo moves the output to the Recycle Bin
+- [ ] Rename `engines\ffmpeg.exe` in the install folder and restart ShiftDrop: dragging a video and holding Shift shows the video formats dimmed with "Media engine missing" in the centre; images still work. Rename it back
+- [ ] With Wi-Fi off, everything above works the same
+
+### N. Compress and Fit to size (M3b)
+- [ ] Drag a phone photo (JPG or PNG, a few MB) and hold **Ctrl**: the Tools wheel has **Compress** and **Under 1 MB**
+- [ ] Drop on **Under 1 MB**: `photo (compressed).jpg` is at most 1 MB (Properties > Size), same width and height if it fit, and looks right
+- [ ] Drop that result on **Under 1 MB** again: refused with "already under 1 MB", nothing written
+- [ ] Drop a PNG screenshot with transparency on **Compress**: a JPG on white; a WebP stays WebP
+- [ ] Drag a video and hold **Ctrl**: **Compress**, **50% size**, **Under 10 MB**, **Under 25 MB**; a song shows the same (results are .m4a)
+- [ ] Drop a 1–3 minute 1080p video on **Under 10 MB**: progress in the top panel; `clip (compressed).mp4` is at most 10 MB and plays; if it needed another try the log says `media: fit attempt 2`
+- [ ] Drop a 4K phone video on **Compress**: at most 1080p, smaller than the source
+- [ ] Drop a video already under 10 MB on **Under 10 MB**: "already under 10 MB"
+- [ ] Convert speed: drop an iPhone/Android H.264 or HEVC `.mov`/`.mp4` on **MP4** (or **MOV**): done in a second or two (streams copied; the log says `plan: copy video, copy audio`)
+- [ ] Startup log: the H.264 encoder line appears a moment after start, before any video is dropped
+- [ ] Cancel (×) during **Under 25 MB** on a long video: nothing left in the folder
 
 ## 4. M0/M1 checklist
 
@@ -155,3 +213,30 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Drag an attachment from Outlook, a file from 7-Zip, a file from VS Code's explorer: note which show the wheel
 - [ ] In `settings.ini`, set `Convert=Ctrl` and `Tools=Shift`, quit and start it again: the wheels swap keys. Set a key to `None`: that wheel never opens
 - [ ] Left-handed mouse (swap buttons in Settings): does the gesture still work?
+
+## 5. Installer
+
+CI builds `ShiftDrop-Setup-<version>.exe` on every push and runs `scripts/test-installer.ps1` against
+it. To build it yourself after section 2, with [Inno Setup 6.3+](https://jrsoftware.org/isinfo.php)
+installed:
+
+```powershell
+./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
+./scripts/make-notices.ps1
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.3.1.exe
+```
+
+### K. Install, upgrade, uninstall (on a PC without Visual Studio)
+
+1. Run the setup. SmartScreen may warn (unsigned): **More info**, **Run anyway**. No UAC prompt appears.
+2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
+   sign in to Windows". Finish with "Launch ShiftDrop" ticked: the tray icon appears.
+3. Start menu has ShiftDrop. Settings > Apps lists ShiftDrop with its version.
+4. Run the same setup again while ShiftDrop is running: no "close the app" error; the old copy exits
+   and the new one starts. The startup checkbox is not shown (your tray-menu choice is kept).
+5. Untick "Start with Windows" in the tray menu, run the setup again, sign out and in: ShiftDrop does
+   not start.
+6. Uninstall from Settings > Apps while it runs: the tray icon goes away, the folder and Start menu
+   entry are removed, `HKCU\…\Run` has no ShiftDrop value, and `%LOCALAPPDATA%\ShiftDrop` is still there.
+

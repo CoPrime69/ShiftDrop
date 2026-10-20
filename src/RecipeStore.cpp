@@ -1,4 +1,5 @@
 #include "RecipeStore.h"
+#include "Engine.h"
 #include "Log.h"
 #include "Utf.h"
 
@@ -12,35 +13,64 @@
 
 namespace sd
 {
-    const char* RecipeStore::BuiltInJson()
+    std::string RecipeStore::BuiltInJson()
     {
         // One-step recipes reproduce the M1 slices exactly (plus WebP, now that libwebp is linked).
-        return R"([
-  { "id": "to-png",  "label": "PNG",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
-  { "id": "to-jpg",  "label": "JPG",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
-  { "id": "to-webp", "label": "WebP", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
-  { "id": "to-tiff", "label": "TIFF", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
-  { "id": "to-bmp",  "label": "BMP",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
+        auto all = nlohmann::json::parse(R"([
+  { "id": "to-png",  "label": "PNG",  "description": "PNG, lossless",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
+  { "id": "to-jpg",  "label": "JPG",  "description": "JPEG, quality 92",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
+  { "id": "to-webp", "label": "WebP", "description": "WebP, quality 85", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
+  { "id": "to-tiff", "label": "TIFF", "description": "TIFF, lossless", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
+  { "id": "to-bmp",  "label": "BMP",  "description": "Bitmap, uncompressed",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
 
-  { "id": "rotate-right", "label": "Rotate \u21bb", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-right", "label": "Rotate \u21bb", "description": "Rotate 90\u00b0 clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "90" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "max-1920", "label": "1920 px", "ring": "tools", "suffix": "edited",
+  { "id": "max-1920", "label": "1920 px", "description": "Fit within 1920 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1920 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "flip", "label": "Flip", "ring": "tools", "suffix": "edited",
+  { "id": "flip", "label": "Flip", "description": "Mirror left to right", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.flip", "params": { "axis": "horizontal" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "half-size", "label": "50%", "ring": "tools", "suffix": "edited",
+  { "id": "half-size", "label": "50%", "description": "Half the width and height", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.scale", "params": { "percent": 50 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "rotate-left", "label": "Rotate \u21ba", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-left", "label": "Rotate \u21ba", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "max-1080", "label": "1080 px", "ring": "tools", "suffix": "edited",
+  { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
+  { "id": "compress-image", "label": "Compress", "description": "Smaller JPEG or WebP, quality 75", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "image.compress", "params": { "quality": 75 } } ] },
+  { "id": "image-under-1mb", "label": "Under 1 MB", "description": "Best quality that fits in 1 MB", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "image.compress", "params": { "maxKB": 1024 } } ] },
 
-  { "id": "copy",      "label": "Copy",      "ring": "files", "steps": [ { "action": "file.copy" } ] },
-  { "id": "move",      "label": "Move to\u2026", "ring": "files", "steps": [ { "action": "file.move" } ] },
-  { "id": "copy-path", "label": "Copy path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
-  { "id": "terminal",  "label": "Terminal",  "ring": "files", "steps": [ { "action": "file.terminal" } ] },
-  { "id": "duplicate", "label": "Duplicate", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
-])";
+  { "id": "compress-media", "label": "Compress", "description": "H.264 + AAC at a smaller size, up to 1080p", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "media.compress", "params": { "maxHeight": 1080 } } ] },
+  { "id": "media-half", "label": "50% size", "description": "Half the file size, guaranteed", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "media.compress", "params": { "percent": 50 } } ] },
+  { "id": "media-under-10mb", "label": "Under 10 MB", "description": "Fits in 10 MB, for chat apps", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "media.compress", "params": { "targetMB": 10 } } ] },
+  { "id": "media-under-25mb", "label": "Under 25 MB", "description": "Fits in 25 MB, for email", "ring": "tools", "suffix": "compressed",
+    "steps": [ { "action": "media.compress", "params": { "targetMB": 25 } } ] },
+
+  { "id": "copy",      "label": "Copy",      "description": "Copy to the clipboard", "ring": "files", "steps": [ { "action": "file.copy" } ] },
+  { "id": "move",      "label": "Move to\u2026", "description": "Move to a folder you pick", "ring": "files", "steps": [ { "action": "file.move" } ] },
+  { "id": "copy-path", "label": "Copy path", "description": "Copy the full path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
+  { "id": "terminal",  "label": "Terminal",  "description": "Open a terminal here", "ring": "files", "steps": [ { "action": "file.terminal" } ] },
+  { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
+])");
+        // Video and audio formats (M3), one Convert slice each, in MediaFormats() order. They share the
+        // Convert wheel with the image formats; the wheel shows only those that fit the dragged files.
+        for (const auto& f : MediaFormats())
+        {
+            nlohmann::json step = nlohmann::json::object();
+            step["action"] = "media.convert";
+            step["params"]["format"] = f.id;
+            nlohmann::json recipe = nlohmann::json::object();
+            recipe["id"] = std::string("to-") + f.id;
+            recipe["label"] = Narrow(f.label);
+            recipe["description"] = Narrow(f.description);
+            recipe["steps"] = nlohmann::json::array({ step });
+            all.push_back(std::move(recipe));
+        }
+        AppendModuleRecipes(all);   // each feature module's own slices (Modules.cpp)
+        return all.dump();
     }
 
     const char* RecipeStore::ExampleJson()

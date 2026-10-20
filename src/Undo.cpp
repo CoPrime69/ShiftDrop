@@ -126,7 +126,8 @@ namespace sd
             }
             // Hashing each output is the honest check (a timestamp can be preserved by an editor).
             // For M2's image outputs this is fast; large video outputs will move it off the UI thread.
-            if (Sha256File(item.output) != item.outputSha256)
+            // Folder outputs (frames, pages) carry no hash; they are recycled as they are.
+            if (!item.outputSha256.empty() && Sha256File(item.output) != item.outputSha256)
             {
                 report.modified.push_back(item.output);
                 continue;
