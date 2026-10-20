@@ -6,9 +6,8 @@ behaviour and UX patterns only, never code, name, icons, artwork or marketing te
 Evidence labels, following REA's rule that every conclusion separates what was seen from what was
 guessed: **[O]** observed in a public source, **[I]** inferred by us, **[U]** unknown / unverified.
 
-> Post-M1 roadmap note: a separate thread ("Product research and feature plan") is doing competitor
-> research and choosing signature features. Its output under `research/` will reshape the milestones
-> after M1. M0 and M1 below are fixed.
+> Roadmap note: milestones after M1 follow the approved research plan (`research/`) plus full parity
+> with Prakhar's detailed Tangerine specification (2026-10-20). Both are mapped in Stage 5b.
 
 ---
 
@@ -39,10 +38,10 @@ unknown. We used that discipline, with one limit:
 | 1 | Start dragging a file in Finder, press **Shift**: a wheel of output formats appears around the pointer | [O] App Store, site, MacG | v1 |
 | 2 | The wheel offers only formats that fit the file's type | [O] MacG, site | v1 |
 | 3 | The wheel stays open after you let go of the key; you keep dragging and **drop on a slice** to run it | [O] site | v1 |
-| 4 | Keyboard choice while the wheel is open: arrow keys pick a slice, Enter applies, Esc cancels | [O] MacG | later (see Stage 4 note) |
+| 4 | Keyboard choice while the wheel is open: arrow keys pick a slice, Enter applies, Esc cancels | [O] MacG, Prakhar's spec | M4 |
 | 5 | Dropping anywhere else, or Esc, cancels | [O] MacG; [I] for "elsewhere" | v1 |
-| 6 | A second modifier opens **tools** for that file type (compress, crop, strip metadata, reorder PDF pages...) | [O] press kit says Command; App Store says Shift+Option. **[U] which is current** | later (Ctrl in our spec) |
-| 7 | A third modifier opens **file actions** (AirDrop, copy path...) | [O] press kit: Control | later (Alt in our spec) |
+| 6 | A second modifier opens **tools** for that file type (22 named tools, see Stage 5b) | [O] Prakhar's spec and press kit: Command | Ctrl in ShiftDrop; tools M3–M10 |
+| 7 | A third modifier opens **file actions** (AirDrop, Float, Copy, Move, Copy Path, Terminal) | [O] Prakhar's spec, press kit: Control | Alt in ShiftDrop; M2, M3, M5 |
 | 8 | Several files of the same kind: the choice applies to all | [O] site | v1 |
 | 9 | Mixed kinds: a notice instead of a wheel | [O] site. We go further: show only actions all files support | v1 |
 | 10 | Output is written **next to the original**; nothing is moved or overwritten | [O] App Store, site | v1 |
@@ -51,7 +50,7 @@ unknown. We used that discipline, with one limit:
 | 13 | Breadth: ~275 conversion paths, ~26 tools, 6 file actions | [O] site, press kit (an older listing said 188) | grows per milestone |
 | 14 | Feedback when done | [U] not documented (likely a notification or Finder reveal) | v1: notification, click reveals the file |
 | 15 | Gesture timing: the wheel appears as soon as the key is pressed mid-drag | [O] reviews describe it as instant; [U] exact delay | v1: appears on the next mouse move or within 30 ms |
-| 16 | Menu-bar app, settings, launch at login | [I] typical for this kind of app; [U] specifics | later (M-settings) |
+| 16 | Menu-bar app, settings, launch at login | [I] typical for this kind of app; [U] specifics | M2 (start at login), M12 (settings window) |
 | 17 | Requires Apple silicon, macOS 13+; $29.99 one-time | [O] store, press kit | n/a |
 
 Our spec adds: configurable trigger keys (never Win), light/dark theme, glass look, toast that opens
@@ -155,50 +154,289 @@ help a shaped overlay either, and both would still need Win32 interop for the ho
 
 ## Stage 5b. Milestones
 
-M0 and M1 are delivered now. After M1, milestones will be re-cut around the signature features from
-the research thread; the list below is the baseline to a shippable v1.
+M0 and M1 are delivered. From M2 on, the roadmap is the **approved plan** in
+[research/product-research-and-design.md](research/product-research-and-design.md) (section 6). Each
+milestone there ships one signature feature end to end (S1 to S6, M2 to M7).
 
-**M0. Gesture spike** (delivered)
-- [ ] Tray icon with Quit (and Open logs folder)
-- [ ] Holding Shift during a file drag shows a placeholder circle under the cursor
-- [ ] Dropping on it logs every path and shows a notification listing the files
-- [ ] Non-file drags, Esc and releasing elsewhere hide it; Explorer never moves the file
+Prakhar's detailed Tangerine specification (2026-10-20) is the **parity target**. Every format, tool
+and file action it names is mapped below. Work that didn't fit the signature milestones gets four new
+milestones (M8 to M11), so polish and release move from M8 to **M12**. Every milestone lands as its
+own pull request.
 
-**M1. Real wheel + WIC images** (delivered)
-- [ ] 4 slices (PNG, JPG, BMP, TIFF), hover highlight, centre = cancel
-- [ ] Slices disabled for non-images and for files already in that format
-- [ ] Drop converts on worker threads; output `name (converted).ext` next to the source, never overwrites
-- [ ] Notification when the batch finishes; clicking it opens Explorer with the outputs selected
-- [ ] EXIF orientation applied; transparency flattened onto white for JPG/BMP
+Each milestone, at a glance:
 
-**M2. Gesture hardening + modes**
-- Ctrl (Edit) and Alt (File actions) wheels, configurable mapping, Alt menu-bar side effect handled
-- Drag thumbnail and cursor polish, edge-of-screen behaviour decided, touch/pen check
-- Measured: hook callback time, arm-to-wheel latency
-- Done when: all three wheels open reliably from Explorer, Desktop and a file dialog on two monitors with different DPI
+| Milestone | Signature feature | Parity work that lands with it |
+|---|---|---|
+| M0/M1 (delivered) | Gesture, wheel, WIC images | Shift wheel, batches, output next to the source |
+| M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
+| M3 | Fit to… (S2), media engine | All audio/video formats, Compress, Float shelf |
+| M4 | Know before you drop (S1) | Keyboard model, switching wheels mid-drag, metadata inspector |
+| M5 | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
+| M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
+| M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
+| **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
+| **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
+| **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
+| **M11 (new)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/PPTX/TXT/MD |
+| M12 (was M8) | Polish, release and showcase | Settings window, installer, real toasts |
 
-**M3. Feedback and job pipeline**
-- Progress HUD/tray progress, cancel from the tray, failure details, history of recent outputs
-- Real toast notifications (AUMID) with "Open folder" action
-- Done when: a 50-file batch shows progress, can be cancelled, and every outcome is in the log
+Each milestone in detail:
 
-**M4. Audio/video/GIF via ffmpeg (LGPL)**
-- MP4/MOV/WEBM/GIF, MP3/WAV/M4A/FLAC; H.264 via Media Foundation encoder; progress + kill on cancel
-- Done when: each listed pair converts, cancel leaves no partial file, licence notices shipped
+**M2. Recipes + Undo (S3)**
+- Action, Recipe and Pipeline model. The "Web-ready" recipe is one slice and writes no intermediate file.
+- Staging file plus atomic rename. History in SQLite. Undo moves outputs to the Recycle Bin and is refused if an output changed.
+- CI, unit tests, ADRs 0001–0005. WebP in and out through libwebp.
+- **(spec/parity)** Three wheels, each on a configurable key:
+  - Shift = Convert.
+  - Ctrl = Tools: Tangerine's Command; quick edits now (resize, rotate, flip), the 22 tools as their milestones land.
+  - Alt = File actions: Tangerine's Control.
+- **(spec)** Start with Windows: on by default, a "Start with Windows" tick in the tray menu turns it off (moved forward from M12 at Prakhar's request).
+- File actions in M2: Copy (to the clipboard), **Move** (pick a folder, then move the originals; this replaces the earlier "Cut"), Copy Path (one per line), Terminal, and Duplicate (ours). File actions also accept folders and mixed selections.
 
-**M5. More images + PDF + archives + file actions**
-- WebP/AVIF encode (libwebp BSD, libavif BSD), HEIC decode via WIC if present; PDF ↔ images (PDFium), zip/unzip, rename pattern, copy path, duplicate
-- Done when: Alt wheel is complete and PDF→PNG pages / images→PDF work
+**M3. Fit to… (S2) and the media engine**
+- sd-media worker plus LGPL ffmpeg.
+- Target-size presets for images, video and PDF, with GPU encoders and a software fallback.
+- Convert-and-carry chip, drop to clipboard, tray progress and cancel.
+- **(parity)** Convert wheel for media:
+  - Video: MP4, MOV, MKV, WebM, AVI, WMV, GIF, and MP3 audio export.
+  - Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA.
+- **(parity)** Tool 1, **Compress**: target size, percentage, preset, and resize while compressing (images and media now, PDF in M5).
+- **(parity)** File action **Float**: a floating shelf that holds files, pins to a screen edge, and lets you drag files out into any app. It's built on convert-and-carry.
 
-**M6. Edit wheel**
-- Compress (target quality/size), resize presets, rotate, strip metadata, trim (A/V)
-- Done when: each edit works on single and multiple files
+**M4. Know before you drop (S1)**
+- Predicted size and live thumbnail on hover, plus a metadata diff.
+- The overlay moves to DirectComposition, which is where the real acrylic spike happens.
+- **(parity)** Keyboard model:
+  - While the wheel is open, the arrow keys move between slices, Enter applies and Esc cancels.
+  - Pressing another wheel's key mid-drag switches to that wheel (Tangerine: Command/Control).
+- **(parity)** "Enter on a file opens the format menu" can't be done the same way: Enter in Explorer opens the file and we can't take it over. Closest alternatives:
+  - A configurable global hotkey (default Ctrl+Shift+Space) opens the wheel for Explorer's current selection.
+  - A "ShiftDrop…" entry in the right-click menu does the same.
+- **(parity)** Tool 2, **Edit Metadata**, part 1: an inspector that reads metadata and groups fields by file, track and chapter, with search.
 
-**M7. Settings, theme, login, packaging**
-- Settings window (keys, enabled actions, output naming), start at login (HKCU Run), light/dark, Inno Setup installer + portable zip (+ MSIX later), code signing decision
-- Done when: a clean Windows 11 VM installs, runs at login, uninstalls cleanly, with zero network calls (verified with a firewall log)
+**M5. Text from anything (S4) and the PDF engine**
+- Windows OCR to the clipboard; searchable PDF.
+- PDF engine:
+  - Windows.Data.Pdf renders pages.
+  - PDFium (BSD/Apache) extracts text.
+  - QPDF (Apache-2.0) restructures files.
+  - Our own writer creates image PDFs.
+- **(parity)** PDF → JPG/PNG: all pages, 300 DPI by default. Images → PDF. PDF → TXT and Markdown, using the text layer, with OCR when a page has none.
+- **(parity)** Tool 21, **Merge PDFs**: starts in the order Explorer gave us; drag to reorder.
+- **(parity)** Tool 22, **Organize PDF Pages**: a page grid to reorder, rotate, duplicate and remove pages.
+- **(parity)** Compress for PDF.
+- **(parity)** AVIF in and out (libavif with aom/dav1d, BSD). HEIC (see exclusions). SVG input via lunasvg (MIT).
+- **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
 
----
+**M6. Share-safe (S5) and the image canvas**
+- Verified metadata scrub, and rule-based PII redaction with a review step.
+- Builds the shared Direct2D image canvas window that M8 reuses.
+- **(parity)** Tool 2, **Edit Metadata**, part 2: edit and remove fields, including hidden camera and processing data.
+  - Images go through the Windows property system and WIC metadata writers.
+  - Media goes through ffmpeg.
+- **(parity)** Tool 7, **Redact Photos**: solid or blur covers, with several movable regions.
+  - Text is found with Windows' built-in OCR.
+  - Faces are found with Windows' built-in face detector (Windows.Media.FaceAnalysis). It ships with Windows; we neither bundle nor download a model.
+- **(parity)** Tool 6, **Crop Images**: exact pixel size, plus preset and custom aspect ratios.
+
+**M7. Sealed engines and plugins (S6)**
+- AppContainer workers, WASM plugins, and proof that nothing touches the network.
+- **(parity)** Archives, through libarchive (BSD-2) inside the sandboxed worker, because archive parsing is untrusted input:
+  - ZIP, TAR and GZIP: create, extract, and convert between them.
+  - RAR and 7z: extract and convert from.
+
+**M8. Photo tools (new)**
+
+Everything here runs on the M6 canvas with a live GPU preview, using Direct2D effects plus our own shaders. No models.
+- Tool 3, **Edit Photos**: exposure, light, colour and detail, plus dehaze (dark-channel prior), clarity (local contrast), grain and noise reduction (edge-preserving filter).
+- Tool 4, **Annotate Photos**: arrows, text, shapes, callouts, numbered labels, magnifiers, inserted images, freehand drawing and highlighter.
+- Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
+- Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
+
+**M9. Video tools (new)**
+
+One timeline window covers all seven tools. It previews with Windows' Media Foundation, steps frame by frame, and accepts typed timecodes. Rendering goes through ffmpeg in the sandboxed worker.
+- Tool 9, **Trim Video**.
+- Tool 10, **Crop Video**: exact output size, original audio kept.
+- Tool 11, **Change Video Speed**: keeps the audio pitch (atempo), and handles silent videos.
+- Tool 12, **Join Videos**: MP4, MOV and MKV in, one MP4 out; the first clip sets the canvas.
+- Tool 13, **Save Video Frames**: exact frames as full-resolution PNGs.
+- Tool 14, **Split Video**: at custom points or into equal parts; the clips go into one folder.
+- Tool 15, **Redact Video**: solid or blur regions, each with its own time range.
+
+**M10. Audio tools (new)**
+
+One waveform window with playback through Windows (XAudio2), and A/B compare.
+- Tool 16, **Normalize Volume**: EBU R128 loudness range and true peak, with before and after levels.
+- Tool 17, **Audio Visualizer**: an animated waveform or a still-image MP4, landscape, portrait or square.
+- Tool 18, **Trim Audio**: at waveform precision with exact times, plus optional removal of silence at the start and end.
+- Tool 19, **Convert Audio Channels**: mono or stereo, separate left and right volumes, and per-channel preview.
+- Tool 20, **Bleep Audio**: movable bleep ranges, with a compare against the original.
+
+**M11. Documents, spreadsheets, presentations, subtitles (new)**
+
+All our own code on small permissively licensed libraries: miniz, pugixml, md4c, libxlsxwriter and libxls. Formats:
+- Documents: DOCX ↔ Markdown, TXT, HTML and EPUB. RTF input (Windows' RichEdit). HTML export.
+- Documents to PDF: our own layout, drawn with DirectWrite, through Windows' built-in "Microsoft Print to PDF".
+- Spreadsheets:
+  - XLSX, ODS, CSV and TSV convert into each other.
+  - XLS input.
+  - PDF export as a plain table layout.
+- Subtitles: SRT ↔ VTT, and either to TXT.
+- PDF → DOCX and EPUB as reflowed text and images. PDF → PPTX with one page image per slide.
+- **Office bridge:** when Microsoft Office or LibreOffice is *already installed*, we drive it for layout-faithful results. This covers PPT/PPTX → PDF/JPG/PNG, DOCX/XLSX → PDF and PDF → DOCX. Nothing is bundled, and those slices only appear when the app is found.
+
+**M12. Polish, release and showcase (was M8)**
+- Signed build (if a certificate is chosen), winget, screen reader support, benchmarks, README.
+- **(spec)** Settings window: keys per wheel, enabled actions, output naming, theme override, and the terminal to open (Windows Terminal, PowerShell, cmd, or a custom command; Tangerine offers Terminal or iTerm2).
+- **(spec)** A rename-pattern file action, real toasts with "Open folder", and an Inno Setup installer plus a portable zip. (Start at login moved to M2.)
+
+### Parity map: interaction model
+
+| # | Tangerine (spec) | ShiftDrop | Milestone |
+|---|---|---|---|
+| 1, 9 | Drag a local file or selection, from Finder, the desktop or any app | Explorer, the desktop, and any app that drags real files (CF_HDROP) | Done (M0/M1) |
+| 2 | Shift → format wheel | Shift → Convert wheel | Done (M1) |
+| 3 | Command → tools wheel | Ctrl → Tools wheel (Ctrl is the Windows counterpart of Command; Win key never used) | M2 |
+| 4 | Control → file-actions wheel | Alt → File-actions wheel | M2 |
+| 5 | Pick a slice and drop to run it | Same | Done (M1) |
+| 6 | Wheel stays open until drop or cancel | Stays open after the key is released; see open question 2 for leaving the wheel | Done (M1) |
+| 7 | Enter / arrows / Esc | Esc done; arrows and Enter | M4 |
+| 8 | Enter on a file opens the format menu | Not possible in Explorer; hotkey on Explorer's selection, plus a right-click entry | M4 |
+| 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag | M4 |
+| 10 | Batches | Same; mixed drops show only the actions every file supports | Done (M1) |
+| 11 | Output saved next to the original | Same, never overwrites, crash-safe, undoable | Done (M1), M2 |
+| 12 | File actions work on folders, mixed selections, files with no tools | Same | M2 |
+
+### Parity map: conversions
+
+| Category | Tangerine formats | ShiftDrop engine | Milestone |
+|---|---|---|---|
+| Images | JPG, PNG, TIFF, BMP | WIC | Done (M1) |
+| | WebP | libwebp | M2 |
+| | AVIF | libavif + aom/dav1d | M5 |
+| | HEIC | Windows' HEIF codec when installed; see exclusions | M5 (partial) |
+| | SVG (input only) | lunasvg | M5 |
+| | PDF export | our PDF writer | M5 |
+| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | LGPL ffmpeg (LAME, native AAC, Vorbis, Opus) | M3 |
+| Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 export | LGPL ffmpeg. H.264/HEVC via the GPU encoder or Windows' Media Foundation encoder; WebM via libvpx/AV1 | M3 |
+| PDF | JPG, PNG (all pages, 300 DPI) | Windows.Data.Pdf | M5 |
+| | TXT, MD | PDFium text, OCR fallback | M5 |
+| | EPUB, DOCX | reflowed text and images (our writer); faithful DOCX via Word if installed | M11 |
+| | PPTX | one page image per slide (our writer) | M11 |
+| | XLSX | **Deferred** (see exclusions) | — |
+| | PAGES | **Excluded** (see exclusions) | — |
+| Documents | DOCX, MD, TXT, EPUB; HTML export | our converters (miniz, pugixml, md4c) | M11 |
+| | RTF input | Windows RichEdit | M11 |
+| | RTFD input | read as the folder it is (its RTF and pictures) | M11 |
+| | Text clippings input | **Excluded** (macOS-only) | — |
+| | PAGES | **Excluded** for output; input best-effort from its embedded preview PDF | M11 (input) |
+| Presentations | PPT/PPTX → PDF, JPG, PNG | Office bridge only (PowerPoint or LibreOffice installed) | M11 |
+| | PDF → PPTX | one page image per slide | M11 |
+| Spreadsheets | XLSX, ODS, CSV, TSV; PDF export; XLS input | libxlsxwriter, pugixml, libxls; plain-table PDF; Office bridge for faithful PDF | M11 |
+| Subtitles | SRT, VTT; TXT export | our code | M11 |
+| Archives | ZIP, TAR, GZIP; RAR input | libarchive (reads RAR/RAR5 under BSD, no unRAR licence) | M7 |
+
+"275 conversion paths" is a count of input × output pairs, not a list we can check item by item; the
+table above covers every format the spec names.
+
+### Parity map: the 22 named tools
+
+| # | Tool | Milestone | Notes |
+|---|---|---|---|
+| 1 | Compress | M3 (images, media), M5 (PDF) | Target size, percentage, preset, resize |
+| 2 | Edit Metadata | M4 (inspect, search), M6 (edit, remove) | Grouped by file / track / chapter |
+| 3 | Edit Photos | M8 | Dehaze, clarity, grain and noise reduction are classic filters, no models |
+| 4 | Annotate Photos | M8 | |
+| 5 | Add a Background | M8 | |
+| 6 | Crop Images | M6 | |
+| 7 | Redact Photos | M6 | Faces: Windows.Media.FaceAnalysis; text: Windows OCR |
+| 8 | Create a Collage | M8 | |
+| 9 | Trim Video | M9 | |
+| 10 | Crop Video | M9 | |
+| 11 | Change Video Speed | M9 | |
+| 12 | Join Videos | M9 | |
+| 13 | Save Video Frames | M9 | |
+| 14 | Split Video | M9 | |
+| 15 | Redact Video | M9 | Manual regions and time ranges (no tracking model) |
+| 16 | Normalize Volume | M10 | |
+| 17 | Audio Visualizer | M10 | |
+| 18 | Trim Audio | M10 | |
+| 19 | Convert Audio Channels | M10 | |
+| 20 | Bleep Audio | M10 | |
+| 21 | Merge PDFs | M5 | |
+| 22 | Organize PDF Pages | M5 | |
+
+Tangerine advertises 26 tools but names 22. The other four are not planned or guessed at (open
+question 1).
+
+### Parity map: file actions
+
+| # | Tangerine | ShiftDrop | Milestone |
+|---|---|---|---|
+| 1 | AirDrop | **Share** via the Windows share sheet (Nearby Share, Phone Link, apps). AirDrop itself doesn't exist on Windows | M5 |
+| 2 | Float (shelf, pin to an edge, drag out) | Same | M3 |
+| 3 | Copy | Copy to the clipboard, paste in Explorer | M2 |
+| 4 | Move (pick a folder, move the originals) | Same (folder picker, then an undoable move) | M2 |
+| 5 | Copy Path (one per line) | Same | M2 |
+| 6 | Terminal (Terminal or iTerm2) | Windows Terminal, falling back to PowerShell; choice in Settings | M2 (choice in M12) |
+| — | (ours) Duplicate, rename pattern | | M2, M12 |
+
+### Platform, pricing, privacy
+
+| Tangerine | ShiftDrop |
+|---|---|
+| Local processing, no uploads | Same, plus no network access at all: CI import check from M2, sandbox proof in M7 |
+| Outputs are new copies | Same |
+| macOS 13+, Apple silicon, App Store | Windows 10 22H2+ x64 (Windows 11 features when present); winget + installer + portable zip (M12) |
+| $29.99, 20-file trial; file actions don't count | Not applicable: no trial, no licence checks, no allowance |
+
+### Excluded, deferred or different on Windows
+
+| Item | What we do | Why |
+|---|---|---|
+| PAGES output | **Excluded** | Apple's private iWork format: undocumented, no library to write it. Input is best effort from the preview PDF most .pages files contain (M11) |
+| PDF → XLSX | **Deferred** | No offline library extracts tables reliably; a wrong table is worse than none. Revisit after M11 |
+| PPT/PPTX rendering | Only with PowerPoint or LibreOffice installed | Rendering slides needs a full layout engine; we use the user's own Office instead of bundling one |
+| Text clippings input | **Excluded** | macOS-only format, never found on Windows |
+| HEIC output | Only when Windows' HEIF and HEVC extensions are installed | The open HEVC encoder (x265) is GPL. HEIC input also works through libheif + libde265 (LGPL, shipped as a separate DLL) |
+| H.264 / HEVC video | GPU encoder or Windows' Media Foundation encoder | x264/x265 are GPL and can't go in the LGPL build |
+| RAR | Extract only | Creating RAR files needs RARLAB's tools |
+| AirDrop | Windows share sheet | AirDrop doesn't exist on Windows |
+| Enter on a file in Finder | Hotkey on Explorer's selection, plus a right-click entry | Explorer uses Enter to open files and we can't take it over |
+| Terminal or iTerm2 | Windows Terminal, PowerShell, cmd or a custom command | Windows equivalents |
+| Face detection (Redact Photos) | Windows.Media.FaceAnalysis | Built into Windows; nothing bundled or downloaded. Coordinator default, can be overruled |
+
+### Original-spec coverage
+
+| Original spec item | Status |
+|---|---|
+| Shift during a drag shows a wheel at the cursor; drop on a slice; Esc or release elsewhere cancels | Done (M0/M1) |
+| Convert: PNG / JPG / BMP / TIFF | Done (M1); WebP in M2; AVIF / HEIC in M5 |
+| Convert: MP4 / MOV / WEBM / GIF, MP3 / WAV / M4A / FLAC | M3 |
+| Convert: PDF ↔ images | M5 |
+| Ctrl = Edit: resize, rotate | M2 |
+| Edit: compress | M3 (Fit to…) and M6 (quality presets) |
+| Edit: trim | M9 (video), M10 (audio) |
+| Edit: strip metadata | M2 (outputs carry none), verified scrub in M6 |
+| Edit: remove background | **Dropped**: needs an ML model, excluded by your no-models rule |
+| Alt = File actions: copy path, duplicate | M2 (plus Copy, Move, Terminal) |
+| File actions: zip / unzip | M7 |
+| File actions: rename pattern | M12 |
+| Configurable modifier keys, never Win | INI today (M0); per-wheel keys in M2; settings UI in M12 |
+| Multiple files; mixed types show only common actions | Done (M1) |
+| Output next to the source, "name (converted).ext", never overwrite | Done (M1); crash-safe commit in M2 |
+| Notification on completion that opens the file location | Done (M1, balloon); real toast in M12 |
+| Tray app, single instance | Done (M0) |
+| Start at login (can be turned off) | M2 (tray toggle; settings window in M12) |
+| Settings window | M12 |
+| Light / dark theme | Done for the wheel (M1); settings window follows it in M12 |
+| Acrylic / Mica glass look | Translucent fill now; real backdrop spike in M4 |
+| No network calls, no telemetry | True today; enforced in CI from M2, proven by the sandbox in M7 |
+| Background job queue with cancellation and progress | Done (M1, worker pool); tray cancel + progress in M3 |
+| Logs in %LOCALAPPDATA%\ShiftDrop\logs | Done (M0) |
+| Per-monitor DPI, Explorer move/copy semantics, elevated windows, browsers, hook timeouts | Handled or documented in Stage 4 (M0/M1) |
+| Packaging: MSIX or Inno Setup + portable zip | M12 (Inno Setup + portable zip; MSIX later) |
 
 ## Decisions log
 
@@ -215,10 +453,28 @@ the research thread; the list below is the baseline to a shippable v1.
 | 2026-10-20 | WIC decoders discovered at runtime; slices disabled when a file can't be decoded | HEIC/WebP/AVIF depend on optional Store codecs |
 | 2026-10-20 | Product name in one place (`src/Brand.h`, plus `.rc` VERSIONINFO and CMake target) | Name may change after the research thread checks it |
 | 2026-10-20 | Settings in `%LOCALAPPDATA%\ShiftDrop\settings.ini` (INI via `GetPrivateProfileString`) | No JSON dependency for one key; can move to JSON when settings grow |
+| 2026-10-20 | Roadmap after M1 = approved research plan (S1–S6, M2–M8); original-spec gaps folded in (see coverage table) | Prakhar approved the plan and asked for everything approved to be built |
+| 2026-10-20 | No ML models we bundle or download, no API keys, anywhere (plugins included); Windows' built-in OCR allowed | Prakhar's rule; drops background removal |
+| 2026-10-20 | GitHub repo CoPrime69/ShiftDrop is the source of truth; one PR per milestone, stacked if the previous one isn't merged | Prakhar created the repo |
+| 2026-10-20 | Defaults you can overrule: keep the name ShiftDrop (rename is a one-line change in Brand.h); LGPL ffmpeg build; no code signing yet; minimum Windows 10 22H2 (Windows 11 features used when present); broker exe + small sidecar folder for workers and ffmpeg; wasmtime for plugins | Research doc recommendations / open questions, decided so work can continue |
+| 2026-10-20 | M2 outputs never carry source metadata (pixels are re-encoded into a fresh container); verified scrub and opt-in carry-over come in M6 | Same behaviour as M1; keeps M2 focused on the pipeline |
+| 2026-10-20 | WebP decode and encode through libwebp (BSD-3), not WIC | Stock Windows has no WebP encoder; consistent results on every PC |
+| 2026-10-20 | Prakhar's detailed Tangerine spec is the parity target: every named format, the 22 named tools and the 6 file actions are mapped to milestones; the 4 unnamed tools are not guessed | Prakhar asked for everything the Mac app does; the spec itself says not to invent the missing four |
+| 2026-10-20 | Roadmap is now M2–M12: new M8 photo tools, M9 video tools, M10 audio tools, M11 documents/spreadsheets/subtitles; polish and release move from M8 to M12 | The tools need shared editor windows that don't fit the signature milestones |
+| 2026-10-20 | Shift = Convert, Ctrl = Tools (Tangerine's Command), Alt = File actions (Tangerine's Control) | Ctrl is the Windows counterpart of Command; the Win key is reserved by Windows. Coordinator default, can be overruled |
+| 2026-10-20 | Face detection for Redact Photos uses Windows.Media.FaceAnalysis | Built into Windows, nothing bundled or downloaded, so it fits the no-models rule the same way Windows OCR does. Coordinator default, can be overruled |
+| 2026-10-20 | Formats with no shippable offline engine are excluded or deferred (PAGES output, PDF → XLSX, text clippings, RAR creation); PPT/PPTX rendering and faithful Office output only through Office or LibreOffice already installed | Nothing GPL, proprietary or huge gets bundled; see "Excluded, deferred or different on Windows" |
+| 2026-10-20 | H.264/HEVC encoding through GPU encoders or Windows' Media Foundation encoder, not x264/x265 | x264/x265 are GPL; the ffmpeg build stays LGPL |
+| 2026-10-20 | Archives through libarchive (BSD-2), including RAR/RAR5 extraction | Permissive licence, reads RAR without the unRAR licence |
+| 2026-10-20 | Document → PDF through Windows' built-in "Microsoft Print to PDF" with our own DirectWrite layout | Real vector PDFs with embedded fonts and no bundled layout engine. WebView2 rejected because it can make network calls |
+| 2026-10-20 | Alt wheel: Move (folder picker, undoable) replaces Cut | Matches Tangerine's Move; Cut was a weaker stand-in |
+| 2026-10-20 | Start with Windows lands in M2: an HKCU Run value, on at first run, tray toggle; the choice is kept in settings.ini so "off" stays off, and Windows' own Startup-apps switch is left alone | Prakhar wants it in the tray at startup; HKCU needs no admin |
+| 2026-10-20 | Move to… and Undo use IFileOperation on a dedicated STA thread; the move never overwrites (shell renames on collision) and its undo moves items back, refused if the original place is taken | IFileOperation is STA-only; moving across drives and moving folders need the shell |
+| 2026-10-20 | The Ctrl wheel is called Tools (recipe ring id "tools") | Matches the Mac app's tools wheel |
 
 ## Open questions
 
-1. Tangerine's second modifier: Command (press kit) or Shift+Option (App Store)? Doesn't block us; our mapping is Ctrl/Alt.
+1. Tangerine advertises 26 tools but names 22. If you can see the four others in the Mac app, send their names and I'll slot them in.
 2. Should the wheel keep showing after the cursor leaves it (Tangerine-like "until drop or cancel") or hide (current)? Hiding keeps Explorer's normal drop available.
 3. Near a screen edge: keep the wheel centred (current, partly off-screen) or shift it inward?
 4. Does the LL hook keep receiving events while an elevated window is under the cursor? Do drags from an elevated app reach us? (Test in TESTING.md, section E.)
@@ -226,7 +482,7 @@ the research thread; the list below is the baseline to a shippable v1.
 6. Virtual-file drags (browsers, Outlook): where should outputs go? Proposal: Downloads.
 7. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 8. Multi-page TIFF / animated GIF: M1 converts the first frame only. Convert all pages/frames later?
-9. Keyboard selection (arrows + Enter while the wheel is open): needs a keyboard LL hook and cancelling the source's drag. Worth doing in M2?
+9. Hotkey for "open the wheel on Explorer's selection" (Tangerine's Enter on a file): is Ctrl+Shift+Space a good default?
 
 ## Sources
 
