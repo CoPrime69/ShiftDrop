@@ -170,7 +170,7 @@ Each milestone, at a glance:
 | M0/M1 (delivered) | Gesture, wheel, WIC images | Shift wheel, batches, output next to the source |
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
 | M3 | Fit to… (S2), media engine | All audio/video formats, Compress, Float shelf |
-| M4 | Know before you drop (S1) | Keyboard model, switching wheels mid-drag, metadata inspector |
+| M4 | Know before you drop (S1) | Keyboard model, metadata inspector |
 | M5 | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
@@ -208,7 +208,6 @@ Each milestone in detail:
 - The overlay moves to DirectComposition, which is where the real acrylic spike happens.
 - **(parity)** Keyboard model:
   - While the wheel is open, the arrow keys move between slices, Enter applies and Esc cancels.
-  - Pressing another wheel's key mid-drag switches to that wheel (Tangerine: Command/Control).
 - **(parity)** "Enter on a file opens the format menu" can't be done the same way: Enter in Explorer opens the file and we can't take it over. Closest alternatives:
   - A configurable global hotkey (default Ctrl+Shift+Space) opens the wheel for Explorer's current selection.
   - A "ShiftDrop…" entry in the right-click menu does the same.
@@ -303,7 +302,7 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 | 6 | Wheel stays open until drop or cancel | Stays open after the key is released; see open question 2 for leaving the wheel | Done (M1) |
 | 7 | Enter / arrows / Esc | Esc done; arrows and Enter | M4 |
 | 8 | Enter on a file opens the format menu | Not possible in Explorer; hotkey on Explorer's selection, plus a right-click entry | M4 |
-| 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag | M4 |
+| 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag; turning the mouse wheel also steps through the wheels | Done (wheel redesign) |
 | 10 | Batches | Same; mixed drops show only the actions every file supports | Done (M1) |
 | 11 | Output saved next to the original | Same, never overwrites, crash-safe, undoable | Done (M1), M2 |
 | 12 | File actions work on folders, mixed selections, files with no tools | Same | M2 |
@@ -472,6 +471,11 @@ question 1).
 | 2026-10-20 | Move to… and Undo use IFileOperation on a dedicated STA thread; the move never overwrites (shell renames on collision) and its undo moves items back, refused if the original place is taken | IFileOperation is STA-only; moving across drives and moving folders need the shell |
 | 2026-10-20 | The Ctrl wheel is called Tools (recipe ring id "tools") | Matches the Mac app's tools wheel |
 | 2026-10-20 | Every CI build produces a per-user Inno Setup installer (no admin, no Visual Studio, no VC++ redistributable thanks to the static CRT); CI installs, upgrades and uninstalls it on a clean runner; a `v*` tag publishes it as a GitHub Release. Unsigned for now, so SmartScreen asks once | Prakhar: anyone must be able to install and run it; moved forward from M12 |
+| 2026-10-20 | Wheel redesign: separate rounded tiles with icons, the hovered tile lifts in the Windows accent colour, the centre shows the count and the hovered slice's detail, spring open and a rotate-crossfade when switching wheels | Prakhar found the M2 wheel shabby; Open-Tangerine is a visual reference only (GPL-3.0, nothing copied) |
+| 2026-10-20 | Switching wheels mid-drag moves forward from M4: press another wheel's key, or scroll (the mouse hook swallows wheel events only while the wheel is open) | Prakhar: people should not have to remember the keys |
+| 2026-10-20 | A top panel hangs from the top centre of the cursor's monitor: wheel tabs while a wheel is open, then the job's progress and result (success tucks away after 2 s, failure stays until clicked; click shows the files). Replaces the tray balloon for jobs started from the wheel | Windows has no notch; same role as Tangerine's notch panel |
+| 2026-10-20 | Tray menu Size (Auto, Small, Medium, Large) and Style (Solid, Glass). Auto scales with the monitor's height (1080p = 1.0, clamped 0.9–1.3) on top of its DPI | Prakhar: it must fit 1080p and 2K screens, with a manual choice. Glass is a blurred screen snapshot, since true acrylic is not available to layered windows |
+| 2026-10-20 | Explorer's drag thumbnail is hidden while the cursor is over the wheel (IDropTargetHelper::Show) and the centre answers COPY | The thumbnail sits on the cursor and covered the top slices; a "not allowed" cursor at the moment the wheel opens looked broken. Releasing on the centre still cancels |
 
 ## Open questions
 

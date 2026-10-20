@@ -43,8 +43,9 @@ namespace sd
         HWND m_hwnd;
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
-        // The shell's drag-image helper keeps Explorer's drag thumbnail visible while the cursor
-        // is over our window. Without it the thumbnail vanishes as soon as the wheel appears.
+        // The shell's drag-image helper. Over the wheel we hide Explorer's drag thumbnail (it sits
+        // on the cursor, i.e. on the wheel's centre, and covers the top slices); the centre shows
+        // the file count instead. It comes back when the cursor leaves the wheel.
         Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
     };
 
