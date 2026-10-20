@@ -1,0 +1,208 @@
+#include "Ffmpeg.h"
+#include "Brand.h"
+#include "Log.h"
+#include "Utf.h"
+
+#include <windows.h>
+#include <wil/resource.h>
+
+#include <algorithm>
+#include <atomic>
+#include <deque>
+#include <filesystem>
+#include <format>
+#include <thread>
+
+namespace sd
+{
+    namespace
+    {
+        // Reads a pipe to EOF, calling `line` for each complete line (without the line break).
+        void ReadLines(HANDLE pipe, const std::function<void(std::string_view)>& line)
+        {
+            std::string pending;
+            char buffer[4096];
+            DWORD read = 0;
+            while (ReadFile(pipe, buffer, sizeof(buffer), &read, nullptr) && read > 0)
+            {
+                pending.append(buffer, read);
+                size_t start = 0, end;
+                // ffmpeg ends log lines with \n, and rewrites status lines with \r.
+                while ((end = pending.find_first_of("\r\n", start)) != std::string::npos)
+                {
+                    if (end > start)
+                        line(std::string_view(pending).substr(start, end - start));
+                    start = end + 1;
+                }
+                pending.erase(0, start);
+            }
+            if (!pending.empty())
+                line(pending);
+        }
+    }
+
+    FfmpegEngine::FfmpegEngine(std::wstring exe) : m_exe(std::move(exe)) {}
+
+    std::wstring FfmpegEngine::Locate()
+    {
+        wchar_t env[MAX_PATH]{};
+        if (const DWORD n = GetEnvironmentVariableW(L"SHIFTDROP_FFMPEG", env, MAX_PATH); n > 0 && n < MAX_PATH)
+            return GetFileAttributesW(env) != INVALID_FILE_ATTRIBUTES ? std::wstring(env) : std::wstring();
+        wchar_t self[MAX_PATH]{};
+        const DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
+        if (n == 0 || n == MAX_PATH)
+            return {};
+        const auto exe = std::filesystem::path(self).parent_path() / L"engines" / L"ffmpeg.exe";
+        return GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES ? exe.wstring() : std::wstring();
+    }
+
+    H264Encoder FfmpegEngine::H264() const
+    {
+        std::call_once(m_probeOnce, [this] {
+            // A GPU encoder is listed whenever ffmpeg was built with it, but only works with that
+            // vendor's GPU and driver, so each one is tried on a few black frames.
+            for (const auto candidate : { H264Encoder::Nvenc, H264Encoder::Qsv, H264Encoder::Amf, H264Encoder::MediaFoundation })
+            {
+                const std::vector<std::wstring> args{ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"color=c=black:s=320x240:r=30:d=0.3",
+                                                      L"-c:v", EncoderName(candidate), L"-pix_fmt", candidate == H264Encoder::Nvenc ? L"yuv420p" : L"nv12",
+                                                      L"-f", L"null", L"-" };
+                std::stop_source never;
+                if (Run(args, nullptr, never.get_token()).ok)
+                {
+                    m_h264 = candidate;
+                    break;
+                }
+            }
+            log::Info(L"ffmpeg: H.264 encoder {}", EncoderName(m_h264));
+        });
+        return m_h264;
+    }
+
+    FfmpegEngine::Result FfmpegEngine::Run(const std::vector<std::wstring>& args, const std::function<void(double)>& progress,
+                                           std::stop_token stop) const
+    {
+        Result result;
+        if (m_exe.empty())
+        {
+            result.error = L"the media engine (ffmpeg.exe) is missing; reinstall " SD_NAME;
+            return result;
+        }
+        std::wstring commandLine = QuoteArg(m_exe);
+        for (const auto& a : args)
+            commandLine += L' ' + QuoteArg(a);
+
+        // Pipes for the child's stdout (progress) and stderr (log). Only the child's ends are
+        // inheritable, and the attribute list below passes exactly those three handles, so handles
+        // from other threads' work never leak into ffmpeg.
+        SECURITY_ATTRIBUTES inherit{ sizeof(inherit), nullptr, TRUE };
+        wil::unique_handle outRead, outWrite, errRead, errWrite;
+        if (!CreatePipe(&outRead, &outWrite, &inherit, 0) || !CreatePipe(&errRead, &errWrite, &inherit, 0))
+        {
+            result.error = L"cannot create pipes for ffmpeg";
+            return result;
+        }
+        SetHandleInformation(outRead.get(), HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation(errRead.get(), HANDLE_FLAG_INHERIT, 0);
+        wil::unique_hfile nul(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit, OPEN_EXISTING, 0, nullptr));
+
+        HANDLE inherited[] = { nul.get(), outWrite.get(), errWrite.get() };
+        SIZE_T attrSize = 0;
+        InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+        std::vector<char> attrBuffer(attrSize);
+        auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuffer.data());
+        if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) ||
+            !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+        {
+            result.error = L"cannot set up the ffmpeg process";
+            return result;
+        }
+        auto deleteAttrs = wil::scope_exit([&] { DeleteProcThreadAttributeList(attrs); });
+
+        STARTUPINFOEXW si{};
+        si.StartupInfo.cb = sizeof(si);
+        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        si.StartupInfo.hStdInput = nul.get();
+        si.StartupInfo.hStdOutput = outWrite.get();
+        si.StartupInfo.hStdError = errWrite.get();
+        si.lpAttributeList = attrs;
+
+        // Kill-on-close job: closing `job` (on return, or by Windows if we die) ends ffmpeg.
+        wil::unique_handle job(CreateJobObjectW(nullptr, nullptr));
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!job || !SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+        {
+            result.error = L"cannot create a job object for ffmpeg";
+            return result;
+        }
+
+        // Suspended until it is in the job, so it cannot outlive us even for a moment.
+        PROCESS_INFORMATION pi{};
+        if (!CreateProcessW(m_exe.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
+                            CREATE_SUSPENDED | CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                            nullptr, nullptr, &si.StartupInfo, &pi))
+        {
+            result.error = std::format(L"cannot start ffmpeg ({})", GetLastError());
+            return result;
+        }
+        wil::unique_handle process(pi.hProcess), thread(pi.hThread);
+        if (!AssignProcessToJobObject(job.get(), process.get()))
+        {
+            TerminateProcess(process.get(), 1);
+            result.error = L"cannot put ffmpeg in a job object";
+            return result;
+        }
+        ResumeThread(thread.get());
+        // Our copies of the child's ends: closed now, so the reads below end when ffmpeg exits.
+        outWrite.reset();
+        errWrite.reset();
+        nul.reset();
+
+        std::atomic<int64_t> durationUs{ -1 };
+        std::deque<std::string> tail;   // ffmpeg's last log lines, for the error message
+        std::jthread errReader([&] {
+            ReadLines(errRead.get(), [&](std::string_view line) {
+                if (durationUs.load() < 0)
+                    if (const int64_t d = ParseDurationLine(line); d > 0)
+                        durationUs = d;
+                tail.emplace_back(line);
+                if (tail.size() > 12)
+                    tail.pop_front();
+            });
+        });
+        std::jthread outReader([&] {
+            ReadLines(outRead.get(), [&](std::string_view line) {
+                const int64_t at = ParseProgressLine(line);
+                const int64_t total = durationUs.load();
+                if (progress && at >= 0 && total > 0)
+                    progress(std::min(1.0, static_cast<double>(at) / static_cast<double>(total)));
+            });
+        });
+
+        while (WaitForSingleObject(process.get(), 100) == WAIT_TIMEOUT)
+            if (stop.stop_requested())
+            {
+                TerminateJobObject(job.get(), 1);
+                result.cancelled = true;
+                WaitForSingleObject(process.get(), 5000);
+                break;
+            }
+        errReader.join();
+        outReader.join();
+
+        DWORD exitCode = 1;
+        GetExitCodeProcess(process.get(), &exitCode);
+        result.ok = !result.cancelled && exitCode == 0;
+        if (result.cancelled)
+            result.error = L"cancelled";
+        else if (!result.ok)
+        {
+            // The useful part is usually just above "Conversion failed!": keep the last few lines.
+            std::string text;
+            for (auto it = tail.size() > 3 ? tail.end() - 3 : tail.begin(); it != tail.end(); ++it)
+                text += (text.empty() ? "" : " | ") + *it;
+            result.error = Widen(text.empty() ? std::format("ffmpeg exited with code {}", exitCode) : text);
+        }
+        return result;
+    }
+}

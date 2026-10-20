@@ -1,6 +1,6 @@
 # Build, run and manual test checklist
 
-Covers M0, M1 and M2. Section 3 (M2) is new; sections A to E are the M0/M1 checks.
+Covers M0 to M3a. Section M (video and audio) is new; sections A to E are the M0/M1 checks.
 
 ## 1. One-time setup (PowerShell)
 
@@ -25,9 +25,10 @@ Open **Developer PowerShell for VS 2022** (so `cmake` and MSVC are on PATH):
 cd C:\dev\shiftdrop
 git pull
 
+./scripts/get-ffmpeg.ps1            # once: the pinned LGPL ffmpeg.exe into build\engines (170 MB download, SHA-256 checked)
 cmake --preset x64-release          # first run builds wil, sqlite3, nlohmann-json, libwebp, gtest (a few minutes)
 cmake --build --preset x64-release
-ctest --preset x64-release          # unit tests
+ctest --preset x64-release          # unit tests (the MediaEngine ones run the real ffmpeg.exe)
 .\build\x64-release\Release\ShiftDrop.exe
 
 # M0 build (placeholder circle; every drop only logs + notifies)
@@ -55,6 +56,14 @@ mkdir C:\temp\sd-target -Force
 ```
 
 Also put a PNG with transparency and a phone photo taken in portrait orientation in that folder.
+
+For section M, make a test video and song with the bundled ffmpeg (or use your own):
+
+```powershell
+$ff = "$env:LOCALAPPDATA\Programs\ShiftDrop\engines\ffmpeg.exe"   # or .\build\engines\ffmpeg.exe
+& $ff -f lavfi -i testsrc=s=1281x721:r=30:d=20 -f lavfi -i sine=f=440:d=20 -c:v mpeg4 -c:a pcm_s16le -shortest C:\temp\sd\clip.avi
+& $ff -f lavfi -i sine=f=440:d=20 C:\temp\sd\song.wav
+```
 
 ## 3. M2 checklist
 
@@ -119,6 +128,24 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
 
+### M. Video and audio (M3a)
+- [ ] The log at startup says `media: ffmpeg at …\engines\ffmpeg.exe`
+- [ ] Drag `clip.avi` (or a phone video) and hold **Shift**: the Convert wheel shows MP4, MOV, MKV, WebM, AVI, WMV, GIF and MP3; AVI is dimmed (already AVI); no image formats
+- [ ] Drag `song.wav` and hold **Shift**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA; WAV is dimmed
+- [ ] Drag a video and a song together: only MP3 is offered
+- [ ] Drag a photo and a video together: the wheel shows image and video formats, all dimmed, centre "Mixed files"
+- [ ] Drop the video on **MP4**: the top panel shows "Converting 1 file to MP4…" with a percentage that climbs and a bar that moves smoothly; then "1 file converted to MP4"; `clip (converted).mp4` plays in the Films & TV / Media Player app, picture not stretched
+- [ ] The log names the H.264 encoder once (`ffmpeg: H.264 encoder h264_nvenc` / `h264_qsv` / `h264_amf` / `h264_mf` / `libopenh264`). Task Manager shows `ffmpeg.exe` under ShiftDrop while it runs, at below-normal priority, and no console window ever appears
+- [ ] Drop on **GIF**: an animated GIF, at most 480 px wide, that loops
+- [ ] Drop on **MKV**: done almost instantly (streams copied), and the result plays
+- [ ] Drop the song on each audio format: every result plays; **MP3** from the video gives just its sound
+- [ ] Drop a long video (a few minutes) on **WebM**, then click the **×** in the top panel: it says "Cancelling…", then "Cancelled" / "Nothing was saved"; no `.sdpart` or `.webm` file is left in the folder and `ffmpeg.exe` is gone from Task Manager
+- [ ] Drop three videos on MP4 and cancel during the second: "Cancelled after 1 of 3", the first output stays
+- [ ] Quit ShiftDrop from the tray during a long conversion: `ffmpeg.exe` ends at once and no `.sdpart` is left
+- [ ] Tray > History: the conversion is listed; Undo moves the output to the Recycle Bin
+- [ ] Rename `engines\ffmpeg.exe` in the install folder and restart ShiftDrop: dragging a video and holding Shift shows the video formats dimmed with "Media engine missing" in the centre; images still work. Rename it back
+- [ ] With Wi-Fi off, everything above works the same
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
@@ -181,9 +208,10 @@ it. To build it yourself after section 2, with [Inno Setup 6.3+](https://jrsoftw
 installed:
 
 ```powershell
+./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.2.0.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.3.0.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)

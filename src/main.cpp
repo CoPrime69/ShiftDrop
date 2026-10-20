@@ -4,6 +4,8 @@
 //   UI thread    hidden main window, tray icon, overlay, WH_MOUSE_LL hook, OLE drop target, history
 //                window, clipboard file actions (STA)
 //   workers      JobQueue threads (MTA) that run recipes and PostMessage results back
+//   media worker one JobQueue thread for video and audio: ffmpeg already uses every core, so files
+//                go one at a time (each in its own ffmpeg process, see Ffmpeg.h)
 //   shell worker one STA thread for IFileOperation work (Move to…)
 #include "Brand.h"
 #include "DropTarget.h"
@@ -67,6 +69,7 @@ namespace sd
             std::wstring label;    // recipe label, or the destination folder's name for a move
             int64_t runId = 0;     // history run (0 when history is unavailable)
             uint64_t token = 0;    // which batch, so its progress and result reach the top panel
+            bool cancelled = false;
             std::vector<FileOutcome> files;
         };
 
@@ -77,6 +80,8 @@ namespace sd
             std::mutex mutex;
             BatchResult result;
             std::atomic<size_t> remaining{ 0 };
+            std::stop_source cancel;          // the top panel's ×; also requested when the app shuts down
+            std::atomic<int> lastPermille{ -1 };   // throttles progress posts to whole tenths of a percent
         };
 
         struct PendingDrop
@@ -125,7 +130,7 @@ namespace sd
         };
         [[maybe_unused]] Look SliceLook(const Recipe& recipe)   // unused in the M0 build
         {
-            if (recipe.IsSingleEncode() || recipe.steps.empty())
+            if (recipe.IsSingleEncode() || recipe.IsMedia() || recipe.steps.empty())
                 return {};
             const auto& step = recipe.steps.front();
             const auto& a = step.action;
@@ -215,13 +220,19 @@ namespace sd
             m_history = HistoryStore::Open(log::AppDataFolder() + L"\\history.db", dbError);
             if (!m_history)
                 log::Error(L"history: {} (conversions still work, but without history or undo)", dbError);
-            m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get());
+            m_media = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
+            if (m_media->Available())
+                log::Info(L"media: ffmpeg at {}", m_media->Path());
+            else
+                log::Warn(L"media: engines\\ffmpeg.exe not found next to " SD_NAME L".exe; video and audio slices are disabled");
+            m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get(), m_media);
             m_runner->RecoverInterrupted();
 
             const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u);
             m_jobs = std::make_unique<JobQueue>(threads);
+            m_mediaJobs = std::make_unique<JobQueue>(1);
             m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
-            log::Info(L"jobs: {} worker thread(s) + 1 shell thread", threads);
+            log::Info(L"jobs: {} worker thread(s) + 1 media thread + 1 shell thread", threads);
 
             std::vector<WheelRing> rings;
 #if !SHIFTDROP_M0
@@ -271,7 +282,7 @@ namespace sd
 #if SHIFTDROP_M0
             constexpr const wchar_t* kBuild = L"M0 placeholder build";
 #else
-            constexpr const wchar_t* kBuild = L"M2 build";
+            constexpr const wchar_t* kBuild = L"M3 build";
 #endif
             if (IsElevated())
             {
@@ -375,7 +386,7 @@ namespace sd
                 return 0;
             case msg::BatchProgress:
                 if (wParam == m_islandBatch)
-                    m_island->SetProgress(static_cast<size_t>(lParam));
+                    m_island->SetProgress(static_cast<double>(lParam) / 1000.0);
                 return 0;
             case msg::AnotherInstance:
                 m_tray.Balloon(SD_NAME, L"" SD_NAME L" is already running.");
@@ -392,6 +403,7 @@ namespace sd
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
                 m_jobs.reset();        // stops and joins workers; results still in flight are freed (see PostBatch)
+                m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
                 m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
                 m_historyWindow.reset();
                 m_overlay.reset();
@@ -597,40 +609,84 @@ namespace sd
             content.centerText = files.size() == 1 ? std::wstring(L"1 file") : std::format(L"{} files", files.size());
 #if !SHIFTDROP_M0
             const char* ringId = RingId(ring);
-            std::wstring firstReason;
-            bool anyEnabled = false;
+            // Each wheel shows the recipes meant for these files: video formats for videos, image formats
+            // for photos. With nothing meant for all of them (a photo and a video), the ones meant for
+            // some; with nothing meant for any (a PDF), all of them, disabled, so the wheel still says
+            // what it does.
+            std::vector<const Recipe*> forAll, forAny, onRing;
             for (const auto& recipe : m_recipes.All())
             {
                 if (recipe.ring != ringId)
                     continue;
+                onRing.push_back(&recipe);
+                const auto applies = [&](const std::wstring& f) { return m_runner->Applies(recipe, f); };
+                if (std::all_of(files.begin(), files.end(), applies))
+                    forAll.push_back(&recipe);
+                else if (std::any_of(files.begin(), files.end(), applies))
+                    forAny.push_back(&recipe);
+            }
+            const bool meantForThese = !forAll.empty();
+            if (forAll.empty())
+                forAll.insert(forAll.end(), forAny.begin(), forAny.end());
+            const auto& shown = forAll.empty() ? onRing : forAll;
+
+            std::wstring firstReason;
+            bool anyEnabled = false;
+            for (const Recipe* recipe : shown)
+            {
                 if (content.slices.size() == kMaxSlices)
                 {
-                    log::Warn(L"wheel: more than {} recipes on the {} wheel; '{}' and later ones are not shown",
-                              kMaxSlices, RingTitle(ring), recipe.label);
+                    log::Warn(L"wheel: more than {} recipes fit these files on the {} wheel; '{}' and later ones are not shown",
+                              kMaxSlices, RingTitle(ring), recipe->label);
                     break;
                 }
                 // Mixed selections only get recipes every file supports. A slice is also disabled when
                 // it would do nothing for every file (to PNG on PNGs).
                 std::wstring reason;
                 const bool all = std::all_of(files.begin(), files.end(),
-                                             [&](const std::wstring& f) { return m_runner->Accepts(recipe, f, &reason); });
+                                             [&](const std::wstring& f) { return m_runner->Accepts(*recipe, f, &reason); });
                 const bool anyToDo = std::any_of(files.begin(), files.end(),
-                                                 [&](const std::wstring& f) { return !m_runner->IsNoOp(recipe, f); });
+                                                 [&](const std::wstring& f) { return !m_runner->IsNoOp(*recipe, f); });
                 if (!all && firstReason.empty())
                     firstReason = reason;
-                const auto look = SliceLook(recipe);
-                content.slices.push_back(WheelSlice{ recipe.label, Widen(recipe.id), all && anyToDo, look.icon, look.mirror,
-                                                     recipe.description.empty() ? recipe.label : recipe.description });
+                const auto look = SliceLook(*recipe);
+                content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror,
+                                                     recipe->description.empty() ? recipe->label : recipe->description });
                 anyEnabled |= all && anyToDo;
             }
             if (!anyEnabled && !firstReason.empty())
             {
                 log::Info(L"wheel: nothing applies: {}", firstReason);
                 if (ring != Ring::Files)
-                    content.centerText = files.size() == 1 ? L"Not an image" : L"Not all images";
+                    content.centerText = NothingHereText(files);
+                content.explains = meantForThese;   // e.g. video formats for a video, but no engine
             }
 #endif
             return content;
+        }
+
+        // The wheel's centre when none of its slices can take the dragged files.
+        std::wstring NothingHereText(const std::vector<std::wstring>& files) const
+        {
+            bool video = false, audio = false, other = false;
+            for (const auto& f : files)
+            {
+                switch (MediaKindOfExtension(LowerExtension(f)))
+                {
+                case MediaKind::Video: video = true; break;
+                case MediaKind::Audio: audio = true; break;
+                default: other = true; break;
+                }
+            }
+            if ((video || audio) && !m_media->Available())
+                return L"Media engine missing";
+            if (int(video) + int(audio) + int(other) > 1)
+                return L"Mixed files";
+            if (video)
+                return L"Not for videos";
+            if (audio)
+                return L"Not for audio";
+            return files.size() == 1 ? L"Not an image" : L"Not all images";
         }
 
         // Called from inside OLE's IDropTarget::Drop, while Explorer's drag loop waits for us. Queue the
@@ -700,13 +756,27 @@ namespace sd
             const auto verb = state->result.kind == BatchKind::Convert ? std::format(L"Converting {} to {}", Count(files.size(), L"file"), recipe.label)
                               : state->result.kind == BatchKind::Duplicate ? std::format(L"Duplicating {}", Count(files.size(), L"file"))
                                                                            : std::format(L"{}: {}", recipe.label, Count(files.size(), L"file"));
-            m_island->ShowProgress(verb + L"\u2026", files.size());
+            // The panel's × stops this batch: the file in progress is abandoned (its staging file
+            // deleted) and the rest are skipped. Files already finished stay.
+            m_island->ShowProgress(verb + L"\u2026", files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
+            // Video and audio go through the media queue, one file at a time; images use every worker.
+            JobQueue& queue = recipe.IsMedia() ? *m_mediaJobs : *m_jobs;
             for (size_t i = 0; i < files.size(); ++i)
             {
                 state->result.files[i].source = files[i];
-                m_jobs->Submit([state, runner = m_runner.get(), history = m_history.get(), i, source = files[i], total = files.size(),
-                                token = state->result.token](std::stop_token stop) {
-                    auto result = runner->Run(state->recipe, state->result.runId, source, stop);
+                queue.Submit([state, runner = m_runner.get(), history = m_history.get(), i, source = files[i], total = files.size(),
+                              token = state->result.token](std::stop_token stop) {
+                    // Shutting down stops the batch the same way the × does.
+                    std::stop_callback onShutdown(stop, [&] { state->cancel.request_stop(); });
+                    // Within-file progress (media only): finished files plus this one's fraction, in
+                    // thousandths of a file, posted when it moves by a tenth of a percent of the batch.
+                    const auto progress = [&](double fraction) {
+                        const size_t finished = total - state->remaining.load();
+                        const auto at = static_cast<int>((static_cast<double>(finished) + fraction) * 1000.0);
+                        if (at / static_cast<int>(total) != state->lastPermille.exchange(at / static_cast<int>(total)))
+                            PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(at));
+                    };
+                    auto result = runner->Run(state->recipe, state->result.runId, source, state->cancel.get_token(), progress);
                     if (result.ok)
                         log::Info(L"job: {} -> {}", source, result.output);
                     else
@@ -717,7 +787,7 @@ namespace sd
                     }
                     const size_t left = state->remaining.fetch_sub(1) - 1;
                     if (left > 0)
-                        PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(total - left));
+                        PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>((total - left) * 1000));
                     else   // last file of the batch
                     {
                         if (history)
@@ -725,6 +795,7 @@ namespace sd
                         std::unique_ptr<BatchResult> done;
                         {
                             std::scoped_lock lock(state->mutex);
+                            state->result.cancelled = state->cancel.stop_requested();
                             done = std::make_unique<BatchResult>(std::move(state->result));
                         }
                         PostBatch(state->notify, std::move(done));
@@ -829,7 +900,14 @@ namespace sd
                     sub = L"Undo from History in the tray menu";
                 else
                     sub = L"Saved next to the originals \u00b7 Undo from History";
-                const auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
+                auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
+                if (batch->cancelled)
+                {
+                    // Asked for, so not a failure: say what is left on disk.
+                    outcome = Island::Outcome::Partial;
+                    title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
+                    sub = ok == 0 ? L"Nothing was saved" : L"Finished files are saved next to the originals";
+                }
                 m_island->ShowResult(outcome, title, sub);
             }
             else
@@ -877,8 +955,10 @@ namespace sd
         RecipeStore m_recipes;
         std::shared_ptr<const ImageCodecs> m_codecs;
         std::unique_ptr<HistoryStore> m_history;
+        std::shared_ptr<const FfmpegEngine> m_media;
         std::unique_ptr<PipelineRunner> m_runner;
         std::unique_ptr<JobQueue> m_jobs;
+        std::unique_ptr<JobQueue> m_mediaJobs;
         std::unique_ptr<JobQueue> m_shellJobs;
         Appearance m_appearance;
         std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it

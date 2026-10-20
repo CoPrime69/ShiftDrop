@@ -3,18 +3,23 @@
 Drag a file, hold a key, and a wheel appears under the cursor. Drop on a slice to act on the file.
 Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
-| Hold | Wheel | M2 slices |
+| Hold | Wheel | Slices so far |
 |---|---|---|
-| Shift | Convert | PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP) |
+| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA |
 | Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50% |
 | Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate |
 
+Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
 Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top
 of the screen shows which wheel you are on, then the job's progress and result. The tray menu sets the
 size (Auto adapts to your screen) and the style (Solid or Glass).
 
-Status: **M2**. Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
-run is in History, and any run can be undone. It starts with Windows and lives in the tray.
+Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
+run is in History, and any run can be undone. Long jobs show their progress in the top panel and
+can be cancelled there. It starts with Windows and lives in the tray.
+
+Video and audio go through a bundled, unmodified LGPL build of [FFmpeg](https://ffmpeg.org) that
+ShiftDrop runs as a separate process, restricted to local files (no network access).
 
 - Plan, REA stages, parity map, decisions and open questions: [docs/PLAN.md](docs/PLAN.md)
 - Build, run and the manual test checklist: [docs/TESTING.md](docs/TESTING.md)
@@ -36,6 +41,7 @@ choose **More info**, then **Run anyway**.
 
 ```powershell
 # Developer PowerShell for VS 2022, with $env:VCPKG_ROOT set (see docs/TESTING.md)
+./scripts/get-ffmpeg.ps1      # once: pinned LGPL ffmpeg.exe into build\engines (SHA-256 checked)
 cmake --preset x64-release
 cmake --build --preset x64-release
 ctest --preset x64-release
@@ -51,7 +57,7 @@ shiftdrop/
 ├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, gtest
 ├─ .github/workflows/ci.yml  build, unit tests, no-network imports check, installer + smoke test
 ├─ installer/ShiftDrop.iss  per-user Inno Setup installer
-├─ scripts/                check-imports, make-notices, test-installer
+├─ scripts/                get-ffmpeg, check-imports, make-notices, test-installer
 ├─ docs/                   PLAN, TESTING, recipes, adr/, research/
 ├─ tests/                  gtest unit tests
 └─ src/
@@ -64,7 +70,9 @@ shiftdrop/
    ├─ Action, Recipe       action registry; recipe JSON parsing and validation
    ├─ RecipeStore          built-in + user recipes
    ├─ ImagePipeline        fused WIC/libwebp pipeline: decode → orient → transform → encode
-   ├─ PipelineRunner       staging → pipeline → atomic commit → hash → history
+   ├─ PipelineRunner       staging → pipeline (images) or ffmpeg (media) → atomic commit → hash → history
+   ├─ Media, Ffmpeg        video/audio formats and ffmpeg arguments; the ffmpeg child process (job object, progress, cancel)
+   ├─ Island               the top panel: wheel tabs, job progress with cancel, results
    ├─ OutputPath           "name (converted).ext", staging and no-replace commit
    ├─ HistoryStore, Hash   SQLite history, SHA-256 (CNG)
    ├─ Undo, FileMove       undo to the Recycle Bin or back to the original place; Move to…
