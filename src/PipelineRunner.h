@@ -50,6 +50,8 @@ namespace sd
                                 const std::function<int64_t()>& elapsedMs) const;
         ItemResult RunMedia(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                             const std::function<void(double)>& progress, const std::function<int64_t()>& elapsedMs) const;
+        FfmpegEngine::Result RunCompress(const Recipe& recipe, const std::wstring& source, const MediaInfo& info, H264Encoder h264,
+                                         const std::wstring& staging, const std::function<void(double)>& progress, std::stop_token stop) const;
         std::shared_ptr<const ImageCodecs> m_codecs;
         HistoryStore* m_history;   // may be null (tests, or the database could not be opened)
         std::shared_ptr<const FfmpegEngine> m_media;

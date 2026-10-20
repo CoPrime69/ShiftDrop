@@ -217,12 +217,12 @@ namespace sd
             }
             if (desc->kind == StepKind::ImageEncode && !last)
             {
-                error = where + ": image.encode must be the last step";
+                error = std::format("{}: {} must be the last step", where, step.action);
                 return false;
             }
             if (last && desc->kind != StepKind::ImageEncode)
             {
-                error = where + ": the last step must be image.encode";
+                error = where + ": the last step must be image.encode (or image.compress)";
                 return false;
             }
             r.steps.push_back(std::move(step));
@@ -249,7 +249,15 @@ namespace sd
 
     const ImageFormatInfo* Recipe::OutputFormatFor(const std::wstring& ext) const
     {
-        if (steps.empty() || steps.back().action != "image.encode")
+        if (steps.empty())
+            return nullptr;
+        if (steps.back().action == "image.compress")
+        {
+            // WebP stays WebP; everything else becomes JPEG, the format every upload box takes.
+            const auto* own = FormatOfExtension(ext);
+            return own && std::string_view(own->id) == "webp" ? own : FindImageFormat("jpg");
+        }
+        if (steps.back().action != "image.encode")
             return nullptr;
         const auto formatId = steps.back().params.value("format", std::string{});
         if (formatId == "same")
@@ -265,13 +273,15 @@ namespace sd
 {
     const MediaFormatInfo* Recipe::MediaFormat() const
     {
-        return IsMedia() ? FindMediaFormat(steps[0].params.value("format", std::string{})) : nullptr;
+        return IsMedia() && steps[0].action == "media.convert" ? FindMediaFormat(steps[0].params.value("format", std::string{})) : nullptr;
     }
 
     std::wstring Recipe::OutputExtensionFor(const std::wstring& ext) const
     {
         if (const auto* media = MediaFormat())
             return media->extension;
+        if (IsMediaCompress())
+            return MediaKindOfExtension(ext) == MediaKind::Audio ? L".m4a" : L".mp4";
         if (const auto* image = OutputFormatFor(ext))
             return image->extension;
         return {};

@@ -36,7 +36,10 @@ namespace sd
         // file actions.
         std::wstring OutputExtensionFor(const std::wstring& lowerSourceExtension) const;
         bool IsSingleEncode() const { return steps.size() == 1 && steps[0].action == "image.encode"; }
-        bool IsMedia() const { return steps.size() == 1 && steps[0].action == "media.convert"; }
+        bool IsMedia() const { return steps.size() == 1 && steps[0].action.starts_with("media."); }   // runs through ffmpeg
+        bool IsMediaCompress() const { return steps.size() == 1 && steps[0].action == "media.compress"; }
+        // Compress / Fit to… recipes: their results are for sending somewhere, so they can be carried.
+        bool IsCompress() const { return IsMediaCompress() || (!steps.empty() && steps.back().action == "image.compress"); }
         bool IsFileAction() const { return steps.size() == 1 && steps[0].action.starts_with("file."); }
     };
 
