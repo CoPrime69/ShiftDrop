@@ -52,6 +52,10 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  src/shelf/Carry.cpp
+  src/shelf/ShelfGeometry.cpp
+  src/shelf/ShelfModule.cpp
+  src/shelf/ShelfStore.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -76,6 +80,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/shelf/ShelfWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -106,6 +111,7 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/ShelfTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
