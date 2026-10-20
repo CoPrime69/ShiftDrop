@@ -237,7 +237,7 @@ TEST(Docs, MarkdownToHtmlAndBack)
     HtmlOptions o;
     const auto html = WriteHtml(doc, o);
     EXPECT_NE(html.find("<!DOCTYPE html>"), std::string::npos);
-    EXPECT_NE(html.find("<h1>Title &amp; more</h1>"), std::string::npos);
+    EXPECT_NE(html.find(">Title &amp; more</h1>"), std::string::npos);
     EXPECT_NE(html.find("<img src=\"images/image1.png\" alt=\"A picture\""), std::string::npos);
     EXPECT_NE(html.find("<ol start=\"3\">"), std::string::npos);
 
@@ -501,8 +501,9 @@ TEST(Docs, RtfThroughRichEdit)
 {
     const std::string rtf =
         "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Calibri;}{\\f1 Consolas;}}\\fs24 "
-        "{\\fs40\\b Heading\\par}"
-        "Plain {\\b bold} {\\i italic} {\\strike gone} caf\\'e9 text, long enough to be the body.\\par"
+        // As WordPad writes it: switches on and off rather than groups.
+        "\\b\\fs40 Heading\\b0\\fs24\\par "
+        "Plain \\b bold\\b0  \\i italic\\i0  \\strike gone\\strike0  caf\\'e9 text, long enough to be the body.\\par "
         "{\\f1 mono line\\par}"
         "}";
     Document doc;

@@ -542,9 +542,11 @@ namespace sd::docs
             error = L"not an RTF document";
             return false;
         }
-        // msftedit.dll is RichEdit 4.1+ ("RICHEDIT50W"), part of every Windows since XP SP1.
+        // msftedit.dll is RichEdit 4.1+ ("RICHEDIT50W"), part of every Windows since XP SP1; riched20.dll
+        // ("RichEdit20W") is the fallback.
         static const HMODULE richEdit = LoadLibraryW(L"msftedit.dll");
-        if (!richEdit)
+        static const HMODULE richEdit20 = richEdit ? nullptr : LoadLibraryW(L"riched20.dll");
+        if (!richEdit && !richEdit20)
         {
             error = L"Windows' RichEdit (msftedit.dll) is missing";
             return false;
@@ -552,8 +554,19 @@ namespace sd::docs
         auto prepared = RtfPrepare(rtf, rtfdFolder);
 
         // A hidden, never-shown window owned by this thread; nothing is ever painted.
-        wil::unique_hwnd edit(CreateWindowExW(0, MSFTEDIT_CLASS, L"", WS_POPUP | ES_MULTILINE, 0, 0, 800, 600, nullptr, nullptr,
-                                              GetModuleHandleW(nullptr), nullptr));
+        // Without a desktop to show it on (a service, a headless session) only a message-only window
+        // can be made; RichEdit parses the same in it.
+        const auto create = [](const wchar_t* cls) {
+            HWND h = CreateWindowExW(0, cls, L"", WS_POPUP | ES_MULTILINE, 0, 0, 800, 600, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+            return h ? h : CreateWindowExW(0, cls, L"", ES_MULTILINE, 0, 0, 800, 600, HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), nullptr);
+        };
+        wil::unique_hwnd edit(richEdit ? create(MSFTEDIT_CLASS) : nullptr);
+        if (!edit)
+        {
+            static const HMODULE fallback = richEdit20 ? richEdit20 : LoadLibraryW(L"riched20.dll");
+            if (fallback)
+                edit.reset(create(RICHEDIT_CLASSW));
+        }
         if (!edit)
         {
             error = std::format(L"cannot start RichEdit (error {})", GetLastError());

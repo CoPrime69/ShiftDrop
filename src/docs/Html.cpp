@@ -367,7 +367,8 @@ namespace sd::docs
                     }
                     return;
                 }
-                // Collapse whitespace the way a browser does.
+                // Collapse whitespace the way a browser does. A space stays with the text it was
+                // written in ("Plain " then "<b>bold</b>"), so it never moves into the next style.
                 std::string collapsed;
                 for (const char c : text)
                 {
@@ -376,11 +377,16 @@ namespace sd::docs
                         pendingSpace = true;
                     else
                     {
-                        if (pendingSpace && (!collapsed.empty() || HasText()))
+                        if (pendingSpace && (!collapsed.empty() || (HasText() && !EndsWithSpace())))
                             collapsed.push_back(' ');
                         pendingSpace = false;
                         collapsed.push_back(c);
                     }
+                }
+                if (pendingSpace && (!collapsed.empty() || (HasText() && !EndsWithSpace())))
+                {
+                    collapsed.push_back(' ');
+                    pendingSpace = false;
                 }
                 if (collapsed.empty())
                     return;
@@ -390,6 +396,12 @@ namespace sd::docs
                     s.text = std::move(collapsed);
                     spans->push_back(std::move(s));
                 }
+            }
+
+            bool EndsWithSpace()
+            {
+                auto* spans = Target(false);
+                return spans && !spans->empty() && !spans->back().text.empty() && spans->back().text.back() == ' ';
             }
 
             bool HasText()
