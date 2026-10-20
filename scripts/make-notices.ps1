@@ -12,6 +12,9 @@ $ports = [ordered]@{
     'sqlite3'       = 'SQLite (history database)'
     'nlohmann-json' = 'JSON for Modern C++ (recipes)'
     'wil'           = 'Windows Implementation Libraries (WIL)'
+    'qpdf'          = 'QPDF (PDF merge, organize, compress and text)'
+    'zlib'          = 'zlib (PDF compression)'
+    'libjpeg-turbo' = 'libjpeg-turbo (used by QPDF for JPEG images)'
 }
 
 $text = [System.Text.StringBuilder]::new()

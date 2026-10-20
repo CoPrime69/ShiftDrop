@@ -123,7 +123,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
+- [ ] Drag `notes.txt` and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -158,6 +158,30 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Convert speed: drop an iPhone/Android H.264 or HEVC `.mov`/`.mp4` on **MP4** (or **MOV**): done in a second or two (streams copied; the log says `plan: copy video, copy audio`)
 - [ ] Startup log: the H.264 encoder line appears a moment after start, before any video is dropped
 - [ ] Cancel (×) during **Under 25 MB** on a long video: nothing left in the folder
+
+### O. PDF, text from anything and Share (M5)
+Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a scanned PDF (a phone
+scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
+one taken sideways), a PNG with transparency, and a PDF with a password.
+
+- [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
+- [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
+- [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
+- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
+- [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
+- [ ] Drag two PDFs, hold **Ctrl**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
+- [ ] Drop one PDF on **Merge**: the panel says to drop two or more
+- [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
+- [ ] Organize and Merge follow the Windows light/dark setting, and look right at 150% scaling
+- [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
+- [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
+- [ ] Drop the scanned PDF (or `page.jpg`) on **Searchable**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on Searchable is skipped ("already searchable")
+- [ ] Settings > Time & language > Language: with no OCR-capable language, Copy text and Searchable are dimmed for photos and say why in the centre
+- [ ] Drag two files, hold **Alt**, drop on **Share**: the Windows share sheet opens near the cursor with both files (Nearby sharing, Phone Link, Mail, other apps). Share to Mail or OneNote: the files arrive. Close the sheet: nothing else happens
+- [ ] The password PDF on any PDF slice: the panel says "the PDF is locked with a password"; a `.txt` renamed to `.pdf` says "not a PDF file"
+- [ ] Tray > History lists each PDF job; Undo moves its output (or the pages folder) to the Recycle Bin
+- [ ] With Wi-Fi off, everything above works the same
 
 ### S. Float shelf, carry and clipboard (M3c)
 Float shelf:
