@@ -555,16 +555,16 @@ namespace sd::canvas
                 {
                     m_layerPending[i] = true;
                     std::thread([hwnd = Hwnd(), full = m_full, effect, generation = m_generation, alive = m_alive] {
-                        Raster small = ShrinkStraight(*full, kLayerEdge);
-                        const double s = static_cast<double>(small.width) / full->width;
+                        Raster reduced = ShrinkStraight(*full, kLayerEdge);
+                        const double s = static_cast<double>(reduced.width) / full->width;
                         if (effect == Effect::Blur)
-                            BlurAll(small, BlurSigma(full->width, full->height) * s);
+                            BlurAll(reduced, BlurSigma(full->width, full->height) * s);
                         else
-                            PixelateAll(small, std::max(1, static_cast<int>(std::lround(PixelBlock(full->width, full->height) * s))));
+                            PixelateAll(reduced, std::max(1, static_cast<int>(std::lround(PixelBlock(full->width, full->height) * s))));
                         auto layer = std::make_unique<Layer>();
                         layer->generation = generation;
                         layer->effect = effect;
-                        layer->pixels = Shrink(small, kLayerEdge);   // premultiplied, same size
+                        layer->pixels = Shrink(reduced, kLayerEdge);   // premultiplied, same size
                         if (alive->load() && PostMessageW(hwnd, kLayerReady, 0, reinterpret_cast<LPARAM>(layer.get())))
                             layer.release();
                     }).detach();
