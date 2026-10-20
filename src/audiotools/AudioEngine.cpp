@@ -33,10 +33,8 @@ namespace sd::audiotools
 
     namespace
     {
-        // The Tools wheel shows eight slices at most and a song already gets four Compress presets
-        // there: Normalize and three tools have slices, the visualizer is in the editor's tool bar.
-        // A recipe file that reuses a slice's id replaces it, e.g. Normalize at -14 LUFS for streaming
-        // (docs/TESTING.md, section T).
+        // Normalize needs no window; the other four open the waveform editor on their own tab. Other
+        // loudness targets are a recipe away (docs/TESTING.md, section T).
         const json& ToolRecipes()
         {
             static const json all = json::parse(R"([
@@ -49,7 +47,7 @@ namespace sd::audiotools
   { "id": "audio-bleep", "label": "Bleep\u2026", "description": "Bleep Audio: a tone or silence over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
     "steps": [ { "action": "audio.bleep" } ] },
   { "id": "audio-visualizer", "label": "Visualizer\u2026", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
-    "wheel": false, "steps": [ { "action": "audio.visualizer" } ] }
+    "steps": [ { "action": "audio.visualizer" } ] }
 ])");
             return all;
         }
@@ -57,26 +55,15 @@ namespace sd::audiotools
 
     const char* BuiltInRecipes()
     {
-        static const std::string wheel = [] {
-            json out = json::array();
-            for (const auto& r : ToolRecipes())
-                if (r.value("wheel", true))
-                    out.push_back(r);
-            for (auto& r : out)
-                r.erase("wheel");
-            return out.dump();
-        }();
-        return wheel.c_str();
+        static const std::string all = ToolRecipes().dump();
+        return all.c_str();
     }
 
     json ToolRecipe(EditorTool tool)
     {
-        for (auto r : ToolRecipes())
+        for (const auto& r : ToolRecipes())
             if (r["steps"][0]["action"] == ToolAction(tool))
-            {
-                r.erase("wheel");
                 return r;
-            }
         return json();
     }
 

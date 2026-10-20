@@ -59,6 +59,9 @@ RestartApplications=no
 ; Shown on a fresh install only. On an upgrade the choice already saved by the app (the tray menu's
 ; "Start with Windows") wins, so reinstalling never turns it back on.
 Name: startup; Description: "Start {#AppName} when I sign in to Windows"; Check: not HasSavedChoice
+; The right-click entry for files and folders (per user, HKCU\Software\Classes). Same rule: an upgrade
+; keeps whatever the tray menu last chose.
+Name: shellmenu; Description: "Add ""{#AppName}..."" to the right-click menu of files and folders"; Check: not HasSavedChoice
 
 [Dirs]
 ; Settings, history, recipes and logs. Kept on uninstall: they are the user's data.
@@ -87,26 +90,41 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#AppName}"; Flags: deletevalue dontcreatekey; Check: not StartupWanted
 
 [Run]
+; The app writes (or removes) the right-click entry itself, pointing at the installed exe.
+Filename: "{app}\{#AppName}.exe"; Parameters: "--register-shell"; Flags: runhidden waituntilterminated; Check: ShellMenuWanted
+Filename: "{app}\{#AppName}.exe"; Parameters: "--unregister-shell"; Flags: runhidden waituntilterminated; Check: not ShellMenuWanted
 Filename: "{app}\{#AppName}.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Quits the running copy and removes the Run value before the files are deleted.
 Filename: "{app}\{#AppName}.exe"; Parameters: "--uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "QuitAndRemoveStartup"
+; --uninstall removes the right-click entry too; this covers an exe that predates that.
+Filename: "{app}\{#AppName}.exe"; Parameters: "--unregister-shell"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveShellMenu"
 
 [Code]
 var
   SavedChoice: String;
+  HadShellMenu: Boolean;
 
 function InitializeSetup: Boolean;
 begin
   // Read once, before [INI] runs, so every Check below sees the state from before this install.
   SavedChoice := GetIniString('Startup', 'StartWithWindows', '', ExpandConstant('{localappdata}\{#AppName}\settings.ini'));
+  HadShellMenu := RegKeyExists(HKCU, 'Software\Classes\Directory\shell\{#AppName}');
   Result := True;
 end;
 
 function HasSavedChoice: Boolean;
 begin
   Result := SavedChoice <> '';
+end;
+
+function ShellMenuWanted: Boolean;
+begin
+  if HasSavedChoice then
+    Result := HadShellMenu   // an upgrade: keep the entry if it was there (it is re-pointed at the new exe)
+  else
+    Result := WizardIsTaskSelected('shellmenu');
 end;
 
 function StartupWanted: Boolean;

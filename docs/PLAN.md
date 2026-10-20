@@ -38,7 +38,7 @@ unknown. We used that discipline, with one limit:
 | 1 | Start dragging a file in Finder, press **Shift**: a wheel of output formats appears around the pointer | [O] App Store, site, MacG | v1 |
 | 2 | The wheel offers only formats that fit the file's type | [O] MacG, site | v1 |
 | 3 | The wheel stays open after you let go of the key; you keep dragging and **drop on a slice** to run it | [O] site | v1 |
-| 4 | Keyboard choice while the wheel is open: arrow keys pick a slice, Enter applies, Esc cancels | [O] MacG, Prakhar's spec | M4 |
+| 4 | Keyboard choice while the wheel is open: arrow keys pick a slice, Enter applies, Esc cancels | [O] MacG, Prakhar's spec | Done (M4) |
 | 5 | Dropping anywhere else, or Esc, cancels | [O] MacG; [I] for "elsewhere" | v1 |
 | 6 | A second modifier opens **tools** for that file type (22 named tools, see Stage 5b) | [O] Prakhar's spec and press kit: Command | Ctrl in ShiftDrop; tools M3–M10 |
 | 7 | A third modifier opens **file actions** (AirDrop, Float, Copy, Move, Copy Path, Terminal) | [O] Prakhar's spec, press kit: Control | Alt in ShiftDrop; M2, M3, M5 |
@@ -170,7 +170,7 @@ Each milestone, at a glance:
 | M0/M1 (delivered) | Gesture, wheel, WIC images | Shift wheel, batches, output next to the source |
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
 | M3 (three PRs: M3a, M3b, M3c) | Fit to… (S2), media engine | M3a: all audio/video formats, progress and cancel. M3b: Compress, Fit to…, carry, clipboard. M3c: Float shelf |
-| M4 | Know before you drop (S1) | Keyboard model, metadata inspector |
+| M4 (delivered, except DirectComposition) | Know before you drop (S1) | Keyboard model, metadata inspector |
 | M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
@@ -212,9 +212,9 @@ The full list:
 - **(parity)** Tool 1, **Compress**: target size, percentage, preset, and resize while compressing (images and media now, PDF in M5).
 - **(parity)** File action **Float**: a floating shelf that holds files, pins to a screen edge, and lets you drag files out into any app. It's built on convert-and-carry.
 
-**M4. Know before you drop (S1)**
+**M4. Know before you drop (S1)** (delivered, except the DirectComposition move, which is still open)
 - Predicted size and live thumbnail on hover, plus a metadata diff.
-- The overlay moves to DirectComposition, which is where the real acrylic spike happens.
+- The overlay moves to DirectComposition, which is where the real acrylic spike happens. *(Not done in M4: the wheel is still a layered window with the Glass snapshot.)*
 - **(parity)** Keyboard model:
   - While the wheel is open, the arrow keys move between slices, Enter applies and Esc cancels.
 - **(parity)** "Enter on a file opens the format menu" can't be done the same way: Enter in Explorer opens the file and we can't take it over. Closest alternatives:
@@ -309,8 +309,8 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 | 4 | Control → file-actions wheel | Alt → File-actions wheel | M2 |
 | 5 | Pick a slice and drop to run it | Same | Done (M1) |
 | 6 | Wheel stays open until drop or cancel | Stays open after the key is released; see open question 2 for leaving the wheel | Done (M1) |
-| 7 | Enter / arrows / Esc | Esc done; arrows and Enter | M4 |
-| 8 | Enter on a file opens the format menu | Not possible in Explorer; hotkey on Explorer's selection, plus a right-click entry | M4 |
+| 7 | Enter / arrows / Esc | Arrows move between slices (Up/Down between rings, then wheels), Enter runs the slice and cancels the drag, Esc cancels | Done (M4) |
+| 8 | Enter on a file opens the format menu | Not possible in Explorer; Ctrl+Shift+Space on Explorer's selection, plus a "ShiftDrop…" right-click entry; the wheel opens in click mode | Done (M4) |
 | 8 | Command/Control switch wheels | Pressing another wheel's key switches wheels mid-drag; turning the mouse wheel also steps through the wheels | Done (wheel redesign) |
 | 10 | Batches | Same; mixed drops show only the actions every file supports | Done (M1) |
 | 11 | Output saved next to the original | Same, never overwrites, crash-safe, undoable | Done (M1), M2 |
@@ -353,7 +353,7 @@ table above covers every format the spec names.
 | # | Tool | Milestone | Notes |
 |---|---|---|---|
 | 1 | Compress | M3 (images, media), M5 (PDF, done) | Target size, percentage, preset, resize |
-| 2 | Edit Metadata | M4 (inspect, search), M6 (edit, remove) | Grouped by file / track / chapter |
+| 2 | Edit Metadata | M4 (inspect, search: done), M6 (edit, remove) | Grouped by file / track / chapter |
 | 3 | Edit Photos | M8 | Dehaze, clarity, grain and noise reduction are classic filters, no models |
 | 4 | Annotate Photos | M8 | |
 | 5 | Add a Background | M8 | |
@@ -511,6 +511,15 @@ question 1).
 | 2026-10-20 | Carry from the top panel: a result with outputs can be dragged straight into any app, and has a pin (Float) and a copy button; it stays while hovered and for 5 s instead of 2 | Convert-and-carry without a separate chip window; the buttons make it discoverable |
 | 2026-10-20 | Drop to clipboard is a Copy button (and Ctrl+C on the shelf), not a global Ctrl+C while the result shows | The panel never has the keyboard; grabbing Ctrl+C from every app for a few seconds would eat real copies |
 | 2026-10-20 | Copy puts CF_HDROP + "Preferred DropEffect: copy" on the clipboard at once; for a single image the picture follows a moment later as "PNG" (keeps transparency) and CF_DIB (flattened on white), only if nothing else was copied meanwhile | Paste in Explorer gets the file, paste in a chat or document gets the picture; decoding big photos stays off the UI thread |
+| 2026-10-20 | Keyboard during a drag is read by polling (GetAsyncKeyState on the 30 ms drag timer, with our own auto-repeat), like the wheel modifiers; no keyboard hook, nothing touches the Win key. Enter runs the highlighted slice on the dragged files, then sends Esc so the drag source cancels; the wheel keeps catching a drop until the drag has ended | The overlay must never take focus, and OLE's drag loop eats key messages anyway. Cancelling the drag means nothing is ever dropped into the folder under the wheel |
+| 2026-10-20 | Up / Down: on a two-ring wheel they move out / in to the slice nearest in angle; past the last ring, and always on a one-ring wheel, Up goes to the previous wheel and Down to the next (like scrolling). Left / Right go round the ring, skipping dimmed slices | One rule for one and two rings; the wheels stay reachable without the modifiers |
+| 2026-10-20 | Wheel capacity: one ring up to 8 slices, two rings up to 16 (inner ring gets the odd one), beyond that pages of 15 plus a "More" slice (hover 650 ms during a drag, or click / Enter). The cap on slices per wheel goes from 8 to 60 | Labels stop fitting past 8 per ring; paging keeps every recipe reachable |
+| 2026-10-20 | The wheel on Explorer's selection: a global hotkey (RegisterHotKey, default Ctrl+Shift+Space, `[Keyboard] ExplorerHotkey` in settings.ini, tray toggle) reads the foreground Explorer window's (or the desktop's) selection through IShellWindows → IShellBrowser → IFolderView2 on a worker STA thread. Pressed outside Explorer the keystroke is handed back to the app in front | RegisterHotKey takes the keys from every app; Ctrl+Shift+Space means something in Excel and editors |
+| 2026-10-20 | Click mode (no drag): hover or arrows to pick, click or Enter to run, Esc, right-click, a click outside or another window coming to the front close it; Shift/Ctrl/Alt or scrolling switch wheels. Arrows, Enter and Esc are taken with RegisterHotKey only while the wheel is open (never Ctrl+Esc) | The overlay still never takes focus, so Explorer keeps it; the keys must not also move Explorer's selection |
+| 2026-10-20 | Right-click entry "ShiftDrop…": a classic verb in HKCU\Software\Classes (`*\shell` and `Directory\shell`) running `ShiftDrop.exe --wheel "%1"` with MultiSelectModel=Player; each process forwards its path to the running copy by WM_COPYDATA (message-only window `ShiftDrop.Keys`), which waits 350 ms for the rest. On by default in the installer, tray toggle, `--register-shell` / `--unregister-shell`. On Windows 11 it is under "Show more options" | No admin rights and no shell extension DLL; the compact Windows 11 menu only takes packaged extensions |
+| 2026-10-20 | Predicted output (S1) on a card under the wheel: format, size (exact for small images, else two downscaled samples through the real pipeline fitted to size ∝ pixels^k; media from the planned ffmpeg command line × duration, "same streams" for stream copies; Compress targets cap it), output name, pixel-size change and metadata removed. Off the UI thread, cached per (file, size, mtime, recipe), cancelled when the highlight moves | Fast enough to follow the cursor, honest about being an estimate ("~", "≤") |
+| 2026-10-20 | The card's thumbnail is the source's shell thumbnail drawn through the recipe's rotate / flip, not a decoded result | At card size a format conversion looks the same; the turn and flip are what show |
+| 2026-10-20 | Inspector (Edit Metadata part 1): the Tools slice "Inspect" opens a read-only window per drop, a tab per file, grouped fields (File, Image, Camera, GPS, Description, Media, tracks, Chapters, Tags, then raw EXIF / XMP / IPTC / PNG text), search over group, name and value, copy value / field / all. Sources: the property system, WIC's metadata query reader, ffmpeg's probe. Files only (folders stay on the File-actions wheel), so Shift on a PDF now falls through to Tools | One window for every kind of file; ffmpeg is already shipped |
 | 2026-10-20 | M5: PDF text comes from our own reader of the pages' text operators, on QPDF's content-stream parser: ToUnicode maps, WinAnsi / MacRoman / Standard encodings with /Differences, /Widths and /W. A page with fewer than 8 visible characters counts as a scan and goes to Windows OCR | vcpkg has no PDFium port (PDFium builds with Chromium's own toolchain), and Windows.Data.Pdf has no text API. QPDF is already here for merge and organize; ordinary PDFs read well and OCR covers the rest |
 | 2026-10-20 | M5: Searchable PDF = an invisible text layer (render mode 3) over the page picture, in a glyphless Type0 font (Identity-H, codes are UTF-16 units, identity ToUnicode, every glyph 500/1000 em, stretched to each word's box with Tz) | Any language Windows OCR reads survives copy and paste; nothing to embed, so the file barely grows |
 | 2026-10-20 | M5: Images → PDF makes one page per image at the image's own DPI (96 when it has none). JPEGs pass through unchanged (DCTDecode; EXIF orientation by the page's drawing matrix); others are lossless Flate with a PNG predictor and a soft mask for transparency | No quality loss, small files, photos the right way up |
@@ -521,7 +530,7 @@ question 1).
 | 2026-10-20 | M5: the WinRT code (Windows.Data.Pdf, Windows.Media.Ocr, share sheet) and the editor windows are object libraries that plug into the core through small hooks; the core and its tests build without them | Unit tests run anywhere; tests that need Windows' renderer or OCR skip themselves where they are missing |
 | 2026-10-20 | M5: an engine can give the top panel its own line for a single result ("Copied 214 words", "2.1 MB to 840 KB (61% smaller)"); a result that is not a file (Copy text) doesn't say "Saved next to the originals" | Copy text writes nothing to disk; for Compress the size saved is what people want to see |
 | 2026-10-20 | All eleven video and audio tools that need a choice share one editor window (`src/mediaeditor`): Direct2D at the window's DPI, light/dark and accent aware, keyboard-usable, with a preview or waveform, a zoomable filmstrip timeline, typed timecodes and the tool's options on the right. Engines and the editor's maths are in `shiftdrop_core` (`src/videotools`, `src/audiotools`); the window is in the app and registers itself with `EditorApi` from a static initializer | The tools differ only in their options and overlays; one window keeps them consistent. The tests link the engines without any UI, and a build without the window says so instead of crashing |
-| 2026-10-20 | The Tools wheel keeps its eight-slice limit: a video gets Compress, 50% size, Under 10 MB, Under 25 MB, Trim…, Crop…, Join…, Split…; a song gets the four Compress slices, Normalize, Trim…, Channels…, Bleep…. The editor has a tool bar (tabs, Ctrl+1…Ctrl+7) with every tool of its kind, so Speed, Frames, Redact and Visualizer are one click away, and confirming runs the tool chosen last under its own recipe (name, suffix, History) | Seven video tools and four Compress presets do not fit eight slices, and smaller labels stop being readable. A recipe file that reuses a slice's id swaps that slice for another tool or preset |
+| 2026-10-20 | Every video and audio tool has its own slice on the Tools wheel (a video: twelve slices with the Compress presets and Inspect, on M4's two rings; a song: ten). Each opens the shared editor on its tab, and the tabs (Ctrl+1…Ctrl+7) switch tools without reloading; confirming runs the tool chosen last under its own built-in recipe (name, suffix, History) | Named tools on the wheel, as in the spec; the tabs save a trip back to the wheel when the first choice was wrong |
 | 2026-10-20 | Per-file choices (a trim range, crop box, redaction areas, frame marks) travel as `params.perFile[path]` and are merged by `ParamsForFile` before each file runs; the whole drop stays one batch with one History run | The pipeline, history and undo stay unchanged: one recipe per drop |
 | 2026-10-20 | Preview frames, filmstrip thumbnails, waveforms and playback sound come from the bundled ffmpeg (separate processes on the editor's own threads), not Media Foundation; quick frames seek to the keyframe before the time and use `-fps_mode passthrough` | One decoder for every format the tools accept (MKV, WebM, AVI included) and the same frames the render will use. Without passthrough the keyframe before the time came out with a negative timestamp and was dropped |
 | 2026-10-20 | Playback is XAudio2 2.9, loaded at run time from System32 (`LoadLibraryExW` + `XAudio2Create`), fed 48 kHz stereo chunks decoded ahead by ffmpeg with the tool's filter (speed, channels, bleeps), so A/B compare plays the real result; with no sound device a timer clock moves the playhead | No new import in the exe, and no audio device is needed to edit |
@@ -546,8 +555,8 @@ question 1).
 13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
 14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
 15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
-16. Tools wheel for video: Trim, Crop, Join and Split have slices, and Speed, Frames and Redact are tabs in the editor. Is that the right four? For a song: Normalize (−16 LUFS), Trim, Channels and Bleep, with the Visualizer as a tab. Or should the wheel get a second page (a "More…" slice) once M8 photo tools also need room?
-17. Normalize defaults to −16 LUFS (podcasts, speech). Music for streaming is usually −14 LUFS. Which default, and should the slice open a small chooser instead?
+16. Normalize is one slice at −16 LUFS (speech, podcasts); music for streaming is usually −14 and broadcast −23 (a recipe adds either). Should the slice open a small chooser instead, or should the three targets be slices?
+17. A video's Tools wheel now has twelve slices on two rings. Too many, or fine? The quieter tools (Frames, Redact) could live only in the editor's tabs.
 18. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
 
 ## Sources

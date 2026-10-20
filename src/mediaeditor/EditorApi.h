@@ -33,7 +33,7 @@ namespace sd::mediatools
     // through the files one at a time. The others take one set of choices for every file.
     bool IsPerFileTool(EditorTool tool);
     // The editor's tool bar: every video tool, or every audio tool that has a window, in bar order.
-    // The wheel has room for only some of them; the rest are one click away in the window.
+    // Any slice opens the window; its tabs switch tools without reloading the files.
     std::vector<EditorTool> SiblingTools(EditorTool tool);
     const wchar_t* ToolName(EditorTool tool);    // "Trim": its tool bar label
     const wchar_t* ToolTitle(EditorTool tool);   // "Trim Video": the window title

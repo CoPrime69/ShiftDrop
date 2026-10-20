@@ -14,8 +14,8 @@ namespace sd::videotools
 {
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();   // JSON array of Tools-wheel slices
-    // A tool's own recipe (id, label, suffix, icon, action), for one picked in the editor's tool bar
-    // that has no slice on the wheel. Null for a tool of the other kind.
+    // A tool's own built-in recipe (id, label, suffix, icon, action), for one picked in the editor's
+    // tabs. Null for a tool of the other kind.
     nlohmann::json ToolRecipe(mediatools::EditorTool tool);
 
     bool IsBatchAction(const std::string& action);         // video.join: one output from every file

@@ -61,6 +61,18 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
+  src/keyboard/Hotkey.cpp
+  src/keyboard/KeyNav.cpp
+  src/keyboard/ShellVerb.cpp
+  src/keyboard/WheelLayout.cpp
+  src/keyboard/WheelRequest.cpp
+  src/preview/Prediction.cpp
+  src/preview/Predictor.cpp
+  src/inspect/InspectModule.cpp
+  src/inspect/Metadata.cpp
+  src/inspect/MetadataReader.cpp
+  src/inspect/ProbeReport.cpp
   src/shelf/Carry.cpp
   src/shelf/ShelfGeometry.cpp
   src/shelf/ShelfModule.cpp
@@ -139,6 +151,10 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/keyboard/ExplorerSelection.cpp
+  src/keyboard/KeyboardController.cpp
+  src/preview/PreviewCard.cpp
+  src/inspect/InspectorWindow.cpp
   src/shelf/ShelfWindow.cpp
   # The video and audio tools' timeline editor (registers itself with mediaeditor/EditorApi)
   src/mediaeditor/EditorUi.cpp
@@ -176,6 +192,9 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/KeyboardTests.cpp
+    tests/PreviewTests.cpp
+    tests/InspectTests.cpp
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
