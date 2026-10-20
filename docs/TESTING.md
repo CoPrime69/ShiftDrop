@@ -123,7 +123,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
+- [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling does not stop on the all-dimmed wheels
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -145,6 +145,55 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Tray > History: the conversion is listed; Undo moves the output to the Recycle Bin
 - [ ] Rename `engines\ffmpeg.exe` in the install folder and restart ShiftDrop: dragging a video and holding Shift shows the video formats dimmed with "Media engine missing" in the centre; images still work. Rename it back
 - [ ] With Wi-Fi off, everything above works the same
+
+### N. Keyboard, Explorer selection, predicted output, inspector (M4)
+Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a folder with 20 or more image recipes (copy `web-ready.json` in the recipes folder under new ids, then restart) for paging.
+
+Keyboard during a drag
+- [ ] Drag a photo, hold **Shift**, let go of the mouse-free hand: **Right** highlights the slice at 12 o'clock, then each one clockwise; **Left** goes back; dimmed slices are skipped; holding an arrow repeats
+- [ ] **Up** / **Down** on a one-ring wheel switch to the previous / next wheel (like scrolling); the first slice of the new wheel is lit
+- [ ] Press **Enter** on a highlighted slice: the job runs on the dragged photo (top panel), the drag ends as if Esc was pressed, and nothing is moved or copied into the folder under the cursor. Release the mouse afterwards: nothing happens
+- [ ] A slice picked by key stays lit while the mouse is still; moving the mouse a few pixels hands the highlight back to the pointer
+- [ ] **Esc** still cancels the drag; the source window never loses focus (its title bar stays active the whole time)
+
+Wheel capacity
+- [ ] With 9 to 16 recipes on a wheel, the slices sit on two rings; labels stay readable; hovering the outer ring lights the outer slice, the gap between the rings never "loses" the highlight; Up / Down move between the rings
+- [ ] With more than 16, the last slice is **More** ("Page 1 of 2" in the centre): hovering it for a moment during a drag turns the page; Enter on it turns it too; the last page wraps to the first
+
+Wheel on Explorer's selection (hotkey)
+- [ ] Select three photos in File Explorer and press **Ctrl+Shift+Space**: the wheel opens at the pointer in click mode ("3 files"), Explorer keeps the focus
+- [ ] Hover a slice and click: it runs on the three photos; arrows + Enter do the same; arrows do not move Explorer's selection while the wheel is open, and work again in Explorer once it closes
+- [ ] **Esc**, a right-click, a click outside the wheel, or Alt+Tab close it without doing anything; clicking the centre closes it too
+- [ ] Shift, Ctrl and Alt (pressed again) and the mouse wheel switch wheels
+- [ ] On the desktop: select icons, press the hotkey: the same
+- [ ] With nothing selected: a notification says "Nothing selected"
+- [ ] In Excel (or VS Code), Ctrl+Shift+Space still does what it does there
+- [ ] Tray menu > "Wheel on Explorer's selection (Ctrl+Shift+Space)" unticked: the hotkey does nothing; ticked again: it works. `[Keyboard] ExplorerHotkey=Ctrl+Alt+W` in settings.ini and a restart change the keys; a hotkey taken by another app gives a notification at startup
+
+Right-click entry
+- [ ] Right-click a photo in Explorer (Windows 11: Show more options): **ShiftDrop…** is there; it opens the wheel on the photo in click mode
+- [ ] Select 20 files, right-click > ShiftDrop…: one wheel opens for all 20 (not 20 wheels), within about half a second
+- [ ] Right-click a folder > ShiftDrop…: the File-actions wheel offers what applies to folders
+- [ ] With ShiftDrop not running, right-click > ShiftDrop… starts it quietly (no "is running" notification) and opens the wheel
+- [ ] Tray menu > the right-click entry toggle removes and adds it; uninstalling removes it
+
+Predicted output
+- [ ] Drag the large photo, hold Shift, hover **WebP**: a card under the wheel shows the thumbnail, "WebP", "~1.2 MB · was 3.4 MB" (numbers vary), the output name "photo (converted).webp" and "removes GPS, camera"
+- [ ] Drop it: the real file's size is within about a third of the prediction
+- [ ] Hover a rotate slice: the thumbnail on the card is turned the same way, and the detail says "4032×3024 → 3024×4032"
+- [ ] Hover a Fit to… / resize slice: "→ 1920×1440"; hover Compress with a size target: "≤ 2 MB"
+- [ ] The small PNG on **JPG**: the size has no "~" (exact)
+- [ ] The video on **MKV**: "same streams, ~…"; on **MP4**: a size from duration × bitrate; the song on **MP3**: "audio only" style sizes
+- [ ] Moving quickly across slices never stutters the wheel; the card follows within a moment; near the bottom of the screen it shows above the wheel
+- [ ] File actions (Copy, Move to…) show no card
+
+Inspector
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Inspect**: a window opens with groups File, Image, Camera, GPS, …, EXIF; nothing is written next to the photo
+- [ ] Type "gps" in the search box: only GPS fields remain; "canon 2023" matches fields containing both words
+- [ ] Double-click a row, or select it and press Ctrl+C: the value is on the clipboard; right-click > Copy all shown fields gives every field as text
+- [ ] Drop three files (photo, video, song) on Inspect: one window with three tabs; the video tab lists Media, Video track 1, Audio track 1, chapters and tags
+- [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
+- [ ] Esc closes the window; Ctrl+F jumps to the search box
 
 ## 4. M0/M1 checklist
 

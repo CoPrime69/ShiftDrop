@@ -2,8 +2,12 @@
 #include "Overlay.h"
 #include "Log.h"
 
+#include <windowsx.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <format>
 #include <numbers>
 
 using Microsoft::WRL::ComPtr;
@@ -15,14 +19,14 @@ namespace sd
     {
         constexpr wchar_t kClassName[] = L"" SD_NAME L".Overlay";
 
-        // Sizes in DIPs; Layout() turns them into pixels for the monitor and the Size setting.
-        constexpr float kTileOutDip = 128.f;   // outer edge of the tiles
-        constexpr float kTileInDip = 58.f;     // inner edge of the tiles
-        constexpr float kCentreDip = 52.f;     // centre disc = dead zone: dropping here cancels
+        // Sizes in DIPs; Layout() turns them into pixels for the monitor and the Size setting. The ring
+        // radii are in keyboard/WheelLayout.h (one ring up to 8 slices, two up to 16).
         constexpr float kGapDip = 4.f;         // straight gap between tiles
         constexpr float kCornerDip = 6.f;      // tile corner rounding
         constexpr float kLiftDip = 7.f;        // a hovered tile grows outward by this much...
         constexpr float kPushDip = 3.f;        // ...and moves out along its centre line by this much
+        constexpr float kInnerLiftDip = 2.f;   // on two rings the inner ring lifts less, so it stays off the outer one
+        constexpr float kInnerPushDip = 1.f;
         constexpr float kMarginDip = 34.f;     // room around the tiles for the lift and the shadow
 
         // Animation lengths, ms.
@@ -34,6 +38,11 @@ namespace sd
         constexpr float kAwayFade = 0.45f;     // opacity lost at the window edge (never 0: drops still land)
         constexpr float kHotTauMs = 42.f;      // exponential approach for hover highlights
         constexpr UINT_PTR kTimerFrame = 1;
+        constexpr UINT_PTR kTimerMore = 2;     // dwelling on "More" during a drag turns the page
+        constexpr UINT kMoreDwellMs = 650;
+        constexpr LONG kKeyHoldPx = 2;         // a slice picked by key stays lit until the mouse moves more than this
+
+        constexpr wchar_t kMoreIcon = 0xE712;   // "More" (three dots)
 
         // Private messages to the overlay window.
         constexpr UINT kMsgHideCursor = WM_APP + 1;   // after DragEnter has returned to the drag source
@@ -118,6 +127,44 @@ namespace sd
         case WM_TIMER:
             if (self && wParam == kTimerFrame)
                 self->OnFrame();
+            if (self && wParam == kTimerMore)
+            {
+                KillTimer(hwnd, kTimerMore);
+                if (self->m_mode == Mode::Wheel && self->m_layout.IsMore(self->m_hot))
+                    self->NextPage();
+            }
+            return 0;
+        // Click mode: the wheel is not part of a drag, so it gets ordinary mouse messages (it is
+        // still never activated, see WM_MOUSEACTIVATE).
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+            if (self && self->InClickMode())
+            {
+                POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+                ClientToScreen(hwnd, &pt);
+                if (msg == WM_MOUSEMOVE)
+                {
+                    if (!self->m_tracking)
+                    {
+                        TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, hwnd, 0 };
+                        self->m_tracking = TrackMouseEvent(&tme) != FALSE;
+                    }
+                    self->OnClickMove(pt);
+                }
+                else if (msg == WM_LBUTTONUP)
+                    self->OnClickUp(pt);
+                else
+                    self->Cancel();
+            }
+            return 0;
+        case WM_MOUSELEAVE:
+            if (self)
+            {
+                self->m_tracking = false;
+                if (self->InClickMode() && !self->m_keyHot)
+                    self->SetHot(kOutside);
+            }
             return 0;
         case kMsgHideCursor:
             if (self && self->m_inDrag && self->m_mode == Mode::Wheel && self->m_appearance.hideCursor)
@@ -136,7 +183,7 @@ namespace sd
 
     // ---- Layout ----------------------------------------------------------------------------------
 
-    void Overlay::Layout(POINT screenPt)
+    void Overlay::Layout(POINT screenPt, int rings)
     {
         m_monitor = MonitorFromPoint(screenPt, MONITOR_DEFAULTTONEAREST);
         m_scale = ScaleFor(m_monitor, m_appearance.size);
@@ -144,16 +191,48 @@ namespace sd
         m_tileCache.clear();
 
         const float s = m_scale;
-        m_tileOut = std::round(kTileOutDip * s);
-        m_tileIn = std::round(kTileInDip * s);
-        m_inner = std::round(kCentreDip * s);
-        m_radius = m_tileOut;
-        const int half = static_cast<int>(std::ceil(m_tileOut + kMarginDip * s));
+        m_windowRings = std::clamp(rings, 1, 2);
+        m_tileIn = std::round(wheel::kInnerInDip * s);
+        m_inner = std::round(wheel::kCentreDip * s);
+        const float extent = std::round(wheel::RingBand(m_windowRings - 1).outer * s);
+        const int half = static_cast<int>(std::ceil(extent + kMarginDip * s));
         m_size = SIZE{ 2 * half, 2 * half };
         m_c = D2D1::Point2F(static_cast<float>(half), static_cast<float>(half));
         // Centred on the cursor even near a screen edge: shifting the wheel would put the cursor on a
         // slice instead of the dead zone, and a drop without moving would then trigger an action.
         m_origin = POINT{ screenPt.x - half, screenPt.y - half };
+    }
+
+    void Overlay::EnsureRings(int rings)
+    {
+        if (rings <= m_windowRings)
+            return;   // never shrinks while open: a one-ring wheel sits fine in a bigger window
+        // Grows around the same centre, so nothing under the cursor moves.
+        const POINT centre{ m_origin.x + static_cast<LONG>(std::lround(m_c.x)), m_origin.y + static_cast<LONG>(std::lround(m_c.y)) };
+        Layout(centre, rings);
+    }
+
+    void Overlay::Arrange(int page)
+    {
+        m_layout = wheel::Arrange(m_content.slices.size(), page);
+        m_shown.clear();
+        for (int i = 0; i < static_cast<int>(m_layout.slots.size()); ++i)
+        {
+            if (m_layout.IsMore(i))
+                m_shown.push_back(WheelSlice{ L"More", L"", true, kMoreIcon, false,
+                                              std::format(L"Page {} of {}", m_layout.page + 1, m_layout.pages) });
+            else
+                m_shown.push_back(m_content.slices[static_cast<size_t>(m_layout.ContentIndex(i))]);
+        }
+        m_hotT.assign(m_shown.size(), 0.f);
+        EnsureRings(m_layout.rings);
+        m_tileOut = std::round(m_layout.OuterEdge() * m_scale);
+        m_radius = m_tileOut;
+    }
+
+    bool Overlay::Selectable(int slot) const
+    {
+        return slot >= 0 && slot < static_cast<int>(m_shown.size()) && m_shown[static_cast<size_t>(slot)].enabled;
     }
 
     // ---- Showing, hiding, switching -------------------------------------------------------------
@@ -170,27 +249,40 @@ namespace sd
             NotifyHidden();
 
         m_ring = std::clamp(ring, 0, std::max(0, static_cast<int>(m_rings.size()) - 1));
-        Layout(screenPt);
+        Layout(screenPt, 1);
+        m_tileOut = std::round(wheel::kInnerOutDip * m_scale);
+        m_radius = m_tileOut;
         m_palette = Current(m_appearance.style);
         m_motion = AnimationsOn();
         m_backdrop.Reset();
         m_backdropPx = {};
         if (m_appearance.style == Style::Glass)
         {
-            // Before the window is shown, so the snapshot is of what is under it. About 6 window
-            // pixels per snapshot pixel at 100%; blurring a small image is cheap and the upscale smooths.
+            // Before the window is shown, so the snapshot is of what is under it. It covers the
+            // largest (two-ring) wheel, so a wheel that grows later still has glass under it. About 6
+            // window pixels per snapshot pixel at 100%; blurring a small image is cheap and the
+            // upscale smooths.
             const int step = std::max(4, static_cast<int>(std::lround(6.f * m_scale)));
-            m_backdropPx = CaptureBlurred(RECT{ m_origin.x, m_origin.y, m_origin.x + m_size.cx, m_origin.y + m_size.cy }, step);
+            const int half = static_cast<int>(std::ceil((wheel::kOuterOutDip + kMarginDip) * m_scale));
+            m_backdropOrigin = POINT{ screenPt.x - half, screenPt.y - half };
+            m_backdropPx = CaptureBlurred(RECT{ screenPt.x - half, screenPt.y - half, screenPt.x + half, screenPt.y + half }, step);
             m_backdropStep = static_cast<float>(step);
         }
         SetMode(Mode::Probe);
+        KillTimer(m_hwnd.get(), kTimerMore);
         m_announced = false;
         m_hot = kCenter;
         m_detail = -1;
         m_scrollAccum = 0;
         m_files.clear();
         m_content = {};
-        m_previous = {};
+        m_layout = m_prevLayout = {};
+        m_shown.clear();
+        m_prevShown.clear();
+        m_keyHot = false;
+        m_click = false;
+        m_sink = false;
+        m_lastHighlight.clear();
         m_hotT.clear();
         m_lastPt = screenPt;
         m_openT = 0.f;
@@ -216,29 +308,46 @@ namespace sd
             return;
         m_cursor.Restore();
         KillTimer(m_hwnd.get(), kTimerFrame);
+        KillTimer(m_hwnd.get(), kTimerMore);
         m_animating = false;
         if (m_mode != Mode::Hidden)
             ShowWindow(m_hwnd.get(), SW_HIDE);
         SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) & ~WS_EX_TRANSPARENT);
         SetMode(Mode::Hidden);
+        m_click = false;
+        m_sink = false;
+        NotifyHighlight();
         NotifyHidden();
     }
 
     void Overlay::BeginClose()
     {
         m_cursor.Restore();
-        if (m_mode != Mode::Wheel || !m_motion)
+        KillTimer(m_hwnd.get(), kTimerMore);
+        if (m_mode != Mode::Wheel || (!m_motion && !m_sink))
         {
             Hide();
             return;
         }
         // Fade out over a few frames. WS_EX_TRANSPARENT makes the fading window click-through, so a
-        // click right after the drop reaches whatever is underneath.
-        SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+        // click right after the drop reaches whatever is underneath. Not while it sinks a drag whose
+        // slice ran by key: until the drag source has seen the Esc, a release must land here (and do
+        // nothing), not in the folder under the wheel.
+        if (!m_sink)
+            SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) | WS_EX_TRANSPARENT);
         SetMode(Mode::Closing);
-        m_closeT = 0.f;
+        m_closeT = m_motion ? 0.f : 1.f;
+        NotifyHighlight();
         NotifyHidden();
         Animate();
+    }
+
+    void Overlay::Cancel()
+    {
+        if (m_mode != Mode::Wheel && m_mode != Mode::Probe)
+            return;
+        m_dropped = false;
+        BeginClose();
     }
 
     void Overlay::SetRing(int ring)
@@ -255,29 +364,33 @@ namespace sd
         // Notches are 120; precision touchpads send many small deltas, so accumulate. Scrolling down
         // (negative delta) moves to the next wheel, like moving down a list.
         m_scrollAccum += wheelDelta;
-        const int n = static_cast<int>(m_rings.size());
-        // Wheels with nothing for these files are skipped, so scrolling only visits useful ones.
-        const auto next = [&](int step) {
-            for (int i = 1, r = m_ring; i < n; ++i)
-            {
-                r = (r + step + n) % n;
-                if (HasActions(r))
-                    return r;
-            }
-            return (m_ring + step + n) % n;   // nothing applies anywhere: plain order
-        };
         while (m_scrollAccum <= -WHEEL_DELTA)
         {
             m_scrollAccum += WHEEL_DELTA;
-            if (const int r = next(1); r != m_ring)
+            if (const int r = NextRing(1); r != m_ring)
                 SwitchTo(r, 1);
         }
         while (m_scrollAccum >= WHEEL_DELTA)
         {
             m_scrollAccum -= WHEEL_DELTA;
-            if (const int r = next(-1); r != m_ring)
+            if (const int r = NextRing(-1); r != m_ring)
                 SwitchTo(r, -1);
         }
+    }
+
+    // Wheels with nothing for these files are skipped, so scrolling (and Up/Down) only visits useful ones.
+    int Overlay::NextRing(int step) const
+    {
+        const int n = static_cast<int>(m_rings.size());
+        if (n < 2)
+            return m_ring;
+        for (int i = 1, r = m_ring; i < n; ++i)
+        {
+            r = (r + step + n) % n;
+            if (HasActions(r))
+                return r;
+        }
+        return (m_ring + step + n) % n;   // nothing applies anywhere: plain order
     }
 
     bool Overlay::HasActions(int ring) const
@@ -296,17 +409,57 @@ namespace sd
             m_events.ringChanged(ring);
         if (m_mode != Mode::Wheel)
             return;   // probe: DragEnter will ask for this ring's content
-        m_previous = m_content;
+        m_prevLayout = m_layout;
+        m_prevShown = m_shown;
         m_content = m_provider ? m_provider(m_files, m_ring) : WheelContent{};
-        m_hotT.assign(m_content.slices.size(), 0.f);
+        Arrange(0);
         m_detail = -1;
         m_switchDir = direction;
         m_switchT = m_motion ? 0.f : 1.f;
-        m_tileCache.clear();
-        m_hot = HitTest(m_lastPt);
-        if (m_hot >= 0 && m_content.slices[static_cast<size_t>(m_hot)].enabled)
+        // A keyboard user lands on the new wheel's first slice; a mouse user on whatever is under the cursor.
+        if (m_keyHot)
+        {
+            std::vector<bool> selectable(m_shown.size());
+            for (size_t i = 0; i < m_shown.size(); ++i)
+                selectable[i] = m_shown[i].enabled;
+            const int first = keynav::FirstSelectable(m_layout, selectable);
+            m_hot = first >= 0 ? first : kCenter;
+        }
+        else
+        {
+            m_hot = HitTest(m_lastPt);
+        }
+        if (Selectable(m_hot))
             m_detail = m_hot;
+        KillTimer(m_hwnd.get(), kTimerMore);
         Animate();
+        NotifyHighlight();
+    }
+
+    void Overlay::NextPage()
+    {
+        if (m_mode != Mode::Wheel || m_layout.pages < 2)
+            return;
+        m_prevLayout = m_layout;
+        m_prevShown = m_shown;
+        Arrange(m_layout.page + 1);
+        m_detail = -1;
+        m_switchDir = 1;
+        m_switchT = m_motion ? 0.f : 1.f;
+        // Enter on "More" keeps the highlight on "More", so Enter again turns the next page.
+        int more = -1;
+        for (int i = 0; i < static_cast<int>(m_shown.size()); ++i)
+            if (m_layout.IsMore(i))
+                more = i;
+        m_hot = m_keyHot ? more : HitTest(m_lastPt);
+        if (Selectable(m_hot))
+            m_detail = m_hot;
+        log::Info(L"overlay: page {} of {}", m_layout.page + 1, m_layout.pages);
+        // Still dwelling on "More" during a drag: keep turning.
+        if (!m_click && !m_keyHot && m_layout.IsMore(m_hot))
+            SetTimer(m_hwnd.get(), kTimerMore, kMoreDwellMs, nullptr);
+        Animate();
+        NotifyHighlight();
     }
 
     // ---- Animation -------------------------------------------------------------------------------
@@ -321,7 +474,7 @@ namespace sd
         {
             m_openT = m_switchT = 1.f;
             for (size_t i = 0; i < m_hotT.size(); ++i)
-                m_hotT[i] = static_cast<int>(i) == m_hot && m_content.slices[i].enabled ? 1.f : 0.f;
+                m_hotT[i] = static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f;
             Render();
             return;
         }
@@ -346,7 +499,7 @@ namespace sd
         const float k = 1.f - std::exp(-dt / kHotTauMs);
         for (size_t i = 0; i < m_hotT.size(); ++i)
         {
-            const float target = static_cast<int>(i) == m_hot && m_content.slices[i].enabled ? 1.f : 0.f;
+            const float target = static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f;
             m_hotT[i] += (target - m_hotT[i]) * k;
             if (std::abs(target - m_hotT[i]) < 0.004f)
                 m_hotT[i] = target;
@@ -359,7 +512,16 @@ namespace sd
             m_closeT = std::min(1.f, m_closeT + dt / kCloseMs);
             if (m_closeT >= 1.f)
             {
-                Hide();
+                if (!m_sink)
+                {
+                    Hide();
+                    return;
+                }
+                // Faded out, but the drag is still on: an invisible disc keeps catching the drop
+                // until OLE says the drag is over (DragLeave or Drop).
+                Render();
+                KillTimer(m_hwnd.get(), kTimerFrame);
+                m_animating = false;
                 return;
             }
         }
@@ -376,7 +538,7 @@ namespace sd
         if (m_mode == Mode::Closing || m_openT < 1.f || m_switchT < 1.f || m_away != m_awayTarget)
             return false;
         for (size_t i = 0; i < m_hotT.size(); ++i)
-            if (m_hotT[i] != (static_cast<int>(i) == m_hot && m_content.slices[i].enabled ? 1.f : 0.f))
+            if (m_hotT[i] != (static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f))
                 return false;
         return true;
     }
@@ -389,31 +551,164 @@ namespace sd
         const float d = std::sqrt(dx * dx + dy * dy);
         if (d > m_radius + kLiftDip * m_scale)
             return kOutside;
-        if (d < m_inner || m_content.slices.empty())
+        if (d < m_inner || m_shown.empty())
             return kCenter;
-        float deg = std::atan2(dx, -dy) * 180.f / std::numbers::pi_v<float>;   // 0 at top, clockwise
-        if (deg < 0)
-            deg += 360.f;
-        const auto n = static_cast<int>(m_content.slices.size());
-        const float span = 360.f / static_cast<float>(n);
-        return static_cast<int>(std::floor((deg + span / 2.f) / span)) % n;
+        const float deg = std::atan2(dx, -dy) * 180.f / std::numbers::pi_v<float>;   // 0 at top, clockwise
+        return wheel::HitSlot(m_layout, d / m_scale, deg, kLiftDip);
     }
 
-    void Overlay::SetHot(int hot)
+    bool Overlay::Contains(POINT pt) const
     {
+        return m_mode == Mode::Wheel && HitTest(pt) != kOutside;
+    }
+
+    void Overlay::SetHot(int hot, bool byKey)
+    {
+        if (byKey)
+        {
+            m_keyHot = true;
+            GetCursorPos(&m_keyAnchor);
+        }
         if (hot == m_hot)
             return;
         m_hot = hot;
-        if (hot >= 0 && m_content.slices[static_cast<size_t>(hot)].enabled)
+        if (Selectable(hot))
             m_detail = hot;
+        // Holding a drag over "More" turns the page; clicks and keys turn it at once instead.
+        if (!byKey && !m_click && m_layout.IsMore(hot))
+            SetTimer(m_hwnd.get(), kTimerMore, kMoreDwellMs, nullptr);
+        else
+            KillTimer(m_hwnd.get(), kTimerMore);
         Animate();
+        NotifyHighlight();
+    }
+
+    void Overlay::NotifyHighlight()
+    {
+        if (!m_events.highlighted)
+            return;
+        WheelHighlight h;
+        if (m_mode == Mode::Wheel && Selectable(m_hot) && !m_layout.IsMore(m_hot))
+            h.actionId = m_shown[static_cast<size_t>(m_hot)].actionId;
+        h.files = &m_files;
+        h.centre = POINT{ m_origin.x + static_cast<LONG>(std::lround(m_c.x)), m_origin.y + static_cast<LONG>(std::lround(m_c.y)) };
+        h.radius = m_tileOut + kLiftDip * m_scale;
+        h.monitor = m_monitor;
+        h.scale = m_scale;
+        // Only changes are passed on (the same slice under a moving cursor is not news).
+        const std::wstring key = h.actionId.empty() ? std::wstring() : std::format(L"{}|{}|{}", h.actionId, m_ring, std::lround(h.radius));
+        if (key == m_lastHighlight)
+            return;
+        m_lastHighlight = key;
+        m_events.highlighted(h);
+    }
+
+    // ---- Keyboard and click mode -----------------------------------------------------------------
+
+    void Overlay::Navigate(keynav::Key key)
+    {
+        if (m_mode != Mode::Wheel)
+            return;
+        std::vector<bool> selectable(m_shown.size());
+        for (size_t i = 0; i < m_shown.size(); ++i)
+            selectable[i] = m_shown[i].enabled;
+        const auto move = keynav::Navigate(m_layout, selectable, m_hot >= 0 ? m_hot : -1, key);
+        if (move.wheel != 0)
+        {
+            const int ring = NextRing(move.wheel);
+            m_keyHot = true;
+            GetCursorPos(&m_keyAnchor);
+            if (ring != m_ring)
+                SwitchTo(ring, move.wheel);
+            return;
+        }
+        if (move.slot >= 0)
+            SetHot(move.slot, true);
+    }
+
+    void Overlay::Run(int slot)
+    {
+        if (m_onDrop && Selectable(slot) && !m_layout.IsMore(slot) && !m_files.empty())
+        {
+            m_dropped = true;
+            // Handed over before the wheel starts closing, so whoever listens to `hidden` already
+            // knows something ran.
+            m_onDrop(m_files, m_shown[static_cast<size_t>(slot)].actionId);
+        }
+    }
+
+    Overlay::Activation Overlay::Activate()
+    {
+        if (m_mode != Mode::Wheel || !Selectable(m_hot))
+            return Activation::None;
+        if (m_layout.IsMore(m_hot))
+        {
+            m_keyHot = true;
+            GetCursorPos(&m_keyAnchor);
+            NextPage();
+            return Activation::Paged;
+        }
+        Run(m_hot);
+        m_sink = m_inDrag;
+        BeginClose();   // fades out with the chosen slice still lit
+        return Activation::Ran;
+    }
+
+    void Overlay::ShowForFiles(POINT screenPt, int ring, std::vector<std::wstring> files)
+    {
+        if (!m_hwnd || files.empty() || m_inDrag)
+            return;   // a drag owns the wheel
+        ShowProbe(screenPt, ring);
+        m_click = true;
+        Open(files, screenPt);
+        // Ready for the mouse at once: the cursor is over the centre, and WM_MOUSEMOVE comes only
+        // once it moves.
+        OnClickMove(screenPt);
+    }
+
+    void Overlay::OnClickMove(POINT pt)
+    {
+        m_lastPt = pt;
+        if (m_keyHot && std::abs(pt.x - m_keyAnchor.x) <= kKeyHoldPx && std::abs(pt.y - m_keyAnchor.y) <= kKeyHoldPx)
+            return;
+        m_keyHot = false;
+        SetHot(HitTest(pt));
+    }
+
+    void Overlay::OnClickUp(POINT pt)
+    {
+        const bool kept = m_keyHot && std::abs(pt.x - m_keyAnchor.x) <= kKeyHoldPx && std::abs(pt.y - m_keyAnchor.y) <= kKeyHoldPx;
+        const int hot = kept ? m_hot : HitTest(pt);
+        if (hot >= 0 && m_layout.IsMore(hot))
+        {
+            m_lastPt = pt;
+            NextPage();
+            return;
+        }
+        if (hot >= 0 && !Selectable(hot))
+            return;   // a dimmed slice: nothing happens, the wheel stays
+        if (hot >= 0)
+        {
+            m_hot = hot;
+            Run(hot);
+            BeginClose();
+            return;
+        }
+        Cancel();   // the centre (or outside): close without doing anything
     }
 
     bool Overlay::OnDragEnter(const std::vector<std::wstring>& files, POINT pt)
     {
+        if (m_click)
+            return false;   // a click-mode wheel is not a drop target
         m_inDrag = true;
         if (m_mode != Mode::Probe && m_mode != Mode::Wheel)
             return false;
+        return Open(files, pt);
+    }
+
+    bool Overlay::Open(const std::vector<std::wstring>& files, POINT pt)
+    {
         if (files.empty())
         {
             log::Info(L"overlay: drag has no CF_HDROP (text, URL or virtual file); hiding");
@@ -434,12 +729,11 @@ namespace sd
                 }
         }
         m_content = m_provider ? m_provider(files, m_ring) : WheelContent{};
-        m_hotT.assign(m_content.slices.size(), 0.f);
-        m_tileCache.clear();
+        Arrange(0);
         if (opening)
         {
             m_openT = m_motion ? 0.f : 1.f;
-            if (m_appearance.hideCursor)
+            if (m_appearance.hideCursor && !m_click)
                 PostMessageW(m_hwnd.get(), kMsgHideCursor, 0, 0);   // not inside DragEnter: the source is waiting on us
         }
         SetMode(Mode::Wheel);
@@ -449,7 +743,8 @@ namespace sd
             m_events.shown(m_ring, m_monitor);
         m_announced = true;
         Animate();
-        log::Info(L"overlay: DragEnter with {} file(s), first: {}", files.size(), files.front());
+        NotifyHighlight();
+        log::Info(L"overlay: {} with {} file(s), first: {}", m_click ? L"opened on a selection" : L"DragEnter", files.size(), files.front());
         return true;
     }
 
@@ -458,8 +753,15 @@ namespace sd
         if (m_mode != Mode::Wheel)
             return DROPEFFECT_NONE;
         m_lastPt = pt;
-        const int hot = HitTest(pt);
-        SetHot(hot);
+        // OLE calls DragOver repeatedly even when the mouse is still: a slice picked by key keeps the
+        // highlight until the cursor really moves.
+        int hot = m_hot;
+        if (!m_keyHot || std::abs(pt.x - m_keyAnchor.x) > kKeyHoldPx || std::abs(pt.y - m_keyAnchor.y) > kKeyHoldPx)
+        {
+            m_keyHot = false;
+            hot = HitTest(pt);
+            SetHot(hot);
+        }
         // Heading out past the tiles, the wheel fades a little with distance, so leaving it is a
         // gradual hand-off rather than a sudden disappearance at the window edge.
         const float d = std::hypot(static_cast<float>(pt.x - m_origin.x) - m_c.x, static_cast<float>(pt.y - m_origin.y) - m_c.y);
@@ -475,16 +777,37 @@ namespace sd
         // Disabled slices answer NONE, so the cursor says "not allowed" there. The centre is where the
         // cursor starts, so it answers COPY like a slice: a "not allowed" cursor the moment the wheel
         // opens reads as broken. Releasing on the centre still does nothing (OnDrop finds no slice).
-        if (hot == kCenter || (hot >= 0 && m_content.slices[static_cast<size_t>(hot)].enabled))
+        if (hot == kCenter || Selectable(hot))
             return SafeEffect(allowed);
         return DROPEFFECT_NONE;
 #endif
+    }
+
+    // A drag whose slice already ran by key has ended (the Esc reached the source, or it was dropped
+    // anyway): the rest of the fade can be click-through.
+    bool Overlay::EndSink()
+    {
+        if (!m_sink)
+            return false;
+        m_sink = false;
+        if (m_mode != Mode::Closing || m_closeT >= 1.f)
+        {
+            Hide();
+            return true;
+        }
+        SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+        Animate();
+        return true;
     }
 
     void Overlay::OnDragLeave()
     {
         m_inDrag = false;
         m_cursor.Restore();
+        if (EndSink())
+            return;
+        if (m_mode == Mode::Closing)
+            return;   // already fading out
         if (IsVisible())
             log::Info(L"overlay: DragLeave (cursor left the wheel, Esc, or released on the centre); hiding");
         BeginClose();
@@ -493,9 +816,12 @@ namespace sd
     void Overlay::OnDrop(const std::vector<std::wstring>& files, POINT pt)
     {
         m_inDrag = false;
-        m_dropped = true;
         m_cursor.Restore();
-        const int hot = HitTest(pt);
+        if (EndSink())
+            return;   // the slice already ran by key: this drop only ends the drag
+        m_dropped = true;
+        // A slice picked by key (cursor not moved since) is the one dropped on.
+        const int hot = m_keyHot ? m_hot : HitTest(pt);
         // The drop is handed over before the wheel starts closing, so whoever listens to `hidden`
         // already knows something was dropped.
         if (m_onDrop && !files.empty())
@@ -504,8 +830,11 @@ namespace sd
             (void)hot;
             m_onDrop(files, L"");
 #else
-            if (hot >= 0 && m_content.slices[static_cast<size_t>(hot)].enabled)
-                m_onDrop(files, m_content.slices[static_cast<size_t>(hot)].actionId);
+            if (Selectable(hot) && !m_layout.IsMore(hot))
+            {
+                m_hot = hot;
+                m_onDrop(files, m_shown[static_cast<size_t>(hot)].actionId);
+            }
 #endif
         }
         BeginClose();   // fades out with the chosen slice still lit
@@ -636,16 +965,15 @@ namespace sd
 
     // ---- Drawing ---------------------------------------------------------------------------------
 
-    void Overlay::DrawSlices(const WheelContent& content, const std::vector<float>& hotT, float alpha, float rotation)
+    void Overlay::DrawSlices(const std::vector<WheelSlice>& slices, const wheel::Layout& layout, const std::vector<float>& hotT, float alpha, float rotation)
     {
-        const size_t n = content.slices.size();
+        const size_t n = std::min(slices.size(), layout.slots.size());
         if (n == 0 || alpha <= 0.f)
             return;
         D2D1_MATRIX_3X2_F base{};
         m_rt->GetTransform(&base);
         const auto turned = D2D1::Matrix3x2F::Rotation(rotation, m_c) * base;
 
-        const float span = 360.f / static_cast<float>(n);
         const float s = m_scale;
         // Draw the hovered tile last so its lift overlaps its neighbours cleanly.
         std::vector<size_t> order(n);
@@ -656,17 +984,23 @@ namespace sd
         });
         for (const size_t i : order)
         {
-            const auto& slice = content.slices[i];
+            const auto& slice = slices[i];
+            const auto& slot = layout.slots[i];
+            const int si = static_cast<int>(i);
             const float t = i < hotT.size() && slice.enabled ? hotT[i] : 0.f;
             const float e = EaseOutCubic(t);
-            const float mid = static_cast<float>(i) * span;
-            // The hovered tile lifts: it grows outward and moves out along its centre line.
-            const float push = kPushDip * s * e;
+            const float mid = layout.MidDeg(si);
+            const auto band = layout.BandOf(si);
+            const float tileIn = std::round(band.inner * s), tileOut = std::round(band.outer * s);
+            // The hovered tile lifts: it grows outward and moves out along its centre line (less on
+            // the inner of two rings, which would otherwise touch the outer one).
+            const bool innerOfTwo = layout.rings == 2 && slot.ring == 0;
+            const float push = (innerOfTwo ? kInnerPushDip : kPushDip) * s * e;
             const float rad = mid * std::numbers::pi_v<float> / 180.f;
             m_rt->SetTransform(D2D1::Matrix3x2F::Translation(push * std::sin(rad), -push * std::cos(rad)) * turned);
 
-            const float outer = m_tileOut + kLiftDip * s * e;
-            auto tile = TileGeometry(n, i, m_tileIn, outer);
+            const float outer = tileOut + (innerOfTwo ? kInnerLiftDip : kLiftDip) * s * e;
+            auto tile = TileGeometry(static_cast<size_t>(slot.count), static_cast<size_t>(slot.index), tileIn, outer);
             if (!tile)
                 continue;
             m_rt->FillGeometry(tile.Get(), Brush(m_palette.tile, alpha).Get());
@@ -677,7 +1011,7 @@ namespace sd
                 ComPtr<ID2D1GradientStopCollection> collection;
                 ComPtr<ID2D1LinearGradientBrush> fill;
                 if (SUCCEEDED(m_rt->CreateGradientStopCollection(stops, 2, &collection)) &&
-                    SUCCEEDED(m_rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(Polar(outer, mid), Polar(m_tileIn, mid)),
+                    SUCCEEDED(m_rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(Polar(outer, mid), Polar(tileIn, mid)),
                                                               collection.Get(), &fill)))
                 {
                     fill->SetOpacity(t * alpha);
@@ -687,9 +1021,9 @@ namespace sd
             m_rt->DrawGeometry(tile.Get(), Brush(m_palette.tileLine, alpha * (1.f - t)).Get(), 1.f);
 
             // Icon above the label on the tile's centre line; format names (no icon) are larger.
-            const float r = (m_tileIn + m_tileOut) / 2.f + 2.f * s * e;
+            const float r = (tileIn + tileOut) / 2.f + 2.f * s * e;
             const auto at = Polar(r, mid);
-            const float width = std::min(2.f * std::numbers::pi_v<float> * r / static_cast<float>(n), 2.f * r) - 12.f * s;
+            const float width = std::min(2.f * std::numbers::pi_v<float> * r / static_cast<float>(slot.count), 2.f * r) - 12.f * s;
             const auto colour = slice.enabled ? Mix(m_palette.text, m_palette.textOnAccent, t) : m_palette.textDim;
             if (slice.icon)
             {
@@ -733,9 +1067,9 @@ namespace sd
                 ch = static_cast<wchar_t>(towupper(ch));
             Text(title, m_ringFont.Get(), lower, m_palette.text, 0.62f * (1.f - detailT));
         }
-        if (detailT > 0.f && m_detail >= 0 && static_cast<size_t>(m_detail) < m_content.slices.size())
+        if (detailT > 0.f && m_detail >= 0 && static_cast<size_t>(m_detail) < m_shown.size())
         {
-            const auto& slice = m_content.slices[static_cast<size_t>(m_detail)];
+            const auto& slice = m_shown[static_cast<size_t>(m_detail)];
             Text(slice.detail.empty() ? slice.label : slice.detail, m_detailFont.Get(),
                  D2D1::RectF(lower.left, lower.top - 1.f * s, lower.right, lower.bottom + 12.f * s), m_palette.text, 0.85f * detailT);
         }
@@ -806,7 +1140,10 @@ namespace sd
                                         D2D1::BitmapBrushProperties(D2D1_EXTEND_MODE_CLAMP, D2D1_EXTEND_MODE_CLAMP, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR), &glass);
                 if (glass)
                 {
-                    glass->SetTransform(D2D1::Matrix3x2F::Scale(m_backdropStep, m_backdropStep));
+                    // The snapshot covers the largest wheel around where it opened; the window may be smaller.
+                    glass->SetTransform(D2D1::Matrix3x2F::Scale(m_backdropStep, m_backdropStep) *
+                                        D2D1::Matrix3x2F::Translation(static_cast<float>(m_backdropOrigin.x - m_origin.x),
+                                                                      static_cast<float>(m_backdropOrigin.y - m_origin.y)));
                     m_rt->FillEllipse(disc, glass.Get());
                 }
             }
@@ -822,7 +1159,7 @@ namespace sd
         DrawCentre();
         Text(SD_NAME, m_labelFont.Get(), D2D1::RectF(m_c.x - m_tileOut, m_c.y - m_tileOut, m_c.x + m_tileOut, m_c.y - m_tileIn), m_palette.text);
 #else
-        if (m_content.slices.empty())
+        if (m_shown.empty())
         {
             // Nothing applies to these files on this wheel: an empty ring keeps the shape.
             if (auto ring = TileGeometry(1, 0, m_tileIn, m_tileOut))
@@ -833,12 +1170,12 @@ namespace sd
         {
             const float e = EaseOutCubic(m_switchT);
             const float turn = 24.f * static_cast<float>(m_switchDir);
-            DrawSlices(m_previous, {}, 1.f - e, -turn * e);
-            DrawSlices(m_content, m_hotT, e, turn * (1.f - e));
+            DrawSlices(m_prevShown, m_prevLayout, {}, 1.f - e, -turn * e);
+            DrawSlices(m_shown, m_layout, m_hotT, e, turn * (1.f - e));
         }
         else
         {
-            DrawSlices(m_content, m_hotT, 1.f, 0.f);
+            DrawSlices(m_shown, m_layout, m_hotT, 1.f, 0.f);
         }
         DrawCentre();
 #endif
@@ -856,6 +1193,11 @@ namespace sd
             // Alpha ~2%: invisible to the eye, but non-zero so the disc is hit-testable for OLE.
             m_rt->FillEllipse(D2D1::Ellipse(m_c, m_radius, m_radius), Brush(D2D1::ColorF(0, 0, 0, 1), 0.02f).Get());
         }
+        else if (m_mode == Mode::Closing && m_sink && m_closeT >= 1.f)
+        {
+            // Faded out while still sinking a drag (see OnFrame): the probe's invisible disc.
+            m_rt->FillEllipse(D2D1::Ellipse(m_c, m_radius, m_radius), Brush(D2D1::ColorF(0, 0, 0, 1), 0.02f).Get());
+        }
         else if (m_mode == Mode::Wheel || m_mode == Mode::Closing)
         {
             DrawScene();
@@ -865,8 +1207,11 @@ namespace sd
             // Never fully transparent while it takes drops: the layered hit test ignores pixels that
             // end up with alpha 0.
             opacity = std::max(0.1f, EaseOutCubic(m_openT * kOpenMs / kFadeInMs)) * (1.f - kAwayFade * m_away);
+        else if (m_mode == Mode::Closing && m_sink && m_closeT >= 1.f)
+            opacity = 1.f;
         else if (m_mode == Mode::Closing)
-            opacity = (1.f - kAwayFade * m_away) * (1.f - EaseOutCubic(m_closeT));
+            // While sinking a drag never quite 0, which would let the drop through the window.
+            opacity = std::max(m_sink ? 0.05f : 0.f, (1.f - kAwayFade * m_away) * (1.f - EaseOutCubic(m_closeT)));
         m_canvas->End(m_hwnd.get(), m_origin, opacity);
         m_rt = nullptr;
     }
