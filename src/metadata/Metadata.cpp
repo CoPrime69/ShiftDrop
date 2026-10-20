@@ -160,6 +160,21 @@ namespace sd::metadata
                 out.push_back({ Field{ "photoshop", L"IPTC", L"Photoshop data", L"(editing history, captions, previews)", true, false }, block });
         }
 
+        constexpr uint16_t kOrientationTag = 0x0112;
+
+        // An EXIF block that says only which way up the picture is: what a clean copy keeps.
+        bool OrientationOnly(std::span<const uint8_t> payload)
+        {
+            ExifData exif;
+            if (!exif.Parse(TiffOf(payload)) || !exif.ThumbnailBytes().empty())
+                return false;
+            for (const auto& dir : exif.Directories())
+                for (const auto& e : dir.entries)
+                    if (dir.ifd != Ifd::Primary || e.tag != kOrientationTag)
+                        return false;
+            return true;
+        }
+
         void ReadExifBlock(std::span<const uint8_t> payload, int block, std::vector<Found>& out)
         {
             ExifData exif;
@@ -177,6 +192,8 @@ namespace sd::metadata
                     f.name = TagName(dir.ifd, e.tag);
                     f.value = FormatValue(exif, dir.ifd, e);
                     f.editable = dir.ifd != Ifd::Thumbnail && e.type != type::Undefined;
+                    // Which way up the picture is: not about the person, and a clean copy keeps it.
+                    f.personal = !(dir.ifd == Ifd::Primary && e.tag == kOrientationTag);
                     out.push_back({ std::move(f), block });
                 }
             if (!exif.ThumbnailBytes().empty())
@@ -358,6 +375,36 @@ namespace sd::metadata
         }
 
         std::span<const uint8_t> Bytes(const std::vector<uint8_t>& v) { return { v.data(), v.size() }; }
+
+        // The EXIF orientation of a JPEG, PNG or WebP (1, normal, when there is none).
+        uint32_t OrientationOf(std::span<const uint8_t> bytes)
+        {
+            std::vector<Block> blocks;
+            if (!ListBlocks(bytes, DetectContainer(bytes), blocks))
+                return 1;
+            for (const auto& b : blocks)
+            {
+                ExifData exif;
+                if (b.kind == BlockKind::Exif && exif.Parse(TiffOf(bytes.subspan(b.payload, b.payloadSize))))
+                {
+                    const auto* e = exif.Find(Ifd::Primary, kOrientationTag);
+                    return e ? exif.UInt(*e) : 1;
+                }
+            }
+            return 1;
+        }
+
+        // WIC's path of that orientation entry, e.g. "/app1/ifd/{ushort=274}".
+        bool IsOrientationPath(const std::wstring& path)
+        {
+            std::wstring lower = path;
+            for (auto& c : lower)
+                c = static_cast<wchar_t>(std::towlower(c));
+            return lower.ends_with(L"/ifd/{ushort=274}") && lower.find(L"/exif") == std::wstring::npos && lower.find(L"/gps") == std::wstring::npos;
+        }
+
+        HRESULT WriteReencoded(const std::wstring& source, const std::wstring& target, const Inventory& before, ScrubReport& report,
+                               std::wstring& extension, std::wstring& error);
     }
 
     size_t Inventory::PersonalCount() const
@@ -467,6 +514,20 @@ namespace sd::metadata
             std::vector<uint8_t> out;
             if (!StripPersonal(Bytes(bytes), out, nullptr, &error))
                 return WINCODEC_ERR_BADHEADER;
+            // A sideways photo stays the right way up: its orientation goes back in, alone.
+            bool placed = true;
+            if (const uint32_t orientation = OrientationOf(Bytes(bytes)); orientation >= 2 && orientation <= 8)
+            {
+                ExifData only;
+                only.Set(Ifd::Primary, ExifEntry{ kOrientationTag, type::Short, 1, { static_cast<uint8_t>(orientation), 0 } });
+                const auto tiff = only.Serialize();
+                std::vector<uint8_t> withOrientation;
+                placed = ReplaceExif(Bytes(out), Bytes(tiff), withOrientation, nullptr);
+                if (placed)
+                    out = std::move(withOrientation);
+            }
+            if (!placed)
+                return WriteReencoded(source, target, before, report, extension, error);   // e.g. a simple WebP: no room for EXIF
             if (!WriteFileBytes(target, Bytes(out)))
             {
                 error = L"cannot write the copy";
@@ -478,7 +539,14 @@ namespace sd::metadata
             return S_OK;
         }
         // Everything else: decode and write the pixels into a fresh file.
-        const Inventory before = ReadMetadata(source);
+        return WriteReencoded(source, target, ReadMetadata(source), report, extension, error);
+    }
+
+    namespace
+    {
+        HRESULT WriteReencoded(const std::wstring& source, const std::wstring& target, const Inventory& before, ScrubReport& report,
+                               std::wstring& extension, std::wstring& error)
+        {
         canvas::Raster image;
         if (const HRESULT hr = canvas::LoadRaster(source, image, error); FAILED(hr))
             return hr;
@@ -490,6 +558,7 @@ namespace sd::metadata
         report.lossless = !format.lossy;
         extension = IsAlreadyFormat(format, LowerExtension(source)) ? LowerExtension(source) : std::wstring(format.extension);
         return S_OK;
+        }
     }
 
     bool IsPersonalWicPath(const std::wstring& path)
@@ -549,6 +618,8 @@ namespace sd::metadata
         {
             for (const auto& b : blocks)
             {
+                if (b.kind == BlockKind::Exif && OrientationOnly(Bytes(bytes).subspan(b.payload, b.payloadSize)))
+                    continue;
                 if (IsPersonal(b.kind))
                     v.leftovers.push_back(Widen(b.name));
                 else if (b.kind == BlockKind::Jfif && b.payloadSize >= 14 && bytes[b.payload + 12] * bytes[b.payload + 13] > 0)
@@ -559,7 +630,7 @@ namespace sd::metadata
             v.leftovers.push_back(L"the file's structure is damaged");
         // 2. Every path WIC's metadata readers expose.
         v.wicChecked = WalkFile(path, [&](const std::wstring& full, const PROPVARIANT&) {
-            if (IsPersonalWicPath(full) && std::find(v.leftovers.begin(), v.leftovers.end(), full) == v.leftovers.end())
+            if (IsPersonalWicPath(full) && !IsOrientationPath(full) && std::find(v.leftovers.begin(), v.leftovers.end(), full) == v.leftovers.end())
                 v.leftovers.push_back(full);
         });
         // 3. The picture still opens.
@@ -620,11 +691,11 @@ namespace sd::metadata
             Ifd ifd{};
             uint16_t tag = 0;
             if (key == "exif.1st.thumbnail")
-                exif.RemoveDirectory(Ifd::Thumbnail), exifEdited = true;
+                exif.RemoveIfd(Ifd::Thumbnail), exifEdited = true;
             else if (key.starts_with("exif.") && key.find('.', 5) == std::string::npos)
             {
                 if (const auto which = IfdFromKey(std::string_view(key).substr(5)))
-                    exif.RemoveDirectory(*which), exifEdited = true;
+                    exif.RemoveIfd(*which), exifEdited = true;
             }
             else if (ParseExifKey(key, ifd, tag))
                 exifEdited |= exif.Remove(ifd, tag);
@@ -718,7 +789,7 @@ namespace sd::metadata
         ExifData exif = ExifOf(source, blocks);
         if (exif.Directories().empty())
             return false;
-        exif.RemoveDirectory(Ifd::Thumbnail);
+        exif.RemoveIfd(Ifd::Thumbnail);
         exif.Remove(Ifd::Primary, 0x0112);   // orientation: absent means normal
         exif.Remove(Ifd::Primary, 0x0100);   // TIFF-style image width and height
         exif.Remove(Ifd::Primary, 0x0101);

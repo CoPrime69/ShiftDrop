@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "imagetools/ImageToolsModule.h"
 #include "shelf/ShelfModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
@@ -9,6 +10,7 @@ namespace sd
     {
         static const std::vector<FeatureModule> modules = {
             ShelfModule(),   // Float shelf (file action), src/shelf
+            ImageToolsModule(),   // Crop, Redact, Share-safe, Remove metadata, src/imagetools
         };
         return modules;
     }
