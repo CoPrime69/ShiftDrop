@@ -448,10 +448,16 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
     MediaSandboxOn on;
     const int before = sandbox::MediaJail::OpenCount();
     const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
-    int runs = 0;
+    int runs = 0, toolRuns = 0;
     for (const auto& recipe : recipes.store.All())
     {
-        if (!recipe.IsMedia())
+        // Convert and Compress recipes, plus the video and audio tools that run without an editor
+        // (those keep working with the setting on, inside the jail or, if they name other files, outside).
+        const bool tool = !recipe.IsMedia() && recipe.steps.size() == 1 &&
+                          (recipe.steps[0].action.starts_with("video.") || recipe.steps[0].action.starts_with("audio."));
+        if (!recipe.IsMedia() && !tool)
+            continue;
+        if (tool && (!runner.EngineFor(recipe) || runner.EngineFor(recipe)->NeedsEditor(recipe)))
             continue;
         for (const auto& source : { video, audio })
         {
@@ -460,7 +466,7 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
             const auto r = runner.Run(recipe, 0, source, {});
             if (!r.ok && r.error.starts_with(L"already"))
                 continue;   // a size preset on a clip that is already small enough
-            ++runs;
+            ++(tool ? toolRuns : runs);
             ASSERT_TRUE(r.ok) << recipe.id << " on " << Narrow(source) << ": " << Narrow(r.error);
             EXPECT_GT(r.size, 0u) << recipe.id;
             const auto info = engine->Probe(r.output);   // the probe is sandboxed too
@@ -469,6 +475,7 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
         }
     }
     EXPECT_GT(runs, 15);
+    EXPECT_GE(toolRuns, 1) << "Normalize needs no editor";
     EXPECT_GE(sandbox::MediaJail::OpenCount() - before, runs) << "every run (and probe) went through the jail";
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
 }
