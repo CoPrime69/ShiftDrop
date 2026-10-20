@@ -246,19 +246,19 @@ TEST(Pipeline, CompressFitsTheTargetAndShrinksOnlyWhenNeeded)
     // A target too small for any quality at full size: the picture is scaled down to fit.
     Recipe tiny;
     std::string error;
-    ASSERT_TRUE(ParseRecipe(R"({ "id": "tiny", "label": "Tiny", "ring": "tools", "suffix": "tiny",
-                                 "steps": [ { "action": "image.compress", "params": { "maxKB": 30 } } ] })",
-                            f.recipes.registry, tiny, error)) << error;
+    const char* json = R"({ "id": "tiny", "label": "Tiny", "ring": "tools", "suffix": "tiny",
+                           "steps": [ { "action": "image.compress", "params": { "maxKB": 30 } } ] })";
+    ASSERT_TRUE(ParseRecipe(json, f.recipes.registry, tiny, error)) << error;
     const auto runId = f.history->BeginRun(tiny, 1);
-    const auto small = f.runner->Run(tiny, runId, source, std::stop_token{});
-    ASSERT_TRUE(small.ok) << Narrow(small.error);
-    EXPECT_LE(std::filesystem::file_size(small.output), 30u * 1024u);
-    ASSERT_TRUE(ImageSize(small.output, w, h));
+    const auto shrunk = f.runner->Run(tiny, runId, source, std::stop_token{});
+    ASSERT_TRUE(shrunk.ok) << Narrow(shrunk.error);
+    EXPECT_LE(std::filesystem::file_size(shrunk.output), 30u * 1024u);
+    ASSERT_TRUE(ImageSize(shrunk.output, w, h));
     EXPECT_LT(w, 1600u);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
 
     // Already under the target: refused, nothing written.
-    const auto again = f.runner->Run(f.recipes.Get("image-under-1mb"), runId, small.output, std::stop_token{});
+    const auto again = f.runner->Run(f.recipes.Get("image-under-1mb"), runId, shrunk.output, std::stop_token{});
     EXPECT_FALSE(again.ok);
     EXPECT_EQ(Narrow(again.error), "already under 1 MB");
 }
