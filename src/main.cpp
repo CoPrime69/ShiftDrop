@@ -1,4 +1,4 @@
-// ShiftDrop: drag a file, hold a wheel key (Shift, Ctrl or Alt by default), drop it on a wheel slice.
+// ShiftDrop: drag a file, press Shift, scroll to the section you want, drop it on a wheel slice.
 //
 // Threads:
 //   UI thread    hidden main window, tray icon, overlay, WH_MOUSE_LL hook, OLE drop target, history
@@ -264,7 +264,7 @@ namespace sd
             if (!m_island->Create())
                 return false;
             m_island->SetAppearance(m_appearance);
-            // The Float shelf: the Alt wheel's Float slice, and where finished results can be carried.
+            // The Float shelf: the File actions wheel's Float slice, and where finished results can be carried.
             m_shelf = std::make_unique<Shelf>(m_instance, log::AppDataFolder() + L"\\shelf.json");
             if (!m_shelf->Create())
                 log::Error(L"shelf: unavailable; the Float slice and carrying results are off");
@@ -342,7 +342,7 @@ namespace sd
             else if (!m_autostart && m_startWheel.empty())
             {
                 // Started at login: stay quiet in the tray. Started by hand: say it is ready.
-                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file and hold {}.", kBuild, KeyHelp()));
+                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file, press {}, and scroll for more sections.", kBuild, KeyHelp()));
             }
             log::Info(L"ready ({}, {})", kBuild, KeyHelp());
             return true;
@@ -364,13 +364,14 @@ namespace sd
     private:
         static std::wstring RecipesFolder() { return log::AppDataFolder() + L"\\recipes"; }
 
-        // "Shift (Convert), Ctrl (Tools) or Alt (File actions)", skipping wheels that are turned off.
+        // "Shift" by default; a wheel given its own key in settings.ini is named after it, as in
+        // "Shift or Ctrl (Tools)".
         std::wstring KeyHelp() const
         {
             std::vector<std::wstring> parts;
             for (int i = 0; i < kRingCount; ++i)
                 if (m_settings.keys[i])
-                    parts.push_back(std::format(L"{} ({})", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i))));
+                    parts.push_back(i == 0 ? m_settings.keyNames[i] : std::format(L"{} ({})", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i))));
             std::wstring text;
             for (size_t i = 0; i < parts.size(); ++i)
                 text += (i == 0 ? L"" : i + 1 == parts.size() ? L" or " : L", ") + parts[i];
@@ -380,9 +381,8 @@ namespace sd
         std::wstring IdleTip() const
         {
             std::wstring tip = SD_NAME;
-            for (int i = 0; i < kRingCount; ++i)
-                if (m_settings.keys[i])
-                    tip += std::format(L"\n{} = {}", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i)));
+            tip += std::format(L"\nDrag a file, press {}", KeyHelp());
+            tip += L"\nScroll to switch sections";
             return tip;   // Tray truncates to 127 characters
         }
 
