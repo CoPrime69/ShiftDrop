@@ -10,12 +10,13 @@
 //
 // The callback only records state in plain globals and PostMessage()s to the main window:
 //   DragBegin  primary button held and moved past SM_CXDRAG/SM_CYDRAG
-//   DragArm    ...and the trigger modifier is down (GetAsyncKeyState), once per press
+//   DragArm    ...and a trigger modifier is down (GetAsyncKeyState), once per press
 //   DragEnd    primary button released after a drag
 // No allocation, no locks, no I/O inside the callback.
 namespace sd::hook
 {
-    bool Install(HWND notify, UINT triggerVk);
+    // keys: up to three trigger VKs (0 = unused). DragArm's wParam says which one was pressed.
+    bool Install(HWND notify, const UINT (&keys)[3]);
     void Uninstall();
     bool Reinstall();          // used by the watchdog when the hook appears to have been dropped
     bool IsInstalled();

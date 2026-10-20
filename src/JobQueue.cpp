@@ -10,7 +10,7 @@
 
 namespace sd
 {
-    JobQueue::JobQueue(unsigned threads)
+    JobQueue::JobQueue(unsigned threads, Apartment apartment) : m_apartment(apartment)
     {
         if (threads == 0)
             threads = 1;
@@ -44,7 +44,9 @@ namespace sd
 
     void JobQueue::Run(std::stop_token stop)
     {
-        const HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        // An STA thread here never hosts objects other apartments call into, so it needs no message pump.
+        const HRESULT hr = CoInitializeEx(nullptr, m_apartment == Apartment::Sta ? COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE
+                                                                                 : COINIT_MULTITHREADED);
         auto uninit = wil::scope_exit([hr] { if (SUCCEEDED(hr)) CoUninitialize(); });
 
         while (!stop.stop_requested())

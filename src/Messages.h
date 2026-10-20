@@ -11,6 +11,7 @@ namespace sd::msg
     constexpr UINT DragEnd = WM_APP + 3;         // lParam: cursor (screen px) at button-up
     constexpr UINT TrayCallback = WM_APP + 10;   // Shell_NotifyIcon callback (NOTIFYICON_VERSION_4 layout)
     constexpr UINT BatchDone = WM_APP + 20;      // lParam: BatchResult*, ownership passes to the receiver
+    constexpr UINT RunDrop = WM_APP + 21;        // a drop queued by the overlay, handled after OLE's Drop returns
     constexpr UINT AnotherInstance = WM_APP + 30;
 
     // Screen coordinates can be negative on multi-monitor setups but always fit in 16 bits,
