@@ -72,34 +72,130 @@ TEST(Media, FormatsAndAliases)
     // Every format names its muxer: the staging file's ".sdpart" extension says nothing to ffmpeg.
     for (const auto& f : MediaFormats())
     {
-        const auto args = OutputArgs(f, H264Encoder::OpenH264);
+        const auto args = OutputArgs(f, MediaPlan{});
         EXPECT_NE(std::find(args.begin(), args.end(), L"-f"), args.end()) << f.id;
     }
 }
 
 TEST(Media, OutputArgsPerFormat)
 {
-    const auto mp4 = OutputArgs(*FindMediaFormat("mp4"), H264Encoder::Nvenc);
+    MediaPlan nvenc;
+    nvenc.h264 = H264Encoder::Nvenc;
+    const auto mp4 = OutputArgs(*FindMediaFormat("mp4"), nvenc);
     EXPECT_TRUE(Has(mp4, L"-c:v", L"h264_nvenc"));
     EXPECT_TRUE(Has(mp4, L"-c:a", L"aac"));
     EXPECT_TRUE(Has(mp4, L"-movflags", L"+faststart"));
     EXPECT_TRUE(Has(mp4, L"-f", L"mp4"));
     // MKV copies the streams first, and re-encodes only as the fallback.
     const auto& mkv = *FindMediaFormat("mkv");
-    EXPECT_TRUE(Has(OutputArgs(mkv, H264Encoder::OpenH264), L"-c", L"copy"));
-    EXPECT_TRUE(Has(OutputArgs(mkv, H264Encoder::OpenH264, true), L"-c:v", L"libopenh264"));
+    const auto mkvPlan = PlanConversion(mkv, MediaInfo{}, H264Encoder::OpenH264);
+    EXPECT_TRUE(Has(OutputArgs(mkv, mkvPlan), L"-c", L"copy"));
+    EXPECT_TRUE(Has(OutputArgs(mkv, TranscodePlan(mkvPlan)), L"-c:v", L"libopenh264"));
     // Audio formats drop the video (cover art included) and take the first audio stream.
-    const auto m4a = OutputArgs(*FindMediaFormat("m4a"), H264Encoder::OpenH264);
+    const auto m4a = OutputArgs(*FindMediaFormat("m4a"), MediaPlan{});
     EXPECT_TRUE(Has(m4a, L"-map", L"0:a:0"));
     EXPECT_NE(std::find(m4a.begin(), m4a.end(), L"-vn"), m4a.end());
     EXPECT_TRUE(Has(m4a, L"-f", L"ipod"));
+}
+
+TEST(Media, ProbeLogIsParsed)
+{
+    const std::vector<std::string> log = {
+        "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'IMG_0042.MOV':",
+        "  Duration: 00:00:12.50, start: 0.000000, bitrate: 15876 kb/s",
+        "  Stream #0:0[0x1](und): Video: hevc (Main) (hvc1 / 0x31637668), yuv420p(tv, bt709), 1920x1080, 15600 kb/s, 29.97 fps, 30 tbr, 600 tbn (default)",
+        "  Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, stereo, fltp, 191 kb/s (default)",
+    };
+    const auto info = ParseMediaInfo(log);
+    EXPECT_EQ(info.durationUs, 12'500'000);
+    EXPECT_EQ(info.videoCodec, "hevc");
+    EXPECT_EQ(info.audioCodec, "aac");
+    EXPECT_EQ(info.width, 1920);
+    EXPECT_EQ(info.height, 1080);
+    EXPECT_NEAR(info.fps, 29.97, 0.001);
+
+    // A song with cover art has no video stream.
+    const auto song = ParseMediaInfo({ "  Duration: 00:03:00.00, start: 0.0",
+                                       "  Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 320 kb/s",
+                                       "  Stream #0:1: Video: mjpeg (Baseline), yuvj420p, 600x600, 90k tbr (attached pic)" });
+    EXPECT_TRUE(song.videoCodec.empty());
+    EXPECT_EQ(song.audioCodec, "mp3");
+}
+
+TEST(Media, CopiesStreamsTheContainerPlays)
+{
+    MediaInfo phone;
+    phone.videoCodec = "hevc";
+    phone.audioCodec = "aac";
+    // iPhone HEVC MOV -> MP4: both streams copied, tagged hvc1, nothing encoded.
+    const auto mp4 = PlanConversion(*FindMediaFormat("mp4"), phone, H264Encoder::Nvenc);
+    EXPECT_TRUE(mp4.copyVideo);
+    EXPECT_TRUE(mp4.copyAudio);
+    const auto args = OutputArgs(*FindMediaFormat("mp4"), mp4);
+    EXPECT_TRUE(Has(args, L"-c:v", L"copy"));
+    EXPECT_TRUE(Has(args, L"-tag:v", L"hvc1"));
+    EXPECT_TRUE(Has(args, L"-c:a", L"copy"));
+    EXPECT_EQ(std::find(args.begin(), args.end(), L"-vf"), args.end());   // no filter on a copied stream
+    // To WebM: HEVC isn't allowed, AAC isn't either: both encoded.
+    const auto webm = PlanConversion(*FindMediaFormat("webm"), phone, H264Encoder::Nvenc);
+    EXPECT_FALSE(webm.copyVideo);
+    EXPECT_FALSE(webm.copyAudio);
+    // To M4A: the AAC soundtrack is copied.
+    MediaInfo song;
+    song.audioCodec = "aac";
+    EXPECT_TRUE(PlanConversion(*FindMediaFormat("m4a"), song, H264Encoder::OpenH264).copyAudio);
+    // An MPEG-4 Part 2 AVI to MP4 is encoded to H.264 (phones don't play Part 2), on the GPU.
+    MediaInfo xvid;
+    xvid.videoCodec = "mpeg4";
+    xvid.audioCodec = "mp3";
+    const auto fromAvi = PlanConversion(*FindMediaFormat("mp4"), xvid, H264Encoder::Qsv);
+    EXPECT_FALSE(fromAvi.copyVideo);
+    EXPECT_TRUE(fromAvi.copyAudio);
+    EXPECT_TRUE(fromAvi.hwDecode);
+    EXPECT_TRUE(Has(InputArgs(fromAvi), L"-hwaccel", L"auto"));
+    EXPECT_FALSE(TranscodePlan(fromAvi).copyAudio);
+}
+
+TEST(Media, SizeFitPicksBitratesAndHeight)
+{
+    MediaInfo clip;
+    clip.durationUs = 60'000'000;   // one minute of 1080p30
+    clip.videoCodec = "h264";
+    clip.audioCodec = "aac";
+    clip.width = 1920;
+    clip.height = 1080;
+    clip.fps = 30;
+    SizeFit fit;
+    ASSERT_TRUE(PlanSizeFit(10LL * 1024 * 1024, clip, fit));
+    // 10 MB over 60 s is ~1.34 Mbit/s in all: 96k audio, the rest video, at 540p.
+    EXPECT_EQ(fit.audioBps, 96'000);
+    EXPECT_NEAR(static_cast<double>(fit.videoBps), 1'246'000, 10'000);
+    EXPECT_EQ(fit.height, 540);
+    // The bitrates and the container margin stay under the target.
+    EXPECT_LT((fit.videoBps + fit.audioBps) * 60 / 8, 10LL * 1024 * 1024);
+    // A generous target keeps the source's height.
+    ASSERT_TRUE(PlanSizeFit(500LL * 1024 * 1024, clip, fit));
+    EXPECT_EQ(fit.height, 0);
+    // A target far too small for an hour of video is refused rather than made unwatchable.
+    clip.durationUs = 3600LL * 1'000'000;
+    EXPECT_FALSE(PlanSizeFit(5LL * 1024 * 1024, clip, fit));
+    // Audio only: one bitrate, capped at 256k.
+    MediaInfo song;
+    song.durationUs = 180'000'000;
+    song.audioCodec = "flac";
+    ASSERT_TRUE(PlanSizeFit(3LL * 1024 * 1024, song, fit));
+    EXPECT_EQ(fit.videoBps, 0);
+    EXPECT_GT(fit.audioBps, 100'000);
+    EXPECT_LE(fit.audioBps, 256'000);
+    const auto args = CompressArgs(song, H264Encoder::OpenH264, &fit, 0);
+    EXPECT_TRUE(Has(args, L"-f", L"ipod"));
 }
 
 TEST(Media, CommandLineIsLocalOnlyAndQuoted)
 {
     const std::wstring input = LR"(C:\Users\a b\clip "final".mov)";
     const std::wstring output = LR"(C:\Users\a b\~clip.1234abcd.sdpart)";
-    const auto args = FfmpegArgs(input, OutputArgs(*FindMediaFormat("webm"), H264Encoder::OpenH264), output);
+    const auto args = FfmpegArgs(input, {}, OutputArgs(*FindMediaFormat("webm"), MediaPlan{}), output);
     EXPECT_TRUE(Has(args, L"-protocol_whitelist", L"file"));   // no network protocols, whatever the path says
     EXPECT_TRUE(Has(args, L"-progress", L"pipe:1"));
     EXPECT_TRUE(Has(args, L"-i", input));
@@ -196,7 +292,7 @@ TEST(MediaEngine, ConvertsThroughThePipeline)
     const auto source = dir / L"my clip.avi";
     ASSERT_TRUE(MakeClip(*engine, source));
 
-    for (const char* id : { "to-mp4", "to-mkv", "to-webm", "to-gif", "to-mp3" })
+    for (const char* id : { "to-mp4", "to-mkv", "to-webm", "to-gif", "to-mp3", "to-mov" })
     {
         const auto& recipe = recipes.Get(id);
         const auto runId = history->BeginRun(recipe, 1);
