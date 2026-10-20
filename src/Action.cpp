@@ -1,4 +1,5 @@
 #include "Action.h"
+#include "Media.h"
 
 namespace sd
 {
@@ -74,6 +75,13 @@ namespace sd
         m_actions.push_back(ActionDescriptor{ "file.copy_path", L"Copy path", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.terminal", L"Terminal", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.duplicate", L"Duplicate", StepKind::FileAction, {} });
+        std::vector<std::string> mediaIds;
+        for (const auto& f : MediaFormats())
+            mediaIds.emplace_back(f.id);
+        m_actions.push_back(ActionDescriptor{
+            "media.convert", L"Convert media", StepKind::MediaEncode,
+            { ParamSpec{ "format", ParamType::Enum, 0, 0, mediaIds, "mp4" } } });
+
         m_actions.push_back(ActionDescriptor{
             "image.encode", L"Encode", StepKind::ImageEncode,
             { ParamSpec{ "format", ParamType::Enum, 0, 0, formatIds, "png" },

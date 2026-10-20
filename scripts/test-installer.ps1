@@ -32,6 +32,8 @@ Remove-Item $settings -ErrorAction SilentlyContinue
 Install 'install'
 Check (Test-Path $exe) 'exe installed under %LOCALAPPDATA%\Programs\ShiftDrop'
 Check (Test-Path (Join-Path $app 'THIRD-PARTY-NOTICES.txt')) 'notices installed'
+Check (Test-Path (Join-Path $app 'engines\ffmpeg.exe')) 'ffmpeg installed in engines'
+Check (Test-Path (Join-Path $app 'engines\FFMPEG-SOURCE.txt')) 'ffmpeg source pointer installed'
 Check (Test-Path $shortcut) 'Start menu shortcut'
 Check ((RunValue) -eq "`"$exe`" --autostart") 'Run value points at the installed exe'
 Check ((Get-Content $settings -Raw) -match 'StartWithWindows=1') 'choice saved as on'
@@ -63,6 +65,7 @@ if ($running.HasExited) { $running = $null }
 $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$logDir\uninstall.log`"" -Wait -PassThru
 Check ($p.ExitCode -eq 0) "uninstall exits 0 (got $($p.ExitCode))"
 Check (WaitFor { -not (Test-Path $exe) } 60) 'exe removed'
+Check (WaitFor { -not (Test-Path (Join-Path $app 'engines\ffmpeg.exe')) } 30) 'ffmpeg removed'
 Check (-not (Test-Path $shortcut)) 'shortcut removed'
 Check ($null -eq (RunValue)) 'Run value removed'
 if ($running) { Check (WaitFor { $running.HasExited } 5) 'uninstall quit the running copy' }

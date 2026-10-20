@@ -24,6 +24,18 @@ jobs:
           key: vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-
 
+      # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
+      # that pins its URL and hash.
+      - uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
+
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:

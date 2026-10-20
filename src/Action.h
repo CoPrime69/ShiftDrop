@@ -32,6 +32,7 @@ namespace sd
         ImageTransform,   // pixels in -> pixels out, in memory (fusable: no intermediate file)
         ImageMetadata,    // changes what metadata the output carries
         ImageEncode,      // pixels -> bytes; must be the last step of an image recipe
+        MediaEncode,      // audio/video file -> new file through ffmpeg (Media.h); a recipe's only step
         FileAction,       // acts on the file itself (clipboard, terminal, duplicate); a recipe's only step
     };
 

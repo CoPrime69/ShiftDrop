@@ -1,5 +1,6 @@
 #pragma once
 #include "Action.h"
+#include "Media.h"
 
 #include <nlohmann/json.hpp>
 
@@ -29,7 +30,13 @@ namespace sd
         std::string ToJson() const;  // canonical form, snapshotted into history
         // The format the encode step writes for this source (resolves "same"). nullptr for file actions.
         const ImageFormatInfo* OutputFormatFor(const std::wstring& lowerSourceExtension) const;
+        // The media format a media.convert recipe writes; nullptr for image recipes and file actions.
+        const MediaFormatInfo* MediaFormat() const;
+        // The output file's extension for this source: the encoded image or media format. Empty for
+        // file actions.
+        std::wstring OutputExtensionFor(const std::wstring& lowerSourceExtension) const;
         bool IsSingleEncode() const { return steps.size() == 1 && steps[0].action == "image.encode"; }
+        bool IsMedia() const { return steps.size() == 1 && steps[0].action == "media.convert"; }
         bool IsFileAction() const { return steps.size() == 1 && steps[0].action.starts_with("file."); }
     };
 
