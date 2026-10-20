@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "Media.h"
 #include "OutputPath.h"
+#include "Utf.h"
 #include "audiotools/AudioEngine.h"
 #include "mediaeditor/EditorApi.h"
 #include "videotools/VideoEngine.h"
@@ -14,6 +15,26 @@ namespace sd
     {
         bool IsVideoAction(const Recipe& r) { return r.steps.size() == 1 && r.steps[0].action.starts_with("video."); }
         bool IsAudioAction(const Recipe& r) { return r.steps.size() == 1 && r.steps[0].action.starts_with("audio."); }
+
+        // The editor's tool bar picked another tool: the run becomes that tool's own recipe (its name
+        // in history and the notification, its output suffix), with the editor's choices as params.
+        void SwitchTool(Recipe& r, const std::string& action)
+        {
+            mediatools::EditorTool tool{};
+            if (!mediatools::ToolForAction(action, tool))
+                return;
+            const auto t = mediatools::IsVideoTool(tool) ? videotools::ToolRecipe(tool) : audiotools::ToolRecipe(tool);
+            if (!t.is_object())
+                return;
+            r.id = t.value("id", r.id);
+            r.label = Widen(t.value("label", std::string()));
+            r.description = Widen(t.value("description", std::string()));
+            r.suffix = Widen(t.value("suffix", std::string()));
+            r.icon = static_cast<wchar_t>(std::stoul(t.value("icon", std::string("0")), nullptr, 16));
+            r.builtIn = true;
+            r.sourcePath.clear();
+            r.steps[0].action = action;
+        }
 
         class MediaToolsEngine final : public IEngine
         {
@@ -72,8 +93,8 @@ namespace sd
                             std::function<void(Recipe adjusted, std::vector<std::wstring> files)> done) const override
             {
                 mediatools::EditorRequest request;
-                const auto& action = recipe.steps[0].action;
-                request.tool = IsVideoAction(recipe) ? videotools::EditorToolFor(action) : audiotools::EditorToolFor(action);
+                if (!mediatools::ToolForAction(recipe.steps[0].action, request.tool))
+                    return;
                 request.title = recipe.description.empty() ? recipe.label : recipe.description.substr(0, recipe.description.find(L':'));
                 request.files = files;
                 request.params = recipe.steps[0].params;
@@ -81,6 +102,9 @@ namespace sd
                 // The editor's choices go into the recipe's parameters; "ask" is spent.
                 mediatools::OpenEditor(owner, std::move(request), [recipe, done](nlohmann::json params, std::vector<std::wstring> chosen) {
                     Recipe adjusted = recipe;
+                    if (const auto tool = params.value("tool", std::string()); !tool.empty() && tool != recipe.steps[0].action)
+                        SwitchTool(adjusted, tool);
+                    params.erase("tool");
                     params["ask"] = false;
                     adjusted.steps[0].params = std::move(params);
                     done(std::move(adjusted), std::move(chosen));

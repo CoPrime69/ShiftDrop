@@ -187,6 +187,55 @@ Convert-and-carry and drop to clipboard (top panel):
 - [ ] Copy something else right after clicking copy on a big photo: your newer copy is not replaced when the picture is ready
 - [ ] A failed or cancelled job with no outputs shows no buttons and cannot be dragged
 
+### T. Video and audio tools (M9, M10)
+Have ffmpeg in place (`scripts/get-ffmpeg.ps1`), a phone video with sound (1080p, 20–60 s), a second clip of another size, a video with no sound, a stereo song with cover art, and a mono voice memo.
+
+The wheel:
+- [ ] Drag a video and hold **Ctrl**: Compress, 50% size, Under 10 MB, Under 25 MB, **Trim…**, **Crop…**, **Join…**, **Split…** (eight slices; the log has no "are not shown" line)
+- [ ] Drag a song: the four Compress slices, **Normalize**, **Trim…**, **Channels…**, **Bleep…**; a photo gets none of these
+
+The editor window (try with each tool):
+- [ ] Drop the video on **Trim…**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
+- [ ] The tabs at the top read Trim, Crop, Speed, Join, Frames, Split, Redact (for a song: Trim, Channels, Bleep, Visualizer). Clicking one, or Ctrl+1 to Ctrl+7, switches tool without reloading the file, and the window title follows. Confirming runs the tool chosen last: History and the output name say so ("clip (speed…)")
+- [ ] Turn the mouse wheel over the timeline: it zooms around the cursor with sharper thumbnails; **0** shows the whole clip; drag the thin bar under the timeline to scroll
+- [ ] Type `0:05.5` in the time field and press Enter: the playhead jumps there; text that is not a time stays red
+- [ ] ← and → step one frame (Shift: one second); Space plays with sound and the playhead follows; Space again stops
+- [ ] Tab walks through the tabs, the transport buttons, the options and the footer with a visible focus ring; arrow keys change a focused choice; Enter is the main button; Esc closes and nothing is written
+- [ ] With two monitors at different scaling, drag the window from one to the other: text and lines stay sharp and the layout scales
+
+Video tools:
+- [ ] **Trim**: drag the handles, or press I and O at the playhead, or type in From and To; "Play the kept part" (Shift+Space) plays only that. Exact gives `clip (trimmed).mp4` that starts and ends on those frames; Fast is instant, and its start can move back to a keyframe
+- [ ] **Crop**: drag on the picture, then drag the edges and corners; 16:9, 9:16, 1:1, 4:5, Original and Free keep the shape; type a Width (the height follows). The result has exactly that size and keeps the sound
+- [ ] **Speed**: pick 0.5× or 2×, or type 1.8 or 180%; Space previews at that speed with the pitch kept. 2× halves the length; the silent video works too
+- [ ] **Join**: drop three clips on **Join…**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
+- [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
+- [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
+- [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
+- [ ] Drop three videos on **Crop…**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
+
+Audio tools:
+- [ ] **Normalize** a quiet song: the top panel says the loudness before and after ("−3x.x → −16.0 LUFS"); normalizing the result again says "already at −16.0 LUFS" and writes nothing
+- [ ] **Trim** on the waveform with the handles or I and O; "Also trim silence at both ends" cuts the quiet lead-in of the voice memo
+- [ ] **Channels**: Make mono, Swap left and right, and the Left and Right volume sliders; while playing, A switches between the original and the result. On a mono file "Make mono" changes nothing and the main button is off
+- [ ] **Bleep**: drag across the waveform to mark two parts (M adds one at the playhead); a 1 kHz tone or silence; Space plays with the bleeps, A compares with the original
+- [ ] **Visualizer** (tab in the song's editor): Landscape, Portrait or Square; the moving waveform, or a still picture (the cover art, or one you choose); the MP4 has the song's sound and length
+
+Always:
+- [ ] Cancel (×) in the top panel during a long render: nothing is left in the folder (no `.sdpart`)
+- [ ] An `.mp4` that holds only sound, dropped with a real video on **Crop…**: its page says "This file has no video to edit." and Skip moves on; the other video is still cropped
+- [ ] Undo from History removes the outputs (a frames or split folder goes with all its files)
+
+Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart). The wheel has room for eight slices, so a recipe that reuses a slice's id takes that slice's place:
+```json
+{ "id": "audio-normalize", "label": "−14 LUFS", "description": "Normalize Volume for streaming", "ring": "tools", "suffix": "normalized",
+  "icon": "E767", "steps": [ { "action": "audio.normalize", "params": { "target": -14 } } ] }
+```
+```json
+{ "id": "video-split", "label": "2× speed", "description": "Twice as fast, same pitch", "ring": "tools", "icon": "EC4A",
+  "steps": [ { "action": "video.speed", "params": { "factor": 2, "ask": false } } ] }
+```
+- [ ] After a restart a song's wheel shows **−14 LUFS** in place of Normalize, and a video's shows **2× speed** in place of Split; it runs at once with no window, and Split is still a tab in the editor
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)

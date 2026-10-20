@@ -32,6 +32,13 @@ namespace sd::mediatools
     // Tools whose choices belong to one file (a trim range, redaction boxes): the editor walks
     // through the files one at a time. The others take one set of choices for every file.
     bool IsPerFileTool(EditorTool tool);
+    // The editor's tool bar: every video tool, or every audio tool that has a window, in bar order.
+    // The wheel has room for only some of them; the rest are one click away in the window.
+    std::vector<EditorTool> SiblingTools(EditorTool tool);
+    const wchar_t* ToolName(EditorTool tool);    // "Trim": its tool bar label
+    const wchar_t* ToolTitle(EditorTool tool);   // "Trim Video": the window title
+    const char* ToolAction(EditorTool tool);     // "video.trim": the action that runs it
+    bool ToolForAction(const std::string& action, EditorTool& tool);
 
     struct EditorRequest
     {
@@ -44,7 +51,8 @@ namespace sd::mediatools
 
     // Called once on the UI thread with the user's choices and the files to run (skipped files left
     // out); never called when the editor is closed. Per-file tools put each file's choices under
-    // params["perFile"][path as UTF-8], so the whole drop is still one batch.
+    // params["perFile"][path as UTF-8], so the whole drop is still one batch. params["tool"] is the
+    // ToolAction of the tool chosen last, which can differ from the one the window opened with.
     using EditorDone = std::function<void(nlohmann::json params, std::vector<std::wstring> files)>;
     // One file's params: the shared ones with that file's "perFile" entry merged over them.
     nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);

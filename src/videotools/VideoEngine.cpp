@@ -35,28 +35,57 @@ namespace sd::videotools
                        { ParamSpec{ "style", ParamType::Enum, 0, 0, { "blur", "solid" }, "blur" } } });
     }
 
-    const char* BuiltInRecipes()
+    namespace
     {
-        // The Tools wheel for a video holds eight slices: the seven tools, plus 2x speed as a one-click
-        // preset. More presets are a recipe file away (docs/TESTING.md, section N).
-        return R"([
+        // Every video tool as a recipe. The Tools wheel shows eight slices at most and a video already
+        // gets four Compress presets there, so four tools have slices; the "wheel": false ones are a
+        // click away in the editor's tool bar. A recipe file that reuses a slice's id swaps it for
+        // another tool (docs/TESTING.md, section T).
+        const json& ToolRecipes()
+        {
+            static const json all = json::parse(R"([
   { "id": "video-trim", "label": "Trim\u2026", "description": "Trim Video: keep a part of it", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
     "steps": [ { "action": "video.trim" } ] },
   { "id": "video-crop", "label": "Crop\u2026", "description": "Crop Video: exact size, 16:9, 9:16, 1:1, 4:5", "ring": "tools", "suffix": "cropped", "icon": "E7A8",
     "steps": [ { "action": "video.crop" } ] },
   { "id": "video-speed", "label": "Speed\u2026", "description": "Change Video Speed: 0.25x to 4x, pitch kept", "ring": "tools", "suffix": "speed", "icon": "EC49",
-    "steps": [ { "action": "video.speed" } ] },
-  { "id": "video-speed-2x", "label": "2\u00D7 speed", "description": "Twice as fast, same pitch", "ring": "tools", "suffix": "2x", "icon": "EC4A",
-    "steps": [ { "action": "video.speed", "params": { "factor": 2, "ask": false } } ] },
+    "wheel": false, "steps": [ { "action": "video.speed" } ] },
   { "id": "video-join", "label": "Join\u2026", "description": "Join Videos into one MP4, in the order you choose", "ring": "tools", "suffix": "joined", "icon": "E71B",
     "steps": [ { "action": "video.join" } ] },
   { "id": "video-frames", "label": "Frames\u2026", "description": "Save Video Frames as full-size PNGs", "ring": "tools", "suffix": "frames", "icon": "E722",
-    "steps": [ { "action": "video.frames" } ] },
+    "wheel": false, "steps": [ { "action": "video.frames" } ] },
   { "id": "video-split", "label": "Split\u2026", "description": "Split Video at points you pick, or into equal parts", "ring": "tools", "suffix": "parts", "icon": "E8C6",
     "steps": [ { "action": "video.split" } ] },
   { "id": "video-redact", "label": "Redact\u2026", "description": "Redact Video: blur or cover areas, each for its own time", "ring": "tools", "suffix": "redacted", "icon": "E72E",
-    "steps": [ { "action": "video.redact" } ] }
-])";
+    "wheel": false, "steps": [ { "action": "video.redact" } ] }
+])");
+            return all;
+        }
+    }
+
+    const char* BuiltInRecipes()
+    {
+        static const std::string wheel = [] {
+            json out = json::array();
+            for (const auto& r : ToolRecipes())
+                if (r.value("wheel", true))
+                    out.push_back(r);
+            for (auto& r : out)
+                r.erase("wheel");
+            return out.dump();
+        }();
+        return wheel.c_str();
+    }
+
+    json ToolRecipe(EditorTool tool)
+    {
+        for (auto r : ToolRecipes())
+            if (r["steps"][0]["action"] == ToolAction(tool))
+            {
+                r.erase("wheel");
+                return r;
+            }
+        return json();
     }
 
     bool IsBatchAction(const std::string& action) { return action == "video.join"; }
@@ -66,17 +95,6 @@ namespace sd::videotools
         if (step.action == "video.frames" || step.action == "video.redact")
             return true;
         return step.params.value("ask", true);
-    }
-
-    EditorTool EditorToolFor(const std::string& action)
-    {
-        if (action == "video.crop") return EditorTool::CropVideo;
-        if (action == "video.speed") return EditorTool::SpeedVideo;
-        if (action == "video.join") return EditorTool::JoinVideos;
-        if (action == "video.frames") return EditorTool::SaveFrames;
-        if (action == "video.split") return EditorTool::SplitVideo;
-        if (action == "video.redact") return EditorTool::RedactVideo;
-        return EditorTool::TrimVideo;
     }
 
     namespace

@@ -261,7 +261,7 @@ Everything here runs on the M6 canvas with a live GPU preview, using Direct2D ef
 - Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
 - Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
 
-**M9. Video tools (new)**
+**M9. Video tools (new, done)**
 
 One timeline window covers all seven tools. It previews with Windows' Media Foundation, steps frame by frame, and accepts typed timecodes. Rendering goes through ffmpeg in the sandboxed worker.
 - Tool 9, **Trim Video**.
@@ -272,7 +272,7 @@ One timeline window covers all seven tools. It previews with Windows' Media Foun
 - Tool 14, **Split Video**: at custom points or into equal parts; the clips go into one folder.
 - Tool 15, **Redact Video**: solid or blur regions, each with its own time range.
 
-**M10. Audio tools (new)**
+**M10. Audio tools (new, done)**
 
 One waveform window with playback through Windows (XAudio2), and A/B compare.
 - Tool 16, **Normalize Volume**: EBU R128 loudness range and true peak, with before and after levels.
@@ -425,7 +425,7 @@ question 1).
 | Convert: PDF ↔ images | M5 |
 | Ctrl = Edit: resize, rotate | M2 |
 | Edit: compress | M3 (Fit to…) and M6 (quality presets) |
-| Edit: trim | M9 (video), M10 (audio) |
+| Edit: trim | Done (M9 video, M10 audio) |
 | Edit: strip metadata | M2 (outputs carry none), verified scrub in M6 |
 | Edit: remove background | **Dropped**: needs an ML model, excluded by your no-models rule |
 | Alt = File actions: copy path, duplicate | M2 (plus Copy, Move, Terminal) |
@@ -511,6 +511,14 @@ question 1).
 | 2026-10-20 | Carry from the top panel: a result with outputs can be dragged straight into any app, and has a pin (Float) and a copy button; it stays while hovered and for 5 s instead of 2 | Convert-and-carry without a separate chip window; the buttons make it discoverable |
 | 2026-10-20 | Drop to clipboard is a Copy button (and Ctrl+C on the shelf), not a global Ctrl+C while the result shows | The panel never has the keyboard; grabbing Ctrl+C from every app for a few seconds would eat real copies |
 | 2026-10-20 | Copy puts CF_HDROP + "Preferred DropEffect: copy" on the clipboard at once; for a single image the picture follows a moment later as "PNG" (keeps transparency) and CF_DIB (flattened on white), only if nothing else was copied meanwhile | Paste in Explorer gets the file, paste in a chat or document gets the picture; decoding big photos stays off the UI thread |
+| 2026-10-20 | All eleven video and audio tools that need a choice share one editor window (`src/mediaeditor`): Direct2D at the window's DPI, light/dark and accent aware, keyboard-usable, with a preview or waveform, a zoomable filmstrip timeline, typed timecodes and the tool's options on the right. Engines and the editor's maths are in `shiftdrop_core` (`src/videotools`, `src/audiotools`); the window is in the app and registers itself with `EditorApi` from a static initializer | The tools differ only in their options and overlays; one window keeps them consistent. The tests link the engines without any UI, and a build without the window says so instead of crashing |
+| 2026-10-20 | The Tools wheel keeps its eight-slice limit: a video gets Compress, 50% size, Under 10 MB, Under 25 MB, Trim…, Crop…, Join…, Split…; a song gets the four Compress slices, Normalize, Trim…, Channels…, Bleep…. The editor has a tool bar (tabs, Ctrl+1…Ctrl+7) with every tool of its kind, so Speed, Frames, Redact and Visualizer are one click away, and confirming runs the tool chosen last under its own recipe (name, suffix, History) | Seven video tools and four Compress presets do not fit eight slices, and smaller labels stop being readable. A recipe file that reuses a slice's id swaps that slice for another tool or preset |
+| 2026-10-20 | Per-file choices (a trim range, crop box, redaction areas, frame marks) travel as `params.perFile[path]` and are merged by `ParamsForFile` before each file runs; the whole drop stays one batch with one History run | The pipeline, history and undo stay unchanged: one recipe per drop |
+| 2026-10-20 | Preview frames, filmstrip thumbnails, waveforms and playback sound come from the bundled ffmpeg (separate processes on the editor's own threads), not Media Foundation; quick frames seek to the keyframe before the time and use `-fps_mode passthrough` | One decoder for every format the tools accept (MKV, WebM, AVI included) and the same frames the render will use. Without passthrough the keyframe before the time came out with a negative timestamp and was dropped |
+| 2026-10-20 | Playback is XAudio2 2.9, loaded at run time from System32 (`LoadLibraryExW` + `XAudio2Create`), fed 48 kHz stereo chunks decoded ahead by ffmpeg with the tool's filter (speed, channels, bleeps), so A/B compare plays the real result; with no sound device a timer clock moves the playhead | No new import in the exe, and no audio device is needed to edit |
+| 2026-10-20 | Redact Video blurs with `gblur` and covers with `drawbox`, each area enabled only for its own time range; the bundled build has no `boxblur` | `boxblur` is GPL and not in our LGPL ffmpeg |
+| 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::note`). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
+| 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, `H264QualityArgs` in Media, `ItemResult::note`, and one line in main.cpp that shows a single file's note in the result panel | A trim or speed change is not as long as its input, and Normalize's levels are the answer the user wants |
 
 ## Open questions
 
@@ -526,6 +534,9 @@ question 1).
 10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
 11. Float shelf: should dragging a file out of the shelf remove it from the shelf (like a tray you empty) or keep it (current)? And should a renamed file follow its new name instead of leaving the shelf?
 12. Should the tray menu get a "Show Float shelf" entry (it hides itself when empty, and Float on any file brings it back)?
+13. Tools wheel for video: Trim, Crop, Join and Split have slices, and Speed, Frames and Redact are tabs in the editor. Is that the right four? For a song: Normalize (−16 LUFS), Trim, Channels and Bleep, with the Visualizer as a tab. Or should the wheel get a second page (a "More…" slice) once M8 photo tools also need room?
+14. Normalize defaults to −16 LUFS (podcasts, speech). Music for streaming is usually −14 LUFS. Which default, and should the slice open a small chooser instead?
+15. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
 
 ## Sources
 

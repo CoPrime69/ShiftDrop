@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "Utf.h"
 #include "resource.h"
+#include "videotools/VideoTools.h"
 
 #include <dwmapi.h>
 #include <shellscalingapi.h>
@@ -30,7 +31,7 @@ namespace sd::mediatools
         constexpr float kTransportH = 40, kRulerH = 24, kFilmH = 64, kScrollH = 10;
 
         // Control ids shared by every tool (tool controls use 100 and up).
-        enum : int { kIdPlay = 1, kIdTime, kIdBack, kIdForward, kIdZoomOut, kIdZoomIn, kIdFit, kIdSkip, kIdCancel, kIdPrimary };
+        enum : int { kIdPlay = 1, kIdTime, kIdBack, kIdForward, kIdZoomOut, kIdZoomIn, kIdFit, kIdSkip, kIdCancel, kIdPrimary, kIdTools = 50 };
 
         std::vector<std::unique_ptr<EditorWindow>>& OpenWindows()
         {
@@ -66,6 +67,7 @@ namespace sd::mediatools
 
     EditorWindow::EditorWindow(EditorRequest request, EditorDone done) : m_req(std::move(request)), m_done(std::move(done))
     {
+        m_startTool = m_req.tool;
         for (const auto& path : m_req.files)
         {
             FileState f;
@@ -615,10 +617,12 @@ namespace sd::mediatools
 
     void EditorWindow::Finish()
     {
-        nlohmann::json params = m_req.params.is_object() ? m_req.params : nlohmann::json::object();
+        // The recipe's own params hold for its own tool; another tool from the tool bar starts clean.
+        nlohmann::json params = m_req.params.is_object() && m_req.tool == m_startTool ? m_req.params : nlohmann::json::object();
         const nlohmann::json shared = SharedParams();   // kept alive: items() only refers to it
         for (const auto& [key, value] : shared.items())
             params[key] = value;
+        params["tool"] = ToolAction(m_req.tool);
         std::vector<std::wstring> files;
         if (PerFile())
         {
@@ -700,6 +704,7 @@ namespace sd::mediatools
         m_controls.clear();
         m_texts.clear();
         // Tab goes through them in this order, after the timeline.
+        BuildToolBar();
         if (HasTimeline())
             BuildTransport();
         BuildPanel();
@@ -710,6 +715,87 @@ namespace sd::mediatools
         if (m_editId && !ControlById(m_editId))
             m_editId = 0;
         Invalidate();
+    }
+
+    void EditorWindow::BuildToolBar()
+    {
+        const auto tools = SiblingTools(m_req.tool);
+        const RectF& h = m_rcHeader;
+        float x = kPad;
+        for (size_t i = 0; i < tools.size(); ++i)
+        {
+            const EditorTool tool = tools[i];
+            ui::Control c;
+            c.id = kIdTools + static_cast<int>(i);
+            c.kind = ui::Control::Kind::Segment;
+            c.text = ToolName(tool);
+            const float w = std::max(64.f, m_painter.TextWidth(c.text, ui::Font::Body) + 28);
+            c.rect = { x, h.y + (h.h - 32) / 2, w, 32 };
+            c.on = tool == m_req.tool;
+            c.tip = std::format(L"{} (Ctrl+{})", ToolTitle(tool), i + 1);
+            c.click = [this, tool] { SwitchTool(tool); };
+            c.step = [this, tools, i](int d) {
+                const auto next = static_cast<int>(i) + d;
+                if (next >= 0 && next < static_cast<int>(tools.size()))
+                    SwitchTool(tools[static_cast<size_t>(next)]);
+            };
+            m_controls.push_back(std::move(c));
+            x += w + 4;
+        }
+        m_toolBarRight = x + 12;
+    }
+
+    void EditorWindow::SwitchTool(EditorTool tool)
+    {
+        if (tool == m_req.tool || IsVideoTool(tool) != Video())
+            return;
+        StopPlay();
+        CancelEdit();
+        if (m_drag != Drag::None)
+            EndDrag();
+        const bool tabFocused = m_focus >= kIdTools && m_focus < kIdTools + 16;
+        const bool wasPerFile = PerFile();
+        m_req.tool = tool;
+        m_req.title = ToolTitle(tool);
+        SetWindowTextW(m_hwnd.get(), (m_req.title + L" \u2013 " SD_NAME).c_str());
+        if (HasTimeline() && !m_playback)
+            m_playback = std::make_unique<Playback>(m_req.ffmpeg, &m_temp);
+        // A fresh pass through the files; choices made so far stay (a trim range is still there on
+        // the way back). Marks are frames for one tool and cut points for the other.
+        for (auto& f : m_files)
+        {
+            f.status = Status::Open;
+            if (!f.ready)
+                continue;
+            if (tool == EditorTool::SaveFrames)
+                f.marks = videotools::NormalizeFrameTimes(f.marks, f.info.media.fps, f.info.DurationUs());
+            else if (tool == EditorTool::SplitVideo)
+                f.marks = NormalizePoints(f.marks, f.info.DurationUs());
+        }
+        for (int i = 0; i < static_cast<int>(m_files.size()); ++i)
+        {
+            auto& f = m_files[static_cast<size_t>(i)];
+            if (tool == EditorTool::JoinVideos && f.ready && !f.joinThumbRequested)
+            {
+                f.joinThumbRequested = true;
+                const int th = MulDiv(54, static_cast<int>(m_dpi), 96);
+                m_loader->Thumbs(i, f.path, f.info, th * 2, th, { { std::min<int64_t>(500'000, f.info.DurationUs() / 3), 0, true } }, false);
+            }
+        }
+        if (!PerFile() || !wasPerFile)
+            m_current = 0;
+        if (tool == EditorTool::AudioVisualizer)
+            RequestWaveform(0);
+        m_focus = 0;
+        m_listScroll = 0;
+        Layout();
+        FileReady();   // view, thumbnails, preview and selection for the new layout; rebuilds
+        // A focused tab keeps the keyboard focus, so arrow keys go on through the tools.
+        const auto tools = SiblingTools(tool);
+        for (size_t i = 0; i < tools.size(); ++i)
+            if (tools[i] == tool && tabFocused)
+                m_focus = kIdTools + static_cast<int>(i);
+        log::Info(L"media editor: switched to {}", m_req.title);
     }
 
     void EditorWindow::BuildTransport()
@@ -932,8 +1018,7 @@ namespace sd::mediatools
     {
         const auto& f = Cur();
         const RectF& h = m_rcHeader;
-        p.Text(m_req.title, { kPad, h.y, 260, h.h }, ui::Font::Title, m_colors.text);
-        const float titleW = p.TextWidth(m_req.title, ui::Font::Title);
+        // The tool bar's tabs are on the left (controls); the file's details follow them.
         std::wstring sub;
         if (m_req.tool == EditorTool::JoinVideos)
             sub = std::format(L"{} clips", m_order.size());
@@ -959,7 +1044,7 @@ namespace sd::mediatools
             p.Text(counter, chip, ui::Font::BodyStrong, m_colors.accent, 1);
             right -= cw + 12;
         }
-        p.Text(sub, { kPad + titleW + 16, h.y, right - kPad - titleW - 16, h.h }, ui::Font::Body, m_colors.textDim);
+        p.Text(sub, { m_toolBarRight, h.y, std::max(0.f, right - m_toolBarRight), h.h }, ui::Font::Body, m_colors.textDim);
         p.Line(0, h.Bottom() - 0.5f, h.Right(), h.Bottom() - 0.5f, m_colors.line);
     }
 
@@ -1544,6 +1629,14 @@ namespace sd::mediatools
             return true;
         }
 
+        // Ctrl+1, Ctrl+2...: the tool bar's tabs.
+        if (ctrl && vk >= '1' && vk <= '9')
+        {
+            const auto tools = SiblingTools(m_req.tool);
+            if (const size_t i = vk - '1'; i < tools.size())
+                SwitchTool(tools[i]);
+            return true;
+        }
         const ui::Control* focused = m_focus ? ControlById(m_focus) : nullptr;
         switch (vk)
         {
