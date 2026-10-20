@@ -111,19 +111,19 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Start a big batch, kill ShiftDrop from Task Manager mid-way, start it again: no `.sdpart` files remain; the log says "recovery: removed leftover staging file"; History shows the run as Interrupted
 
 ### L. Wheel redesign and top panel
-- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice; Explorer's thumbnail disappears while you are over the wheel and comes back when you leave it
+- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice
 - [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
-- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions and their keys, Convert highlighted
+- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl**, then **Alt**: the wheel turns to Tools, then File actions, and the panel's highlight slides along
-- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel (wraps round); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
-- [ ] Over the wheel Explorer's drag picture stays with its full name, with no "+ Copy" badge and no mouse pointer
+- [ ] When the wheel opens, Explorer's drag picture fades away and the wheel takes its place (no picture or name over the wheel, no mouse pointer); it comes back when you drag off the wheel. The file's own icon staying where it was is Windows: a drag only copies until you drop
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling does not stop on the all-dimmed wheels
+- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -324,8 +324,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.1.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.5.0.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)

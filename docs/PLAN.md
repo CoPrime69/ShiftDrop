@@ -529,6 +529,9 @@ question 1).
 | 2026-10-20 | M5: Merge PDFs and Organize PDF Pages ask first, in small windows of their own (Direct2D, light/dark, keyboard: Alt+arrows move, R / Shift+R rotate, Ctrl+D duplicates, Delete, Ctrl+Z, Enter, Esc). Organize keeps the first PDF's outline and metadata | The same editor step the video tools use; the page plan travels in the recipe's params |
 | 2026-10-20 | M5: the WinRT code (Windows.Data.Pdf, Windows.Media.Ocr, share sheet) and the editor windows are object libraries that plug into the core through small hooks; the core and its tests build without them | Unit tests run anywhere; tests that need Windows' renderer or OCR skip themselves where they are missing |
 | 2026-10-20 | M5: an engine can give the top panel its own line for a single result ("Copied 214 words", "2.1 MB to 840 KB (61% smaller)"); a result that is not a file (Copy text) doesn't say "Saved next to the originals" | Copy text writes nothing to disk; for Compress the size saved is what people want to see |
+| 2026-10-20 | Scrolling (and Up / Down past the last ring) visits every wheel in a fixed order and wraps around both ways; wheels with nothing for the files are no longer skipped, they show dimmed with the reason. Shift still opens the best wheel first | Prakhar, after testing: skipping made the order jump around (Tools vanished for an MP4 with no ffmpeg) |
+| 2026-10-20 | The top panel shows wheel names only, no Shift / Ctrl / Alt keycaps; the keys still open their wheels | Prakhar: scrolling is the way to switch, and a key per wheel does not scale as wheels are added |
+| 2026-10-20 | Explorer's drag picture gives way to the wheel again (no IDropTargetHelper on the wheel); replaces the 17:21 decision to keep it over the wheel | Prakhar, after testing 0.2/0.3: the picture sat on top of the wheel's centre text; the wheel should replace it as in the first redesign |
 
 ## Open questions
 
