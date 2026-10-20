@@ -18,6 +18,9 @@ namespace sd
     // otherwise); OpenH264 always works. x264 is GPL and not in our LGPL ffmpeg build.
     enum class H264Encoder { Nvenc, Qsv, Amf, MediaFoundation, OpenH264 };
     const wchar_t* EncoderName(H264Encoder encoder);   // ffmpeg's name, e.g. L"h264_nvenc"
+    // "-c:v <encoder>" and its constant-quality settings at `cq` (the usual H.264 scale: 23 = visually
+    // lossless for most video); encoders without a reliable constant-quality mode get `fallbackBps`.
+    std::vector<std::wstring> H264QualityArgs(H264Encoder encoder, int cq, int64_t fallbackBps);
 
     struct MediaFormatInfo
     {

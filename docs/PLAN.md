@@ -261,7 +261,7 @@ Everything here runs on the M6 canvas with a live GPU preview, using Direct2D ef
 - Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
 - Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
 
-**M9. Video tools (new)**
+**M9. Video tools (new, done)**
 
 One timeline window covers all seven tools. It previews with Windows' Media Foundation, steps frame by frame, and accepts typed timecodes. Rendering goes through ffmpeg in the sandboxed worker.
 - Tool 9, **Trim Video**.
@@ -272,7 +272,7 @@ One timeline window covers all seven tools. It previews with Windows' Media Foun
 - Tool 14, **Split Video**: at custom points or into equal parts; the clips go into one folder.
 - Tool 15, **Redact Video**: solid or blur regions, each with its own time range.
 
-**M10. Audio tools (new)**
+**M10. Audio tools (new, done)**
 
 One waveform window with playback through Windows (XAudio2), and A/B compare.
 - Tool 16, **Normalize Volume**: EBU R128 loudness range and true peak, with before and after levels.
@@ -425,7 +425,7 @@ question 1).
 | Convert: PDF ↔ images | M5 |
 | Ctrl = Edit: resize, rotate | M2 |
 | Edit: compress | M3 (Fit to…) and M6 (quality presets) |
-| Edit: trim | M9 (video), M10 (audio) |
+| Edit: trim | Done (M9 video, M10 audio) |
 | Edit: strip metadata | M2 (outputs carry none), verified scrub in M6 |
 | Edit: remove background | **Dropped**: needs an ML model, excluded by your no-models rule |
 | Alt = File actions: copy path, duplicate | M2 (plus Copy, Move, Terminal) |
@@ -532,6 +532,14 @@ question 1).
 | 2026-10-20 | Scrolling (and Up / Down past the last ring) visits every wheel in a fixed order and wraps around both ways; wheels with nothing for the files are no longer skipped, they show dimmed with the reason. Shift still opens the best wheel first | Prakhar, after testing: skipping made the order jump around (Tools vanished for an MP4 with no ffmpeg) |
 | 2026-10-20 | The top panel shows wheel names only, no Shift / Ctrl / Alt keycaps; the keys still open their wheels | Prakhar: scrolling is the way to switch, and a key per wheel does not scale as wheels are added |
 | 2026-10-20 | Explorer's drag picture gives way to the wheel again (no IDropTargetHelper on the wheel); replaces the 17:21 decision to keep it over the wheel | Prakhar, after testing 0.2/0.3: the picture sat on top of the wheel's centre text; the wheel should replace it as in the first redesign |
+| 2026-10-20 | All eleven video and audio tools that need a choice share one editor window (`src/mediaeditor`): Direct2D at the window's DPI, light/dark and accent aware, keyboard-usable, with a preview or waveform, a zoomable filmstrip timeline, typed timecodes and the tool's options on the right. Engines and the editor's maths are in `shiftdrop_core` (`src/videotools`, `src/audiotools`); the window is in the app and registers itself with `EditorApi` from a static initializer | The tools differ only in their options and overlays; one window keeps them consistent. The tests link the engines without any UI, and a build without the window says so instead of crashing |
+| 2026-10-20 | Every video and audio tool has its own slice on the Tools wheel (a video: twelve slices with the Compress presets and Inspect, on M4's two rings; a song: ten). Each opens the shared editor on its tab, and the tabs (Ctrl+1…Ctrl+7) switch tools without reloading; confirming runs the tool chosen last under its own built-in recipe (name, suffix, History) | Named tools on the wheel, as in the spec; the tabs save a trip back to the wheel when the first choice was wrong |
+| 2026-10-20 | Per-file choices (a trim range, crop box, redaction areas, frame marks) travel as `params.perFile[path]` and are merged by `ParamsForFile` before each file runs; the whole drop stays one batch with one History run | The pipeline, history and undo stay unchanged: one recipe per drop |
+| 2026-10-20 | Preview frames, filmstrip thumbnails, waveforms and playback sound come from the bundled ffmpeg (separate processes on the editor's own threads), not Media Foundation; quick frames seek to the keyframe before the time and use `-fps_mode passthrough` | One decoder for every format the tools accept (MKV, WebM, AVI included) and the same frames the render will use. Without passthrough the keyframe before the time came out with a negative timestamp and was dropped |
+| 2026-10-20 | Playback is XAudio2 2.9, loaded at run time from System32 (`LoadLibraryExW` + `XAudio2Create`), fed 48 kHz stereo chunks decoded ahead by ffmpeg with the tool's filter (speed, channels, bleeps), so A/B compare plays the real result; with no sound device a timer clock moves the playhead | No new import in the exe, and no audio device is needed to edit |
+| 2026-10-20 | Redact Video blurs with `gblur` and covers with `drawbox`, each area enabled only for its own time range; the bundled build has no `boxblur` | `boxblur` is GPL and not in our LGPL ffmpeg |
+| 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::message`, from M5). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
+| 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, and Media exposes `H264QualityArgs` | A trim, a speed change or a join is not as long as its input; the tools reuse the H.264 encoder choice instead of their own |
 
 ## Open questions
 
@@ -550,6 +558,9 @@ question 1).
 13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
 14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
 15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
+16. Normalize is one slice at −16 LUFS (speech, podcasts); music for streaming is usually −14 and broadcast −23 (a recipe adds either). Should the slice open a small chooser instead, or should the three targets be slices?
+17. A video's Tools wheel now has twelve slices on two rings. Too many, or fine? The quieter tools (Frames, Redact) could live only in the editor's tabs.
+18. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
 
 ## Sources
 
