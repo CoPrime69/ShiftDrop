@@ -12,9 +12,11 @@ namespace sd::audiotools
 {
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();   // JSON array of Tools-wheel slices
+    // A tool's own recipe (id, label, suffix, icon, action), for one picked in the editor's tool bar
+    // that has no slice on the wheel. Null for a tool of the other kind.
+    nlohmann::json ToolRecipe(mediatools::EditorTool tool);
 
     bool NeedsEditor(const RecipeStep& step);
-    mediatools::EditorTool EditorToolFor(const std::string& action);
 
     ItemResult Run(const EngineServices& services, const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                    const ProgressFn& progress);

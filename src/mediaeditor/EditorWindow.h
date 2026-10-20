@@ -134,6 +134,8 @@ namespace sd::mediatools
         // ---- Layout, controls and painting ----
         void Layout();
         void Rebuild();                     // controls and texts from the current state
+        void BuildToolBar();                // the header's tabs: every tool of this kind
+        void SwitchTool(EditorTool tool);
         void BuildTransport();
         void BuildFooter();
         void BuildPanel();                  // the tool's options (EditorTools.cpp)
@@ -209,7 +211,9 @@ namespace sd::mediatools
         nlohmann::json FileParams(const FileState& file) const;   // EditorTools.cpp
         void ChoosePicture();                                     // EditorTools.cpp
 
-        EditorRequest m_req;
+        EditorRequest m_req;                // m_req.tool and title follow the tool bar
+        EditorTool m_startTool{};          // the one the recipe asked for: its params apply to it only
+        float m_toolBarRight = 0;           // where the header's file details start (DIPs)
         EditorDone m_done;
         std::vector<FileState> m_files;
         int m_current = 0;

@@ -2,6 +2,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "audiotools/AudioEngine.h"
 #include "audiotools/AudioTools.h"
 #include "mediaeditor/MediaProbe.h"
 #include "mediaeditor/MediaTools.h"
@@ -18,6 +19,23 @@ using namespace sd::test;
 
 namespace
 {
+    // An audio tool's recipe by id, whether it has a slice or is reached from the editor's tool bar.
+    Recipe ToolById(const Recipes& recipes, std::string_view id)
+    {
+        if (const auto* r = recipes.store.Find(id))
+            return *r;
+        for (const auto tool : SiblingTools(EditorTool::TrimAudio))
+            if (const auto j = ToolRecipe(tool); j.value("id", std::string()) == id)
+            {
+                Recipe r;
+                std::string error;
+                EXPECT_TRUE(ParseRecipe(j.dump(), recipes.registry, r, error)) << error;
+                return r;
+            }
+        ADD_FAILURE() << "no recipe " << std::string(id);
+        return {};
+    }
+
     bool Has(const std::vector<std::wstring>& args, std::wstring_view a, std::wstring_view b)
     {
         for (size_t i = 0; i + 1 < args.size(); ++i)
@@ -220,19 +238,37 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
     TempDir dir;
     Recipes recipes(dir);
     const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, nullptr);
-    int forAudio = 0;
+    int forAudio = 0, tools = 0;
     for (const auto& r : recipes.store.All())
         if (r.ring == "tools" && runner.Applies(r, L"C:\\a\\song.flac"))
         {
             ++forAudio;
-            EXPECT_TRUE(r.id.starts_with("audio-")) << r.id;
+            if (!r.id.starts_with("audio-"))
+                continue;
+            ++tools;
             EXPECT_FALSE(runner.Applies(r, L"C:\\a\\clip.mp4")) << r.id;
         }
+    // The wheel shows eight slices at most: the four Compress presets, Normalize and three tools.
     EXPECT_EQ(forAudio, 8);
-    const auto* engine = runner.EngineFor(recipes.Get("audio-normalize-14"));
+    EXPECT_EQ(tools, 4);
+    // The visualizer is in the editor's tool bar.
+    EXPECT_EQ(recipes.store.Find("audio-visualizer"), nullptr);
+    EXPECT_EQ(SiblingTools(EditorTool::BleepAudio).size(), 4u);
+    for (const auto tool : SiblingTools(EditorTool::BleepAudio))
+    {
+        EXPECT_FALSE(IsVideoTool(tool));
+        Recipe parsed;
+        std::string error;
+        EXPECT_TRUE(ParseRecipe(ToolRecipe(tool).dump(), recipes.registry, parsed, error)) << error;
+        EXPECT_EQ(parsed.steps[0].action, ToolAction(tool));
+    }
+    const auto* engine = runner.EngineFor(recipes.Get("audio-normalize"));
     ASSERT_NE(engine, nullptr);
-    EXPECT_FALSE(engine->NeedsEditor(recipes.Get("audio-normalize-14")));
-    EXPECT_FALSE(engine->NeedsEditor(recipes.Get("audio-mono")));
+    EXPECT_FALSE(engine->NeedsEditor(recipes.Get("audio-normalize")));
+    Recipe mono = recipes.Get("audio-channels");
+    mono.steps[0].params["mode"] = "mono";
+    mono.steps[0].params["ask"] = false;
+    EXPECT_FALSE(engine->NeedsEditor(mono));   // a one-click preset
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-bleep")));
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-trim")));
     EXPECT_FALSE(engine->IsBatch(recipes.Get("audio-trim")));
@@ -270,7 +306,7 @@ namespace
         }
         ItemResult Run(std::string_view id, nlohmann::json params, const std::wstring& source)
         {
-            Recipe r = recipes.Get(id);
+            Recipe r = ToolById(recipes, id);
             for (auto& [k, v] : params.items())
                 r.steps[0].params[k] = v;
             const auto run = history->BeginRun(r, 1);
@@ -318,7 +354,7 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
     // A quiet, varying tone (two levels), 8 s: well below -16 LUFS.
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=300:d=8:sample_rate=44100,volume='if(lt(t,4),0.03,0.06)':eval=frame", L"-ac", L"2",
                        L"-c:a", L"pcm_s16le", L"-f", L"wav", quiet }));
-    const auto r = f.Run("audio-normalize-16", {}, quiet);
+    const auto r = f.Run("audio-normalize", {}, quiet);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     EXPECT_EQ(std::filesystem::path(r.output).filename(), L"quiet talk (normalized).wav");
     EXPECT_NE(r.note.find(L"\u2192 \u221216."), std::wstring::npos) << Narrow(r.note);   // "-3x.x -> -16.0 LUFS"
@@ -332,9 +368,12 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
     EXPECT_LE(after->inputTP, -0.9);
     EXPECT_EQ(Probe(*Ffmpeg(), r.output).sampleRate, 44100);
     // Normalizing the result again: already there, nothing written.
-    const auto again = f.Run("audio-normalize-16", {}, r.output);
+    const auto again = f.Run("audio-normalize", {}, r.output);
     EXPECT_FALSE(again.ok);
     EXPECT_TRUE(again.skipped);
+    EXPECT_TRUE(again.error.starts_with(L"already at \u2212")) << Narrow(again.error);
+    EXPECT_TRUE(again.error.ends_with(L" LUFS")) << Narrow(again.error);
+    EXPECT_EQ(again.error.find(L"\u2192"), std::wstring::npos) << Narrow(again.error);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
 }
 
@@ -393,10 +432,10 @@ TEST(AudioToolsEngine, ChannelsAndBleep)
     const auto pcm = Pcm(swapped.output);
     EXPECT_LT(Rms(pcm, 0, 0.5, 2.5), 50);     // left is silent now
     EXPECT_GT(Rms(pcm, 1, 0.5, 2.5), 1000);   // and the tone is on the right
-    const auto mono = f.Run("audio-mono", {}, left);
+    const auto mono = f.Run("audio-channels", { { "mode", "mono" }, { "ask", false } }, left);
     ASSERT_TRUE(mono.ok) << Narrow(mono.error);
     EXPECT_EQ(Probe(*Ffmpeg(), mono.output).channels, 1);
-    EXPECT_FALSE(f.Run("audio-mono", {}, mono.output).ok);   // already mono
+    EXPECT_FALSE(f.Run("audio-channels", { { "mode", "mono" }, { "ask", false } }, mono.output).ok);   // already mono
 
     const auto talk = f.dir / L"talk.wav";
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=440:d=4:sample_rate=8000", L"-ac", L"2", L"-c:a", L"pcm_s16le", L"-f", L"wav", talk }));

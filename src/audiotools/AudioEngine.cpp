@@ -31,28 +31,53 @@ namespace sd::audiotools
         registry.Add({ "audio.bleep", L"Bleep audio", StepKind::Engine, { ParamSpec{ "tone", ParamType::Enum, 0, 0, { "tone", "silence" }, "tone" } } });
     }
 
-    const char* BuiltInRecipes()
+    namespace
     {
-        // Eight slices for a song: the three loudness targets and Mono need no window; the rest open
-        // the waveform editor.
-        return R"([
-  { "id": "audio-normalize-14", "label": "\u221214 LUFS", "description": "Normalize Volume for streaming: \u221214 LUFS, peaks at \u22121 dBTP", "ring": "tools", "suffix": "normalized", "icon": "E767",
-    "steps": [ { "action": "audio.normalize", "params": { "target": -14 } } ] },
-  { "id": "audio-normalize-16", "label": "\u221216 LUFS", "description": "Normalize Volume for podcasts: \u221216 LUFS, peaks at \u22121 dBTP", "ring": "tools", "suffix": "normalized", "icon": "E767",
+        // The Tools wheel shows eight slices at most and a song already gets four Compress presets
+        // there: Normalize and three tools have slices, the visualizer is in the editor's tool bar.
+        // A recipe file that reuses a slice's id replaces it, e.g. Normalize at -14 LUFS for streaming
+        // (docs/TESTING.md, section T).
+        const json& ToolRecipes()
+        {
+            static const json all = json::parse(R"([
+  { "id": "audio-normalize", "label": "Normalize", "description": "Normalize Volume: \u221216 LUFS, peaks at \u22121 dBTP", "ring": "tools", "suffix": "normalized", "icon": "E767",
     "steps": [ { "action": "audio.normalize", "params": { "target": -16 } } ] },
-  { "id": "audio-normalize-23", "label": "\u221223 LUFS", "description": "Normalize Volume for broadcast (EBU R128): \u221223 LUFS", "ring": "tools", "suffix": "normalized", "icon": "E767",
-    "steps": [ { "action": "audio.normalize", "params": { "target": -23 } } ] },
-  { "id": "audio-visualizer", "label": "Visualizer\u2026", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
-    "steps": [ { "action": "audio.visualizer" } ] },
   { "id": "audio-trim", "label": "Trim\u2026", "description": "Trim Audio to exact times, and silence at the ends", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
     "steps": [ { "action": "audio.trim" } ] },
   { "id": "audio-channels", "label": "Channels\u2026", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
     "steps": [ { "action": "audio.channels" } ] },
-  { "id": "audio-mono", "label": "Mono", "description": "Both channels mixed into one", "ring": "tools", "suffix": "mono", "icon": "E7F6",
-    "steps": [ { "action": "audio.channels", "params": { "mode": "mono", "ask": false } } ] },
   { "id": "audio-bleep", "label": "Bleep\u2026", "description": "Bleep Audio: a tone or silence over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
-    "steps": [ { "action": "audio.bleep" } ] }
-])";
+    "steps": [ { "action": "audio.bleep" } ] },
+  { "id": "audio-visualizer", "label": "Visualizer\u2026", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
+    "wheel": false, "steps": [ { "action": "audio.visualizer" } ] }
+])");
+            return all;
+        }
+    }
+
+    const char* BuiltInRecipes()
+    {
+        static const std::string wheel = [] {
+            json out = json::array();
+            for (const auto& r : ToolRecipes())
+                if (r.value("wheel", true))
+                    out.push_back(r);
+            for (auto& r : out)
+                r.erase("wheel");
+            return out.dump();
+        }();
+        return wheel.c_str();
+    }
+
+    json ToolRecipe(EditorTool tool)
+    {
+        for (auto r : ToolRecipes())
+            if (r["steps"][0]["action"] == ToolAction(tool))
+            {
+                r.erase("wheel");
+                return r;
+            }
+        return json();
     }
 
     bool NeedsEditor(const RecipeStep& step)
@@ -62,14 +87,6 @@ namespace sd::audiotools
         if (step.action == "audio.bleep")
             return true;
         return step.params.value("ask", true);
-    }
-
-    EditorTool EditorToolFor(const std::string& action)
-    {
-        if (action == "audio.visualizer") return EditorTool::AudioVisualizer;
-        if (action == "audio.channels") return EditorTool::AudioChannels;
-        if (action == "audio.bleep") return EditorTool::BleepAudio;
-        return EditorTool::TrimAudio;
     }
 
     namespace
@@ -101,7 +118,11 @@ namespace sd::audiotools
             if (loudness->silent)
                 return FailItem(s.history, runId, source, L"the audio is silent: nothing to normalize");
             if (std::abs(loudness->inputI - target.integrated) < 0.5 && loudness->inputTP <= target.truePeak + 0.1)
-                return FailItem(s.history, runId, source, std::format(L"already at {}", LoudnessNote(loudness->inputI, loudness->inputI)), true);
+            {
+                std::wstring level = LoudnessNote(loudness->inputI, loudness->inputI);
+                level.erase(0, level.find(L'\u2192') + 2);   // just "-16.0 LUFS"
+                return FailItem(s.history, runId, source, L"already at " + level, true);
+            }
             log::Info(L"audio: {} measured {:.1f} LUFS, {:.1f} dBTP, LRA {:.1f}; target {}", source, loudness->inputI, loudness->inputTP,
                       loudness->inputLRA, Num(target.integrated));
             // Pass 2: apply, and read loudnorm's own measurement of the result.

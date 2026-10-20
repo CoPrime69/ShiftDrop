@@ -8,6 +8,7 @@
 #include "mediaeditor/MediaTools.h"
 #include "mediaeditor/MediaToolsModule.h"
 #include "mediaeditor/Timeline.h"
+#include "videotools/VideoEngine.h"
 #include "videotools/VideoTools.h"
 
 #include <algorithm>
@@ -20,6 +21,23 @@ using namespace sd::test;
 
 namespace
 {
+    // A video tool's recipe by id, whether it has a slice or is reached from the editor's tool bar.
+    Recipe ToolById(const Recipes& recipes, std::string_view id)
+    {
+        if (const auto* r = recipes.store.Find(id))
+            return *r;
+        for (const auto tool : SiblingTools(EditorTool::TrimVideo))
+            if (const auto j = ToolRecipe(tool); j.value("id", std::string()) == id)
+            {
+                Recipe r;
+                std::string error;
+                EXPECT_TRUE(ParseRecipe(j.dump(), recipes.registry, r, error)) << error;
+                return r;
+            }
+        ADD_FAILURE() << "no recipe " << std::string(id);
+        return {};
+    }
+
     bool Has(const std::vector<std::wstring>& args, std::wstring_view a, std::wstring_view b)
     {
         for (size_t i = 0; i + 1 < args.size(); ++i)
@@ -533,13 +551,33 @@ TEST(VideoTools, SlicesOnTheToolsWheelForVideosOnly)
             EXPECT_NE(r.icon, 0) << r.id;
         }
     }
-    EXPECT_LE(forVideo, 8) << "the wheel shows eight slices at most";
-    for (const char* id : { "video-trim", "video-crop", "video-speed", "video-speed-2x", "video-join", "video-frames", "video-split", "video-redact" })
+    // The wheel shows eight slices at most: the four Compress presets and four tools.
+    EXPECT_EQ(forVideo, 8);
+    for (const char* id : { "video-trim", "video-crop", "video-join", "video-split" })
         ASSERT_NE(recipes.store.Find(id), nullptr) << id;
+    // Every tool is in the editor's tool bar, with a recipe of its own for history and output names.
+    EXPECT_EQ(SiblingTools(EditorTool::JoinVideos).size(), 7u);
+    for (const auto tool : SiblingTools(EditorTool::JoinVideos))
+    {
+        const auto j = ToolRecipe(tool);
+        ASSERT_TRUE(j.is_object()) << ToolAction(tool);
+        EXPECT_EQ(j["steps"][0]["action"], ToolAction(tool));
+        EXPECT_FALSE(j.contains("wheel"));
+        EXPECT_TRUE(IsVideoTool(tool));
+        Recipe parsed;
+        std::string error;
+        EXPECT_TRUE(ParseRecipe(j.dump(), recipes.registry, parsed, error)) << error;
+        EditorTool back{};
+        EXPECT_TRUE(ToolForAction(ToolAction(tool), back));
+        EXPECT_EQ(back, tool);
+    }
+    EXPECT_FALSE(ToolRecipe(EditorTool::TrimAudio).is_object());
     const auto* engine = runner.EngineFor(recipes.Get("video-trim"));
     ASSERT_NE(engine, nullptr);
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("video-trim")));
-    EXPECT_FALSE(engine->NeedsEditor(recipes.Get("video-speed-2x")));   // one click
+    Recipe twice = ToolById(recipes, "video-speed");
+    twice.steps[0].params["ask"] = false;
+    EXPECT_FALSE(engine->NeedsEditor(twice));   // a one-click preset
     EXPECT_TRUE(engine->IsBatch(recipes.Get("video-join")));
     EXPECT_FALSE(engine->IsBatch(recipes.Get("video-split")));
     std::wstring why;
@@ -551,6 +589,52 @@ TEST(VideoTools, SlicesOnTheToolsWheelForVideosOnly)
     bool called = false;
     EXPECT_FALSE(OpenEditor(nullptr, EditorRequest{}, [&](nlohmann::json, std::vector<std::wstring>) { called = true; }));
     EXPECT_FALSE(called);
+}
+
+namespace
+{
+    // Stands in for the editor window: the user switches to Speed in the tool bar, picks 3x, confirms.
+    void FakeEditorPicksSpeed(HWND, EditorRequest request, EditorDone done)
+    {
+        EXPECT_EQ(request.tool, EditorTool::TrimVideo);
+        done(nlohmann::json{ { "tool", "video.speed" }, { "factor", 3 } }, request.files);
+    }
+
+    void FakeEditorKeepsTrim(HWND, EditorRequest request, EditorDone done)
+    {
+        done(nlohmann::json{ { "tool", "video.trim" }, { "start", 1 } }, request.files);
+    }
+}
+
+TEST(VideoTools, ToolBarSwitchRunsTheChosenTool)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    const auto engine = MediaToolsModule().makeEngine(EngineServices{ nullptr, nullptr });
+    Recipe ran;
+    std::vector<std::wstring> files;
+    const auto done = [&](Recipe r, std::vector<std::wstring> f) {
+        ran = std::move(r);
+        files = std::move(f);
+    };
+    SetEditorOpener(&FakeEditorPicksSpeed);
+    engine->OpenEditor(nullptr, recipes.Get("video-trim"), { L"C:\\v\\a.mp4" }, done);
+    EXPECT_EQ(ran.id, "video-speed");
+    EXPECT_EQ(ran.steps[0].action, "video.speed");
+    EXPECT_EQ(ran.suffix, L"speed");
+    EXPECT_EQ(ran.description.substr(0, 18), L"Change Video Speed");
+    EXPECT_EQ(static_cast<int>(ran.icon), 0xEC49);
+    EXPECT_EQ(ran.steps[0].params.value("factor", 0.0), 3.0);
+    EXPECT_FALSE(ran.steps[0].params.value("ask", true));   // the editor was the asking
+    EXPECT_FALSE(ran.steps[0].params.contains("tool"));
+    EXPECT_EQ(files, std::vector<std::wstring>{ L"C:\\v\\a.mp4" });
+    // Confirming the tool it opened with keeps the recipe as it was.
+    SetEditorOpener(&FakeEditorKeepsTrim);
+    engine->OpenEditor(nullptr, recipes.Get("video-trim"), { L"C:\\v\\a.mp4" }, done);
+    SetEditorOpener(nullptr);
+    EXPECT_EQ(ran.id, "video-trim");
+    EXPECT_EQ(ran.suffix, L"trimmed");
+    EXPECT_EQ(ran.steps[0].params.value("start", 0.0), 1.0);
 }
 
 // ---- With the real ffmpeg.exe (SHIFTDROP_FFMPEG) --------------------------------------------------
@@ -600,7 +684,7 @@ namespace
         }
         ItemResult Run(std::string_view id, nlohmann::json params, const std::wstring& source, double* lastProgress = nullptr)
         {
-            Recipe r = recipes.Get(id);
+            Recipe r = ToolById(recipes, id);
             for (auto& [k, v] : params.items())
                 r.steps[0].params[k] = v;
             const auto run = history->BeginRun(r, 1);
@@ -663,7 +747,7 @@ TEST(VideoToolsEngine, CropSpeedAndRedact)
     ASSERT_TRUE(square.ok) << Narrow(square.error);
     EXPECT_EQ(Probe(*Ffmpeg(), square.output).width, 240);
 
-    const auto fast = f.Run("video-speed-2x", {}, clip);
+    const auto fast = f.Run("video-speed", { { "factor", 2 }, { "ask", false } }, clip);
     ASSERT_TRUE(fast.ok) << Narrow(fast.error);
     EXPECT_EQ(std::filesystem::path(fast.output).filename(), L"clip (2x).mp4");
     const auto s = Probe(*Ffmpeg(), fast.output);
