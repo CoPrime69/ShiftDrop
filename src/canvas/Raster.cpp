@@ -364,20 +364,23 @@ namespace sd::canvas
     {
         bytes.clear();
         ComPtr<IStream> stream;
-        stream.Attach(SHCreateMemStream(nullptr, 0));
-        if (!stream)
-            return Fail(error, L"encode", E_OUTOFMEMORY);
+        if (const HRESULT hr = CreateStreamOnHGlobal(nullptr, TRUE, &stream); FAILED(hr))
+            return Fail(error, L"encode", hr);
         if (const HRESULT hr = SaveRaster(image, format, quality, stream.Get(), error); FAILED(hr))
             return hr;
+        // The stream's own size (its HGLOBAL can be rounded up).
         STATSTG stat{};
         if (const HRESULT hr = stream->Stat(&stat, STATFLAG_NONAME); FAILED(hr))
             return Fail(error, L"encode", hr);
-        bytes.resize(static_cast<size_t>(stat.cbSize.QuadPart));
-        const LARGE_INTEGER zero{};
-        stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-        ULONG read = 0;
-        if (const HRESULT hr = stream->Read(bytes.data(), static_cast<ULONG>(bytes.size()), &read); FAILED(hr) || read != bytes.size())
-            return Fail(error, L"encode", FAILED(hr) ? hr : E_FAIL);
+        const ULARGE_INTEGER end = stat.cbSize;
+        HGLOBAL memory = nullptr;
+        if (const HRESULT hr = GetHGlobalFromStream(stream.Get(), &memory); FAILED(hr))
+            return Fail(error, L"encode", hr);
+        const auto* data = static_cast<const uint8_t*>(GlobalLock(memory));
+        if (!data)
+            return Fail(error, L"encode", E_OUTOFMEMORY);
+        bytes.assign(data, data + static_cast<size_t>(end.QuadPart));
+        GlobalUnlock(memory);
         return S_OK;
     }
 }

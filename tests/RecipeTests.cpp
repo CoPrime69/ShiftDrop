@@ -31,9 +31,18 @@ TEST(Recipe, BuiltInsAndExampleLoadWithoutErrors)
     for (const auto& r : recipes.store.All())
         ++(r.ring == "convert" ? convert : r.ring == "tools" ? tools : files);
     EXPECT_EQ(convert, 21u);  // PNG, JPG, WebP, TIFF, BMP + Web + 15 video/audio formats
-    EXPECT_EQ(tools, 12u);    // 6 quick edits + 2 image and 4 media compress presets
-    EXPECT_EQ(files, 6u);     // Copy, Move to…, Copy path, Terminal, Duplicate, Float
+    EXPECT_EQ(tools, 15u);    // 6 quick edits + 2 image and 4 media compress presets + Crop, Redact, Share-safe
+    EXPECT_EQ(files, 7u);     // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Remove metadata
     EXPECT_TRUE(recipes.Get("move").IsFileAction());
+
+    // The image Tools wheel shows 8 slices: the module tools come before the last quick edits.
+    std::vector<std::string> imageTools;
+    for (const auto& r : recipes.store.All())
+        if (r.ring == "tools" && !r.IsMediaCompress())
+            imageTools.push_back(r.id);
+    const std::vector<std::string> expected = { "rotate-right", "max-1920", "flip", "compress-image", "image-under-1mb",
+                                                "crop", "redact", "share-safe", "half-size", "rotate-left", "max-1080" };
+    EXPECT_EQ(imageTools, expected);
 }
 
 TEST(Recipe, DefaultsAreFilledIn)

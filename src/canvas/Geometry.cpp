@@ -33,9 +33,11 @@ namespace sd::canvas
         // Snap to the fit zoom and to 100% when a step crosses them, so both are easy to get back to.
         const double fit = FitZoom(m_fitMargin);
         double next = m_zoom * std::pow(2.0, notches / 4.0);
+        double snap = next;
         for (const double stop : { fit, 1.0 })
-            if ((m_zoom < stop && next > stop) || (m_zoom > stop && next < stop))
-                next = stop;
+            if (((m_zoom < stop && next > stop) || (m_zoom > stop && next < stop)) && std::abs(stop - m_zoom) < std::abs(snap - m_zoom))
+                snap = stop;   // the first stop on the way
+        next = snap;
         if (std::abs(next - fit) < 1e-9)
         {
             Fit(m_fitMargin);

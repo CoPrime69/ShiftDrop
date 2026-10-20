@@ -954,6 +954,10 @@ namespace sd
                 }
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
+                else if (!batch->files.empty() && !batch->files.front().result.note.empty() &&
+                         std::all_of(batch->files.begin(), batch->files.end(),
+                                     [&](const FileOutcome& f) { return f.result.note == batch->files.front().result.note; }))
+                    sub = batch->files.front().result.note;   // the engine's own line: what Share-safe removed, and so on
                 else
                     sub = L"Saved next to the originals \u00b7 Undo from History";
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;

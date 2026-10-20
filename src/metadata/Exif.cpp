@@ -280,7 +280,7 @@ namespace sd::metadata
         return false;
     }
 
-    void ExifData::RemoveDirectory(Ifd ifd)
+    void ExifData::RemoveIfd(Ifd ifd)
     {
         std::erase_if(m_dirs, [&](const ExifDirectory& d) { return d.ifd == ifd; });
         if (ifd == Ifd::Thumbnail)

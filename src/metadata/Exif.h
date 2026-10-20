@@ -50,7 +50,7 @@ namespace sd::metadata
 
         const ExifEntry* Find(Ifd ifd, uint16_t tag) const;
         bool Remove(Ifd ifd, uint16_t tag);
-        void RemoveDirectory(Ifd ifd);   // the whole GPS IFD, the thumbnail...
+        void RemoveIfd(Ifd ifd);   // the whole GPS IFD, the thumbnail...
         void Set(Ifd ifd, ExifEntry entry);
 
         // Reading values in the block's byte order.

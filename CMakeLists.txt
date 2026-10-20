@@ -56,6 +56,25 @@ add_library(shiftdrop_core STATIC
   src/shelf/ShelfGeometry.cpp
   src/shelf/ShelfModule.cpp
   src/shelf/ShelfStore.cpp
+  src/canvas/Covers.cpp
+  src/canvas/Editor.cpp
+  src/canvas/Geometry.cpp
+  src/canvas/Raster.cpp
+  src/canvas/RegionTool.cpp
+  src/canvas/Regions.cpp
+  src/crop/CropEngine.cpp
+  src/crop/CropMath.cpp
+  src/crop/CropTool.cpp
+  src/imagetools/ImageToolsModule.cpp
+  src/metadata/Container.cpp
+  src/metadata/Exif.cpp
+  src/metadata/MediaMetadata.cpp
+  src/metadata/Metadata.cpp
+  src/redact/Pii.cpp
+  src/redact/RedactEngine.cpp
+  src/redact/RedactTool.cpp
+  src/redact/Vision.cpp
+  src/sharesafe/ShareSafeEngine.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -67,6 +86,12 @@ target_link_libraries(shiftdrop_core PUBLIC
   WebP::webp
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
 )
+
+# Windows' own text recognition and face detection (Windows.Media.Ocr, Windows.Media.FaceAnalysis)
+# through C++/WinRT, kept out of the core: linked into the app and the tests, it plugs itself in.
+add_library(shiftdrop_vision OBJECT src/redact/WinRtVision.cpp)
+target_compile_options(shiftdrop_vision PRIVATE ${SHIFTDROP_OPTIONS})
+target_link_libraries(shiftdrop_vision PUBLIC shiftdrop_core windowsapp)
 
 add_executable(ShiftDrop WIN32
   src/main.cpp
@@ -81,12 +106,13 @@ add_executable(ShiftDrop WIN32
   src/Tray.cpp
   src/HistoryWindow.cpp
   src/shelf/ShelfWindow.cpp
+  src/canvas/EditorWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core d2d1 dwrite dwmapi shcore gdi32 comctl32)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_vision d2d1 dwrite dwmapi shcore gdi32 comctl32)
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
@@ -112,9 +138,13 @@ if(SHIFTDROP_TESTS)
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
     tests/ShelfTests.cpp
+    tests/CanvasTests.cpp
+    tests/CropTests.cpp
+    tests/RedactTests.cpp
+    tests/ShareSafeTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
-  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
+  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_vision GTest::gtest)
   include(GoogleTest)
   # The MediaEngine tests run the real ffmpeg.exe when there is one; they are skipped otherwise.
   if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")

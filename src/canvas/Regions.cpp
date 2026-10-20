@@ -192,6 +192,7 @@ namespace sd::canvas
         m_drag.index = index;
         m_drag.grip = Grip::SE;
         m_drag.start = at;
+        m_drag.last = at;
         m_drag.originals.emplace_back(index, m_items.back().rect);
         return index;
     }
@@ -277,6 +278,7 @@ namespace sd::canvas
     {
         if (!m_drag.active || m_drag.originals.empty())
             return;
+        m_drag.last = at;
         if (m_drag.grip == Grip::Body)
         {
             RectD all = m_drag.originals.front().second;
@@ -304,11 +306,13 @@ namespace sd::canvas
     {
         const bool creating = m_drag.creating;
         const int index = m_drag.index;
+        // A new region the pointer drew less than the minimum size across (a click, a slip) is dropped.
+        const double drawn = std::max(std::abs(m_drag.last.x - m_drag.start.x), std::abs(m_drag.last.y - m_drag.start.y));
         m_drag = {};
         if (creating && index >= 0 && index < static_cast<int>(m_items.size()))
         {
             const RectD& r = m_items[static_cast<size_t>(index)].rect;
-            if (r.w < m_min || r.h < m_min)
+            if (drawn < m_min || r.w < m_min || r.h < m_min)
             {
                 m_items.erase(m_items.begin() + index);
                 return false;

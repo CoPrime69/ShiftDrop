@@ -91,6 +91,7 @@ namespace sd::canvas
             int index = -1;
             Grip grip = Grip::None;
             PointD start;
+            PointD last;      // where the pointer is now
             std::vector<std::pair<int, RectD>> originals;   // every region the drag moves, as it began
         };
 

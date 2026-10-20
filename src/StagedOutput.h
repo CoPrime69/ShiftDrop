@@ -17,6 +17,7 @@ namespace sd
         std::wstring output;
         std::wstring error;
         uint64_t size = 0;
+        std::wstring note;   // optional result line for the top panel ("Removed GPS, camera, 14 fields")
     };
 
     // One output of one source, written the safe way (OutputPath.h, ADR 0003) and recorded in

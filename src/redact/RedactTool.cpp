@@ -85,6 +85,8 @@ namespace sd::redact
         for (const auto& c : covers)
         {
             // Outward to whole pixels: a cover never leaves a sliver of what it hides at its edge.
+            if (Intersect(c.rect, { 0, 0, static_cast<double>(width), static_cast<double>(height) }).Empty())
+                continue;   // entirely off the picture
             const double l = std::floor(c.rect.x), t = std::floor(c.rect.y);
             const RectI px = ToPixels({ l, t, std::ceil(c.rect.Right()) - l, std::ceil(c.rect.Bottom()) - t }, width, height);
             if (px.w > 0 && px.h > 0)
@@ -447,6 +449,7 @@ namespace sd::redact
         if (e.id == "kind" && e.index >= 0 && e.index <= 2)
         {
             m_kind = e.index;
+            m_newStyle = e.index;
             for (auto& r : m_regions.Items())
                 if (r.selected)
                     r.style = e.index;
@@ -458,6 +461,7 @@ namespace sd::redact
                 m_custom = e.rgb & 0xFFFFFF;
             m_fill = e.index == 0 ? 0x000000 : e.index == 1 ? 0xFFFFFF : m_custom;
             m_kind = 0;
+            m_newStyle = 0;
             for (auto& r : m_regions.Items())
                 if (r.selected)
                     r.style = 0;
@@ -506,6 +510,7 @@ namespace sd::redact
         m_fill = state.value("fill", 0u);
         m_custom = state.value("custom", 0xE81123u);
         m_kind = state.value("kind", 0);
+        m_newStyle = m_kind;
         const auto& files = state.contains("files") ? state["files"] : nlohmann::json::array();
         for (size_t i = 0; i < m_state.size() && i < files.size(); ++i)
         {
