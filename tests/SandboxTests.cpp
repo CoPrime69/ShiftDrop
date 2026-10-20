@@ -96,7 +96,34 @@ namespace
                 to.sin_family = AF_INET;
                 to.sin_port = htons(static_cast<u_short>(port));
                 inet_pton(AF_INET, "127.0.0.1", &to.sin_addr);
-                connected = connect(s, reinterpret_cast<sockaddr*>(&to), sizeof(to)) == 0 ? 0 : WSAGetLastError();
+                // Non-blocking with a 5 s wait: inside an AppContainer, Windows' filtering platform
+                // may drop the packets instead of refusing, so a blocking connect would hang ~21 s.
+                u_long nonBlocking = 1;
+                ioctlsocket(s, FIONBIO, &nonBlocking);
+                if (connect(s, reinterpret_cast<sockaddr*>(&to), sizeof(to)) == 0)
+                    connected = 0;
+                else if ((connected = WSAGetLastError()) == WSAEWOULDBLOCK)
+                {
+                    fd_set writable, failed;
+                    FD_ZERO(&writable);
+                    FD_ZERO(&failed);
+                    FD_SET(s, &writable);
+                    FD_SET(s, &failed);
+                    timeval wait{ 5, 0 };
+                    const int ready = select(0, nullptr, &writable, &failed, &wait);
+                    if (ready == 0)
+                        connected = WSAETIMEDOUT;
+                    else if (ready < 0)
+                        connected = WSAGetLastError();
+                    else if (FD_ISSET(s, &failed))
+                    {
+                        int error = 0, size = sizeof(error);
+                        getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &size);
+                        connected = error != 0 ? error : WSAECONNREFUSED;
+                    }
+                    else
+                        connected = 0;
+                }
                 closesocket(s);
             }
             WSACleanup();
@@ -191,6 +218,15 @@ namespace
             closesocket(m_socket);
             WSACleanup();
         }
+        // True when a connection reached us (it waits in the backlog until accepted).
+        bool Reached() const
+        {
+            fd_set readable;
+            FD_ZERO(&readable);
+            FD_SET(m_socket, &readable);
+            timeval now{ 0, 0 };
+            return select(0, &readable, nullptr, nullptr, &now) > 0;
+        }
         int port = 0;
 
     private:
@@ -255,6 +291,7 @@ TEST(Sandbox, PlainWorkerReachesWhatTheSandboxBlocks)
     EXPECT_FALSE(r.sandboxed);
     EXPECT_EQ(r.open, 0u) << r.raw;
     EXPECT_EQ(r.connect, 0) << r.raw;
+    EXPECT_TRUE(listener.Reached());
 }
 
 TEST(Sandbox, AppContainerDeniesFilesAndNetwork)
@@ -272,7 +309,10 @@ TEST(Sandbox, AppContainerDeniesFilesAndNetwork)
     EXPECT_EQ(r.open, static_cast<unsigned long>(ERROR_ACCESS_DENIED)) << "a file in the user profile: " << r.raw;
     EXPECT_NE(r.list, 0u) << "listing the user profile: " << r.raw;
     EXPECT_EQ(r.startup, 0) << "Winsock itself loads";
-    EXPECT_EQ(r.connect, WSAEACCES) << "connect to 127.0.0.1 is denied: " << r.raw;
+    // Loopback from an AppContainer without capabilities is either refused (WSAEACCES) or dropped
+    // by the filtering platform (a time-out); either way nothing may reach the listener.
+    EXPECT_TRUE(r.connect == WSAEACCES || r.connect == WSAETIMEDOUT) << "connect to 127.0.0.1 is denied: " << r.raw;
+    EXPECT_FALSE(listener.Reached()) << "nothing reached 127.0.0.1";
     EXPECT_NE(r.spawn, 0u) << "no child processes: " << r.raw;
 }
 
