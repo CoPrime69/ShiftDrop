@@ -33,6 +33,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          # The runner's vcpkg clone can be older than our builtin-baseline commit; fetch so it resolves.
+          git -C $env:VCPKG_ROOT fetch --quiet origin
           cmake --preset x64-release
 
       - name: Build
