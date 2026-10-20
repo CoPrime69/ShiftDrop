@@ -1,13 +1,14 @@
-// Windows OCR and face detection through C++/WinRT. Built only with MSVC (the Windows SDK has the
-// C++/WinRT headers), as its own object library linked into the app and the tests: the core
-// library stays plain Win32 + COM.
+// Face detection with Windows.Media.FaceAnalysis, the detector built into Windows, for Redact
+// Photos' "Find faces". Nothing is bundled or downloaded. Built only with MSVC (C++/WinRT), in the
+// WinRT object library, and installs itself into vision::RegisterFaceProvider before main().
 #include "redact/Vision.h"
 
+#include <unknwn.h>
+#include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.Media.FaceAnalysis.h>
-#include <winrt/Windows.Media.Ocr.h>
 #include <winrt/Windows.Storage.Streams.h>
 
 #include <algorithm>
@@ -17,13 +18,12 @@
 namespace
 {
     namespace imaging = winrt::Windows::Graphics::Imaging;
-    namespace ocr = winrt::Windows::Media::Ocr;
     namespace faces = winrt::Windows::Media::FaceAnalysis;
     using sd::canvas::Raster;
     using sd::canvas::RectD;
 
     // The picture as a premultiplied BGRA SoftwareBitmap whose longer side is at most `maxEdge`,
-    // shrunk by averaging (area sampling keeps small text readable). `scale` maps back to pixels.
+    // shrunk by averaging. `scale` maps its pixels back to the raster's.
     imaging::SoftwareBitmap ToBitmap(const Raster& image, uint32_t maxEdge, double& scale)
     {
         scale = std::min(1.0, static_cast<double>(maxEdge) / std::max(image.width, image.height));
@@ -58,24 +58,7 @@ namespace
                                                              static_cast<int32_t>(h), imaging::BitmapAlphaMode::Premultiplied);
     }
 
-    bool TextAvailable()
-    {
-        static std::once_flag once;
-        static bool available = false;
-        std::call_once(once, [] {
-            try
-            {
-                available = ocr::OcrEngine::TryCreateFromUserProfileLanguages() != nullptr;
-            }
-            catch (const winrt::hresult_error&)
-            {
-                available = false;
-            }
-        });
-        return available;
-    }
-
-    bool FacesAvailable()
+    bool Available()
     {
         static std::once_flag once;
         static bool available = false;
@@ -92,44 +75,11 @@ namespace
         return available;
     }
 
-    std::vector<sd::redact::OcrLine> ReadText(const Raster& image, std::wstring* error)
-    {
-        std::vector<sd::redact::OcrLine> lines;
-        try
-        {
-            const auto engine = ocr::OcrEngine::TryCreateFromUserProfileLanguages();
-            if (!engine)
-            {
-                if (error)
-                    *error = L"no text-recognition language is installed (Settings > Time & language > Language)";
-                return lines;
-            }
-            double scale = 1;
-            const auto bitmap = ToBitmap(image, ocr::OcrEngine::MaxImageDimension(), scale);
-            const auto result = engine.RecognizeAsync(bitmap).get();
-            for (const auto& line : result.Lines())
-            {
-                sd::redact::OcrLine out;
-                for (const auto& word : line.Words())
-                {
-                    const auto r = word.BoundingRect();
-                    out.words.push_back({ std::wstring(word.Text()), RectD{ r.X / scale, r.Y / scale, r.Width / scale, r.Height / scale } });
-                }
-                if (!out.words.empty())
-                    lines.push_back(std::move(out));
-            }
-        }
-        catch (const winrt::hresult_error& e)
-        {
-            if (error)
-                *error = std::wstring(e.message());
-        }
-        return lines;
-    }
-
-    std::vector<RectD> FindFaces(const Raster& image, std::wstring* error)
+    std::vector<RectD> Find(const Raster& image, std::wstring* error)
     {
         std::vector<RectD> found;
+        if (image.Empty())
+            return found;
         try
         {
             if (!faces::FaceDetector::IsSupported())
@@ -140,6 +90,7 @@ namespace
             }
             const auto detector = faces::FaceDetector::CreateAsync().get();
             double scale = 1;
+            // The detector wants Gray8 (or NV12); 1600 px is plenty for faces in a photo.
             const auto bitmap = imaging::SoftwareBitmap::Convert(ToBitmap(image, 1600, scale), imaging::BitmapPixelFormat::Gray8);
             for (const auto& face : detector.DetectFacesAsync(bitmap).get())
             {
@@ -155,8 +106,8 @@ namespace
         return found;
     }
 
-    const sd::vision::Provider kProvider{ &TextAvailable, &FacesAvailable, &ReadText, &FindFaces };
+    const sd::vision::FaceProvider kProvider{ &Available, &Find };
 
-    // Linked as an object library, so this initialiser always runs and plugs the provider in.
-    [[maybe_unused]] const bool kRegistered = (sd::vision::RegisterProvider(&kProvider), true);
+    // Linked as an object library, so this initialiser always runs and plugs the detector in.
+    [[maybe_unused]] const bool g_installed = (sd::vision::RegisterFaceProvider(&kProvider), true);
 }

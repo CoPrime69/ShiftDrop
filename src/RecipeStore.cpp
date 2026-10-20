@@ -29,6 +29,12 @@ namespace sd
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1920 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "flip", "label": "Flip", "description": "Mirror left to right", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.flip", "params": { "axis": "horizontal" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
+  { "id": "half-size", "label": "50%", "description": "Half the width and height", "ring": "tools", "suffix": "edited",
+    "steps": [ { "action": "image.scale", "params": { "percent": 50 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
+  { "id": "rotate-left", "label": "Rotate \u21ba", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
+    "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
+  { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
+    "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "compress-image", "label": "Compress", "description": "Smaller JPEG or WebP, quality 75", "ring": "tools", "suffix": "compressed",
     "steps": [ { "action": "image.compress", "params": { "quality": 75 } } ] },
   { "id": "image-under-1mb", "label": "Under 1 MB", "description": "Best quality that fits in 1 MB", "ring": "tools", "suffix": "compressed",
@@ -64,16 +70,6 @@ namespace sd
             all.push_back(std::move(recipe));
         }
         AppendModuleRecipes(all);   // each feature module's own slices (Modules.cpp)
-        // Quick edits that give way to the modules' tools when a wheel is full (it shows 8 slices).
-        for (auto& recipe : nlohmann::json::parse(R"([
-  { "id": "half-size", "label": "50%", "description": "Half the width and height", "ring": "tools", "suffix": "edited",
-    "steps": [ { "action": "image.scale", "params": { "percent": 50 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "rotate-left", "label": "Rotate \u21ba", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
-    "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
-    "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] }
-])"))
-            all.push_back(std::move(recipe));
         return all.dump();
     }
 

@@ -145,10 +145,10 @@ namespace sd::sharesafe
         auto result = out.Commit(recipe.suffix, extension);
         if (result.ok)
         {
-            result.note = report.Summary();
+            result.message = report.Summary();
             if (covers)
-                result.note = std::format(L"Covered {} · {}", covers == 1 ? std::wstring(L"1 detail") : std::format(L"{} details", covers),
-                                          report.fields ? result.note : std::wstring(L"no metadata"));
+                result.message = std::format(L"Covered {} · {}", covers == 1 ? std::wstring(L"1 detail") : std::format(L"{} details", covers),
+                                          report.fields ? result.message : std::wstring(L"no metadata"));
         }
         return result;
     }
@@ -207,7 +207,7 @@ namespace sd::sharesafe
             progress(1.0);
         auto result = out.Commit(recipe.suffix, ext);
         if (result.ok)
-            result.note = MediaSummary(before);
+            result.message = MediaSummary(before);
         return result;
     }
 

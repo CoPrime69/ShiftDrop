@@ -123,7 +123,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag a PDF (or `notes.txt`) and hold **Shift**: the File-actions wheel opens (nothing on Convert applies); scrolling does not stop on the all-dimmed wheels; **Ctrl** still shows Tools with the reason
+- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling does not stop on the all-dimmed wheels
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -159,6 +159,30 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Startup log: the H.264 encoder line appears a moment after start, before any video is dropped
 - [ ] Cancel (×) during **Under 25 MB** on a long video: nothing left in the folder
 
+### O. PDF, text from anything and Share (M5)
+Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a scanned PDF (a phone
+scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
+one taken sideways), a PNG with transparency, and a PDF with a password.
+
+- [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
+- [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
+- [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
+- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
+- [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
+- [ ] Drag two PDFs, hold **Ctrl**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
+- [ ] Drop one PDF on **Merge**: the panel says to drop two or more
+- [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
+- [ ] Organize and Merge follow the Windows light/dark setting, and look right at 150% scaling
+- [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
+- [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
+- [ ] Drop the scanned PDF (or `page.jpg`) on **Searchable**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on Searchable is skipped ("already searchable")
+- [ ] Settings > Time & language > Language: with no OCR-capable language, Copy text and Searchable are dimmed for photos and say why in the centre
+- [ ] Drag two files, hold **Alt**, drop on **Share**: the Windows share sheet opens near the cursor with both files (Nearby sharing, Phone Link, Mail, other apps). Share to Mail or OneNote: the files arrive. Close the sheet: nothing else happens
+- [ ] The password PDF on any PDF slice: the panel says "the PDF is locked with a password"; a `.txt` renamed to `.pdf` says "not a PDF file"
+- [ ] Tray > History lists each PDF job; Undo moves its output (or the pages folder) to the Recycle Bin
+- [ ] With Wi-Fi off, everything above works the same
+
 ### S. Float shelf, carry and clipboard (M3c)
 Float shelf:
 - [ ] Drag `photo.jpg` and hold **Alt**: the File-actions wheel has **Float** (pin icon); dropping on it slides a shelf out of the right edge of that screen with the photo's thumbnail, name and "size · folder"; the top panel says "photo.jpg on the Float shelf"
@@ -186,6 +210,55 @@ Convert-and-carry and drop to clipboard (top panel):
 - [ ] The **copy** button: paste in Explorer copies the output file; for a single image, paste in Paint, Word or a chat message box pastes the picture itself (with transparency where the app supports PNG)
 - [ ] Copy something else right after clicking copy on a big photo: your newer copy is not replaced when the picture is ready
 - [ ] A failed or cancelled job with no outputs shows no buttons and cannot be dragged
+
+### O. Keyboard, Explorer selection, predicted output, inspector (M4)
+Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a folder with 20 or more image recipes (copy `web-ready.json` in the recipes folder under new ids, then restart) for paging.
+
+Keyboard during a drag
+- [ ] Drag a photo, hold **Shift**, let go of the mouse-free hand: **Right** highlights the slice at 12 o'clock, then each one clockwise; **Left** goes back; dimmed slices are skipped; holding an arrow repeats
+- [ ] **Up** / **Down** on a one-ring wheel switch to the previous / next wheel (like scrolling); the first slice of the new wheel is lit
+- [ ] Press **Enter** on a highlighted slice: the job runs on the dragged photo (top panel), the drag ends as if Esc was pressed, and nothing is moved or copied into the folder under the cursor. Release the mouse afterwards: nothing happens
+- [ ] A slice picked by key stays lit while the mouse is still; moving the mouse a few pixels hands the highlight back to the pointer
+- [ ] **Esc** still cancels the drag; the source window never loses focus (its title bar stays active the whole time)
+
+Wheel capacity
+- [ ] With 9 to 16 recipes on a wheel, the slices sit on two rings; labels stay readable; hovering the outer ring lights the outer slice, the gap between the rings never "loses" the highlight; Up / Down move between the rings
+- [ ] With more than 16, the last slice is **More** ("Page 1 of 2" in the centre): hovering it for a moment during a drag turns the page; Enter on it turns it too; the last page wraps to the first
+
+Wheel on Explorer's selection (hotkey)
+- [ ] Select three photos in File Explorer and press **Ctrl+Shift+Space**: the wheel opens at the pointer in click mode ("3 files"), Explorer keeps the focus
+- [ ] Hover a slice and click: it runs on the three photos; arrows + Enter do the same; arrows do not move Explorer's selection while the wheel is open, and work again in Explorer once it closes
+- [ ] **Esc**, a right-click, a click outside the wheel, or Alt+Tab close it without doing anything; clicking the centre closes it too
+- [ ] Shift, Ctrl and Alt (pressed again) and the mouse wheel switch wheels
+- [ ] On the desktop: select icons, press the hotkey: the same
+- [ ] With nothing selected: a notification says "Nothing selected"
+- [ ] In Excel (or VS Code), Ctrl+Shift+Space still does what it does there
+- [ ] Tray menu > "Wheel on Explorer's selection (Ctrl+Shift+Space)" unticked: the hotkey does nothing; ticked again: it works. `[Keyboard] ExplorerHotkey=Ctrl+Alt+W` in settings.ini and a restart change the keys; a hotkey taken by another app gives a notification at startup
+
+Right-click entry
+- [ ] Right-click a photo in Explorer (Windows 11: Show more options): **ShiftDrop…** is there; it opens the wheel on the photo in click mode
+- [ ] Select 20 files, right-click > ShiftDrop…: one wheel opens for all 20 (not 20 wheels), within about half a second
+- [ ] Right-click a folder > ShiftDrop…: the File-actions wheel offers what applies to folders
+- [ ] With ShiftDrop not running, right-click > ShiftDrop… starts it quietly (no "is running" notification) and opens the wheel
+- [ ] Tray menu > the right-click entry toggle removes and adds it; uninstalling removes it
+
+Predicted output
+- [ ] Drag the large photo, hold Shift, hover **WebP**: a card under the wheel shows the thumbnail, "WebP", "~1.2 MB · was 3.4 MB" (numbers vary), the output name "photo (converted).webp" and "removes GPS, camera"
+- [ ] Drop it: the real file's size is within about a third of the prediction
+- [ ] Hover a rotate slice: the thumbnail on the card is turned the same way, and the detail says "4032×3024 → 3024×4032"
+- [ ] Hover a Fit to… / resize slice: "→ 1920×1440"; hover Compress with a size target: "≤ 2 MB"
+- [ ] The small PNG on **JPG**: the size has no "~" (exact)
+- [ ] The video on **MKV**: "same streams, ~…"; on **MP4**: a size from duration × bitrate; the song on **MP3**: "audio only" style sizes
+- [ ] Moving quickly across slices never stutters the wheel; the card follows within a moment; near the bottom of the screen it shows above the wheel
+- [ ] File actions (Copy, Move to…) show no card
+
+Inspector
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Inspect**: a window opens with groups File, Image, Camera, GPS, …, EXIF; nothing is written next to the photo
+- [ ] Type "gps" in the search box: only GPS fields remain; "canon 2023" matches fields containing both words
+- [ ] Double-click a row, or select it and press Ctrl+C: the value is on the clipboard; right-click > Copy all shown fields gives every field as text
+- [ ] Drop three files (photo, video, song) on Inspect: one window with three tabs; the video tab lists Media, Video track 1, Audio track 1, chapters and tags
+- [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
+- [ ] Esc closes the window; Ctrl+F jumps to the search box
 
 ## 4. M0/M1 checklist
 

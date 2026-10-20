@@ -344,8 +344,8 @@ TEST(ShareSafe, RemoveMetadataIsVerifiedAndReported)
     const auto r = f.Run(recipe, source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     EXPECT_EQ(std::filesystem::path(r.output).filename(), L"IMG_0001 (no metadata).jpg");
-    EXPECT_TRUE(r.note.starts_with(L"Removed GPS, camera, ")) << Narrow(r.note);
-    EXPECT_TRUE(r.note.ends_with(L" fields")) << Narrow(r.note);
+    EXPECT_TRUE(r.message.starts_with(L"Removed GPS, camera, ")) << Narrow(r.message);
+    EXPECT_TRUE(r.message.ends_with(L" fields")) << Narrow(r.message);
 
     // Re-opened independently: nothing personal, the picture intact.
     Bytes out;
@@ -503,7 +503,7 @@ TEST(ShareSafe, ReviewCoversAreBurnedInAndMetadataGoes)
     recipe.steps[0].params = redact::CoversToJson({ source }, { { { { 8, 8, 16, 8 }, canvas::CoverKind::Solid, 0x000000 } } });
     const auto r = f.Run(recipe, source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_TRUE(r.note.starts_with(L"Covered 1 detail")) << Narrow(r.note);
+    EXPECT_TRUE(r.message.starts_with(L"Covered 1 detail")) << Narrow(r.message);
     EXPECT_TRUE(VerifyNoMetadata(r.output).clean);
     canvas::Raster out;
     std::wstring error;
@@ -600,7 +600,7 @@ TEST(ShareSafe, VideoIsStreamCopiedWithoutMetadata)
     const auto r = f.Run(recipe, source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     EXPECT_EQ(std::filesystem::path(r.output).filename(), L"holiday (share-safe).mp4");
-    EXPECT_TRUE(r.note.starts_with(L"Removed ")) << Narrow(r.note);
+    EXPECT_TRUE(r.message.starts_with(L"Removed ")) << Narrow(r.message);
 
     log.clear();
     engine->Run(ProbeArgs(r.output), nullptr, never.get_token(), &log);

@@ -5,14 +5,18 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 | Hold | Wheel | Slices so far |
 |---|---|---|
-| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA |
-| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB; for video and audio Compress, 50% size, Under 10 MB, Under 25 MB |
-| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app) |
+| Shift | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
+| Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB. PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF |
+| Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
 Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top
 of the screen shows which wheel you are on, then the job's progress and result. The tray menu sets the
 size (Auto adapts to your screen) and the style (Solid or Glass).
+
+Arrow keys pick a slice and Enter runs it, mid-drag. Without dragging, press Ctrl+Shift+Space on
+Explorer's selection, or right-click > ShiftDrop…, and the wheel opens on those files. While a slice
+is highlighted, a card under the wheel predicts the result: format, size, name and what changes.
 
 Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
 run is in History, and any run can be undone. Long jobs show their progress in the top panel and

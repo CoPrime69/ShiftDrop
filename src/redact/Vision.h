@@ -5,26 +5,24 @@
 #include <string>
 #include <vector>
 
-// Windows' built-in text recognition (Windows.Media.Ocr) and face detection
-// (Windows.Media.FaceAnalysis), behind a plain C++ interface. Both ship with Windows: nothing is
-// bundled or downloaded. The WinRT implementation (WinRtVision.cpp) is its own library and
-// registers itself when it is linked in (the app, and the tests on Windows); without it every
-// call says it is unavailable.
+// What Redact Photos and Share-safe find in a picture with Windows' own engines: text through the
+// OCR module (src/ocr, Windows.Media.Ocr) and faces through Windows.Media.FaceAnalysis. Both ship
+// with Windows: nothing is bundled or downloaded. The face detector (WinFaces.cpp) is in the WinRT
+// object library and plugs itself in when it is linked (the app, and the tests on Windows); without
+// it, or without an OCR language, the calls say so.
 namespace sd::vision
 {
-    struct Provider
+    struct FaceProvider
     {
-        bool (*textAvailable)();   // an OCR language is installed
-        bool (*facesAvailable)();
+        bool (*available)();
         // Blocking; call on a worker thread (MTA). Boxes are in the raster's pixels.
-        std::vector<redact::OcrLine> (*readText)(const canvas::Raster& image, std::wstring* error);
-        std::vector<canvas::RectD> (*findFaces)(const canvas::Raster& image, std::wstring* error);
+        std::vector<canvas::RectD> (*find)(const canvas::Raster& image, std::wstring* error);
     };
-
-    void RegisterProvider(const Provider* provider);
+    void RegisterFaceProvider(const FaceProvider* provider);
 
     bool CanReadText();
     bool CanFindFaces();
+    // Blocking, on a worker thread. Boxes in the raster's pixels.
     std::vector<redact::OcrLine> ReadText(const canvas::Raster& image, std::wstring* error);
     std::vector<canvas::RectD> FindFaces(const canvas::Raster& image, std::wstring* error);
 }

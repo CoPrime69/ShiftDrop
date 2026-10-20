@@ -79,7 +79,7 @@ namespace sd::redact
             progress(1.0);
         auto result = out.Commit(recipe.suffix, extension);
         if (result.ok)
-            result.note = L"Covers burned in · all metadata removed";
+            result.message = L"Covers burned in, all metadata removed";
         return result;
     }
 
