@@ -29,6 +29,11 @@
 #include "Tray.h"
 #include "Utf.h"
 #include "resource.h"
+#include "inspect/InspectorWindow.h"
+#include "keyboard/KeyboardController.h"
+#include "keyboard/ShellVerb.h"
+#include "keyboard/WheelRequest.h"
+#include "preview/PreviewCard.h"
 #include "shelf/ShelfWindow.h"
 
 #include <windows.h>
@@ -54,7 +59,7 @@ namespace sd
         constexpr UINT_PTR kTimerPoll = 1;           // modifier pressed while the mouse is not moving
         constexpr UINT_PTR kTimerHideFallback = 2;   // button released but OLE never sent Drop/DragLeave
         constexpr UINT_PTR kTimerWatchdog = 3;       // hook silently removed by Windows
-        constexpr size_t kMaxSlices = 8;             // more than this and the labels stop fitting
+        constexpr size_t kMaxSlices = 60;            // two rings hold 16; past that the wheel pages (keyboard/WheelLayout.h)
 
         // What a finished batch is called in its notification.
         enum class BatchKind { Convert, Tools, Duplicate, Move };
@@ -190,7 +195,11 @@ namespace sd
     class App
     {
     public:
-        App(HINSTANCE instance, bool autostart) : m_instance(instance), m_autostart(autostart) {}
+        // `wheelPaths`: started by the right-click entry ("--wheel <path>"); the wheel opens on them.
+        App(HINSTANCE instance, bool autostart, std::vector<std::wstring> wheelPaths)
+            : m_instance(instance), m_autostart(autostart), m_startWheel(std::move(wheelPaths))
+        {
+        }
 
         bool Init()
         {
@@ -269,6 +278,11 @@ namespace sd
                     m_island->HideSwitcher();
             };
             events.ringChanged = [this](int ring) { m_island->SetRing(ring); };
+            // The predicted-output card follows the highlighted slice (M4).
+            events.highlighted = [this](const WheelHighlight& h) {
+                if (m_preview)
+                    m_preview->Update(h, h.actionId.empty() ? nullptr : m_recipes.Find(Narrow(h.actionId)));
+            };
             m_overlay = std::make_unique<Overlay>(
                 m_instance, std::move(rings),
                 [this](const std::vector<std::wstring>& files, int ring) { return ContentFor(files, static_cast<Ring>(ring)); },
@@ -281,6 +295,21 @@ namespace sd
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
             m_tray.Add(m_hwnd.get(), m_icon.get(), IdleTip());
+
+            // M4: the predicted-output card, the inspector window, keyboard picking and the wheel on
+            // Explorer's selection. None of them is needed for the drag gesture, so a failure only logs.
+            inspect::InstallWindow();
+            m_preview = std::make_unique<PreviewCard>(m_instance, m_media);
+            m_preview->SetAppearance(m_appearance);
+            if (!m_preview->Create())
+                m_preview.reset();
+            KeyboardController::Events keyEvents;
+            keyEvents.notice = [this](const std::wstring& title, const std::wstring& text) { m_tray.Balloon(title, text); };
+            m_keyboard = std::make_unique<KeyboardController>(m_instance, *m_overlay, m_settings.keys, std::move(keyEvents));
+            if (!m_keyboard->Create())
+                m_keyboard.reset();
+            else if (!m_startWheel.empty())
+                m_keyboard->Queue(m_startWheel);
 
             const UINT keys[kRingCount] = { m_settings.keys[0], m_settings.keys[1], m_settings.keys[2] };
             if (!hook::Install(m_hwnd.get(), keys))
@@ -310,7 +339,7 @@ namespace sd
                 m_tray.Balloon(std::format(L"{} recipe file(s) could not be loaded", m_recipes.Errors().size()),
                                m_recipes.Errors().front() + L"\nSee the log for details.", NIIF_WARNING);
             }
-            else if (!m_autostart)
+            else if (!m_autostart && m_startWheel.empty())
             {
                 // Started at login: stay quiet in the tray. Started by hand: say it is ready.
                 m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file and hold {}.", kBuild, KeyHelp()));
@@ -419,6 +448,8 @@ namespace sd
                 m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
                 m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
                 m_historyWindow.reset();
+                m_keyboard.reset();    // before the overlay it drives
+                m_preview.reset();     // joins the prediction worker
                 m_shelf.reset();       // revokes its drop target; OLE is still initialised
                 m_overlay.reset();
                 m_tray.Remove();
@@ -442,6 +473,8 @@ namespace sd
             SaveAppearance(m_appearance);
             m_overlay->SetAppearance(m_appearance);
             m_island->SetAppearance(m_appearance);
+            if (m_preview)
+                m_preview->SetAppearance(m_appearance);
             if (m_shelf)
                 m_shelf->SetAppearance(m_appearance);
             const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
@@ -477,6 +510,14 @@ namespace sd
             case IDM_HIDE_CURSOR:
                 m_appearance.hideCursor = !m_appearance.hideCursor;
                 ApplyAppearance();
+                break;
+            case IDM_EXPLORER_HOTKEY:
+                if (m_keyboard)
+                    m_keyboard->ToggleHotkey();
+                break;
+            case IDM_SHELL_MENU:
+                if (m_keyboard)
+                    m_keyboard->ToggleShellMenu();
                 break;
             case IDM_HISTORY:
                 if (!m_history)
@@ -515,8 +556,8 @@ namespace sd
         void OnDragEnd()
         {
             KillTimer(m_hwnd.get(), kTimerPoll);
-            if (!m_overlay || !m_overlay->IsVisible())
-                return;
+            if (!m_overlay || !m_overlay->IsVisible() || m_overlay->InClickMode())
+                return;   // a wheel opened without a drag closes by itself (KeyboardController)
             if (!m_overlay->InDrag())
             {
                 // The probe never received DragEnter: this was not an OLE drag (window move, text
@@ -571,6 +612,8 @@ namespace sd
                 if (m_overlay->IsVisible())
                 {
                     SwitchOnKeyPress();
+                    if (m_keyboard)
+                        m_keyboard->PollDrag();   // arrows and Enter pick a slice (M4)
                     return;
                 }
                 const UINT held = HeldKey();
@@ -906,8 +949,9 @@ namespace sd
                 if (f.result.ok)
                 {
                     ++ok;
-                    outputs.push_back(f.result.output);
-                    details += FileName(f.result.output) + L"\n";
+                    if (!f.result.output.empty())   // empty: the result is not a file (Copy text)
+                        outputs.push_back(f.result.output);
+                    details += (f.result.output.empty() ? f.result.message : FileName(f.result.output)) + L"\n";
                 }
                 else
                 {
@@ -939,6 +983,9 @@ namespace sd
                             : std::format(L"Moved {} of {} to {}", ok, total, batch->label);
                 break;
             }
+            // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
+            if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
+                title = batch->files[0].result.message;
             if (batch->token == m_islandBatch)
             {
                 // The panel: one line on what happened, one on where (or what went wrong first).
@@ -954,7 +1001,7 @@ namespace sd
                 }
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
-                else
+                else if (!outputs.empty())
                     sub = L"Saved next to the originals \u00b7 Undo from History";
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
                 if (batch->cancelled)
@@ -990,8 +1037,16 @@ namespace sd
             case WM_CONTEXTMENU:
             case NIN_SELECT:
             case NIN_KEYSELECT:
-                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled(), m_appearance);
+            {
+                std::vector<TrayToggle> toggles;
+                if (m_keyboard)
+                {
+                    toggles.push_back({ IDM_EXPLORER_HOTKEY, std::format(L"Wheel on Explorer's selection ({})", m_keyboard->HotkeyLabel()), m_keyboard->HotkeyOn() });
+                    toggles.push_back({ IDM_SHELL_MENU, L"\u201c" SD_NAME L"\u2026\u201d in Explorer's right-click menu", KeyboardController::ShellMenuOn() });
+                }
+                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled(), m_appearance, toggles);
                 break;
+            }
             case NIN_BALLOONUSERCLICK:
                 RevealInExplorer(m_lastOutputs);
                 break;
@@ -1025,6 +1080,9 @@ namespace sd
         uint64_t m_nextBatch = 1;
         uint64_t m_islandBatch = 0;          // the batch whose progress the top panel shows
         std::unique_ptr<HistoryWindow> m_historyWindow;
+        std::unique_ptr<PreviewCard> m_preview;            // M4: after the overlay, which reports highlights to it
+        std::unique_ptr<KeyboardController> m_keyboard;    // M4: drives the overlay
+        std::vector<std::wstring> m_startWheel;            // --wheel paths this process was started with
         bool m_keyDown[kRingCount]{};   // wheel keys' state at the last poll, to see fresh presses
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
@@ -1072,14 +1130,25 @@ namespace sd
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 {
+    // The installer adds and removes the right-click entry (per user, no admin rights).
+    if (sd::HasArg(sd::wheelrequest::kRegisterShellArg))
+        return sd::shellverb::Register(sd::shellverb::CurrentExe()) ? 0 : 1;
+    if (sd::HasArg(sd::wheelrequest::kUnregisterShellArg))
+        return sd::shellverb::Unregister() ? 0 : 1;
     if (sd::HasArg(sd::kQuitArg) || sd::HasArg(sd::kUninstallArg))
     {
         const bool quit = sd::QuitRunningInstance();
-        // Uninstalling also removes the Run value, wherever it points; settings and history are kept.
+        // Uninstalling also removes the Run value, wherever it points, and the right-click entry;
+        // settings and history are kept.
         if (sd::HasArg(sd::kUninstallArg))
+        {
             sd::startup::Disable();
+            sd::shellverb::Unregister();
+        }
         return quit ? 0 : 1;
     }
+    // "--wheel <paths>" from Explorer's right-click entry: one process per selected item.
+    auto wheelPaths = sd::wheelrequest::WheelPaths(sd::wheelrequest::CommandLineArgs());
 
     const bool autostart = sd::HasArg(sd::startup::kAutostartArg);
     // Single instance per logon session. Read GetLastError immediately: CreateMutexW returns a valid
@@ -1089,6 +1158,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     wil::unique_handle mutex(rawMutex);
     if (mutexError == ERROR_ALREADY_EXISTS)
     {
+        // Hand the paths to the running copy, which opens one wheel for all of them.
+        if (!wheelPaths.empty())
+            return sd::KeyboardController::Forward(wheelPaths) ? 0 : 1;
         if (HWND other = FindWindowW(sd::kMainClass, nullptr))
             PostMessageW(other, sd::msg::AnotherInstance, 0, 0);
         return 0;
@@ -1107,7 +1179,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 
     int code = 1;
     {
-        sd::App app(instance, autostart);   // destroyed before OleUninitialize
+        sd::App app(instance, autostart, std::move(wheelPaths));   // destroyed before OleUninitialize
         if (app.Init())
             code = app.Run();
         else
