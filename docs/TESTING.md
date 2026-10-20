@@ -324,8 +324,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.1.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.5.0.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)
