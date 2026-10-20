@@ -41,6 +41,8 @@ namespace sd
         constexpr UINT_PTR kTimerMore = 2;     // dwelling on "More" during a drag turns the page
         constexpr UINT kMoreDwellMs = 650;
         constexpr LONG kKeyHoldPx = 2;         // a slice picked by key stays lit until the mouse moves more than this
+        constexpr float kEdgeRoomDip = 8.f;    // gap kept between the tiles and the monitor's work area edge
+        constexpr float kEdgeGuardDip = 6.f;   // a moved wheel ignores the cursor until it moves this far
 
         constexpr wchar_t kMoreIcon = 0xE712;   // "More" (three dots)
 
@@ -198,9 +200,40 @@ namespace sd
         const int half = static_cast<int>(std::ceil(extent + kMarginDip * s));
         m_size = SIZE{ 2 * half, 2 * half };
         m_c = D2D1::Point2F(static_cast<float>(half), static_cast<float>(half));
-        // Centred on the cursor even near a screen edge: shifting the wheel would put the cursor on a
-        // slice instead of the dead zone, and a drop without moving would then trigger an action.
-        m_origin = POINT{ screenPt.x - half, screenPt.y - half };
+        // Near a screen edge the wheel moves in so every tile stays on screen (the window's shadow
+        // margin may still hang over the edge). The cursor is then no longer on the centre, so
+        // PointerSlot treats the opening spot as the centre until the cursor moves: dropping without
+        // moving still runs nothing.
+        const POINT centre = ClampCentre(screenPt, extent + kEdgeRoomDip * s);
+        m_shifted = centre.x != m_openPt.x || centre.y != m_openPt.y;
+        m_edgeGuard = m_edgeGuard || m_shifted;
+        m_origin = POINT{ centre.x - half, centre.y - half };
+    }
+
+    POINT Overlay::ClampCentre(POINT pt, float extentPx) const
+    {
+        MONITORINFO mi{ sizeof(mi) };
+        if (!GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi))
+            return pt;
+        // The work area leaves out the taskbar, so no tile hides under it.
+        const RECT& work = mi.rcWork;
+        const LONG r = static_cast<LONG>(std::ceil(extentPx));
+        const auto clampAxis = [r](LONG v, LONG lo, LONG hi) {
+            return hi - lo < 2 * r ? (lo + hi) / 2 : std::clamp(v, lo + r, hi - r);   // a tiny monitor: centred
+        };
+        return POINT{ clampAxis(pt.x, work.left, work.right), clampAxis(pt.y, work.top, work.bottom) };
+    }
+
+    int Overlay::PointerSlot(POINT pt)
+    {
+        if (m_edgeGuard)
+        {
+            const LONG guard = static_cast<LONG>(std::lround(kEdgeGuardDip * m_scale));
+            if (std::abs(pt.x - m_openPt.x) <= guard && std::abs(pt.y - m_openPt.y) <= guard)
+                return HitTest(pt) == kOutside ? kOutside : kCenter;
+            m_edgeGuard = false;
+        }
+        return HitTest(pt);
     }
 
     void Overlay::EnsureRings(int rings)
@@ -249,6 +282,8 @@ namespace sd
             NotifyHidden();
 
         m_ring = std::clamp(ring, 0, std::max(0, static_cast<int>(m_rings.size()) - 1));
+        m_openPt = screenPt;
+        m_edgeGuard = false;
         Layout(screenPt, 1);
         m_tileOut = std::round(wheel::kInnerOutDip * m_scale);
         m_radius = m_tileOut;
@@ -263,9 +298,12 @@ namespace sd
             // window pixels per snapshot pixel at 100%; blurring a small image is cheap and the
             // upscale smooths.
             const int step = std::max(4, static_cast<int>(std::lround(6.f * m_scale)));
+            // Centred where the largest wheel would sit: a smaller wheel moved in from the same edge
+            // never moves further than that, so it stays inside the snapshot.
             const int half = static_cast<int>(std::ceil((wheel::kOuterOutDip + kMarginDip) * m_scale));
-            m_backdropOrigin = POINT{ screenPt.x - half, screenPt.y - half };
-            m_backdropPx = CaptureBlurred(RECT{ screenPt.x - half, screenPt.y - half, screenPt.x + half, screenPt.y + half }, step);
+            const POINT at = ClampCentre(screenPt, (wheel::kOuterOutDip + kEdgeRoomDip) * m_scale);
+            m_backdropOrigin = POINT{ at.x - half, at.y - half };
+            m_backdropPx = CaptureBlurred(RECT{ at.x - half, at.y - half, at.x + half, at.y + half }, step);
             m_backdropStep = static_cast<float>(step);
         }
         SetMode(Mode::Probe);
@@ -423,7 +461,7 @@ namespace sd
         }
         else
         {
-            m_hot = HitTest(m_lastPt);
+            m_hot = PointerSlot(m_lastPt);
         }
         if (Selectable(m_hot))
             m_detail = m_hot;
@@ -447,7 +485,7 @@ namespace sd
         for (int i = 0; i < static_cast<int>(m_shown.size()); ++i)
             if (m_layout.IsMore(i))
                 more = i;
-        m_hot = m_keyHot ? more : HitTest(m_lastPt);
+        m_hot = m_keyHot ? more : PointerSlot(m_lastPt);
         if (Selectable(m_hot))
             m_detail = m_hot;
         log::Info(L"overlay: page {} of {}", m_layout.page + 1, m_layout.pages);
@@ -668,13 +706,13 @@ namespace sd
         if (m_keyHot && std::abs(pt.x - m_keyAnchor.x) <= kKeyHoldPx && std::abs(pt.y - m_keyAnchor.y) <= kKeyHoldPx)
             return;
         m_keyHot = false;
-        SetHot(HitTest(pt));
+        SetHot(PointerSlot(pt));
     }
 
     void Overlay::OnClickUp(POINT pt)
     {
         const bool kept = m_keyHot && std::abs(pt.x - m_keyAnchor.x) <= kKeyHoldPx && std::abs(pt.y - m_keyAnchor.y) <= kKeyHoldPx;
-        const int hot = kept ? m_hot : HitTest(pt);
+        const int hot = kept ? m_hot : PointerSlot(pt);
         if (hot >= 0 && m_layout.IsMore(hot))
         {
             m_lastPt = pt;
@@ -729,12 +767,13 @@ namespace sd
         if (opening)
         {
             m_openT = m_motion ? 0.f : 1.f;
-            if (m_appearance.hideCursor && !m_click)
+            // A wheel moved in from an edge keeps the pointer: it is off the centre, so it has to be seen.
+            if (m_appearance.hideCursor && !m_click && !m_shifted)
                 PostMessageW(m_hwnd.get(), kMsgHideCursor, 0, 0);   // not inside DragEnter: the source is waiting on us
         }
         SetMode(Mode::Wheel);
         m_lastPt = pt;
-        m_hot = HitTest(pt);
+        m_hot = PointerSlot(pt);
         if (!m_announced && m_events.shown)
             m_events.shown(m_ring, m_monitor);
         m_announced = true;
@@ -755,7 +794,7 @@ namespace sd
         if (!m_keyHot || std::abs(pt.x - m_keyAnchor.x) > kKeyHoldPx || std::abs(pt.y - m_keyAnchor.y) > kKeyHoldPx)
         {
             m_keyHot = false;
-            hot = HitTest(pt);
+            hot = PointerSlot(pt);
             SetHot(hot);
         }
         // Heading out past the tiles, the wheel fades a little with distance, so leaving it is a
@@ -817,7 +856,7 @@ namespace sd
             return;   // the slice already ran by key: this drop only ends the drag
         m_dropped = true;
         // A slice picked by key (cursor not moved since) is the one dropped on.
-        const int hot = m_keyHot ? m_hot : HitTest(pt);
+        const int hot = m_keyHot ? m_hot : PointerSlot(pt);
         // The drop is handed over before the wheel starts closing, so whoever listens to `hidden`
         // already knows something was dropped.
         if (m_onDrop && !files.empty())

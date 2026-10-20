@@ -71,10 +71,10 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 
 ### F. Three wheels
 - [ ] Drag `photo.jpg`, hold **Shift**: the Convert wheel shows PNG, JPG (dimmed), WebP, TIFF, BMP, Web; the centre says "Convert / 1 file"
-- [ ] Hold **Ctrl** instead: the Tools wheel shows Rotate ↻, 1920 px, Flip, 50%, Rotate ↺, 1080 px
-- [ ] Hold **Alt** instead: the File-actions wheel shows Copy, Move to…, Copy path, Terminal, Duplicate (note whether the source window's menu bar lights up when you let go of Alt)
-- [ ] Drag `notes.txt` with Shift or Ctrl: every slice is dimmed, the centre says "Not an image"; with Alt every file action is available
-- [ ] Drag `folder` with Alt: Duplicate is dimmed, the other four work
+- [ ] Scroll one notch: the Tools wheel shows Rotate ↻, 1920 px, Flip, 50%, Rotate ↺, 1080 px
+- [ ] Scroll one more notch: the File-actions wheel shows Copy, Move to…, Copy path, Terminal, Duplicate
+- [ ] Drag `notes.txt` with Shift: Convert and Tools slices are dimmed, the centre says "Not an image"; on File actions every action is available
+- [ ] Drag `folder` with Shift and scroll to File actions: Duplicate is dimmed, the other four work
 
 ### G. Convert and tools
 - [ ] Shift → **Web** on a large photo: one file `photo (converted).webp`, at most 2048 px on the long edge; no `~photo...sdpart` file is left behind and no intermediate PNG appears
@@ -114,7 +114,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice
 - [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
 - [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
-- [ ] Still dragging, press **Ctrl**, then **Alt**: the wheel turns to Tools, then File actions, and the panel's highlight slides along
+- [ ] Still dragging, press **Ctrl** or **Alt**: nothing changes (only Shift opens the wheel; Ctrl and Alt keep their usual drag meaning)
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
@@ -229,7 +229,7 @@ Wheel on Explorer's selection (hotkey)
 - [ ] Select three photos in File Explorer and press **Ctrl+Shift+Space**: the wheel opens at the pointer in click mode ("3 files"), Explorer keeps the focus
 - [ ] Hover a slice and click: it runs on the three photos; arrows + Enter do the same; arrows do not move Explorer's selection while the wheel is open, and work again in Explorer once it closes
 - [ ] **Esc**, a right-click, a click outside the wheel, or Alt+Tab close it without doing anything; clicking the centre closes it too
-- [ ] Shift, Ctrl and Alt (pressed again) and the mouse wheel switch wheels
+- [ ] The mouse wheel switches sections, in order and wrapping round
 - [ ] On the desktop: select icons, press the hotkey: the same
 - [ ] With nothing selected: a notification says "Nothing selected"
 - [ ] In Excel (or VS Code), Ctrl+Shift+Space still does what it does there
@@ -359,7 +359,7 @@ Remove metadata (File-actions wheel, **Alt**)
 - [ ] A tray icon appears (blue disc with a white ring) and a notification says ShiftDrop is running, naming the build (M0 or M1)
 - [ ] Right-click the tray icon: the menu shows History…, Open recipes folder, Open logs folder, Start with Windows and Quit; each works
 - [ ] Launching the exe a second time shows "ShiftDrop is already running" and no second icon
-- [ ] `settings.ini` exists in `%LOCALAPPDATA%\ShiftDrop` with `Convert=Shift`, `Tools=Ctrl`, `Files=Alt`
+- [ ] `settings.ini` exists in `%LOCALAPPDATA%\ShiftDrop` with `Convert=Shift`, `Tools=None`, `Files=None` (an older file with `Tools=Ctrl` / `Files=Alt` is switched to None once, and the log says so)
 - [ ] The log lists the WIC decoders and encoders on your PC (note whether WebP/HEIC/AVIF appear)
 - [ ] Task Manager: memory at idle is a few MB; CPU is 0% while you move the mouse normally
 - [ ] Restart Explorer (`Stop-Process -Name explorer`): the tray icon comes back
