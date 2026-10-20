@@ -54,8 +54,9 @@ namespace sd::test
         return std::string(std::istreambuf_iterator<char>(in), {});
     }
 
-    // Writes a width x height 32bpp PNG with a gradient and a transparent left half.
-    inline HRESULT WritePng(const std::wstring& path, UINT width, UINT height)
+    // Writes a width x height 32bpp PNG with a gradient and a transparent left half. `noise` adds
+    // per-pixel noise (opaque), so lossy encodes come out large, like a real photo.
+    inline HRESULT WritePng(const std::wstring& path, UINT width, UINT height, bool noise = false)
     {
         using Microsoft::WRL::ComPtr;
         ComPtr<IWICImagingFactory> factory;
@@ -81,6 +82,19 @@ namespace sd::test
                 p[1] = static_cast<BYTE>(y * 255 / height);
                 p[2] = 128;
                 p[3] = x < width / 2 ? 0 : 255;
+                if (noise)
+                {
+                    UINT n = x * 0x9E3779B9u ^ y * 0x85EBCA6Bu;   // repeatable hash (murmur3 finaliser)
+                    n ^= n >> 16;
+                    n *= 0x85EBCA6Bu;
+                    n ^= n >> 13;
+                    n *= 0xC2B2AE35u;
+                    n ^= n >> 16;
+                    p[0] = static_cast<BYTE>(p[0] / 2 + (n >> 24) / 2);
+                    p[1] = static_cast<BYTE>(p[1] / 2 + ((n >> 16) & 0xFF) / 2);
+                    p[2] = static_cast<BYTE>((n >> 8) & 0xFF);
+                    p[3] = 255;
+                }
             }
         if (SUCCEEDED(hr)) hr = frame->WritePixels(height, width * 4, static_cast<UINT>(pixels.size()), reinterpret_cast<BYTE*>(pixels.data()));
         if (SUCCEEDED(hr)) hr = frame->Commit();
