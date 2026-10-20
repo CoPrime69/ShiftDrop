@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <format>
+#include <map>
 
 namespace sd
 {
@@ -16,29 +17,12 @@ namespace sd
         // tells Explorer's Paste whether to copy or move. We always say copy.
         bool PutFilesOnClipboard(const std::vector<std::wstring>& files, HWND owner, DWORD effect)
         {
-            size_t chars = 1;   // final extra terminator
-            for (const auto& f : files)
-                chars += f.size() + 1;
-            const size_t bytes = sizeof(DROPFILES) + chars * sizeof(wchar_t);
-
-            wil::unique_hglobal drop(GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes));
+            wil::unique_hglobal drop = MakeDropFiles(files);
             wil::unique_hglobal effectMem(GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD)));
             if (!drop || !effectMem)
                 return false;
-            {
-                auto* df = static_cast<DROPFILES*>(GlobalLock(drop.get()));
-                df->pFiles = sizeof(DROPFILES);
-                df->fWide = TRUE;
-                auto* p = reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(df) + sizeof(DROPFILES));
-                for (const auto& f : files)
-                {
-                    std::copy(f.begin(), f.end(), p);
-                    p += f.size() + 1;   // GMEM_ZEROINIT supplies each terminator and the final one
-                }
-                GlobalUnlock(drop.get());
-                *static_cast<DWORD*>(GlobalLock(effectMem.get())) = effect;
-                GlobalUnlock(effectMem.get());
-            }
+            *static_cast<DWORD*>(GlobalLock(effectMem.get())) = effect;
+            GlobalUnlock(effectMem.get());
 
             if (!OpenClipboard(owner))
                 return false;
@@ -90,6 +74,44 @@ namespace sd
         }
     }
 
+    wil::unique_hglobal MakeDropFiles(const std::vector<std::wstring>& files)
+    {
+        size_t chars = 1;   // final extra terminator
+        for (const auto& f : files)
+            chars += f.size() + 1;
+        wil::unique_hglobal drop(GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(DROPFILES) + chars * sizeof(wchar_t)));
+        if (!drop)
+            return drop;
+        auto* df = static_cast<DROPFILES*>(GlobalLock(drop.get()));
+        df->pFiles = sizeof(DROPFILES);
+        df->fWide = TRUE;
+        auto* p = reinterpret_cast<wchar_t*>(reinterpret_cast<BYTE*>(df) + sizeof(DROPFILES));
+        for (const auto& f : files)
+        {
+            std::copy(f.begin(), f.end(), p);
+            p += f.size() + 1;   // GMEM_ZEROINIT supplies each terminator and the final one
+        }
+        GlobalUnlock(drop.get());
+        return drop;
+    }
+
+    namespace
+    {
+        std::map<std::string, InstantFileAction, std::less<>>& ModuleActions()
+        {
+            static std::map<std::string, InstantFileAction, std::less<>> actions;   // UI thread only
+            return actions;
+        }
+    }
+
+    void SetInstantFileAction(std::string actionId, InstantFileAction run)
+    {
+        if (run)
+            ModuleActions()[std::move(actionId)] = std::move(run);
+        else
+            ModuleActions().erase(actionId);
+    }
+
     FileActionResult RunInstantFileAction(std::string_view actionId, const std::vector<std::wstring>& files, HWND owner)
     {
         FileActionResult r;
@@ -98,7 +120,11 @@ namespace sd
         const auto count = files.size() == 1 ? std::filesystem::path(files[0]).filename().wstring()
                                               : std::format(L"{} files", files.size());
 
-        if (actionId == "file.copy")
+        if (const auto it = ModuleActions().find(actionId); it != ModuleActions().end())
+        {
+            r = it->second(files, owner);
+        }
+        else if (actionId == "file.copy")
         {
             r.ok = PutFilesOnClipboard(files, owner, DROPEFFECT_COPY);
             r.message = r.ok ? std::format(L"Copied {}. Paste in Explorer.", count) : L"Could not open the clipboard.";

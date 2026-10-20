@@ -38,6 +38,9 @@ Rules:
 | `image.flip` | `axis` "horizontal", "vertical" | |
 | `image.strip_metadata` | | Outputs never carry source metadata in M2; this step documents the intent |
 | `image.encode` | `format` png, jpg, webp, tiff, bmp, same (default png); `quality` 1–100 (default 90) | `same` keeps the source format, or PNG if it can't be written |
+| `image.compress` | `maxKB` 0–10000000, `percent` 0–99, `quality` 1–100 (default 75) | Last step. JPEG (WebP stays WebP). With `maxKB` or `percent` (of the source's size): the highest quality that fits, scaling the picture down only when even quality 40 is too big; never writes a file over the target. With neither: one encode at `quality`, refused if it isn't smaller than the source |
+| `media.convert` | `format` mp4, mov, mkv, webm, avi, wmv, gif, mp3, m4a, wav, flac, ogg, opus, aiff, wma | Only step. Streams the target can hold are copied (no quality loss, near instant) |
+| `media.compress` | `targetMB` 0–100000, `percent` 0–99, `maxHeight` 0–4320 (default 1080, 0 = keep) | Only step. H.264 + AAC MP4 (AAC M4A for audio). With a target: bitrates and height planned from the duration, up to 3 tries, never over the target. With neither: a quality preset that must come out smaller |
 | `file.copy` | | Clipboard; paste in Explorer |
 | `file.move` | | Asks for a folder, then moves; undoable |
 | `file.copy_path` | | Quoted paths, one per line |

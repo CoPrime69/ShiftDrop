@@ -7,6 +7,7 @@
 //   media worker one JobQueue thread for video and audio: ffmpeg already uses every core, so files
 //                go one at a time (each in its own ffmpeg process, see Ffmpeg.h)
 //   shell worker one STA thread for IFileOperation work (Move to…)
+//   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
 #include "Brand.h"
 #include "DropTarget.h"
 #include "FileActions.h"
@@ -28,6 +29,7 @@
 #include "Tray.h"
 #include "Utf.h"
 #include "resource.h"
+#include "shelf/ShelfWindow.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -235,6 +237,10 @@ namespace sd
             m_mediaJobs = std::make_unique<JobQueue>(1);
             m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
             log::Info(L"jobs: {} worker thread(s) + 1 media thread + 1 shell thread", threads);
+            // The H.264 encoder test (a few tiny encodes, about a second) runs now, on the media thread,
+            // instead of delaying the first video conversion.
+            if (m_media->Available())
+                m_mediaJobs->Submit([media = m_media](std::stop_token) { media->H264(); });
 
             std::vector<WheelRing> rings;
 #if !SHIFTDROP_M0
@@ -249,6 +255,11 @@ namespace sd
             if (!m_island->Create())
                 return false;
             m_island->SetAppearance(m_appearance);
+            // The Float shelf: the Alt wheel's Float slice, and where finished results can be carried.
+            m_shelf = std::make_unique<Shelf>(m_instance, log::AppDataFolder() + L"\\shelf.json");
+            if (!m_shelf->Create())
+                log::Error(L"shelf: unavailable; the Float slice and carrying results are off");
+            m_shelf->SetAppearance(m_appearance);
 
             Overlay::Events events;
             events.shown = [this](int ring, HMONITOR monitor) { m_island->ShowSwitcher(ring, monitor); };
@@ -408,6 +419,7 @@ namespace sd
                 m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
                 m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
                 m_historyWindow.reset();
+                m_shelf.reset();       // revokes its drop target; OLE is still initialised
                 m_overlay.reset();
                 m_tray.Remove();
                 m_hwnd.release();   // the window is being destroyed by the system right now
@@ -430,6 +442,8 @@ namespace sd
             SaveAppearance(m_appearance);
             m_overlay->SetAppearance(m_appearance);
             m_island->SetAppearance(m_appearance);
+            if (m_shelf)
+                m_shelf->SetAppearance(m_appearance);
             const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
             log::Info(L"appearance: size {}, style {}", sizes[static_cast<int>(m_appearance.size)],
                       m_appearance.style == Style::Glass ? L"glass" : L"solid");
@@ -952,7 +966,9 @@ namespace sd
                     title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
                     sub = ok == 0 ? L"Nothing was saved" : L"Finished files are saved next to the originals";
                 }
-                m_island->ShowResult(outcome, title, sub);
+                // Outputs can be carried on from the panel: dragged into an app, floated, copied.
+                const bool carry = m_shelf && !outputs.empty();
+                m_island->ShowResult(outcome, title, sub, carry ? m_shelf->CarryActions(outputs) : Island::ResultActions{});
             }
             else
             {
@@ -1007,6 +1023,7 @@ namespace sd
         Appearance m_appearance;
         std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it
         std::unique_ptr<Overlay> m_overlay;
+        std::unique_ptr<Shelf> m_shelf;      // after the island: results hand it their outputs
         uint64_t m_nextBatch = 1;
         uint64_t m_islandBatch = 0;          // the batch whose progress the top panel shows
         std::unique_ptr<HistoryWindow> m_historyWindow;

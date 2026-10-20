@@ -52,6 +52,10 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  src/shelf/Carry.cpp
+  src/shelf/ShelfGeometry.cpp
+  src/shelf/ShelfModule.cpp
+  src/shelf/ShelfStore.cpp
   # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
   src/mediaeditor/EditorApi.cpp
   src/mediaeditor/EditorLayout.cpp
@@ -87,6 +91,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/shelf/ShelfWindow.cpp
   # The video and audio tools' timeline editor (registers itself with mediaeditor/EditorApi)
   src/mediaeditor/EditorUi.cpp
   src/mediaeditor/EditorWindow.cpp
@@ -123,6 +128,7 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/ShelfTests.cpp
     tests/VideoToolsTests.cpp
     tests/AudioToolsTests.cpp
   )

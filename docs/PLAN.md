@@ -200,7 +200,7 @@ Split into three pull requests so each one can be tried by hand:
   child process, video and audio formats on the Convert wheel (only the formats that fit the dragged
   files), per-file progress and a cancel button in the top panel.
 - **M3b:** Fit to… target sizes, Compress (tool 1), convert-and-carry and drop to clipboard.
-- **M3c:** the Float shelf.
+- **M3c (done):** the Float shelf, convert-and-carry from the top panel, and copy to the clipboard (files, plus the picture for a single image).
 
 The full list:
 - sd-media worker plus LGPL ffmpeg.
@@ -498,6 +498,19 @@ question 1).
 | 2026-10-20 | Each wheel shows only the recipes meant for the dragged files: video formats for videos, audio formats for audio, image formats for images (MP3 for both video and audio); a mix gets what fits all of them | Prakhar: the first wheel should already be the right one for the file type |
 | 2026-10-20 | The top panel's progress moves within a file for video and audio (percentage for a single file) and has a × that cancels the batch: the file in progress is abandoned and its staging file deleted, finished files stay | Long jobs need a way out; nothing half-written is ever left next to the originals |
 | 2026-10-20 | The installer grows from about 2.5 MB to about 45 MB because of ffmpeg.exe | Video and audio need it; a download-on-first-use engine would be a network call, which the offline rule forbids |
+| 2026-10-20 | Convert copies the streams a container can hold (H.264/HEVC + AAC/MP3 into MP4/MOV, anything into MKV, ...) instead of re-encoding; it probes the file first and falls back to a re-encode if the copy fails. Re-encodes decode on the GPU (`-hwaccel auto`) and use faster encoder presets | Prakhar: fast conversion. A phone video to MP4 takes a second instead of a minute, with no quality loss |
+| 2026-10-20 | Compress and Fit to size (tool 1): images search the JPEG/WebP quality (binary search, 40–92) for the best fit and shrink the picture only when even 40 is too big; media plans video/audio bitrates and height from the duration (0.08 bits per pixel per frame ladder) and retries up to 3 times. Neither ever keeps a result over the target, and a no-target preset must come out smaller than the source | A target size is a promise: "under 10 MB" must be under 10 MB. Presets: images Compress, Under 1 MB; video and audio Compress (up to 1080p), 50% size, Under 10 MB (chat apps), Under 25 MB (email) |
+| 2026-10-20 | The H.264 encoder test runs on the media thread right after start | The first video conversion no longer waits about a second for it |
+| 2026-10-20 | Features are built as modules (docs/modules.md): one `FeatureModule` per area in `src/<area>/`, plugged in through `src/Modules.cpp`, with an `IEngine` that runs its recipes and `StagedOutput` for every output | Lets several milestones be built at the same time without touching each other, and keeps every output crash-safe and undoable |
+| 2026-10-20 | Float is an instant file action (`file.float`, a FeatureModule in `src/shelf`) handled on the UI thread through a small `SetInstantFileAction` hook in FileActions, not an engine | It writes nothing and runs no job; the shelf window must live on the UI thread anyway |
+| 2026-10-20 | The Float shelf is a layered Direct2D window like the wheel and the top panel: newest file on top, thumbnails from IShellItemImageFactory on its own STA worker, at most five rows visible (the rest scroll), a "drag all / drag selected" handle at the bottom | One look across the app; thumbnails never block the UI thread |
+| 2026-10-20 | Dropped within 32 DIP of a work-area edge, the shelf pins flush to it (side edges win a corner tie) and folds into a 22 x 84 DIP tab when the mouse leaves; it peeks open for 1.8 s when files arrive. Away from the edges it floats and never folds | A pinned shelf should take no room until it is wanted; a floating one was put there on purpose |
+| 2026-10-20 | Dragging out of the shelf or the top panel offers copy or link only, never move; the shelf keeps its files after a drag out | Same rule as the wheel: no target can take the original away. Files leave the shelf only by ×, Clear, or when they disappear from disk |
+| 2026-10-20 | The shelf follows the light/dark app theme (the top panel stays the dark island); Glass makes it translucent without a blur | The shelf is a window you work in and stays on screen; a blurred snapshot would go stale as it moves |
+| 2026-10-20 | Shelf state (files, edge, position) in `%LOCALAPPDATA%\ShiftDrop\shelf.json`, rewritten through a temp file + rename; files are checked every 4 s while it shows and dropped only on "not found" (an offline network drive keeps its items) | Survives restarts and crashes; unplugged drives don't wipe the shelf |
+| 2026-10-20 | Carry from the top panel: a result with outputs can be dragged straight into any app, and has a pin (Float) and a copy button; it stays while hovered and for 5 s instead of 2 | Convert-and-carry without a separate chip window; the buttons make it discoverable |
+| 2026-10-20 | Drop to clipboard is a Copy button (and Ctrl+C on the shelf), not a global Ctrl+C while the result shows | The panel never has the keyboard; grabbing Ctrl+C from every app for a few seconds would eat real copies |
+| 2026-10-20 | Copy puts CF_HDROP + "Preferred DropEffect: copy" on the clipboard at once; for a single image the picture follows a moment later as "PNG" (keeps transparency) and CF_DIB (flattened on white), only if nothing else was copied meanwhile | Paste in Explorer gets the file, paste in a chat or document gets the picture; decoding big photos stays off the UI thread |
 
 ## Open questions
 
@@ -510,7 +523,9 @@ question 1).
 7. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 8. Multi-page TIFF / animated GIF: M1 converts the first frame only. Convert all pages/frames later?
 9. Hotkey for "open the wheel on Explorer's selection" (Tangerine's Enter on a file): is Ctrl+Shift+Space a good default?
-10. Converting a video to MP4/MOV/MKV re-encodes at good quality (constant quality on GPUs, 8 Mbit/s otherwise), so files can grow. Shrinking is M3b's Compress. Fine, or should Convert keep the size close to the original?
+10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
+11. Float shelf: should dragging a file out of the shelf remove it from the shelf (like a tray you empty) or keep it (current)? And should a renamed file follow its new name instead of leaving the shelf?
+12. Should the tray menu get a "Show Float shelf" entry (it hides itself when empty, and Float on any file brings it back)?
 
 ## Sources
 

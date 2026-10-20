@@ -1,6 +1,6 @@
 # Build, run and manual test checklist
 
-Covers M0 to M3a. Section M (video and audio) is new; sections A to E are the M0/M1 checks.
+Covers M0 to M3c. Sections M (video and audio), N (Compress and Fit to size) and S (Float shelf, carry and clipboard) are the newest; sections A to E are the M0/M1 checks.
 
 ## 1. One-time setup (PowerShell)
 
@@ -146,6 +146,47 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Rename `engines\ffmpeg.exe` in the install folder and restart ShiftDrop: dragging a video and holding Shift shows the video formats dimmed with "Media engine missing" in the centre; images still work. Rename it back
 - [ ] With Wi-Fi off, everything above works the same
 
+### N. Compress and Fit to size (M3b)
+- [ ] Drag a phone photo (JPG or PNG, a few MB) and hold **Ctrl**: the Tools wheel has **Compress** and **Under 1 MB**
+- [ ] Drop on **Under 1 MB**: `photo (compressed).jpg` is at most 1 MB (Properties > Size), same width and height if it fit, and looks right
+- [ ] Drop that result on **Under 1 MB** again: refused with "already under 1 MB", nothing written
+- [ ] Drop a PNG screenshot with transparency on **Compress**: a JPG on white; a WebP stays WebP
+- [ ] Drag a video and hold **Ctrl**: **Compress**, **50% size**, **Under 10 MB**, **Under 25 MB**; a song shows the same (results are .m4a)
+- [ ] Drop a 1–3 minute 1080p video on **Under 10 MB**: progress in the top panel; `clip (compressed).mp4` is at most 10 MB and plays; if it needed another try the log says `media: fit attempt 2`
+- [ ] Drop a 4K phone video on **Compress**: at most 1080p, smaller than the source
+- [ ] Drop a video already under 10 MB on **Under 10 MB**: "already under 10 MB"
+- [ ] Convert speed: drop an iPhone/Android H.264 or HEVC `.mov`/`.mp4` on **MP4** (or **MOV**): done in a second or two (streams copied; the log says `plan: copy video, copy audio`)
+- [ ] Startup log: the H.264 encoder line appears a moment after start, before any video is dropped
+- [ ] Cancel (×) during **Under 25 MB** on a long video: nothing left in the folder
+
+### S. Float shelf, carry and clipboard (M3c)
+Float shelf:
+- [ ] Drag `photo.jpg` and hold **Alt**: the File-actions wheel has **Float** (pin icon); dropping on it slides a shelf out of the right edge of that screen with the photo's thumbnail, name and "size · folder"; the top panel says "photo.jpg on the Float shelf"
+- [ ] About two seconds later (mouse elsewhere) the pinned shelf folds into a slim tab on the edge showing the thumbnail and "1"; hovering the tab unfolds it smoothly, leaving folds it again
+- [ ] Drag three more files straight onto the tab (no key held): it unfolds as the drag arrives, the badge under the drag picture says "Add to the Float shelf", and the files are added at the top; dropping one that is already there moves it up instead of adding it twice
+- [ ] Add more than five items: the list scrolls with the mouse wheel and shows a thin scroll bar
+- [ ] Drag one item out into an Explorer folder: it is **copied** there (the original stays on the shelf and on disk); into a browser upload box, a mail message and a chat app (Teams, Discord, Slack, WhatsApp): each gets the file
+- [ ] Ctrl+click two items (or click one and Shift+click another), drag one of them out: both go; the handle at the bottom says "Drag 2 selected into an app"; with nothing selected it says "Drag all N into an app" and dragging it carries everything
+- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear the shelf
+- [ ] Click an item, then use the keyboard: Up/Down move, Shift+Up/Down extend, Ctrl+A, Enter opens, Delete removes, Ctrl+C copies (the footer says "Copied…"), Esc folds a pinned shelf
+- [ ] Drag the shelf by its header to the middle of the screen: it floats there (no folding); drag it near the left, top or bottom edge and let go: it glides flush against that edge with square outer corners, and folds when you leave it
+- [ ] The pin button in the header pins a floating shelf to the nearest edge and unpins a pinned one
+- [ ] With two monitors at different scaling (100 % and 150 %), drag the shelf from one to the other: it changes size to match, pins to the edges of the monitor it is on and never spills onto the other one
+- [ ] Delete or rename one of the shelf's files in Explorer: within a few seconds it disappears from the shelf
+- [ ] The trash button (or "Clear the shelf") empties it and it fades away; Float on a file brings it back
+- [ ] Quit and restart ShiftDrop with files on the shelf: it comes back (folded if pinned) in the same place with the same files; `%LOCALAPPDATA%\ShiftDrop\shelf.json` lists them
+- [ ] Windows dark and light app theme: the shelf follows it (Settings > Personalisation > Colours), also while it is open; tray Style > Glass makes it translucent
+- [ ] Animation effects off: the shelf appears, folds and moves without animation
+
+Convert-and-carry and drop to clipboard (top panel):
+- [ ] Convert `photo.jpg` to PNG: the result in the top panel stays while the mouse is over it, and its second line says "Drag into any app, or click to show in Explorer"; it has a pin button and a copy button
+- [ ] Drag the result itself into a chat app or a browser upload box: the output file (`photo (converted).png`) arrives there, and the panel tucks away; drag a batch result of 3 files into an Explorer folder: all three are copied
+- [ ] Drag the result onto the Float shelf: the outputs are added
+- [ ] The **pin** button puts the outputs on the Float shelf (the button turns into a tick, the line says so)
+- [ ] The **copy** button: paste in Explorer copies the output file; for a single image, paste in Paint, Word or a chat message box pastes the picture itself (with transparency where the app supports PNG)
+- [ ] Copy something else right after clicking copy on a big photo: your newer copy is not replaced when the picture is ready
+- [ ] A failed or cancelled job with no outputs shows no buttons and cannot be dragged
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
@@ -210,8 +251,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.0.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.3.1.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)
