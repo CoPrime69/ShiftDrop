@@ -52,11 +52,11 @@ TEST(Canvas, FitCentresTheImageAndNeverEnlargesIt)
     EXPECT_DOUBLE_EQ(v.ToView(PointD{ 0, 0 }).y, 150);   // (800 - 500) / 2
     EXPECT_TRUE(v.IsFit());
 
-    ViewTransform small;
-    small.SetImage({ 200, 100 });
-    small.SetViewport({ 0, 0, 1000, 800 });
-    small.Fit(0);
-    EXPECT_DOUBLE_EQ(small.Zoom(), 1.0);   // a small picture is shown at 100%, not blown up
+    ViewTransform tiny;
+    tiny.SetImage({ 200, 100 });
+    tiny.SetViewport({ 0, 0, 1000, 800 });
+    tiny.Fit(0);
+    EXPECT_DOUBLE_EQ(tiny.Zoom(), 1.0);   // a tiny picture is shown at 100%, not blown up
 }
 
 TEST(Canvas, ZoomKeepsThePointUnderTheCursor)
