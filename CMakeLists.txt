@@ -52,6 +52,18 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
+  src/keyboard/Hotkey.cpp
+  src/keyboard/KeyNav.cpp
+  src/keyboard/ShellVerb.cpp
+  src/keyboard/WheelLayout.cpp
+  src/keyboard/WheelRequest.cpp
+  src/preview/Prediction.cpp
+  src/preview/Predictor.cpp
+  src/inspect/InspectModule.cpp
+  src/inspect/Metadata.cpp
+  src/inspect/MetadataReader.cpp
+  src/inspect/ProbeReport.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -76,6 +88,10 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/keyboard/ExplorerSelection.cpp
+  src/keyboard/KeyboardController.cpp
+  src/preview/PreviewCard.cpp
+  src/inspect/InspectorWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -106,6 +122,9 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/KeyboardTests.cpp
+    tests/PreviewTests.cpp
+    tests/InspectTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
