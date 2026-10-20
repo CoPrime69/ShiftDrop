@@ -91,7 +91,7 @@ namespace sd
             log::Warn(L"tray: balloon failed");
     }
 
-    void Tray::ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance)
+    void Tray::ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance, const std::vector<TrayToggle>& toggles)
     {
         wil::unique_hmenu menu(CreatePopupMenu());
         if (!menu)
@@ -116,6 +116,8 @@ namespace sd
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(style.release()), L"Style");
         AppendMenuW(menu.get(), MF_STRING | (appearance.hideCursor ? MF_CHECKED : MF_UNCHECKED), IDM_HIDE_CURSOR, L"Hide cursor over the wheel");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        for (const auto& t : toggles)
+            AppendMenuW(menu.get(), MF_STRING | (t.checked ? MF_CHECKED : MF_UNCHECKED), t.id, t.text.c_str());
         AppendMenuW(menu.get(), MF_STRING | (startWithWindows ? MF_CHECKED : MF_UNCHECKED), IDM_START_WITH_WINDOWS, L"Start with Windows");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, IDM_QUIT, L"Quit");
