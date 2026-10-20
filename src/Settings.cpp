@@ -97,10 +97,9 @@ namespace sd
     Appearance LoadAppearance()
     {
         const auto path = SettingsPath();
-        wchar_t size[16]{}, style[16]{}, name[16]{};
+        wchar_t size[16]{}, style[16]{};
         GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
         GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
-        GetPrivateProfileStringW(L"Appearance", L"ItemName", L"line", name, ARRAYSIZE(name), path.c_str());
         Appearance a;
         const auto is = [](const wchar_t* value, const wchar_t* name) { return CompareStringOrdinal(value, -1, name, -1, TRUE) == CSTR_EQUAL; };
         if (is(size, L"small"))
@@ -110,7 +109,6 @@ namespace sd
         else if (is(size, L"large"))
             a.size = WheelSize::Large;
         a.style = is(style, L"glass") ? Style::Glass : Style::Solid;
-        a.itemName = is(name, L"full") ? NameDisplay::Full : is(name, L"none") ? NameDisplay::Hidden : NameDisplay::OneLine;
         a.hideCursor = GetPrivateProfileIntW(L"Appearance", L"HideCursor", 1, path.c_str()) != 0;
         return a;
     }
@@ -121,8 +119,6 @@ namespace sd
         const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
         WritePrivateProfileStringW(L"Appearance", L"Size", sizes[static_cast<int>(a.size)], path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid", path.c_str());
-        const wchar_t* names[] = { L"line", L"full", L"none" };
-        WritePrivateProfileStringW(L"Appearance", L"ItemName", names[static_cast<int>(a.itemName)], path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"HideCursor", a.hideCursor ? L"1" : L"0", path.c_str());
     }
 }
