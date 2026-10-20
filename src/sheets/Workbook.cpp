@@ -301,6 +301,13 @@ namespace sd::sheets
                     else
                         quoted = false;
                 }
+                else if (c == '\r')
+                {
+                    // Line ends inside a quoted field become "\n", as cells hold them.
+                    if (i + 1 < s.size() && s[i + 1] == '\n')
+                        ++i;
+                    field.push_back('\n');
+                }
                 else
                     field.push_back(c);
                 continue;

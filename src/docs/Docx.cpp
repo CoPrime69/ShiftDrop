@@ -179,13 +179,19 @@ namespace sd::docs
                 }
                 m_folder = FolderOf(main);
                 m_rels = ReadRels(m_zip, main);
+                bool styles = false, numbering = false;
                 for (const auto& [id, rel] : m_rels)
                 {
                     if (rel.type.ends_with("/styles"))
-                        LoadStyles(ResolvePart(m_folder, rel.target));
+                        styles = true, LoadStyles(ResolvePart(m_folder, rel.target));
                     else if (rel.type.ends_with("/numbering"))
-                        LoadNumbering(ResolvePart(m_folder, rel.target));
+                        numbering = true, LoadNumbering(ResolvePart(m_folder, rel.target));
                 }
+                // Some generators leave these relationships out; Word still finds the parts.
+                if (!styles)
+                    LoadStyles(m_folder + "styles.xml");
+                if (!numbering)
+                    LoadNumbering(m_folder + "numbering.xml");
                 LoadTitle();
                 pugi::xml_document d;
                 if (!d.load_buffer(xml->data(), xml->size(), pugi::parse_default | pugi::parse_ws_pcdata))
@@ -658,7 +664,14 @@ namespace sd::docs
                 }
                 m_lastWasCode = b.kind == BlockKind::Code;
                 b.spans = std::move(spans);
-                // Empty paragraphs are spacing, not content.
+                // Empty paragraphs are spacing, not content, except an empty one with only a bottom
+                // border: Word's (and our) horizontal rule.
+                if (b.kind == BlockKind::Paragraph && b.spans.empty() && Child(Child(ppr, "pBdr"), "bottom"))
+                {
+                    b.kind = BlockKind::Rule;
+                    m_doc.blocks.push_back(std::move(b));
+                    return;
+                }
                 if (b.kind != BlockKind::ListItem && b.kind != BlockKind::Code && b.spans.empty())
                     return;
                 m_doc.blocks.push_back(std::move(b));
