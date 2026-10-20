@@ -1,6 +1,7 @@
 #pragma once
 #include "Canvas.h"
 #include "DropTarget.h"
+#include "HiddenCursor.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -115,6 +116,7 @@ namespace sd
         bool Settled() const;
         void Animate();
         void NotifyHidden();
+        void RequestThumbnail(const std::wstring& path);
 
         bool EnsureTextFormats();
         Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight) const;
@@ -180,6 +182,11 @@ namespace sd
         bool m_dropped = false;                   // closing after a drop (not because the cursor left)
         int m_switchDir = 1;
         std::vector<float> m_hotT;
+
+        // The dragged item: the pointer can be hidden over the wheel, and Explorer's drag picture
+        // redrawn with a shorter name (DragImage.h) from the file's thumbnail.
+        HiddenCursor m_cursor;
+        unsigned m_thumbRequest = 0;   // a thumbnail arriving for an older request is dropped
 
         // Glass style: the screen under the window, captured when the wheel opens, shrunk and blurred.
         theme::Pixels m_backdropPx;

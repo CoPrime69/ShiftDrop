@@ -32,10 +32,13 @@ namespace sd
     // How the wheel and the top panel look; changed from the tray menu, saved in [Appearance].
     enum class WheelSize { Auto, Small, Medium, Large };   // Auto: from the monitor's size and DPI
     enum class Style { Solid, Glass };                      // Glass: frosted, blurred background
+    enum class NameDisplay { OneLine, Full, Hidden };       // the dragged item's name under its picture
     struct Appearance
     {
         WheelSize size = WheelSize::Auto;
         Style style = Style::Solid;
+        NameDisplay itemName = NameDisplay::OneLine;
+        bool hideCursor = true;   // no mouse pointer over the wheel; the dragged item's picture marks the spot
     };
     Appearance LoadAppearance();
     void SaveAppearance(const Appearance& appearance);
