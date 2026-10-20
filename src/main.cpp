@@ -235,6 +235,10 @@ namespace sd
             m_mediaJobs = std::make_unique<JobQueue>(1);
             m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
             log::Info(L"jobs: {} worker thread(s) + 1 media thread + 1 shell thread", threads);
+            // The H.264 encoder test (a few tiny encodes, about a second) runs now, on the media thread,
+            // instead of delaying the first video conversion.
+            if (m_media->Available())
+                m_mediaJobs->Submit([media = m_media](std::stop_token) { media->H264(); });
 
             std::vector<WheelRing> rings;
 #if !SHIFTDROP_M0
