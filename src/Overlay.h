@@ -154,7 +154,7 @@ namespace sd
         void Run(int slot);                // drop / click / Enter on a slot
         bool EndSink();                    // the drag ended after a slice ran by key
         void NotifyHighlight();
-        int NextRing(int step) const;      // the next wheel with something for m_files
+        int NextRing(int step) const;      // the next wheel in order, wrapping around
         void NextPage();
         void OnClickMove(POINT screenPt);
         void OnClickUp(POINT screenPt);

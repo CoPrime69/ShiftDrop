@@ -324,7 +324,7 @@ namespace sd
 #if SHIFTDROP_M0
             constexpr const wchar_t* kBuild = L"M0 placeholder build";
 #else
-            constexpr const wchar_t* kBuild = L"M3 build";
+            constexpr const wchar_t* kBuild = L"Version " SD_VERSION;
 #endif
             if (IsElevated())
             {
