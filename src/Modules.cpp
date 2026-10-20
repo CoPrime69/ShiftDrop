@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "shelf/ShelfModule.h"
 #include "pdf/PdfModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
@@ -8,6 +9,7 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
+            ShelfModule(),   // Float shelf (file action), src/shelf
             pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
         };
         return modules;

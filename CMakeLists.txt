@@ -24,6 +24,13 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
 find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+# QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
+# linker must be able to find them in vcpkg's lib folder.
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  link_directories("${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/lib")
+endif()
+get_target_property(SHIFTDROP_QPDF_LINKS qpdf::libqpdf INTERFACE_LINK_LIBRARIES)
+message(STATUS "qpdf links: ${SHIFTDROP_QPDF_LINKS}")
 
 set(SHIFTDROP_DEFINES
   UNICODE _UNICODE            # wide-character Win32 APIs only
@@ -54,6 +61,10 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  src/shelf/Carry.cpp
+  src/shelf/ShelfGeometry.cpp
+  src/shelf/ShelfModule.cpp
+  src/shelf/ShelfStore.cpp
   # PDF module (M5): plain C++ and QPDF; the WinRT and UI parts are in the libraries below
   src/pdf/ImagePdf.cpp
   src/pdf/PageRenderer.cpp
@@ -117,6 +128,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/shelf/ShelfWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -147,6 +159,7 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
   )
