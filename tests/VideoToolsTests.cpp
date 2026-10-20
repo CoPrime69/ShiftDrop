@@ -551,9 +551,9 @@ TEST(VideoTools, SlicesOnTheToolsWheelForVideosOnly)
             EXPECT_NE(r.icon, 0) << r.id;
         }
     }
-    // The wheel shows eight slices at most: the four Compress presets and four tools.
-    EXPECT_EQ(forVideo, 8);
-    for (const char* id : { "video-trim", "video-crop", "video-join", "video-split" })
+    // Two rings hold sixteen slices; past that the wheel pages. Every video tool has a slice.
+    EXPECT_LE(forVideo, 16);
+    for (const char* id : { "video-trim", "video-crop", "video-speed", "video-join", "video-frames", "video-split", "video-redact" })
         ASSERT_NE(recipes.store.Find(id), nullptr) << id;
     // Every tool is in the editor's tool bar, with a recipe of its own for history and output names.
     EXPECT_EQ(SiblingTools(EditorTool::JoinVideos).size(), 7u);

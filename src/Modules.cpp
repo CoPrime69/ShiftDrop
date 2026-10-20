@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "inspect/InspectModule.h"
 #include "shelf/ShelfModule.h"
 #include "pdf/PdfModule.h"
 #include "mediaeditor/MediaToolsModule.h"
@@ -10,6 +11,7 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
+            inspect::Module(),   // Tools: Inspect (metadata, M4)
             ShelfModule(),   // Float shelf (file action), src/shelf
             pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
             MediaToolsModule(),   // video tools (M9) and audio tools (M10)

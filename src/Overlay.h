@@ -4,6 +4,8 @@
 #include "HiddenCursor.h"
 #include "Settings.h"
 #include "Theme.h"
+#include "keyboard/KeyNav.h"
+#include "keyboard/WheelLayout.h"
 
 #include <windows.h>
 #include <d2d1.h>
@@ -51,6 +53,17 @@ namespace sd
         bool fallThrough = false;
     };
 
+    // What the preview card needs to know about the highlighted slice.
+    struct WheelHighlight
+    {
+        std::wstring actionId;                              // empty: nothing (or a dimmed slice) is highlighted
+        const std::vector<std::wstring>* files = nullptr;   // the wheel's files, valid during the call
+        POINT centre{};                                     // the wheel, screen px
+        float radius = 0.f;                                 // its outer edge, px
+        HMONITOR monitor = nullptr;
+        float scale = 1.f;                                  // px per DIP
+    };
+
     // The radial menu: a topmost, non-activating, layered popup centred on the cursor.
     //
     // It is drawn with Direct2D and pushed with UpdateLayeredWindow (per-pixel alpha, see Canvas).
@@ -62,6 +75,13 @@ namespace sd
     //
     // Switching wheels while it is open: press another wheel's key (main.cpp calls SetRing) or turn
     // the mouse wheel (the hook forwards it to OnScroll, see MouseHook.h).
+    //
+    // Up to 8 slices sit on one ring, 9 to 16 on two, more page through a "More" slice
+    // (keyboard/WheelLayout.h). The keyboard picks slices too (Navigate / Activate, fed by
+    // KeyboardController): a slice picked by key stays lit until the mouse really moves.
+    //
+    // Besides a drag, the wheel opens in "click mode" on files given to it (Explorer's selection, the
+    // right-click entry): hover or arrows to pick, click or Enter to run, Esc or a click outside to close.
     class Overlay final : public IDropSink
     {
     public:
@@ -72,6 +92,8 @@ namespace sd
             std::function<void(int ring, HMONITOR monitor)> shown;   // the wheel appeared (files arrived)
             std::function<void()> hidden;                            // dropped, cancelled or dismissed
             std::function<void(int ring)> ringChanged;
+            // The highlighted slice changed (hover or keyboard): what the preview card shows.
+            std::function<void(const struct WheelHighlight&)> highlighted;
         };
 
         Overlay(HINSTANCE instance, std::vector<WheelRing> rings, ContentProvider provider, DropHandler onDrop, Events events);
@@ -91,6 +113,18 @@ namespace sd
         bool IsVisible() const { return m_mode == Mode::Probe || m_mode == Mode::Wheel; }
         bool InDrag() const { return m_inDrag; }   // between DragEnter and DragLeave/Drop
 
+        // Click mode: the wheel opens at `screenPt` on `files` without a drag.
+        void ShowForFiles(POINT screenPt, int ring, std::vector<std::wstring> files);
+        bool InClickMode() const { return m_click && m_mode == Mode::Wheel; }
+        bool ShowsWheel() const { return m_mode == Mode::Wheel; }   // the probe has become the real wheel
+        bool Contains(POINT screenPt) const;                         // over the tiles (or the centre)
+
+        // Keyboard picking. Activate runs the highlighted slice (as a drop would) or turns the page.
+        enum class Activation { None, Paged, Ran };
+        void Navigate(keynav::Key key);
+        Activation Activate();
+        void Cancel();                   // Esc in click mode, or a click outside
+
         void SetRing(int ring);          // another wheel's key was pressed
         void OnScroll(int wheelDelta);   // WM_MOUSEWHEEL delta (120 per notch; touchpads send less)
         // The mouse hook swallows wheel events while this is true, so the window under the cursor
@@ -105,14 +139,25 @@ namespace sd
 
     private:
         enum class Mode { Hidden, Probe, Wheel, Closing };
-        static constexpr int kOutside = -1;
-        static constexpr int kCenter = -2;
+        static constexpr int kOutside = wheel::kOutside;
+        static constexpr int kCenter = wheel::kCentre;
 
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         void SetMode(Mode mode);
-        void Layout(POINT screenPt);
+        void Layout(POINT screenPt, int rings);
+        void EnsureRings(int rings);       // grows the window (around the same centre) for two rings
+        void Arrange(int page);            // m_layout and m_shown for m_content
         int HitTest(POINT screenPt) const;
-        void SetHot(int hot);
+        bool Open(const std::vector<std::wstring>& files, POINT pt);   // the probe becomes the wheel
+        void SetHot(int hot, bool byKey = false);
+        bool Selectable(int slot) const;   // an enabled slice or "More"
+        void Run(int slot);                // drop / click / Enter on a slot
+        bool EndSink();                    // the drag ended after a slice ran by key
+        void NotifyHighlight();
+        int NextRing(int step) const;      // the next wheel with something for m_files
+        void NextPage();
+        void OnClickMove(POINT screenPt);
+        void OnClickUp(POINT screenPt);
         void SwitchTo(int ring, int direction);
         bool HasActions(int ring) const;   // any enabled slice for m_files (or WheelContent::explains)
         void BeginClose();
@@ -125,7 +170,7 @@ namespace sd
         Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight) const;
         void Render();
         void DrawScene();
-        void DrawSlices(const WheelContent& content, const std::vector<float>& hotT, float alpha, float rotation);
+        void DrawSlices(const std::vector<WheelSlice>& slices, const wheel::Layout& layout, const std::vector<float>& hotT, float alpha, float rotation);
         void DrawCentre();
         D2D1_POINT_2F Polar(float radius, float degrees) const;   // 0° = 12 o'clock, clockwise
         Microsoft::WRL::ComPtr<ID2D1Geometry> TileGeometry(size_t count, size_t index, float inner, float outer);
@@ -159,7 +204,8 @@ namespace sd
         D2D1_POINT_2F m_c{};          // wheel centre: the cursor when it opened
         float m_radius = 0.f;         // outer edge of the tiles (hit-testing stops here)
         float m_inner = 0.f;          // centre dead zone: dropping here cancels
-        float m_tileIn = 0.f, m_tileOut = 0.f;
+        float m_tileIn = 0.f, m_tileOut = 0.f;   // inner edge of the inner ring, outer edge of the outermost
+        int m_windowRings = 1;                  // rings the window is sized for
         std::map<uint64_t, Microsoft::WRL::ComPtr<ID2D1Geometry>> m_tileCache;
 
         // State.
@@ -169,9 +215,17 @@ namespace sd
         bool m_announced = false;     // events.shown sent for this showing
         int m_ring = 0;
         int m_hot = kCenter;
-        int m_detail = -1;            // slice whose detail the centre shows (kept while it fades out)
+        int m_detail = -1;            // slot whose detail the centre shows (kept while it fades out)
         int m_scrollAccum = 0;
-        WheelContent m_content, m_previous;
+        WheelContent m_content;       // every slice for m_files on this wheel
+        wheel::Layout m_layout, m_prevLayout;
+        std::vector<WheelSlice> m_shown, m_prevShown;   // the visible slots (this page, plus "More")
+        bool m_keyHot = false;        // m_hot was picked by key: the mouse takes over only when it moves
+        POINT m_keyAnchor{};          // where the cursor was when the key picked it
+        bool m_click = false;         // click mode (no drag)
+        bool m_tracking = false;      // TrackMouseEvent armed (click mode)
+        bool m_sink = false;          // ran by key mid-drag: keep catching the drop until the drag ends
+        std::wstring m_lastHighlight;
         std::vector<std::wstring> m_files;
         POINT m_lastPt{};
         theme::Palette m_palette{};
@@ -191,6 +245,7 @@ namespace sd
         // Glass style: the screen under the window, captured when the wheel opens, shrunk and blurred.
         theme::Pixels m_backdropPx;
         float m_backdropStep = 1.f;
+        POINT m_backdropOrigin{};   // screen px of the snapshot's top-left (it covers the largest wheel)
         Microsoft::WRL::ComPtr<ID2D1Bitmap> m_backdrop;
         unsigned m_backdropGeneration = 0;
     };

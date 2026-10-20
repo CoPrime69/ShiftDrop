@@ -248,11 +248,10 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
             ++tools;
             EXPECT_FALSE(runner.Applies(r, L"C:\\a\\clip.mp4")) << r.id;
         }
-    // The wheel shows eight slices at most: the four Compress presets, Normalize and three tools.
-    EXPECT_EQ(forAudio, 8);
-    EXPECT_EQ(tools, 4);
-    // The visualizer is in the editor's tool bar.
-    EXPECT_EQ(recipes.store.Find("audio-visualizer"), nullptr);
+    // Two rings hold sixteen slices; past that the wheel pages. Normalize and the four editor tools.
+    EXPECT_LE(forAudio, 16);
+    EXPECT_EQ(tools, 5);
+    EXPECT_NE(recipes.store.Find("audio-visualizer"), nullptr);
     EXPECT_EQ(SiblingTools(EditorTool::BleepAudio).size(), 4u);
     for (const auto tool : SiblingTools(EditorTool::BleepAudio))
     {

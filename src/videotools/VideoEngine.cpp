@@ -37,10 +37,8 @@ namespace sd::videotools
 
     namespace
     {
-        // Every video tool as a recipe. The Tools wheel shows eight slices at most and a video already
-        // gets four Compress presets there, so four tools have slices; the "wheel": false ones are a
-        // click away in the editor's tool bar. A recipe file that reuses a slice's id swaps it for
-        // another tool (docs/TESTING.md, section T).
+        // Every video tool as a slice, each opening the editor on its own tab. With the four Compress
+        // presets and Inspect a video's Tools wheel has twelve slices, on two rings.
         const json& ToolRecipes()
         {
             static const json all = json::parse(R"([
@@ -49,15 +47,15 @@ namespace sd::videotools
   { "id": "video-crop", "label": "Crop\u2026", "description": "Crop Video: exact size, 16:9, 9:16, 1:1, 4:5", "ring": "tools", "suffix": "cropped", "icon": "E7A8",
     "steps": [ { "action": "video.crop" } ] },
   { "id": "video-speed", "label": "Speed\u2026", "description": "Change Video Speed: 0.25x to 4x, pitch kept", "ring": "tools", "suffix": "speed", "icon": "EC49",
-    "wheel": false, "steps": [ { "action": "video.speed" } ] },
+    "steps": [ { "action": "video.speed" } ] },
   { "id": "video-join", "label": "Join\u2026", "description": "Join Videos into one MP4, in the order you choose", "ring": "tools", "suffix": "joined", "icon": "E71B",
     "steps": [ { "action": "video.join" } ] },
   { "id": "video-frames", "label": "Frames\u2026", "description": "Save Video Frames as full-size PNGs", "ring": "tools", "suffix": "frames", "icon": "E722",
-    "wheel": false, "steps": [ { "action": "video.frames" } ] },
+    "steps": [ { "action": "video.frames" } ] },
   { "id": "video-split", "label": "Split\u2026", "description": "Split Video at points you pick, or into equal parts", "ring": "tools", "suffix": "parts", "icon": "E8C6",
     "steps": [ { "action": "video.split" } ] },
   { "id": "video-redact", "label": "Redact\u2026", "description": "Redact Video: blur or cover areas, each for its own time", "ring": "tools", "suffix": "redacted", "icon": "E72E",
-    "wheel": false, "steps": [ { "action": "video.redact" } ] }
+    "steps": [ { "action": "video.redact" } ] }
 ])");
             return all;
         }
@@ -65,26 +63,15 @@ namespace sd::videotools
 
     const char* BuiltInRecipes()
     {
-        static const std::string wheel = [] {
-            json out = json::array();
-            for (const auto& r : ToolRecipes())
-                if (r.value("wheel", true))
-                    out.push_back(r);
-            for (auto& r : out)
-                r.erase("wheel");
-            return out.dump();
-        }();
-        return wheel.c_str();
+        static const std::string all = ToolRecipes().dump();
+        return all.c_str();
     }
 
     json ToolRecipe(EditorTool tool)
     {
-        for (auto r : ToolRecipes())
+        for (const auto& r : ToolRecipes())
             if (r["steps"][0]["action"] == ToolAction(tool))
-            {
-                r.erase("wheel");
                 return r;
-            }
         return json();
     }
 
