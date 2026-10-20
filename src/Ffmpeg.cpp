@@ -88,7 +88,7 @@ namespace sd
     }
 
     FfmpegEngine::Result FfmpegEngine::Run(const std::vector<std::wstring>& args, const std::function<void(double)>& progress,
-                                           std::stop_token stop, std::vector<std::string>* log) const
+                                           std::stop_token stop, std::vector<std::string>* log, int64_t outputUs) const
     {
         Result result;
         if (m_exe.empty())
@@ -153,7 +153,7 @@ namespace sd
         errWrite.reset();
         nul.reset();
 
-        std::atomic<int64_t> durationUs{ -1 };
+        std::atomic<int64_t> durationUs{ outputUs > 0 ? outputUs : -1 };   // else the input's, from the log
         std::deque<std::string> tail;   // ffmpeg's last log lines, for the error message
         std::jthread errReader([&] {
             ReadLines(errRead.get(), [&](std::string_view line) {

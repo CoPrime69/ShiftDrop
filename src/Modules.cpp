@@ -3,6 +3,7 @@
 #include "inspect/InspectModule.h"
 #include "shelf/ShelfModule.h"
 #include "pdf/PdfModule.h"
+#include "mediaeditor/MediaToolsModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
@@ -14,6 +15,7 @@ namespace sd
             inspect::Module(),   // Tools: Inspect (metadata, M4)
             ShelfModule(),   // Float shelf (file action), src/shelf
             pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
+            MediaToolsModule(),   // video tools (M9) and audio tools (M10)
             archive::Module(),   // Zip, Extract, convert archives; parsed in the sandboxed worker (src/archive, src/sandbox)
         };
         return modules;

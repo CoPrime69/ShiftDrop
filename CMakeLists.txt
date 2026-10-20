@@ -95,6 +95,7 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
+<<<<<<< HEAD
   src/archive/ArchiveFormats.cpp
   src/archive/ArchiveModule.cpp
   src/archive/ArchiveReader.cpp
@@ -106,6 +107,19 @@ add_library(shiftdrop_core STATIC
   src/sandbox/MediaSandbox.cpp
   src/sandbox/Sandbox.cpp
   src/sandbox/Worker.cpp
+=======
+  # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
+  src/mediaeditor/EditorApi.cpp
+  src/mediaeditor/EditorLayout.cpp
+  src/mediaeditor/MediaProbe.cpp
+  src/mediaeditor/MediaTools.cpp
+  src/mediaeditor/MediaToolsModule.cpp
+  src/mediaeditor/Timeline.cpp
+  src/videotools/VideoEngine.cpp
+  src/videotools/VideoTools.cpp
+  src/audiotools/AudioEngine.cpp
+  src/audiotools/AudioTools.cpp
+>>>>>>> origin/main
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -158,6 +172,12 @@ add_executable(ShiftDrop WIN32
   src/preview/PreviewCard.cpp
   src/inspect/InspectorWindow.cpp
   src/shelf/ShelfWindow.cpp
+  # The video and audio tools' timeline editor (registers itself with mediaeditor/EditorApi)
+  src/mediaeditor/EditorUi.cpp
+  src/mediaeditor/EditorWindow.cpp
+  src/mediaeditor/EditorTools.cpp
+  src/mediaeditor/MediaLoader.cpp
+  src/mediaeditor/Playback.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -207,8 +227,13 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
+<<<<<<< HEAD
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
+=======
+    tests/VideoToolsTests.cpp
+    tests/AudioToolsTests.cpp
+>>>>>>> origin/main
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).

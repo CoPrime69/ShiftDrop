@@ -111,19 +111,19 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Start a big batch, kill ShiftDrop from Task Manager mid-way, start it again: no `.sdpart` files remain; the log says "recovery: removed leftover staging file"; History shows the run as Interrupted
 
 ### L. Wheel redesign and top panel
-- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice; Explorer's thumbnail disappears while you are over the wheel and comes back when you leave it
+- [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice
 - [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
-- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions and their keys, Convert highlighted
+- [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl**, then **Alt**: the wheel turns to Tools, then File actions, and the panel's highlight slides along
-- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel (wraps round); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
-- [ ] Over the wheel Explorer's drag picture stays with its full name, with no "+ Copy" badge and no mouse pointer
+- [ ] When the wheel opens, Explorer's drag picture fades away and the wheel takes its place (no picture or name over the wheel, no mouse pointer); it comes back when you drag off the wheel. The file's own icon staying where it was is Windows: a drag only copies until you drop
 - [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
 - [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
-- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling does not stop on the all-dimmed wheels
+- [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies; before M4 this was the File-actions wheel); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
@@ -260,6 +260,55 @@ Inspector
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
 
+### T. Video and audio tools (M9, M10)
+Have ffmpeg in place (`scripts/get-ffmpeg.ps1`), a phone video with sound (1080p, 20–60 s), a second clip of another size, a video with no sound, a stereo song with cover art, and a mono voice memo.
+
+The wheel:
+- [ ] Drag a video and hold **Ctrl**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim…**, **Crop…**, **Speed…**, **Join…**, **Frames…**, **Split…**, **Redact…** on two rings
+- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim…**, **Channels…**, **Bleep…**, **Visualizer…**; a photo gets none of these
+
+The editor window (try with each tool):
+- [ ] Drop the video on **Trim…**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
+- [ ] The tabs at the top read Trim, Crop, Speed, Join, Frames, Split, Redact (for a song: Trim, Channels, Bleep, Visualizer). Clicking one, or Ctrl+1 to Ctrl+7, switches tool without reloading the file, and the window title follows. Confirming runs the tool chosen last: History and the output name say so ("clip (speed…)")
+- [ ] Turn the mouse wheel over the timeline: it zooms around the cursor with sharper thumbnails; **0** shows the whole clip; drag the thin bar under the timeline to scroll
+- [ ] Type `0:05.5` in the time field and press Enter: the playhead jumps there; text that is not a time stays red
+- [ ] ← and → step one frame (Shift: one second); Space plays with sound and the playhead follows; Space again stops
+- [ ] Tab walks through the tabs, the transport buttons, the options and the footer with a visible focus ring; arrow keys change a focused choice; Enter is the main button; Esc closes and nothing is written
+- [ ] With two monitors at different scaling, drag the window from one to the other: text and lines stay sharp and the layout scales
+
+Video tools:
+- [ ] **Trim**: drag the handles, or press I and O at the playhead, or type in From and To; "Play the kept part" (Shift+Space) plays only that. Exact gives `clip (trimmed).mp4` that starts and ends on those frames; Fast is instant, and its start can move back to a keyframe
+- [ ] **Crop**: drag on the picture, then drag the edges and corners; 16:9, 9:16, 1:1, 4:5, Original and Free keep the shape; type a Width (the height follows). The result has exactly that size and keeps the sound
+- [ ] **Speed**: pick 0.5× or 2×, or type 1.8 or 180%; Space previews at that speed with the pitch kept. 2× halves the length; the silent video works too
+- [ ] **Join**: drop three clips on **Join…**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
+- [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
+- [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
+- [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
+- [ ] Drop three videos on **Crop…**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
+
+Audio tools:
+- [ ] **Normalize** a quiet song: the top panel says "Loudness −3x.x → −16.0 LUFS"; normalizing the result again says "already at −16.0 LUFS" and writes nothing
+- [ ] **Trim** on the waveform with the handles or I and O; "Also trim silence at both ends" cuts the quiet lead-in of the voice memo
+- [ ] **Channels**: Make mono, Swap left and right, and the Left and Right volume sliders; while playing, A switches between the original and the result. On a mono file "Make mono" changes nothing and the main button is off
+- [ ] **Bleep**: drag across the waveform to mark two parts (M adds one at the playhead); a 1 kHz tone or silence; Space plays with the bleeps, A compares with the original
+- [ ] **Visualizer** (tab in the song's editor): Landscape, Portrait or Square; the moving waveform, or a still picture (the cover art, or one you choose); the MP4 has the song's sound and length
+
+Always:
+- [ ] Cancel (×) in the top panel during a long render: nothing is left in the folder (no `.sdpart`)
+- [ ] An `.mp4` that holds only sound, dropped with a real video on **Crop…**: its page says "This file has no video to edit." and Skip moves on; the other video is still cropped
+- [ ] Undo from History removes the outputs (a frames or split folder goes with all its files)
+
+Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
+```json
+{ "id": "normalize-14", "label": "−14 LUFS", "description": "Normalize Volume for streaming", "ring": "tools", "suffix": "normalized",
+  "icon": "E767", "steps": [ { "action": "audio.normalize", "params": { "target": -14 } } ] }
+```
+```json
+{ "id": "speed-2x", "label": "2× speed", "description": "Twice as fast, same pitch", "ring": "tools", "icon": "EC4A",
+  "steps": [ { "action": "video.speed", "params": { "factor": 2, "ask": false } } ] }
+```
+- [ ] After a restart a song's Tools wheel also has **−14 LUFS** and a video's **2× speed**; both run at once with no window (the speed one names its output `clip (2x).mp4`)
+
 ### P. Archives and the sandbox (M7)
 
 Prepare a folder `Photos` with a few pictures, a subfolder and a file with a non-English name
@@ -286,7 +335,7 @@ Sandbox
 - [ ] While a large extract runs, Process Explorer (or Task Manager > Details, column "Integrity level") shows `ShiftDropWorker.exe` at **AppContainer**, under ShiftDrop.exe, and it disappears when the job ends
 - [ ] Kill ShiftDrop.exe in Task Manager during a large extract: ShiftDropWorker.exe ends at once
 - [ ] Set `[Sandbox] Archives=0` in `settings.ini`, restart, extract: it still works, and the worker shows integrity level Medium
-- [ ] Optional (open question 16), on a PC with a GPU: set `[Sandbox] Media=1`, restart, convert a video to MP4 and compress one (GPU encoder in use): both work, ffmpeg.exe shows **AppContainer** in Process Explorer; note any failure and the log lines
+- [ ] Optional (open question 19), on a PC with a GPU: set `[Sandbox] Media=1`, restart, convert a video to MP4 and compress one (GPU encoder in use): both work, ffmpeg.exe shows **AppContainer** in Process Explorer; note any failure and the log lines
 - [ ] Uninstall: the AppContainer profile is removed (`%LOCALAPPDATA%\Packages\shiftdrop.sandbox` is gone)
 
 ## 4. M0/M1 checklist
@@ -353,8 +402,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.1.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.5.0.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)

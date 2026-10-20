@@ -378,19 +378,15 @@ namespace sd
         }
     }
 
-    // Wheels with nothing for these files are skipped, so scrolling (and Up/Down) only visits useful ones.
+    // Scrolling (and Up/Down past the last ring) visits every wheel in order and wraps around:
+    // Convert, Tools, File actions, Convert... A wheel with nothing for these files still shows, with
+    // its slices dimmed and the reason in the centre, so the order never changes under the user.
     int Overlay::NextRing(int step) const
     {
         const int n = static_cast<int>(m_rings.size());
         if (n < 2)
             return m_ring;
-        for (int i = 1, r = m_ring; i < n; ++i)
-        {
-            r = (r + step + n) % n;
-            if (HasActions(r))
-                return r;
-        }
-        return (m_ring + step + n) % n;   // nothing applies anywhere: plain order
+        return ((m_ring + step) % n + n) % n;
     }
 
     bool Overlay::HasActions(int ring) const

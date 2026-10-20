@@ -261,7 +261,7 @@ Everything here runs on the M6 canvas with a live GPU preview, using Direct2D ef
 - Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
 - Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
 
-**M9. Video tools (new)**
+**M9. Video tools (new, done)**
 
 One timeline window covers all seven tools. It previews with Windows' Media Foundation, steps frame by frame, and accepts typed timecodes. Rendering goes through ffmpeg in the sandboxed worker.
 - Tool 9, **Trim Video**.
@@ -272,7 +272,7 @@ One timeline window covers all seven tools. It previews with Windows' Media Foun
 - Tool 14, **Split Video**: at custom points or into equal parts; the clips go into one folder.
 - Tool 15, **Redact Video**: solid or blur regions, each with its own time range.
 
-**M10. Audio tools (new)**
+**M10. Audio tools (new, done)**
 
 One waveform window with playback through Windows (XAudio2), and A/B compare.
 - Tool 16, **Normalize Volume**: EBU R128 loudness range and true peak, with before and after levels.
@@ -425,7 +425,7 @@ question 1).
 | Convert: PDF ↔ images | M5 |
 | Ctrl = Edit: resize, rotate | M2 |
 | Edit: compress | M3 (Fit to…) and M6 (quality presets) |
-| Edit: trim | M9 (video), M10 (audio) |
+| Edit: trim | Done (M9 video, M10 audio) |
 | Edit: strip metadata | M2 (outputs carry none), verified scrub in M6 |
 | Edit: remove background | **Dropped**: needs an ML model, excluded by your no-models rule |
 | Alt = File actions: copy path, duplicate | M2 (plus Copy, Move, Terminal) |
@@ -529,6 +529,17 @@ question 1).
 | 2026-10-20 | M5: Merge PDFs and Organize PDF Pages ask first, in small windows of their own (Direct2D, light/dark, keyboard: Alt+arrows move, R / Shift+R rotate, Ctrl+D duplicates, Delete, Ctrl+Z, Enter, Esc). Organize keeps the first PDF's outline and metadata | The same editor step the video tools use; the page plan travels in the recipe's params |
 | 2026-10-20 | M5: the WinRT code (Windows.Data.Pdf, Windows.Media.Ocr, share sheet) and the editor windows are object libraries that plug into the core through small hooks; the core and its tests build without them | Unit tests run anywhere; tests that need Windows' renderer or OCR skip themselves where they are missing |
 | 2026-10-20 | M5: an engine can give the top panel its own line for a single result ("Copied 214 words", "2.1 MB to 840 KB (61% smaller)"); a result that is not a file (Copy text) doesn't say "Saved next to the originals" | Copy text writes nothing to disk; for Compress the size saved is what people want to see |
+| 2026-10-20 | Scrolling (and Up / Down past the last ring) visits every wheel in a fixed order and wraps around both ways; wheels with nothing for the files are no longer skipped, they show dimmed with the reason. Shift still opens the best wheel first | Prakhar, after testing: skipping made the order jump around (Tools vanished for an MP4 with no ffmpeg) |
+| 2026-10-20 | The top panel shows wheel names only, no Shift / Ctrl / Alt keycaps; the keys still open their wheels | Prakhar: scrolling is the way to switch, and a key per wheel does not scale as wheels are added |
+| 2026-10-20 | Explorer's drag picture gives way to the wheel again (no IDropTargetHelper on the wheel); replaces the 17:21 decision to keep it over the wheel | Prakhar, after testing 0.2/0.3: the picture sat on top of the wheel's centre text; the wheel should replace it as in the first redesign |
+| 2026-10-20 | All eleven video and audio tools that need a choice share one editor window (`src/mediaeditor`): Direct2D at the window's DPI, light/dark and accent aware, keyboard-usable, with a preview or waveform, a zoomable filmstrip timeline, typed timecodes and the tool's options on the right. Engines and the editor's maths are in `shiftdrop_core` (`src/videotools`, `src/audiotools`); the window is in the app and registers itself with `EditorApi` from a static initializer | The tools differ only in their options and overlays; one window keeps them consistent. The tests link the engines without any UI, and a build without the window says so instead of crashing |
+| 2026-10-20 | Every video and audio tool has its own slice on the Tools wheel (a video: twelve slices with the Compress presets and Inspect, on M4's two rings; a song: ten). Each opens the shared editor on its tab, and the tabs (Ctrl+1…Ctrl+7) switch tools without reloading; confirming runs the tool chosen last under its own built-in recipe (name, suffix, History) | Named tools on the wheel, as in the spec; the tabs save a trip back to the wheel when the first choice was wrong |
+| 2026-10-20 | Per-file choices (a trim range, crop box, redaction areas, frame marks) travel as `params.perFile[path]` and are merged by `ParamsForFile` before each file runs; the whole drop stays one batch with one History run | The pipeline, history and undo stay unchanged: one recipe per drop |
+| 2026-10-20 | Preview frames, filmstrip thumbnails, waveforms and playback sound come from the bundled ffmpeg (separate processes on the editor's own threads), not Media Foundation; quick frames seek to the keyframe before the time and use `-fps_mode passthrough` | One decoder for every format the tools accept (MKV, WebM, AVI included) and the same frames the render will use. Without passthrough the keyframe before the time came out with a negative timestamp and was dropped |
+| 2026-10-20 | Playback is XAudio2 2.9, loaded at run time from System32 (`LoadLibraryExW` + `XAudio2Create`), fed 48 kHz stereo chunks decoded ahead by ffmpeg with the tool's filter (speed, channels, bleeps), so A/B compare plays the real result; with no sound device a timer clock moves the playhead | No new import in the exe, and no audio device is needed to edit |
+| 2026-10-20 | Redact Video blurs with `gblur` and covers with `drawbox`, each area enabled only for its own time range; the bundled build has no `boxblur` | `boxblur` is GPL and not in our LGPL ffmpeg |
+| 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::message`, from M5). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
+| 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, and Media exposes `H264QualityArgs` | A trim, a speed change or a join is not as long as its input; the tools reuse the H.264 encoder choice instead of their own |
 | 2026-10-20 | M7: archives through libarchive (BSD-2) built without GPL parts and without crypto: zip, tar, 7z, RAR/RAR5 readers; gzip, bzip2, xz/lzma and zstd filters | One library for every format; RAR is read under BSD with no unRAR licence |
 | 2026-10-20 | M7: archive parsing runs in a separate small worker, `engines\ShiftDropWorker.exe`, started in an AppContainer with no capabilities (handles passed with PROC_THREAD_ATTRIBUTE_HANDLE_LIST) inside a kill-on-close job (2 GiB memory, 2 h CPU, one process, no UI). It gets only the archive's read handle and a pipe; it streams entries back and **the app creates every file** after checking each name and size again | A parser bug in hostile input reaches neither the person's files nor the network. A separate exe keeps the sandboxed code small, needs no change to ShiftDrop.exe's start-up, and gets the same CI import check |
 | 2026-10-20 | M7: when AppContainer is unavailable (old or locked-down Windows, Wine) the worker runs as a plain child in the same job, with one log line; with no worker exe at all, archives are read in-process, also logged. `[Sandbox] Archives=0` in settings.ini turns the AppContainer off | Archives still work everywhere; the log says how they ran |
@@ -558,10 +569,13 @@ question 1).
 13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
 14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
 15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
-16. M7: Media sandbox: on a PC with an NVIDIA, Intel or AMD GPU, set `[Sandbox] Media=1` and run TESTING.md section P's media steps. If GPU encoding works inside the AppContainer, it can default to on.
-17. M7: Password-protected archives are refused. Should Extract ask for the password (the worker would get it over its pipe), or is refusing fine?
-18. M7: Zip on several files from different folders is named after the first item's parent folder. Good, or always "Archive.zip"?
-19. M7: Should the Convert wheel also offer TAR (no compression) and TAR.XZ, or are ZIP / TAR.GZ / 7z enough?
+16. Normalize is one slice at −16 LUFS (speech, podcasts); music for streaming is usually −14 and broadcast −23 (a recipe adds either). Should the slice open a small chooser instead, or should the three targets be slices?
+17. A video's Tools wheel now has twelve slices on two rings. Too many, or fine? The quieter tools (Frames, Redact) could live only in the editor's tabs.
+18. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
+19. M7: Media sandbox: on a PC with an NVIDIA, Intel or AMD GPU, set `[Sandbox] Media=1` and run TESTING.md section P's media steps. If GPU encoding works inside the AppContainer, it can default to on.
+20. M7: Password-protected archives are refused. Should Extract ask for the password (the worker would get it over its pipe), or is refusing fine?
+21. M7: Zip on several files from different folders is named after the first item's parent folder. Good, or always "Archive.zip"?
+22. M7: Should the Convert wheel also offer TAR (no compression) and TAR.XZ, or are ZIP / TAR.GZ / 7z enough?
 
 ## Sources
 
