@@ -357,7 +357,7 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
     const auto r = f.Run("audio-normalize", {}, quiet);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     EXPECT_EQ(std::filesystem::path(r.output).filename(), L"quiet talk (normalized).wav");
-    EXPECT_NE(r.note.find(L"\u2192 \u221216."), std::wstring::npos) << Narrow(r.note);   // "-3x.x -> -16.0 LUFS"
+    EXPECT_NE(r.message.find(L"\u2192 \u221216."), std::wstring::npos) << Narrow(r.message);   // "Loudness -3x.x -> -16.0 LUFS"
     // Measured again from the file itself: within half a LU of the target, at the source's rate.
     std::vector<std::string> log;
     std::stop_source never;
