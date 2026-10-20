@@ -1,4 +1,6 @@
-# M0 + M1: build, run and manual test checklist
+# Build, run and manual test checklist
+
+Covers M0, M1 and M2. Section 3 (M2) is new; sections A to E are the M0/M1 checks.
 
 ## 1. One-time setup (PowerShell)
 
@@ -11,24 +13,21 @@ git clone https://github.com/microsoft/vcpkg C:\dev\vcpkg
 C:\dev\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 [Environment]::SetEnvironmentVariable('VCPKG_ROOT', 'C:\dev\vcpkg', 'User')
 $env:VCPKG_ROOT = 'C:\dev\vcpkg'
-```
 
-Clone the repository:
-
-```powershell
 git clone https://github.com/CoPrime69/ShiftDrop C:\dev\shiftdrop
 ```
 
-## 2. Configure, build, run
+## 2. Configure, build, test, run
 
 Open **Developer PowerShell for VS 2022** (so `cmake` and MSVC are on PATH):
 
 ```powershell
 cd C:\dev\shiftdrop
+git pull
 
-# M1 build (real wheel + WIC conversion)
-cmake --preset x64-release
+cmake --preset x64-release          # first run builds wil, sqlite3, nlohmann-json, libwebp, gtest (a few minutes)
 cmake --build --preset x64-release
+ctest --preset x64-release          # unit tests
 .\build\x64-release\Release\ShiftDrop.exe
 
 # M0 build (placeholder circle; every drop only logs + notifies)
@@ -37,16 +36,13 @@ cmake --build --preset x64-release-m0
 .\build\x64-release-m0\Release\ShiftDrop.exe
 ```
 
-The first configure downloads and installs `wil` into `build\<preset>\vcpkg_installed`.
-
 Follow the log live in a second window:
 
 ```powershell
 Get-Content "$env:LOCALAPPDATA\ShiftDrop\logs\shiftdrop-$(Get-Date -Format yyyyMMdd).log" -Wait -Tail 30
 ```
 
-Quit from the tray menu, or `Stop-Process -Name ShiftDrop`. Only one copy runs at a time, so quit the
-M0 build before starting the M1 build.
+Quit from the tray menu, or `Stop-Process -Name ShiftDrop`. Only one copy runs at a time.
 
 Make test files:
 
@@ -54,19 +50,64 @@ Make test files:
 mkdir C:\temp\sd -Force; cd C:\temp\sd
 Copy-Item "$env:WINDIR\Web\Wallpaper\Windows\img0.jpg" .\photo.jpg
 Set-Content .\notes.txt "hello"
+mkdir .\folder -Force; Set-Content .\folder\inside.txt "x"
+mkdir C:\temp\sd-target -Force
 ```
 
 Also put a PNG with transparency and a phone photo taken in portrait orientation in that folder.
 
-## 3. Checklist
+## 3. M2 checklist
 
 Tick each line. If a line fails, send me that line plus the log excerpt.
 
+### F. Three wheels
+- [ ] Drag `photo.jpg`, hold **Shift**: the Convert wheel shows PNG, JPG (dimmed), WebP, TIFF, BMP, Web; the centre says "Convert / 1 file"
+- [ ] Hold **Ctrl** instead: the Tools wheel shows Rotate ↻, 1920 px, Flip, 50%, Rotate ↺, 1080 px
+- [ ] Hold **Alt** instead: the File-actions wheel shows Copy, Move to…, Copy path, Terminal, Duplicate (note whether the source window's menu bar lights up when you let go of Alt)
+- [ ] Drag `notes.txt` with Shift or Ctrl: every slice is dimmed, the centre says "Not an image"; with Alt every file action is available
+- [ ] Drag `folder` with Alt: Duplicate is dimmed, the other four work
+
+### G. Convert and tools
+- [ ] Shift → **Web** on a large photo: one file `photo (converted).webp`, at most 2048 px on the long edge; no `~photo...sdpart` file is left behind and no intermediate PNG appears
+- [ ] Shift → **WebP** on a transparent PNG: transparency is kept (check in a browser)
+- [ ] Ctrl → **Rotate ↻** on `photo.jpg`: `photo (edited).jpg`, rotated clockwise, still a JPG
+- [ ] Ctrl → **1080 px** on a small image (under 1080 px): output has the same size (never upscales)
+- [ ] Portrait phone photo → Ctrl → Rotate ↻: the result is rotated relative to how the photo *looks* (EXIF applied first)
+- [ ] Drop 5 images on Shift → BMP: one notification for the batch, ending with "Undo: tray menu > History"
+
+### H. File actions
+- [ ] Alt → **Copy** on 2 files, then Ctrl+V in another Explorer folder: both are copied
+- [ ] Alt → **Copy path**, paste in Notepad: one quoted path per line
+- [ ] Alt → **Terminal**: Windows Terminal (or PowerShell) opens in that folder
+- [ ] Alt → **Duplicate** on `notes.txt`: `notes (copy).txt` with the same content
+- [ ] Alt → **Move to…** on `photo.jpg` + `folder`: a folder picker titled "Move 2 items to" opens **in front** (tell me if it opens behind Explorer); pick `C:\temp\sd-target`; both move there; notification "Moved 2 item(s) to sd-target"
+- [ ] Move a file into a folder that already has a file with that name: the existing file is untouched and the moved one gets a new name
+- [ ] Cancel the folder picker: nothing moves
+
+### I. History and undo
+- [ ] Tray menu > **History…**: a window lists the runs above, newest first, with When / Action / Files / Result
+- [ ] Select the Web run, **Undo**: the WebP goes to the Recycle Bin, the original stays, the row says "Undone"
+- [ ] Convert again, open the output in Paint, change a pixel and save, then **Undo** that run: refused, "Not undone: ... was changed after ShiftDrop created it", nothing deleted
+- [ ] Undo the Move run: the items go back to `C:\temp\sd`
+- [ ] Undo a Move after creating a new `photo.jpg` in the original place: refused, nothing moved
+- [ ] **Show files** (or double-click a row): Explorer opens with the outputs selected
+- [ ] Esc closes the history window; Tab moves between the list and the buttons
+- [ ] Drag the history window to a monitor with another scaling: text and buttons stay crisp and correctly sized
+
+### J. Start with Windows, recipes, recovery
+- [ ] First start: tray menu shows **Start with Windows** ticked; `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` lists `ShiftDrop` pointing at this exe with `--autostart`
+- [ ] Sign out and back in (or restart): ShiftDrop is in the tray, with no "is running" notification
+- [ ] Untick Start with Windows: the Run value is gone; restarting ShiftDrop does not turn it back on
+- [ ] Tray menu > **Open recipes folder**: `web-ready.json` is there. Copy it to `mine.json`, change `"id"` to `"mine"`, `"label"` to `"Mine"` and the quality to `140`; quit from the tray and start it again: a warning names `mine.json` and the quality field; fix it to `60` and start it again: a "Mine" slice appears on the Convert wheel
+- [ ] Start a big batch, kill ShiftDrop from Task Manager mid-way, start it again: no `.sdpart` files remain; the log says "recovery: removed leftover staging file"; History shows the run as Interrupted
+
+## 4. M0/M1 checklist
+
 ### A. Startup (both builds)
 - [ ] A tray icon appears (blue disc with a white ring) and a notification says ShiftDrop is running, naming the build (M0 or M1)
-- [ ] Right-click the tray icon: the menu shows "Open logs folder" and "Quit"; both work
+- [ ] Right-click the tray icon: the menu shows History…, Open recipes folder, Open logs folder, Start with Windows and Quit; each works
 - [ ] Launching the exe a second time shows "ShiftDrop is already running" and no second icon
-- [ ] `settings.ini` exists in `%LOCALAPPDATA%\ShiftDrop` with `TriggerKey=Shift`
+- [ ] `settings.ini` exists in `%LOCALAPPDATA%\ShiftDrop` with `Convert=Shift`, `Tools=Ctrl`, `Files=Alt`
 - [ ] The log lists the WIC decoders and encoders on your PC (note whether WebP/HEIC/AVIF appear)
 - [ ] Task Manager: memory at idle is a few MB; CPU is 0% while you move the mouse normally
 - [ ] Restart Explorer (`Stop-Process -Name explorer`): the tray icon comes back
@@ -84,8 +125,8 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] With the circle visible, press Esc: it disappears and nothing is logged as dropped
 - [ ] With the circle visible, drag out of it and drop on another folder: the circle disappears and Explorer performs its normal Shift = move
 
-### C. M1 wheel (M1 build)
-- [ ] Shift during a drag of `photo.jpg`: a wheel with PNG (top), JPG (right), BMP (bottom), TIFF (left) and "1 file" in the centre
+### C. M1 wheel (now the Convert wheel)
+- [ ] Shift during a drag of `photo.jpg`: a wheel with PNG at the top, then clockwise JPG, WebP, TIFF, BMP, Web
 - [ ] The JPG slice is dimmed (already JPG); hovering it shows the "not allowed" cursor
 - [ ] Hovering PNG/BMP/TIFF highlights the slice in your accent colour; the cursor shows "+ Copy"
 - [ ] Explorer's drag thumbnail stays visible over the wheel
@@ -112,5 +153,5 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Move the mouse over an elevated window: does the log show "hook: no events ... reinstalled"?
 - [ ] Drag an image from Chrome/Edge with Shift: expected no wheel (virtual file, not CF_HDROP); note what the log says
 - [ ] Drag an attachment from Outlook, a file from 7-Zip, a file from VS Code's explorer: note which show the wheel
-- [ ] Set `TriggerKey=Ctrl` in `settings.ini`, restart, and repeat C.1 with Ctrl. Then `Alt`: does the source window's menu bar activate when you release Alt?
+- [ ] In `settings.ini`, set `Convert=Ctrl` and `Tools=Shift`, quit and start it again: the wheels swap keys. Set a key to `None`: that wheel never opens
 - [ ] Left-handed mouse (swap buttons in Settings): does the gesture still work?

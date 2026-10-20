@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+
+      # vcpkg's built packages are cached between runs, keyed on the manifest.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg-cache
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          # The runner's vcpkg clone can be older than our builtin-baseline commit; fetch so it resolves.
+          git -C $env:VCPKG_ROOT fetch --quiet origin
+          cmake --preset x64-release
+
+      - name: Build
+        run: cmake --build --preset x64-release
+
+      - name: Unit tests
+        run: ctest --preset x64-release
+
+      - name: Offline check (no networking imports)
+        shell: pwsh
+        run: ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
+
+      - name: Build the M0 placeholder too
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          cmake --preset x64-release-m0 -DSHIFTDROP_TESTS=OFF
+          cmake --build --preset x64-release-m0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShiftDrop-${{ github.sha }}
+          path: build/x64-release/Release/ShiftDrop.exe
