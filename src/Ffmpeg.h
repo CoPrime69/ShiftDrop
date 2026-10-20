@@ -40,9 +40,11 @@ namespace sd
         // Runs ffmpeg with `args` (after the program name). `progress` gets 0..1 from a reader thread
         // as the output advances, when the input's duration is known. Blocks until ffmpeg exits or
         // `stop` is requested (then the process is killed).
-        // `log`, if given, receives ffmpeg's log lines (the first few hundred).
+        // `log`, if given, receives ffmpeg's log lines (the first few hundred). `outputUs`, when above 0,
+        // is how long the output will be, for progress: a trim, a speed change or a join is not as long
+        // as its (first) input.
         Result Run(const std::vector<std::wstring>& args, const std::function<void(double)>& progress, std::stop_token stop,
-                   std::vector<std::string>* log = nullptr) const;
+                   std::vector<std::string>* log = nullptr, int64_t outputUs = 0) const;
 
         // Streams, size and duration of an input (one quick ffmpeg run that writes nothing).
         MediaInfo Probe(const std::wstring& input) const;
