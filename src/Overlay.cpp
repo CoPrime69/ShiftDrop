@@ -1088,12 +1088,20 @@ namespace sd
         m_rt->DrawEllipse(D2D1::Ellipse(m_c, m_inner - 0.5f, m_inner - 0.5f), Brush(m_palette.centreLine).Get(), 1.f);
 
         const float w = 2.f * m_inner - 14.f * s;
-        Text(m_content.centerText, m_countFont.Get(), D2D1::RectF(m_c.x - w / 2, m_c.y - 22.f * s, m_c.x + w / 2, m_c.y + 2.f * s), m_palette.text);
-
-        // Below the count: the wheel's name, crossfading to the hovered slice's detail.
         float detailT = 0.f;
         if (m_detail >= 0 && static_cast<size_t>(m_detail) < m_hotT.size())
             detailT = m_hotT[static_cast<size_t>(m_detail)];
+
+        // The count (or a size), crossfading to the hovered slice's headline when it has one.
+        const auto upper = D2D1::RectF(m_c.x - w / 2, m_c.y - 22.f * s, m_c.x + w / 2, m_c.y + 2.f * s);
+        const std::wstring* headline = nullptr;
+        if (m_detail >= 0 && static_cast<size_t>(m_detail) < m_shown.size() && !m_shown[static_cast<size_t>(m_detail)].headline.empty())
+            headline = &m_shown[static_cast<size_t>(m_detail)].headline;
+        Text(m_content.centerText, m_countFont.Get(), upper, m_palette.text, headline ? 1.f - detailT : 1.f);
+        if (headline && detailT > 0.f)
+            Text(*headline, m_countFont.Get(), upper, m_palette.text, detailT);
+
+        // Below the count: the wheel's name, crossfading to the hovered slice's detail.
         const auto lower = D2D1::RectF(m_c.x - w / 2, m_c.y + 2.f * s, m_c.x + w / 2, m_c.y + 20.f * s);
         if (!m_rings.empty())
         {
