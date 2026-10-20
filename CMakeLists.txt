@@ -22,6 +22,15 @@ find_package(wil CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
+find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
+find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+# QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
+# linker must be able to find them in vcpkg's lib folder.
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  link_directories("${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/lib")
+endif()
+get_target_property(SHIFTDROP_QPDF_LINKS qpdf::libqpdf INTERFACE_LINK_LIBRARIES)
+message(STATUS "qpdf links: ${SHIFTDROP_QPDF_LINKS}")
 
 set(SHIFTDROP_DEFINES
   UNICODE _UNICODE            # wide-character Win32 APIs only
@@ -52,10 +61,39 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
+  src/keyboard/Hotkey.cpp
+  src/keyboard/KeyNav.cpp
+  src/keyboard/ShellVerb.cpp
+  src/keyboard/WheelLayout.cpp
+  src/keyboard/WheelRequest.cpp
+  src/preview/Prediction.cpp
+  src/preview/Predictor.cpp
+  src/inspect/InspectModule.cpp
+  src/inspect/Metadata.cpp
+  src/inspect/MetadataReader.cpp
+  src/inspect/ProbeReport.cpp
   src/shelf/Carry.cpp
   src/shelf/ShelfGeometry.cpp
   src/shelf/ShelfModule.cpp
   src/shelf/ShelfStore.cpp
+  # PDF module (M5): plain C++ and QPDF; the WinRT and UI parts are in the libraries below
+  src/pdf/ImagePdf.cpp
+  src/pdf/PageRenderer.cpp
+  src/pdf/PagePlan.cpp
+  src/pdf/PdfCompress.cpp
+  src/pdf/PdfContent.cpp
+  src/pdf/PdfDoc.cpp
+  src/pdf/PdfEngine.cpp
+  src/pdf/PdfModule.cpp
+  src/pdf/PdfText.cpp
+  src/pdf/PdfWriter.cpp
+  src/pdf/TextLayout.cpp
+  src/pdf/Wic.cpp
+  src/ocr/Ocr.cpp
+  src/ocr/OcrEngine.cpp
+  src/ocr/TextLayer.cpp
+  src/share/ShareEngine.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -65,8 +103,30 @@ target_link_libraries(shiftdrop_core PUBLIC
   unofficial::sqlite3::sqlite3
   nlohmann_json::nlohmann_json
   WebP::webp
+  qpdf::libqpdf
+  ZLIB::ZLIB
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
 )
+
+# Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
+# share sheet, through C++/WinRT (Windows SDK headers). Object libraries, so each file's static
+# initialiser that installs it into the core's hooks is always linked in.
+add_library(shiftdrop_winrt OBJECT
+  src/pdf/WinPdfRenderer.cpp
+  src/ocr/WinOcr.cpp
+  src/share/WinShare.cpp
+)
+target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
+target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
+
+# The PDF editor windows (Merge, Organize): app-only UI, drawn with Direct2D like the wheel.
+add_library(shiftdrop_pdf_ui OBJECT
+  src/pdf/EditorWindow.cpp
+  src/pdf/MergeWindow.cpp
+  src/pdf/OrganizeWindow.cpp
+)
+target_compile_options(shiftdrop_pdf_ui PRIVATE ${SHIFTDROP_OPTIONS})
+target_link_libraries(shiftdrop_pdf_ui PUBLIC shiftdrop_core d2d1 dwrite dwmapi)
 
 add_executable(ShiftDrop WIN32
   src/main.cpp
@@ -80,13 +140,17 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/keyboard/ExplorerSelection.cpp
+  src/keyboard/KeyboardController.cpp
+  src/preview/PreviewCard.cpp
+  src/inspect/InspectorWindow.cpp
   src/shelf/ShelfWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core d2d1 dwrite dwmapi shcore gdi32 comctl32)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32)
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
@@ -111,10 +175,15 @@ if(SHIFTDROP_TESTS)
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
+    tests/KeyboardTests.cpp
+    tests/PreviewTests.cpp
+    tests/InspectTests.cpp
     tests/ShelfTests.cpp
+    tests/PdfTests.cpp
+    tests/OcrTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
-  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
+  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)
   include(GoogleTest)
   # The MediaEngine tests run the real ffmpeg.exe when there is one; they are skipped otherwise.
   if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")

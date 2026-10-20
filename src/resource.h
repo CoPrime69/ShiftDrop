@@ -9,6 +9,9 @@
 #define IDM_OPEN_RECIPES 40004
 #define IDM_START_WITH_WINDOWS 40005
 #define IDM_HIDE_CURSOR 40006
+// Keyboard and Explorer (M4)
+#define IDM_EXPLORER_HOTKEY 40030
+#define IDM_SHELL_MENU  40031
 // Size and Style submenus: base + the WheelSize / Style value (see Settings.h)
 #define IDM_SIZE_BASE   40010
 #define IDM_STYLE_BASE  40020
