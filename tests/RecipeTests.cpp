@@ -31,7 +31,7 @@ TEST(Recipe, BuiltInsAndExampleLoadWithoutErrors)
     for (const auto& r : recipes.store.All())
         ++(r.ring == "convert" ? convert : r.ring == "tools" ? tools : files);
     EXPECT_EQ(convert, 26u);  // PNG, JPG, WebP, TIFF, BMP + Web + 15 video/audio formats + 5 PDF (M5)
-    EXPECT_EQ(tools, 18u);    // 6 quick edits + 2 image and 4 media compress presets + 6 PDF/OCR (M5)
+    EXPECT_EQ(tools, 19u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect (M4) + 6 PDF/OCR (M5)
     EXPECT_EQ(files, 7u);     // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share (M5)
     EXPECT_TRUE(recipes.Get("move").IsFileAction());
 }
