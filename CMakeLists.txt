@@ -64,6 +64,9 @@ add_executable(ShiftDrop WIN32
   src/main.cpp
   src/MouseHook.cpp
   src/Overlay.cpp
+  src/Island.cpp
+  src/Canvas.cpp
+  src/Theme.cpp
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp

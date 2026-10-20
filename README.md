@@ -9,6 +9,10 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 | Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50% |
 | Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate |
 
+Still dragging, press another wheel's key or turn the mouse wheel to switch wheels; a panel at the top
+of the screen shows which wheel you are on, then the job's progress and result. The tray menu sets the
+size (Auto adapts to your screen) and the style (Solid or Glass).
+
 Status: **M2**. Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
 run is in History, and any run can be undone. It starts with Windows and lives in the tray.
 

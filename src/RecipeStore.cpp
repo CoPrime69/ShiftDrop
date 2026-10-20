@@ -16,30 +16,30 @@ namespace sd
     {
         // One-step recipes reproduce the M1 slices exactly (plus WebP, now that libwebp is linked).
         return R"([
-  { "id": "to-png",  "label": "PNG",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
-  { "id": "to-jpg",  "label": "JPG",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
-  { "id": "to-webp", "label": "WebP", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
-  { "id": "to-tiff", "label": "TIFF", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
-  { "id": "to-bmp",  "label": "BMP",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
+  { "id": "to-png",  "label": "PNG",  "description": "PNG, lossless",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
+  { "id": "to-jpg",  "label": "JPG",  "description": "JPEG, quality 92",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
+  { "id": "to-webp", "label": "WebP", "description": "WebP, quality 85", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
+  { "id": "to-tiff", "label": "TIFF", "description": "TIFF, lossless", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
+  { "id": "to-bmp",  "label": "BMP",  "description": "Bitmap, uncompressed",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
 
-  { "id": "rotate-right", "label": "Rotate \u21bb", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-right", "label": "Rotate \u21bb", "description": "Rotate 90\u00b0 clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "90" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "max-1920", "label": "1920 px", "ring": "tools", "suffix": "edited",
+  { "id": "max-1920", "label": "1920 px", "description": "Fit within 1920 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1920 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "flip", "label": "Flip", "ring": "tools", "suffix": "edited",
+  { "id": "flip", "label": "Flip", "description": "Mirror left to right", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.flip", "params": { "axis": "horizontal" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "half-size", "label": "50%", "ring": "tools", "suffix": "edited",
+  { "id": "half-size", "label": "50%", "description": "Half the width and height", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.scale", "params": { "percent": 50 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "rotate-left", "label": "Rotate \u21ba", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-left", "label": "Rotate \u21ba", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "max-1080", "label": "1080 px", "ring": "tools", "suffix": "edited",
+  { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
 
-  { "id": "copy",      "label": "Copy",      "ring": "files", "steps": [ { "action": "file.copy" } ] },
-  { "id": "move",      "label": "Move to\u2026", "ring": "files", "steps": [ { "action": "file.move" } ] },
-  { "id": "copy-path", "label": "Copy path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
-  { "id": "terminal",  "label": "Terminal",  "ring": "files", "steps": [ { "action": "file.terminal" } ] },
-  { "id": "duplicate", "label": "Duplicate", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
+  { "id": "copy",      "label": "Copy",      "description": "Copy to the clipboard", "ring": "files", "steps": [ { "action": "file.copy" } ] },
+  { "id": "move",      "label": "Move to\u2026", "description": "Move to a folder you pick", "ring": "files", "steps": [ { "action": "file.move" } ] },
+  { "id": "copy-path", "label": "Copy path", "description": "Copy the full path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
+  { "id": "terminal",  "label": "Terminal",  "description": "Open a terminal here", "ring": "files", "steps": [ { "action": "file.terminal" } ] },
+  { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
 ])";
     }
 

@@ -28,4 +28,15 @@ namespace sd
 
     Settings LoadSettings();
     std::wstring SettingsPath();
+
+    // How the wheel and the top panel look; changed from the tray menu, saved in [Appearance].
+    enum class WheelSize { Auto, Small, Medium, Large };   // Auto: from the monitor's size and DPI
+    enum class Style { Solid, Glass };                      // Glass: frosted, blurred background
+    struct Appearance
+    {
+        WheelSize size = WheelSize::Auto;
+        Style style = Style::Solid;
+    };
+    Appearance LoadAppearance();
+    void SaveAppearance(const Appearance& appearance);
 }
