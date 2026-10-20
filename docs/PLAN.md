@@ -475,7 +475,9 @@ question 1).
 | 2026-10-20 | Switching wheels mid-drag moves forward from M4: press another wheel's key, or scroll (the mouse hook swallows wheel events only while the wheel is open) | Prakhar: people should not have to remember the keys |
 | 2026-10-20 | A top panel hangs from the top centre of the cursor's monitor: wheel tabs while a wheel is open, then the job's progress and result (success tucks away after 2 s, failure stays until clicked; click shows the files). Replaces the tray balloon for jobs started from the wheel | Windows has no notch; same role as Tangerine's notch panel |
 | 2026-10-20 | Tray menu Size (Auto, Small, Medium, Large) and Style (Solid, Glass). Auto scales with the monitor's height (1080p = 1.0, clamped 0.9–1.3) on top of its DPI | Prakhar: it must fit 1080p and 2K screens, with a manual choice. Glass is a blurred screen snapshot, since true acrylic is not available to layered windows |
-| 2026-10-20 | Explorer's drag thumbnail is hidden while the cursor is over the wheel (IDropTargetHelper::Show) and the centre answers COPY | The thumbnail sits on the cursor and covered the top slices; a "not allowed" cursor at the moment the wheel opens looked broken. Releasing on the centre still cancels |
+| 2026-10-20 | The wheel does not use IDropTargetHelper, so Explorer's drag thumbnail and its "+ Copy" label are not drawn over it; the centre answers COPY | Prakhar: the thumbnail covered the slices and "Copy" is misleading. A "not allowed" cursor the moment the wheel opens looked broken. Releasing on the centre still cancels. Windows' small drag cursor is the source app's and stays |
+| 2026-10-20 | Shift opens the best wheel for the files: if nothing on Convert applies (a PDF today), the first wheel that has something opens instead. Scrolling skips wheels with nothing for the files; Ctrl and Alt still open their own wheel | Prakhar: fewer scrolls, the right options at once. As PDF (M5) and media (M3) conversions land, Shift opens them for those files |
+| 2026-10-20 | Leaving the wheel: it fades with distance past the tiles, then shrinks and fades out over 200 ms | Prakhar: the exit felt abrupt |
 
 ## Open questions
 

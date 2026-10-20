@@ -229,7 +229,7 @@ namespace sd
             constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE8B7 };
             for (int i = 0; i < kRingCount; ++i)
                 rings.push_back(WheelRing{ RingTitle(static_cast<Ring>(i)), m_settings.keys[i] ? m_settings.keyNames[i] : L"",
-                                           kRingIcons[i] });
+                                           kRingIcons[i], static_cast<Ring>(i) == Ring::Convert });
 #endif
             m_appearance = LoadAppearance();
             m_island = std::make_unique<Island>(m_instance, rings, [this] { RevealInExplorer(m_lastOutputs); });

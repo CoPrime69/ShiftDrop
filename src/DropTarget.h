@@ -32,7 +32,7 @@ namespace sd
         : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropTarget>
     {
     public:
-        DropTarget(HWND hwnd, IDropSink* sink);
+        explicit DropTarget(IDropSink* sink);
 
         STDMETHOD(DragEnter)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
         STDMETHOD(DragOver)(DWORD keyState, POINTL pt, DWORD* effect) override;
@@ -40,13 +40,12 @@ namespace sd
         STDMETHOD(Drop)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
 
     private:
-        HWND m_hwnd;
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
-        // The shell's drag-image helper. Over the wheel we hide Explorer's drag thumbnail (it sits
-        // on the cursor, i.e. on the wheel's centre, and covers the top slices); the centre shows
-        // the file count instead. It comes back when the cursor leaves the wheel.
-        Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
+        // Deliberately no IDropTargetHelper. Explorer's drag thumbnail and its "+ Copy" label are only
+        // drawn over windows that report the drag to that helper, so leaving it out hides both while
+        // the cursor is over the wheel (they sat on the centre and covered the top slices). They come
+        // back as soon as the cursor is over any other window.
     };
 
     // Reads CF_HDROP from a data object. Returns an empty vector if the format is not present.
