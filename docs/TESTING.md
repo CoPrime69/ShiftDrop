@@ -309,6 +309,50 @@ Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 ```
 - [ ] After a restart a song's Tools wheel also has **−14 LUFS** and a video's **2× speed**; both run at once with no window (the speed one names its output `clip (2x).mp4`)
 
+### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
+Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
+
+Canvas (Crop or Redact)
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Crop**: an editor opens in the app's colours (follows Windows light/dark), the photo fits the window and is upright
+- [ ] Mouse wheel zooms around the pointer; **Ctrl+0** fits, **Ctrl+1** shows 100 %; the zoom chip at the bottom toggles between them; at high zoom pixels stay sharp (not blurred)
+- [ ] Hold **Space** and drag, or drag with the middle button: the picture pans
+- [ ] Move the window to a monitor with another scale: text, handles and lines stay crisp and the same size
+- [ ] **Ctrl+Z** / **Ctrl+Y** (and the toolbar arrows) undo and redo every change, including side-panel changes
+- [ ] **Esc** closes without writing anything; **Enter** applies (when a number box is not being edited)
+- [ ] The PNG with transparency shows a checkerboard behind it
+
+Crop
+- [ ] Drag a box: the outside is darkened, a "W × H" tag shows the size in real pixels, the thirds grid shows (toggle in the panel)
+- [ ] Drag the edges and corners; hold **Shift** to keep the shape; arrows nudge by one pixel, Shift+arrows by ten
+- [ ] Aspect ratio Free, Original, 1:1, 4:5, 3:2, 16:9, 9:16 and Custom (type W and H): the box changes to the shape and stays inside the picture
+- [ ] Type an exact Width and Height in pixels: the output is exactly that size
+- [ ] Rotate left / right turns the picture; Straighten (slider or typed degrees) tilts it and the box stays inside the picture
+- [ ] Apply: `photo (cropped).jpg` appears next to the photo, the original is untouched; cropping again makes `photo (cropped 2).jpg`
+- [ ] Open the cropped JPG's Properties > Details: camera, date and location are kept (Crop is not a privacy tool; use Share-safe for that), the size is the new size, it opens upright everywhere
+- [ ] PNG stays PNG, WebP stays WebP
+- [ ] Drop five photos of different sizes on Crop: the editor shows the first one and the panel says "The other 4 images" with Centred / Same place; Apply makes five cropped copies, each with the first one's shape (centred, or in the same place); with an exact size set, each is that size where it fits
+
+Redact Photos
+- [ ] Drop the screenshot on **Redact**: drag over the email: a black cover appears; drag several more; click one to select, Ctrl+click to select more, Del removes them
+- [ ] Switch a selected cover to Blur and to Pixelate; switch Solid's colour to white and to a custom colour (colour picker)
+- [ ] Find > Personal details: the email, phone and card number get suggested covers labelled with what they are; Find > All text covers every line; "Keep all" / "Remove all" work
+- [ ] Drop the group photo, Find > Faces: each face gets a cover (or a line says face detection is not available)
+- [ ] Apply: `screenshot (redacted).png`; zoom in on it: the covered parts are gone (solid is exactly the chosen colour); Properties > Details shows no camera, date or GPS
+- [ ] On a PC with no OCR language installed, the Find section says how to add one
+
+Share-safe
+- [ ] Drag the phone photo, hold **Ctrl**, drop on **Share-safe**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
+- [ ] The top panel says something like "Removed GPS, camera, 14 fields"; `photo (share-safe).jpg` has no GPS, camera or date in Properties > Details, and still opens upright
+- [ ] Drop the screenshot on Share-safe: a "Review before sharing" editor opens with covers on the email, phone and card number; remove one, add one, Apply: the result says "Covered N details · …"
+- [ ] Esc in the review window saves nothing
+- [ ] Drop the phone video on Share-safe: `video (share-safe).mp4` plays the same, is about the same size (no re-encode), and its location and creation date are gone (Inspect on it shows no GPS / location tag)
+- [ ] Drop an already clean file (a Share-safe output): it is skipped with "already clean"
+
+Remove metadata (File-actions wheel, **Alt**)
+- [ ] Drop the phone photo on **Remove metadata**: `photo (no metadata).jpg`, no editor, the result line lists what went
+- [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
+- [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
