@@ -251,12 +251,12 @@ namespace sd
     {
         if (steps.empty() || steps.back().action != "image.encode")
             return nullptr;
-        const auto id = steps.back().params.value("format", std::string{});
-        if (id == "same")
+        const auto formatId = steps.back().params.value("format", std::string{});
+        if (formatId == "same")
         {
             const auto* own = FormatOfExtension(ext);
             return own ? own : FindImageFormat("png");
         }
-        return FindImageFormat(id);
+        return FindImageFormat(formatId);
     }
 }
