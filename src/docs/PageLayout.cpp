@@ -601,7 +601,7 @@ namespace sd::docs
                     PlaceLines(lines, textLeft);
                     // Items of one list sit close; the list as a whole gets paragraph spacing.
                     const bool last = index + 1 >= m_doc.blocks.size() || m_doc.blocks[index + 1].kind != BlockKind::ListItem;
-                    Space(last ? 6 : 2);
+                    Space(last ? 6.f : 2.f);
                     break;
                 }
                 case BlockKind::Code:

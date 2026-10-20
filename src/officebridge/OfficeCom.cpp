@@ -455,7 +455,7 @@ namespace sd::office
                         px = SlidePixels(static_cast<float>(GetNumber(setup.Get(), L"SlideWidth", error)),
                                          static_cast<float>(GetNumber(setup.Get(), L"SlideHeight", error)));
                     const std::wstring ext = job.target == "png" ? L".png" : L".jpg";
-                    const std::wstring filter = job.target == "png" ? L"PNG" : L"JPG";
+                    const std::wstring exportFilter = job.target == "png" ? L"PNG" : L"JPG";
                     ok = count > 0;
                     if (!ok)
                         error = L"the presentation has no slides";
@@ -472,7 +472,7 @@ namespace sd::office
                         const auto path = (std::filesystem::path(job.output) / SlideFileName(i, count, ext)).wstring();
                         bool failed = false;
                         Call(slide.Get(), L"Export",
-                             NamedArgs(N(L"FileName", path), N(L"FilterName", filter), N(L"ScaleWidth", static_cast<int>(px.cx)),
+                             NamedArgs(N(L"FileName", path), N(L"FilterName", exportFilter), N(L"ScaleWidth", static_cast<int>(px.cx)),
                                        N(L"ScaleHeight", static_cast<int>(px.cy))),
                              error, &failed);
                         ok = !failed;
