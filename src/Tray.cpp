@@ -91,14 +91,19 @@ namespace sd
             log::Warn(L"tray: balloon failed");
     }
 
-    void Tray::ShowMenu(POINT anchor)
+    void Tray::ShowMenu(POINT anchor, bool startWithWindows)
     {
         wil::unique_hmenu menu(CreatePopupMenu());
         if (!menu)
             return;
-        AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, hold the trigger key");
+        AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, hold Shift, Ctrl or Alt");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
+        AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
+        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu.get(), MF_STRING | (startWithWindows ? MF_CHECKED : MF_UNCHECKED), IDM_START_WITH_WINDOWS, L"Start with Windows");
+        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, IDM_QUIT, L"Quit");
 
         // Known shell quirk: the owner must be foreground or the menu will not close when you click

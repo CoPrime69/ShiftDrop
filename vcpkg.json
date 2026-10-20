@@ -1,10 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "shiftdrop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "ShiftDrop: drag a file, press a modifier, drop it on a radial menu to convert it. Offline.",
   "dependencies": [
-    "wil"
+    "wil",
+    "sqlite3",
+    "nlohmann-json",
+    "libwebp",
+    "gtest"
   ],
-  "builtin-baseline": "469a0504e4a6ebf6173d1c0f51a7fa34c382fd43"
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 }
