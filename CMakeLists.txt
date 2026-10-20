@@ -78,6 +78,25 @@ add_library(shiftdrop_core STATIC
   src/shelf/ShelfGeometry.cpp
   src/shelf/ShelfModule.cpp
   src/shelf/ShelfStore.cpp
+  src/canvas/Covers.cpp
+  src/canvas/Editor.cpp
+  src/canvas/Geometry.cpp
+  src/canvas/Raster.cpp
+  src/canvas/RegionTool.cpp
+  src/canvas/Regions.cpp
+  src/crop/CropEngine.cpp
+  src/crop/CropMath.cpp
+  src/crop/CropTool.cpp
+  src/imagetools/ImageToolsModule.cpp
+  src/metadata/Container.cpp
+  src/metadata/Exif.cpp
+  src/metadata/MediaMetadata.cpp
+  src/metadata/Metadata.cpp
+  src/redact/Pii.cpp
+  src/redact/RedactEngine.cpp
+  src/redact/RedactTool.cpp
+  src/redact/Vision.cpp
+  src/sharesafe/ShareSafeEngine.cpp
   # PDF module (M5): plain C++ and QPDF; the WinRT and UI parts are in the libraries below
   src/pdf/ImagePdf.cpp
   src/pdf/PageRenderer.cpp
@@ -95,19 +114,6 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
-<<<<<<< HEAD
-  src/archive/ArchiveFormats.cpp
-  src/archive/ArchiveModule.cpp
-  src/archive/ArchiveReader.cpp
-  src/archive/ArchiveSource.cpp
-  src/archive/ArchiveWriter.cpp
-  src/archive/Entries.cpp
-  src/archive/EntryPipe.cpp
-  src/archive/Sinks.cpp
-  src/sandbox/MediaSandbox.cpp
-  src/sandbox/Sandbox.cpp
-  src/sandbox/Worker.cpp
-=======
   # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
   src/mediaeditor/EditorApi.cpp
   src/mediaeditor/EditorLayout.cpp
@@ -119,7 +125,17 @@ add_library(shiftdrop_core STATIC
   src/videotools/VideoTools.cpp
   src/audiotools/AudioEngine.cpp
   src/audiotools/AudioTools.cpp
->>>>>>> origin/main
+  src/archive/ArchiveFormats.cpp
+  src/archive/ArchiveModule.cpp
+  src/archive/ArchiveReader.cpp
+  src/archive/ArchiveSource.cpp
+  src/archive/ArchiveWriter.cpp
+  src/archive/Entries.cpp
+  src/archive/EntryPipe.cpp
+  src/archive/Sinks.cpp
+  src/sandbox/MediaSandbox.cpp
+  src/sandbox/Sandbox.cpp
+  src/sandbox/Worker.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -142,6 +158,7 @@ add_library(shiftdrop_winrt OBJECT
   src/pdf/WinPdfRenderer.cpp
   src/ocr/WinOcr.cpp
   src/share/WinShare.cpp
+  src/redact/WinFaces.cpp
 )
 target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
 target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
@@ -178,6 +195,7 @@ add_executable(ShiftDrop WIN32
   src/mediaeditor/EditorTools.cpp
   src/mediaeditor/MediaLoader.cpp
   src/mediaeditor/Playback.cpp
+  src/canvas/EditorWindow.cpp
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -227,13 +245,14 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
-<<<<<<< HEAD
-    tests/ArchiveTests.cpp
-    tests/SandboxTests.cpp
-=======
     tests/VideoToolsTests.cpp
     tests/AudioToolsTests.cpp
->>>>>>> origin/main
+    tests/CanvasTests.cpp
+    tests/CropTests.cpp
+    tests/RedactTests.cpp
+    tests/ShareSafeTests.cpp
+    tests/ArchiveTests.cpp
+    tests/SandboxTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
