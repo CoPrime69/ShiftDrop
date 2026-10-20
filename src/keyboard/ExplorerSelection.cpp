@@ -2,10 +2,12 @@
 #include "Log.h"
 #include "keyboard/WheelRequest.h"
 
-#include <exdisp.h>
-#include <shlguid.h>
+// shlobj.h first: it brings in the COM headers (objbase.h) that exdisp.h needs but doesn't include,
+// and WIN32_LEAN_AND_MEAN keeps windows.h from including them.
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <exdisp.h>
+#include <shlguid.h>
 #include <wil/resource.h>
 #include <wrl/client.h>
 
