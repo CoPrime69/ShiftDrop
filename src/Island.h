@@ -103,7 +103,7 @@ namespace sd
         std::unique_ptr<Canvas> m_canvas;
         ID2D1RenderTarget* m_rt = nullptr;   // valid between Canvas::Begin and End
         std::wstring m_textFamily, m_iconFamily;
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_keyFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont, m_actionFont;
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont, m_actionFont;
         float m_fontScale = 0.f;
 
         // Layout, window pixels.

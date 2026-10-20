@@ -44,8 +44,8 @@ namespace sd
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
         Microsoft::WRL::ComPtr<IDataObject> m_data;   // while accepting, to give the badge back on leave
-        // The shell's drag-image helper keeps Explorer's drag picture visible while the pointer is
-        // over the wheel. Without it the picture vanishes as soon as the wheel appears.
+        // The shell's drag-image helper would keep Explorer's drag picture visible over the wheel.
+        // Left empty on purpose (see the constructor): the picture gives way to the wheel.
         Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
     };
 
