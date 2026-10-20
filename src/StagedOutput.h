@@ -17,7 +17,9 @@ namespace sd
         std::wstring output;
         std::wstring error;
         uint64_t size = 0;
-        std::wstring note;   // optional result line for the top panel ("Removed GPS, camera, 14 fields")
+        // Optional: what the top panel says instead of the usual "done" line, for a batch of one
+        // ("Copied 214 words", "4.2 MB to 1.1 MB"). An ok result with no output wrote no file.
+        std::wstring message;
     };
 
     // One output of one source, written the safe way (OutputPath.h, ADR 0003) and recorded in
