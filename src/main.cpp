@@ -308,6 +308,10 @@ namespace sd
             case msg::AnotherInstance:
                 m_tray.Balloon(SD_NAME, L"" SD_NAME L" is already running.");
                 return 0;
+            case msg::QuitRequest:
+                log::Info(L"quit requested by another process (installer or uninstaller)");
+                DestroyWindow(hwnd);
+                return 0;
             case WM_COMMAND:
                 OnCommand(LOWORD(wParam));
                 return 0;
@@ -723,9 +727,56 @@ namespace sd
     };
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int)
+namespace sd
 {
-    const bool autostart = commandLine && wcsstr(commandLine, sd::startup::kAutostartArg) != nullptr;
+    namespace
+    {
+        // Used by the installer: "--quit" before replacing the files, "--uninstall" before removing them.
+        constexpr wchar_t kQuitArg[] = L"--quit";
+        constexpr wchar_t kUninstallArg[] = L"--uninstall";
+
+        bool HasArg(const wchar_t* arg)
+        {
+            int argc = 0;
+            wil::unique_hlocal_ptr<PWSTR> argv(CommandLineToArgvW(GetCommandLineW(), &argc));
+            if (!argv)
+                return false;
+            for (int i = 1; i < argc; ++i)
+                if (CompareStringOrdinal(argv.get()[i], -1, arg, -1, TRUE) == CSTR_EQUAL)
+                    return true;
+            return false;
+        }
+
+        // Asks the copy running in this logon session to exit and waits for it, so its exe can be
+        // replaced or deleted. Returns false only if it is still running after the wait.
+        bool QuitRunningInstance()
+        {
+            HWND other = FindWindowW(kMainClass, nullptr);
+            if (!other)
+                return true;
+            DWORD pid = 0;
+            GetWindowThreadProcessId(other, &pid);
+            // SYNCHRONIZE is all WaitForSingleObject needs; same user, so no elevation is involved.
+            wil::unique_handle process(OpenProcess(SYNCHRONIZE, FALSE, pid));
+            PostMessageW(other, msg::QuitRequest, 0, 0);
+            // Shutdown waits for a move in progress (IFileOperation can't stop halfway), hence the margin.
+            return !process || WaitForSingleObject(process.get(), 15000) == WAIT_OBJECT_0;
+        }
+    }
+}
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
+    if (sd::HasArg(sd::kQuitArg) || sd::HasArg(sd::kUninstallArg))
+    {
+        const bool quit = sd::QuitRunningInstance();
+        // Uninstalling also removes the Run value, wherever it points; settings and history are kept.
+        if (sd::HasArg(sd::kUninstallArg))
+            sd::startup::Disable();
+        return quit ? 0 : 1;
+    }
+
+    const bool autostart = sd::HasArg(sd::startup::kAutostartArg);
     // Single instance per logon session. Read GetLastError immediately: CreateMutexW returns a valid
     // handle to the existing mutex and reports ERROR_ALREADY_EXISTS.
     HANDLE rawMutex = CreateMutexW(nullptr, FALSE, sd::kMutexName);

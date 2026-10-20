@@ -13,6 +13,7 @@ namespace sd::msg
     constexpr UINT BatchDone = WM_APP + 20;      // lParam: BatchResult*, ownership passes to the receiver
     constexpr UINT RunDrop = WM_APP + 21;        // a drop queued by the overlay, handled after OLE's Drop returns
     constexpr UINT AnotherInstance = WM_APP + 30;
+    constexpr UINT QuitRequest = WM_APP + 31;      // "ShiftDrop.exe --quit" (the installer) asks the running copy to exit
 
     // Screen coordinates can be negative on multi-monitor setups but always fit in 16 bits,
     // so they travel in an LPARAM like WM_MOUSEMOVE's. Unpack with GET_X_LPARAM / GET_Y_LPARAM.
