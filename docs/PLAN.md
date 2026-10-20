@@ -237,15 +237,18 @@ The full list:
 - [x] **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
 
 **M6. Share-safe (S5) and the image canvas**
-- Verified metadata scrub, and rule-based PII redaction with a review step.
-- Builds the shared Direct2D image canvas window that M8 reuses.
-- **(parity)** Tool 2, **Edit Metadata**, part 2: edit and remove fields, including hidden camera and processing data.
+- [x] Verified metadata scrub, and rule-based PII redaction with a review step.
+  - Tools wheel **Share-safe** and File-actions wheel **Remove metadata**. Every output is re-opened and its metadata enumerated; the result says what went ("Removed GPS, camera, 14 fields").
+  - Video and audio: ffmpeg stream copy with `-map_metadata -1 -map_chapters -1`, then probed again to prove the tags are gone and the streams are the same.
+  - The metadata read/remove/write engine lives in `src/metadata` (JPEG, PNG, WebP, TIFF/EXIF, media tags), ready for Edit Metadata part 2.
+- [x] Builds the shared Direct2D image canvas window that M8 reuses (`src/canvas`, tools are `ICanvasTool` classes).
+- [ ] **(parity)** Tool 2, **Edit Metadata**, part 2: edit and remove fields, including hidden camera and processing data. Not in M6; the engine in `src/metadata` already removes and sets fields.
   - Images go through the Windows property system and WIC metadata writers.
   - Media goes through ffmpeg.
-- **(parity)** Tool 7, **Redact Photos**: solid or blur covers, with several movable regions.
+- [x] **(parity)** Tool 7, **Redact Photos**: solid, blur or pixelate covers, with several movable regions.
   - Text is found with Windows' built-in OCR.
   - Faces are found with Windows' built-in face detector (Windows.Media.FaceAnalysis). It ships with Windows; we neither bundle nor download a model.
-- **(parity)** Tool 6, **Crop Images**: exact pixel size, plus preset and custom aspect ratios.
+- [x] **(parity)** Tool 6, **Crop Images**: exact pixel size, plus preset and custom aspect ratios, rotate and straighten, batch.
 
 **M7. Sealed engines and plugins (S6)**
 - AppContainer workers, WASM plugins, and proof that nothing touches the network.
@@ -478,6 +481,11 @@ question 1).
 | 2026-10-20 | Alt wheel: Move (folder picker, undoable) replaces Cut | Matches Tangerine's Move; Cut was a weaker stand-in |
 | 2026-10-20 | Start with Windows lands in M2: an HKCU Run value, on at first run, tray toggle; the choice is kept in settings.ini so "off" stays off, and Windows' own Startup-apps switch is left alone | Prakhar wants it in the tray at startup; HKCU needs no admin |
 | 2026-10-20 | Move to… and Undo use IFileOperation on a dedicated STA thread; the move never overwrites (shell renames on collision) and its undo moves items back, refused if the original place is taken | IFileOperation is STA-only; moving across drives and moving folders need the shell |
+| 2026-10-20 | Crop and Redact outputs keep the input format (JPEG q92, PNG, WebP 90); Crop keeps the EXIF (camera, dates, location) minus the thumbnail and orientation, Redact and Share-safe keep none | A crop is the same photo; a redaction is meant to be shared |
+| 2026-10-20 | The lossless scrub keeps only the EXIF orientation tag when it is not "normal" | Otherwise the clean copy shows sideways; orientation is not personal |
+| 2026-10-20 | A batch crop uses the first picture's box: the same shape scaled to each picture, centred (or the same place); an exact size is kept when it fits | One decision for a whole folder, as the plan asks |
+| 2026-10-20 | Share-safe's personal-details check (email, phone, Luhn-valid card, IBAN) only proposes covers; nothing is covered without the review window | OCR and rules can be wrong; the person decides |
+| 2026-10-20 | Share-safe runs on the media lane | It may run ffmpeg for video and audio; one lane keeps batches simple |
 | 2026-10-20 | The Ctrl wheel is called Tools (recipe ring id "tools") | Matches the Mac app's tools wheel |
 | 2026-10-20 | Every CI build produces a per-user Inno Setup installer (no admin, no Visual Studio, no VC++ redistributable thanks to the static CRT); CI installs, upgrades and uninstalls it on a clean runner; a `v*` tag publishes it as a GitHub Release. Unsigned for now, so SmartScreen asks once | Prakhar: anyone must be able to install and run it; moved forward from M12 |
 | 2026-10-20 | Wheel redesign: separate rounded tiles with icons, the hovered tile lifts in the Windows accent colour, the centre shows the count and the hovered slice's detail, spring open and a rotate-crossfade when switching wheels | Prakhar found the M2 wheel shabby; Open-Tangerine is a visual reference only (GPL-3.0, nothing copied) |
