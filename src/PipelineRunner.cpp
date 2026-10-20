@@ -57,7 +57,7 @@ namespace sd
             return MediaFormatAccepts(*media, MediaKindOfExtension(ext));
         if (recipe.IsMediaCompress())
             return MediaKindOfExtension(ext) != MediaKind::None;
-        return m_codecs->CanDecode(ext);
+        return m_codecs->IsImage(ext);   // HEIC without Windows' codec too: its slices show dimmed, with the reason
     }
 
     bool PipelineRunner::Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const
@@ -114,14 +114,20 @@ namespace sd
         if (!m_codecs->CanDecode(ext))
         {
             if (why)
-                *why = std::format(L"no image decoder for '{}' on this PC", ext);
+                *why = m_codecs->WhyNotDecodable(ext);
             return false;
         }
         const auto* format = recipe.OutputFormatFor(ext);
-        if (!format || !m_codecs->CanEncode(*format))
+        if (!format)
         {
             if (why)
                 *why = L"output format unavailable";
+            return false;
+        }
+        if (std::wstring missing; !m_codecs->CanEncode(*format, &missing))
+        {
+            if (why)
+                *why = missing.empty() ? L"output format unavailable" : missing;
             return false;
         }
         return true;

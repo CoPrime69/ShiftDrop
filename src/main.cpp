@@ -709,8 +709,9 @@ namespace sd
                 if (!all && firstReason.empty())
                     firstReason = reason;
                 const auto look = SliceLook(*recipe);
-                content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror,
-                                                     recipe->description.empty() ? recipe->label : recipe->description });
+                // A slice dimmed for a reason (HEIC without Windows' codec) carries that reason as its detail.
+                std::wstring detail = !all && !reason.empty() ? reason : recipe->description.empty() ? recipe->label : recipe->description;
+                content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror, std::move(detail) });
                 anyEnabled |= all && anyToDo;
             }
             if (!anyEnabled && !firstReason.empty())
@@ -745,6 +746,9 @@ namespace sd
                 return L"Not for videos";
             if (audio)
                 return L"Not for audio";
+            for (const auto& f : files)   // a HEIC on a PC without Windows' HEIF codec says what to install
+                if (auto label = m_codecs->MissingCodecLabel(LowerExtension(f)); !label.empty())
+                    return label;
             return files.size() == 1 ? L"Not an image" : L"Not all images";
         }
 

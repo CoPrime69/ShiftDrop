@@ -24,6 +24,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
 find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+find_package(libavif CONFIG REQUIRED)   # AVIF: dav1d decodes, aom encodes (BSD-2-Clause)
+find_package(lunasvg CONFIG REQUIRED)   # SVG input (MIT)
 # QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
 # linker must be able to find them in vcpkg's lib folder.
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
@@ -94,6 +96,12 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
+  # Image formats beyond WIC (AVIF, SVG, HEIC through Windows' codec), plugged into ImagePipeline
+  src/formats/Avif.cpp
+  src/formats/Formats.cpp
+  src/formats/Heic.cpp
+  src/formats/Pixels.cpp
+  src/formats/Svg.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -105,6 +113,8 @@ target_link_libraries(shiftdrop_core PUBLIC
   WebP::webp
   qpdf::libqpdf
   ZLIB::ZLIB
+  avif
+  lunasvg::lunasvg
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
 )
 
@@ -181,6 +191,7 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
+    tests/FormatsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)
