@@ -205,11 +205,11 @@ namespace sd
             }
 
             const bool last = i + 1 == steps.size();
-            if (desc->kind == StepKind::FileAction)
+            if (desc->kind == StepKind::FileAction || desc->kind == StepKind::MediaEncode)
             {
                 if (steps.size() != 1)
                 {
-                    error = where + ": a file action must be the recipe's only step";
+                    error = std::format("{}: {} must be the recipe's only step", where, desc->kind == StepKind::FileAction ? "a file action" : step.action);
                     return false;
                 }
                 r.steps.push_back(std::move(step));
@@ -258,5 +258,22 @@ namespace sd
             return own ? own : FindImageFormat("png");
         }
         return FindImageFormat(formatId);
+    }
+}
+
+namespace sd
+{
+    const MediaFormatInfo* Recipe::MediaFormat() const
+    {
+        return IsMedia() ? FindMediaFormat(steps[0].params.value("format", std::string{})) : nullptr;
+    }
+
+    std::wstring Recipe::OutputExtensionFor(const std::wstring& ext) const
+    {
+        if (const auto* media = MediaFormat())
+            return media->extension;
+        if (const auto* image = OutputFormatFor(ext))
+            return image->extension;
+        return {};
     }
 }

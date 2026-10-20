@@ -13,9 +13,19 @@
 
 namespace sd
 {
-    PipelineRunner::PipelineRunner(std::shared_ptr<const ImageCodecs> codecs, HistoryStore* history)
-        : m_codecs(std::move(codecs)), m_history(history)
+    PipelineRunner::PipelineRunner(std::shared_ptr<const ImageCodecs> codecs, HistoryStore* history, std::shared_ptr<const FfmpegEngine> media)
+        : m_codecs(std::move(codecs)), m_history(history), m_media(std::move(media))
     {
+    }
+
+    bool PipelineRunner::Applies(const Recipe& recipe, const std::wstring& path) const
+    {
+        if (recipe.IsFileAction())
+            return true;
+        const auto ext = LowerExtension(path);
+        if (const auto* media = recipe.MediaFormat())
+            return MediaFormatAccepts(*media, MediaKindOfExtension(ext));
+        return m_codecs->CanDecode(ext);
     }
 
     bool PipelineRunner::Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const
@@ -40,6 +50,24 @@ namespace sd
             return true;
         }
         const auto ext = LowerExtension(path);
+        if (const auto* media = recipe.MediaFormat())
+        {
+            const auto kind = MediaKindOfExtension(ext);
+            if (!MediaFormatAccepts(*media, kind))
+            {
+                if (why)
+                    *why = kind == MediaKind::None ? L"not a video or audio file" : std::format(L"{} is not made from {}", media->label,
+                                                                                               kind == MediaKind::Video ? L"videos" : L"audio files");
+                return false;
+            }
+            if (!m_media || !m_media->Available())
+            {
+                if (why)
+                    *why = L"the media engine is missing; reinstall to convert video and audio";
+                return false;
+            }
+            return true;
+        }
         if (!m_codecs->CanDecode(ext))
         {
             if (why)
@@ -59,11 +87,14 @@ namespace sd
     bool PipelineRunner::IsNoOp(const Recipe& recipe, const std::wstring& path) const
     {
         const auto ext = LowerExtension(path);
+        if (const auto* media = recipe.MediaFormat())
+            return IsAlreadyMediaFormat(*media, ext);
         const auto* format = recipe.OutputFormatFor(ext);
         return recipe.IsSingleEncode() && format && IsAlreadyFormat(*format, ext);
     }
 
-    ItemResult PipelineRunner::Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop) const
+    ItemResult PipelineRunner::Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
+                                   const std::function<void(double)>& progress) const
     {
         ItemResult result;
         const auto started = std::chrono::steady_clock::now();
@@ -73,10 +104,17 @@ namespace sd
         };
 
         std::wstring why;
-        if (IsNoOp(recipe, source))
+        if (stop.stop_requested())
+        {
+            // Cancelled from the top panel (or shutting down) before this file's turn came.
+            result.skipped = true;
+            result.error = L"cancelled";
+        }
+        else if (IsNoOp(recipe, source))
         {
             result.skipped = true;
-            result.error = std::format(L"already {}", recipe.OutputFormatFor(LowerExtension(source))->label);
+            const auto* media = recipe.MediaFormat();
+            result.error = std::format(L"already {}", media ? media->label : recipe.OutputFormatFor(LowerExtension(source))->label);
         }
         else if (!Accepts(recipe, source, &why))
         {
@@ -94,6 +132,8 @@ namespace sd
 
         if (recipe.IsFileAction())
             return RunDuplicate(recipe, runId, source, elapsedMs);
+        if (recipe.IsMedia())
+            return RunMedia(recipe, runId, source, stop, progress, elapsedMs);
 
         std::wstring staging;
         Microsoft::WRL::ComPtr<IStream> stream;
@@ -174,6 +214,52 @@ namespace sd
             result.error = HResultText(hr);
             if (m_history)
                 m_history->FinishItem(item, status::Failed, L"", 0, "", result.error, elapsedMs());
+            return result;
+        }
+        result.ok = true;
+        result.output = finalPath;
+        const auto sha = Sha256File(finalPath, &result.size);
+        if (m_history)
+            m_history->FinishItem(item, status::Done, finalPath, result.size, sha, L"", elapsedMs());
+        return result;
+    }
+
+    // media.convert: ffmpeg writes straight into the staging file (its muxer is named with -f, since the
+    // staging name has no real extension), then the same atomic commit as images.
+    ItemResult PipelineRunner::RunMedia(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
+                                        const std::function<void(double)>& progress, const std::function<int64_t()>& elapsedMs) const
+    {
+        ItemResult result;
+        const auto* format = recipe.MediaFormat();
+        std::wstring staging;
+        {
+            Microsoft::WRL::ComPtr<IStream> reserve;   // reserves a unique staging name; closed before ffmpeg opens it
+            if (const HRESULT hr = CreateStaging(source, staging, reserve); FAILED(hr))
+            {
+                result.error = std::format(L"cannot write next to the source: {}", HResultText(hr));
+                return result;
+            }
+        }
+        const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
+        const bool video = MediaKindOfExtension(LowerExtension(source)) == MediaKind::Video;
+        const auto h264 = video && (std::string_view(format->id) == "mp4" || std::string_view(format->id) == "mov" || format->remux)
+                              ? m_media->H264() : H264Encoder::OpenH264;
+        auto run = m_media->Run(FfmpegArgs(source, OutputArgs(*format, h264), staging), progress, stop);
+        if (!run.ok && !run.cancelled && format->remux)
+        {
+            // Copying the streams failed (a codec the container can't hold): re-encode instead.
+            log::Info(L"media: copying streams into {} failed ({}); re-encoding", format->label, run.error);
+            run = m_media->Run(FfmpegArgs(source, OutputArgs(*format, h264, true), staging), progress, stop);
+        }
+        std::wstring finalPath;
+        HRESULT hr = run.ok ? CommitStaging(staging, source, recipe.suffix, format->extension, finalPath) : E_FAIL;
+        if (FAILED(hr))
+        {
+            DeleteFileW(staging.c_str());
+            result.error = run.ok ? std::format(L"commit: {}", HResultText(hr)) : run.error;
+            result.skipped = run.cancelled;   // cancelled from the top panel: nothing was made, nothing failed
+            if (m_history)
+                m_history->FinishItem(item, run.cancelled ? status::Skipped : status::Failed, L"", 0, "", result.error, elapsedMs());
             return result;
         }
         result.ok = true;

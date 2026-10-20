@@ -6,6 +6,8 @@
 #include <cmath>
 #include <format>
 
+#include <windowsx.h>
+
 using Microsoft::WRL::ComPtr;
 using namespace sd::theme;
 
@@ -36,6 +38,8 @@ namespace sd
         constexpr wchar_t kGlyphWarning = 0xE7BA;   // Warning
         constexpr wchar_t kGlyphError = 0xE711;     // Cancel
         constexpr wchar_t kGlyphOpen = 0xE8A7;      // OpenInNewWindow
+        constexpr wchar_t kGlyphClose = 0xE8BB;     // ChromeClose (the cancel ×)
+        constexpr float kCancelDip = 26.f;          // the × button's diameter
     }
 
     Island::Island(HINSTANCE instance, std::vector<WheelRing> rings, std::function<void()> onClick)
@@ -87,7 +91,22 @@ namespace sd
                     self->m_onClick();
                 self->Retract();
             }
+            else if (self)
+                self->OnMouse(msg, POINT{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
             return 0;
+        case WM_MOUSEMOVE:
+        case WM_MOUSELEAVE:
+            if (self)
+                self->OnMouse(msg, POINT{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) });
+            return 0;
+        case WM_SETCURSOR:
+            // A hand over the result (it opens Explorer) and over the ×; an arrow on the rest of the progress pill.
+            if (self && self->m_state == State::Progress && !self->m_cancelHover)
+            {
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+                return TRUE;
+            }
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         case WM_TIMER:
             if (self && wParam == kTimerFrame)
                 self->OnFrame();
@@ -170,7 +189,8 @@ namespace sd
             m_w = ContentWidth();
             m_h = ContentHeight();
         }
-        SetClickThrough(state != State::Result);
+        // Clickable only when there is something to click: a result, or a job's ×.
+        SetClickThrough(!(state == State::Result || (state == State::Progress && m_onCancel)));
         Render();
         SetWindowPos(m_hwnd.get(), HWND_TOPMOST, m_origin.x, m_origin.y, m_size.cx, m_size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         Animate();
@@ -218,27 +238,68 @@ namespace sd
             Retract();
     }
 
-    void Island::ShowProgress(const std::wstring& title, size_t total)
+    void Island::ShowProgress(const std::wstring& title, size_t total, std::function<void()> onCancel)
     {
         m_title = title;
         m_total = total;
-        m_done = 0;
+        m_done = 0.0;
+        m_fractional = false;
+        m_onCancel = std::move(onCancel);
+        m_cancelHover = false;
+        m_cancelled = false;
         m_bar = 0.f;
         POINT pt{};
         GetCursorPos(&pt);
         Present(State::Progress, m_monitor ? m_monitor : MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST));
     }
 
-    void Island::SetProgress(size_t done)
+    void Island::SetProgress(double done)
     {
-        m_done = std::min(done, m_total);
+        m_done = std::clamp(done, 0.0, static_cast<double>(m_total));
+        m_fractional |= done != std::floor(done);
         if (m_state == State::Progress)
             Animate();
+    }
+
+    void Island::OnMouse(UINT msg, POINT pt)
+    {
+        if (m_state != State::Progress || !m_onCancel || m_cancelled)
+            return;
+        const auto& r = m_cancelRect;
+        const bool over = msg != WM_MOUSELEAVE && pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom;
+        if (msg == WM_MOUSELEAVE)
+            m_tracking = false;
+        else if (!m_tracking)
+        {
+            TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, m_hwnd.get(), 0 };
+            m_tracking = TrackMouseEvent(&tme) != FALSE;
+        }
+        if (msg == WM_LBUTTONUP && over)
+        {
+            // Stop the job; its result (what was finished before) replaces this panel when it arrives.
+            m_cancelled = true;
+            m_cancelHover = false;
+            auto cancel = std::move(m_onCancel);
+            m_onCancel = nullptr;
+            SetClickThrough(true);
+            log::Info(L"island: cancel clicked");
+            cancel();
+            Animate();
+            return;
+        }
+        if (over != m_cancelHover)
+        {
+            m_cancelHover = over;
+            Animate();
+        }
     }
 
     void Island::ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle)
     {
         m_outcome = outcome;
+        m_onCancel = nullptr;   // the job is over
+        m_cancelled = false;
+        m_cancelHover = false;
         m_title = title;
         m_subtitle = subtitle;
         m_resultSince = GetTickCount64();
@@ -299,13 +360,13 @@ namespace sd
             approach(m_h, ContentHeight(), kSizeTauMs);
             m_contentT = std::min(1.f, m_contentT + dt / kContentMs);
             approach(m_tabPos, static_cast<float>(m_ring), kTabTauMs);
-            approach(m_bar, m_total ? static_cast<float>(m_done) / static_cast<float>(m_total) : 0.f, kBarTauMs);
+            approach(m_bar, m_total ? static_cast<float>(m_done / static_cast<double>(m_total)) : 0.f, kBarTauMs);
             m_spin = std::fmod(m_spin + dt * 0.36f, 360.f);   // one turn a second
         }
         else
         {
             m_tabPos = static_cast<float>(m_ring);
-            m_bar = m_total ? static_cast<float>(m_done) / static_cast<float>(m_total) : 0.f;
+            m_bar = m_total ? static_cast<float>(m_done / static_cast<double>(m_total)) : 0.f;
         }
 
         if (m_state == State::Result && !m_retracting)
@@ -360,6 +421,8 @@ namespace sd
         case State::Progress:
             w = 14.f * s + 26.f * s + 12.f * s + std::max(TextWidth(m_title, m_titleFont.Get()), 200.f * s) + 28.f * s +
                 TextWidth(std::format(L"{} of {}", m_total, m_total), m_subFont.Get()) + 14.f * s + 2.f * s;   // matches DrawProgress, +2 so it never trims
+            if (m_onCancel || m_cancelled)
+                w += kCancelDip * s + 10.f * s;
             break;
         default:
             w = 14.f * s + 32.f * s + 12.f * s +
@@ -400,8 +463,9 @@ namespace sd
         m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_subFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_statusIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_BOLD, C);
+        m_cancelFont = MakeFormat(m_iconFamily, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
         (void)R;
-        return m_tabFont && m_tabIconFont && m_keyFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont;
+        return m_tabFont && m_tabIconFont && m_keyFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont;
     }
 
     float Island::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
@@ -509,13 +573,33 @@ namespace sd
             m_rt->DrawGeometry(arc.Get(), Brush(m_palette.accent, alpha).Get(), 2.5f * s, round.Get());
         }
 
+        // The × sits at the right end; the text and the bar end before it.
+        auto right = box.right;
+        if (m_onCancel || m_cancelled)
+        {
+            const float d = kCancelDip * s;
+            const auto c2 = D2D1::Point2F(box.right - 6.f * s - d / 2.f, cy);
+            m_cancelRect = D2D1::RectF(c2.x - d / 2.f, c2.y - d / 2.f, c2.x + d / 2.f, c2.y + d / 2.f);
+            const float on = m_cancelHover ? 1.f : 0.f;
+            m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
+                              Brush(m_cancelHover ? m_palette.error : m_palette.keycap, (m_cancelHover ? 0.9f : 1.f) * alpha).Get());
+            const wchar_t x[2]{ kGlyphClose, 0 };
+            Text(x, m_cancelFont.Get(), m_cancelRect, Mix(m_palette.panelTextDim, m_palette.textOnAccent, on), (m_cancelled ? 0.4f : 1.f) * alpha);
+            right = m_cancelRect.left - 4.f * s;
+        }
+
         const float tx = box.left + 14.f * s + 26.f * s + 12.f * s;
-        const auto count = std::format(L"{} of {}", m_done, m_total);
-        const float cw = TextWidth(std::format(L"{} of {}", m_total, m_total), m_subFont.Get());
-        Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 4.f * s, box.right - cw - 28.f * s, cy + 3.f * s), m_palette.panelText, alpha);
-        Text(count, m_subFont.Get(), D2D1::RectF(box.right - cw - 14.f * s, box.top + 4.f * s, box.right, cy + 3.f * s), m_palette.panelTextDim, alpha);
+        // "2 of 5" files; a single video or audio file shows its percentage instead.
+        const bool percent = m_fractional && m_total == 1;
+        const auto count = m_cancelled ? std::wstring(L"Cancelling\u2026")
+                           : percent  ? std::format(L"{}%", static_cast<int>(m_done * 100.0))
+                                      : std::format(L"{} of {}", static_cast<size_t>(m_done), m_total);
+        const float cw = std::max(TextWidth(std::format(L"{} of {}", m_total, m_total), m_subFont.Get()),
+                                  m_cancelled ? TextWidth(count, m_subFont.Get()) : 0.f);
+        Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 4.f * s, right - cw - 28.f * s, cy + 3.f * s), m_palette.panelText, alpha);
+        Text(count, m_subFont.Get(), D2D1::RectF(right - cw - 14.f * s, box.top + 4.f * s, right, cy + 3.f * s), m_palette.panelTextDim, alpha);
         // Progress bar under the title.
-        const auto track = D2D1::RectF(tx, cy + 9.f * s, box.right - 14.f * s, cy + 13.f * s);
+        const auto track = D2D1::RectF(tx, cy + 9.f * s, right - 14.f * s, cy + 13.f * s);
         m_rt->FillRoundedRectangle(D2D1::RoundedRect(track, 2.f * s, 2.f * s), Brush(m_palette.keycap, alpha).Get());
         if (m_bar > 0.f)
         {

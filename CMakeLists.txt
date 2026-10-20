@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.24)
 # Must be set before project(); CMP0091 is NEW because of the minimum version above.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(ShiftDrop VERSION 0.2.0 LANGUAGES CXX RC)
+project(ShiftDrop VERSION 0.3.0 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,7 @@ set(SHIFTDROP_OPTIONS /W4 /permissive- /utf-8 /EHsc /Zc:__cplusplus /MP)
 # actions. The app and the tests both link it.
 add_library(shiftdrop_core STATIC
   src/Action.cpp
+  src/Ffmpeg.cpp
   src/FileActions.cpp
   src/FileMove.cpp
   src/Hash.cpp
@@ -41,6 +42,7 @@ add_library(shiftdrop_core STATIC
   src/ImagePipeline.cpp
   src/JobQueue.cpp
   src/Log.cpp
+  src/Media.cpp
   src/OutputPath.cpp
   src/PipelineRunner.cpp
   src/Recipe.cpp
@@ -79,6 +81,19 @@ target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDrop PRIVATE shiftdrop_core d2d1 dwrite dwmapi shcore gdi32 comctl32)
 
+# Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
+# downloads it into build/engines; when it is there, every build copies it next to the exe so the
+# build folder runs like an install. Without it the app still builds and runs, with media disabled.
+set(SHIFTDROP_ENGINES_DIR "${CMAKE_SOURCE_DIR}/build/engines" CACHE PATH "Folder holding ffmpeg.exe (scripts/get-ffmpeg.ps1)")
+if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")
+  add_custom_command(TARGET ShiftDrop POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShiftDrop>/engines"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe" "$<TARGET_FILE_DIR:ShiftDrop>/engines/ffmpeg.exe"
+    COMMENT "Copying engines/ffmpeg.exe next to ShiftDrop.exe")
+else()
+  message(STATUS "No ffmpeg.exe in ${SHIFTDROP_ENGINES_DIR}: run scripts/get-ffmpeg.ps1 to enable video and audio")
+endif()
+
 if(SHIFTDROP_TESTS)
   enable_testing()
   find_package(GTest CONFIG REQUIRED)
@@ -88,9 +103,16 @@ if(SHIFTDROP_TESTS)
     tests/RecipeTests.cpp
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp
+    tests/MediaTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core GTest::gtest)
   include(GoogleTest)
-  gtest_discover_tests(shiftdrop_tests DISCOVERY_MODE PRE_TEST)
+  # The MediaEngine tests run the real ffmpeg.exe when there is one; they are skipped otherwise.
+  if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")
+    file(TO_NATIVE_PATH "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe" SHIFTDROP_FFMPEG_NATIVE)
+    gtest_discover_tests(shiftdrop_tests DISCOVERY_MODE PRE_TEST PROPERTIES ENVIRONMENT "SHIFTDROP_FFMPEG=${SHIFTDROP_FFMPEG_NATIVE}")
+  else()
+    gtest_discover_tests(shiftdrop_tests DISCOVERY_MODE PRE_TEST)
+  endif()
 endif()

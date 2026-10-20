@@ -12,10 +12,10 @@
 
 namespace sd
 {
-    const char* RecipeStore::BuiltInJson()
+    std::string RecipeStore::BuiltInJson()
     {
         // One-step recipes reproduce the M1 slices exactly (plus WebP, now that libwebp is linked).
-        return R"([
+        auto all = nlohmann::json::parse(R"([
   { "id": "to-png",  "label": "PNG",  "description": "PNG, lossless",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
   { "id": "to-jpg",  "label": "JPG",  "description": "JPEG, quality 92",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
   { "id": "to-webp", "label": "WebP", "description": "WebP, quality 85", "steps": [ { "action": "image.encode", "params": { "format": "webp", "quality": 85 } } ] },
@@ -40,7 +40,22 @@ namespace sd
   { "id": "copy-path", "label": "Copy path", "description": "Copy the full path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
   { "id": "terminal",  "label": "Terminal",  "description": "Open a terminal here", "ring": "files", "steps": [ { "action": "file.terminal" } ] },
   { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
-])";
+])");
+        // Video and audio formats (M3), one Convert slice each, in MediaFormats() order. They share the
+        // Convert wheel with the image formats; the wheel shows only those that fit the dragged files.
+        for (const auto& f : MediaFormats())
+        {
+            nlohmann::json step = nlohmann::json::object();
+            step["action"] = "media.convert";
+            step["params"]["format"] = f.id;
+            nlohmann::json recipe = nlohmann::json::object();
+            recipe["id"] = std::string("to-") + f.id;
+            recipe["label"] = Narrow(f.label);
+            recipe["description"] = Narrow(f.description);
+            recipe["steps"] = nlohmann::json::array({ step });
+            all.push_back(std::move(recipe));
+        }
+        return all.dump();
     }
 
     const char* RecipeStore::ExampleJson()

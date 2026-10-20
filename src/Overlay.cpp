@@ -285,7 +285,7 @@ namespace sd
         if (m_files.empty() || !m_provider)
             return true;   // probe: the files are not known yet
         const auto content = m_provider(m_files, ring);
-        return std::any_of(content.slices.begin(), content.slices.end(), [](const WheelSlice& s) { return s.enabled; });
+        return content.explains || std::any_of(content.slices.begin(), content.slices.end(), [](const WheelSlice& s) { return s.enabled; });
     }
 
     void Overlay::SwitchTo(int ring, int direction)

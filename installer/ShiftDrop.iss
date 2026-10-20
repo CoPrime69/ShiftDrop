@@ -1,16 +1,21 @@
 ; ShiftDrop installer (Inno Setup 6.3 or later). CI builds it on every push; to build it by hand after
 ; a Release build (see docs/TESTING.md, section 5):
+;   ./scripts/get-ffmpeg.ps1
 ;   ./scripts/make-notices.ps1
-;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 installer\ShiftDrop.iss
+;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\ShiftDrop.iss
 ;
 ; Per-user install: no admin rights, no UAC prompt. Files go to %LOCALAPPDATA%\Programs\ShiftDrop.
 ; The app is linked with the static CRT, so nothing else (no VC++ redistributable) is installed.
+; ffmpeg.exe (engines\) is the only other program; it runs only when a video or audio file is converted.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef AppExe
   #define AppExe "..\build\x64-release\Release\ShiftDrop.exe"
+#endif
+#ifndef EnginesDir
+  #define EnginesDir "..\build\engines"
 #endif
 #ifndef NoticesFile
   #define NoticesFile "..\build\installer\THIRD-PARTY-NOTICES.txt"
@@ -62,6 +67,10 @@ Name: "{localappdata}\{#AppName}"; Flags: uninsneveruninstall
 [Files]
 Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
+; Video and audio (scripts/get-ffmpeg.ps1): the LGPL ffmpeg.exe, unmodified, with its licence and source pointer.
+Source: "{#EnginesDir}\ffmpeg.exe"; DestDir: "{app}\engines"; Flags: ignoreversion
+Source: "{#EnginesDir}\FFMPEG-LICENSE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
+Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"

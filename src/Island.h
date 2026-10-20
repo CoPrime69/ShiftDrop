@@ -44,8 +44,10 @@ namespace sd
         void ShowSwitcher(int ring, HMONITOR monitor);   // a wheel opened on `monitor`
         void SetRing(int ring);
         void HideSwitcher();                             // the wheel closed and nothing was dropped
-        void ShowProgress(const std::wstring& title, size_t total);   // "Converting 4 files…"
-        void SetProgress(size_t done);
+        // "Converting 4 files…". With `onCancel`, the panel shows a × that calls it (once).
+        void ShowProgress(const std::wstring& title, size_t total, std::function<void()> onCancel = {});
+        // Files finished so far; a fraction moves the bar within the current file (video, audio).
+        void SetProgress(double done);
         void ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle);
 
     private:
@@ -60,6 +62,7 @@ namespace sd
         void OnFrame();
         float ContentWidth() const;
         float ContentHeight() const;
+        void OnMouse(UINT msg, POINT pt);
 
         Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight,
                                                              DWRITE_TEXT_ALIGNMENT align) const;
@@ -83,7 +86,7 @@ namespace sd
         std::unique_ptr<Canvas> m_canvas;
         ID2D1RenderTarget* m_rt = nullptr;   // valid between Canvas::Begin and End
         std::wstring m_textFamily, m_iconFamily;
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_keyFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont;
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_keyFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont;
         float m_fontScale = 0.f;
 
         // Layout, window pixels.
@@ -103,7 +106,14 @@ namespace sd
         State m_state = State::Hidden;
         int m_ring = 0;
         std::wstring m_title, m_subtitle;
-        size_t m_total = 0, m_done = 0;
+        size_t m_total = 0;
+        double m_done = 0.0;
+        bool m_fractional = false;            // SetProgress got a fraction: show a percentage for one file
+        std::function<void()> m_onCancel;     // the running job's cancel; empty when it can't be cancelled
+        D2D1_RECT_F m_cancelRect{};           // the × in window pixels, set by DrawProgress
+        bool m_cancelHover = false;
+        bool m_cancelled = false;             // × clicked: shows "Cancelling…" until the result arrives
+        bool m_tracking = false;              // TrackMouseEvent armed for WM_MOUSELEAVE
         Outcome m_outcome = Outcome::Success;
 
         // Animation.

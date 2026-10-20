@@ -34,6 +34,10 @@ namespace sd
     {
         std::vector<WheelSlice> slices;   // slice 0 is at 12 o'clock, then clockwise
         std::wstring centerText;          // e.g. "3 files", or why nothing applies
+        // Nothing is enabled, but the slices are meant for these files and the centre says why they
+        // can't run (the media engine is missing). Such a wheel is opened and scrolled to like one
+        // with actions, so the reason is seen.
+        bool explains = false;
     };
 
     // One of the wheels you can switch between (shown in the top panel and as dots in the centre).
@@ -110,7 +114,7 @@ namespace sd
         int HitTest(POINT screenPt) const;
         void SetHot(int hot);
         void SwitchTo(int ring, int direction);
-        bool HasActions(int ring) const;   // any enabled slice for m_files
+        bool HasActions(int ring) const;   // any enabled slice for m_files (or WheelContent::explains)
         void BeginClose();
         void OnFrame();
         bool Settled() const;
