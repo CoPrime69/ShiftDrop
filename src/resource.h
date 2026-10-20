@@ -12,4 +12,3 @@
 // Size and Style submenus: base + the WheelSize / Style value (see Settings.h)
 #define IDM_SIZE_BASE   40010
 #define IDM_STYLE_BASE  40020
-#define IDM_NAME_BASE   40030

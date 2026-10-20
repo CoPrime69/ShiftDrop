@@ -39,15 +39,11 @@ namespace sd
         STDMETHOD(DragLeave)() override;
         STDMETHOD(Drop)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
 
-        // The drag's data object while files are over the wheel (between DragEnter and DragLeave or
-        // Drop), for adjusting the drag picture (DragImage.h); null otherwise.
-        IDataObject* Data() const { return m_data.Get(); }
-
     private:
         HWND m_hwnd;
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
-        Microsoft::WRL::ComPtr<IDataObject> m_data;
+        Microsoft::WRL::ComPtr<IDataObject> m_data;   // while accepting, to give the badge back on leave
         // The shell's drag-image helper keeps Explorer's drag picture visible while the pointer is
         // over the wheel. Without it the picture vanishes as soon as the wheel appears.
         Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
