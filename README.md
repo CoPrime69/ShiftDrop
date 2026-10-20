@@ -17,7 +17,18 @@ run is in History, and any run can be undone. It starts with Windows and lives i
 - Writing recipes: [docs/recipes.md](docs/recipes.md)
 - Design decisions: [docs/adr/](docs/adr/)
 
+## Install
+
+Download `ShiftDrop-Setup-<version>.exe` (from a GitHub Release, or the `ShiftDrop-Setup-…` artifact of
+any CI run) and run it. It installs for your user only, needs no admin rights and nothing else
+(no Visual Studio, no runtimes), adds a Start menu entry, and can start ShiftDrop when you sign in.
+Uninstall from Settings > Apps; your settings, recipes and history in `%LOCALAPPDATA%\ShiftDrop` are kept.
+
+The installer is not code-signed yet, so Windows SmartScreen may say "Windows protected your PC":
+choose **More info**, then **Run anyway**.
+
 ## Build
+
 
 ```powershell
 # Developer PowerShell for VS 2022, with $env:VCPKG_ROOT set (see docs/TESTING.md)
@@ -34,8 +45,9 @@ shiftdrop/
 ├─ CMakeLists.txt          shiftdrop_core (static lib), ShiftDrop.exe, shiftdrop_tests
 ├─ CMakePresets.json       x64-release, x64-release-m0, test preset
 ├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, gtest
-├─ .github/workflows/ci.yml  build, unit tests, no-network imports check
-├─ scripts/check-imports.ps1
+├─ .github/workflows/ci.yml  build, unit tests, no-network imports check, installer + smoke test
+├─ installer/ShiftDrop.iss  per-user Inno Setup installer
+├─ scripts/                check-imports, make-notices, test-installer
 ├─ docs/                   PLAN, TESTING, recipes, adr/, research/
 ├─ tests/                  gtest unit tests
 └─ src/
