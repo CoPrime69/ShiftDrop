@@ -146,7 +146,20 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] Rename `engines\ffmpeg.exe` in the install folder and restart ShiftDrop: dragging a video and holding Shift shows the video formats dimmed with "Media engine missing" in the centre; images still work. Rename it back
 - [ ] With Wi-Fi off, everything above works the same
 
-### N. Keyboard, Explorer selection, predicted output, inspector (M4)
+### N. Compress and Fit to size (M3b)
+- [ ] Drag a phone photo (JPG or PNG, a few MB) and hold **Ctrl**: the Tools wheel has **Compress** and **Under 1 MB**
+- [ ] Drop on **Under 1 MB**: `photo (compressed).jpg` is at most 1 MB (Properties > Size), same width and height if it fit, and looks right
+- [ ] Drop that result on **Under 1 MB** again: refused with "already under 1 MB", nothing written
+- [ ] Drop a PNG screenshot with transparency on **Compress**: a JPG on white; a WebP stays WebP
+- [ ] Drag a video and hold **Ctrl**: **Compress**, **50% size**, **Under 10 MB**, **Under 25 MB**; a song shows the same (results are .m4a)
+- [ ] Drop a 1–3 minute 1080p video on **Under 10 MB**: progress in the top panel; `clip (compressed).mp4` is at most 10 MB and plays; if it needed another try the log says `media: fit attempt 2`
+- [ ] Drop a 4K phone video on **Compress**: at most 1080p, smaller than the source
+- [ ] Drop a video already under 10 MB on **Under 10 MB**: "already under 10 MB"
+- [ ] Convert speed: drop an iPhone/Android H.264 or HEVC `.mov`/`.mp4` on **MP4** (or **MOV**): done in a second or two (streams copied; the log says `plan: copy video, copy audio`)
+- [ ] Startup log: the H.264 encoder line appears a moment after start, before any video is dropped
+- [ ] Cancel (×) during **Under 25 MB** on a long video: nothing left in the folder
+
+### O. Keyboard, Explorer selection, predicted output, inspector (M4)
 Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a folder with 20 or more image recipes (copy `web-ready.json` in the recipes folder under new ids, then restart) for paging.
 
 Keyboard during a drag
@@ -259,8 +272,8 @@ installed:
 ```powershell
 ./scripts/get-ffmpeg.ps1     # if section 2 hasn't already
 ./scripts/make-notices.ps1
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\ShiftDrop.iss
-.\build\installer\ShiftDrop-Setup-0.3.0.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\ShiftDrop.iss
+.\build\installer\ShiftDrop-Setup-0.3.1.exe
 ```
 
 ### K. Install, upgrade, uninstall (on a PC without Visual Studio)
