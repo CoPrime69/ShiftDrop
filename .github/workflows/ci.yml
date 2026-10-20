@@ -3,10 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 permissions:
-  contents: read
+  contents: write   # only the tag-triggered "Publish release" step writes (it creates the release)
 
 jobs:
   build:
@@ -22,6 +23,18 @@ jobs:
           path: ${{ github.workspace }}\vcpkg-cache
           key: vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-
+
+      # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
+      # that pins its URL and hash.
+      - uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -54,7 +67,46 @@ jobs:
           cmake --preset x64-release-m0 -DSHIFTDROP_TESTS=OFF
           cmake --build --preset x64-release-m0
 
+      # Inno Setup ships on the windows-2022 image; install it only if a future image drops it.
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          ./scripts/make-notices.ps1
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
+          & $iscc /Qp "/DAppVersion=$version" installer/ShiftDrop.iss
+          if ($LASTEXITCODE) { exit 1 }
+          "SD_VERSION=$version" >> $env:GITHUB_ENV
+          "SD_SETUP=build/installer/ShiftDrop-Setup-$version.exe" >> $env:GITHUB_ENV
+
+      - name: Installer smoke test
+        shell: pwsh
+        run: ./scripts/test-installer.ps1 -Setup $env:SD_SETUP
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-logs-${{ github.sha }}
+          path: ${{ runner.temp }}/installer-logs
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShiftDrop-Setup-${{ github.sha }}
+          path: ${{ env.SD_SETUP }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: ShiftDrop-${{ github.sha }}
           path: build/x64-release/Release/ShiftDrop.exe
+
+      # A version tag (v0.2.0) publishes the installer as a GitHub Release.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
+          gh release create "${{ github.ref_name }}" $env:SD_SETUP --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."

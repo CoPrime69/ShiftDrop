@@ -1,5 +1,6 @@
 #pragma once
 #include "Action.h"
+#include "Media.h"
 
 #include <nlohmann/json.hpp>
 
@@ -22,6 +23,7 @@ namespace sd
         std::wstring description;
         std::string ring = "convert";   // which wheel shows it: "convert" (Shift), "tools" (Ctrl), "files" (Alt)
         std::wstring suffix = L"converted";   // output "name (suffix).ext"
+        wchar_t icon = 0;            // optional Segoe Fluent Icons glyph for the slice ("icon": "E7AD")
         std::vector<RecipeStep> steps;
         bool builtIn = false;
         std::wstring sourcePath;     // file it came from; empty for built-ins
@@ -29,7 +31,16 @@ namespace sd
         std::string ToJson() const;  // canonical form, snapshotted into history
         // The format the encode step writes for this source (resolves "same"). nullptr for file actions.
         const ImageFormatInfo* OutputFormatFor(const std::wstring& lowerSourceExtension) const;
+        // The media format a media.convert recipe writes; nullptr for image recipes and file actions.
+        const MediaFormatInfo* MediaFormat() const;
+        // The output file's extension for this source: the encoded image or media format. Empty for
+        // file actions.
+        std::wstring OutputExtensionFor(const std::wstring& lowerSourceExtension) const;
         bool IsSingleEncode() const { return steps.size() == 1 && steps[0].action == "image.encode"; }
+        bool IsMedia() const { return steps.size() == 1 && steps[0].action.starts_with("media."); }   // runs through ffmpeg
+        bool IsMediaCompress() const { return steps.size() == 1 && steps[0].action == "media.compress"; }
+        // Compress / Fit to… recipes: their results are for sending somewhere, so they can be carried.
+        bool IsCompress() const { return IsMediaCompress() || (!steps.empty() && steps.back().action == "image.compress"); }
         bool IsFileAction() const { return steps.size() == 1 && steps[0].action.starts_with("file."); }
     };
 

@@ -47,9 +47,11 @@ namespace sd
     Settings LoadSettings()
     {
         const auto path = SettingsPath();
-        if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+        wchar_t probe[2]{};
+        if (!GetPrivateProfileStringW(L"Gesture", nullptr, L"", probe, ARRAYSIZE(probe), path.c_str()))
         {
-            // First run: write the defaults so the user can see what is configurable.
+            // First run (the installer may already have written [Startup]): write the defaults so the
+            // user can see what is configurable.
             WritePrivateProfileStringW(L"Gesture", L"Convert", L"Shift", path.c_str());
             WritePrivateProfileStringW(L"Gesture", L"Tools", L"Ctrl", path.c_str());
             WritePrivateProfileStringW(L"Gesture", L"Files", L"Alt", path.c_str());
@@ -90,5 +92,33 @@ namespace sd
                 }
         log::Info(L"settings: Convert={}, Tools={}, Files={} ({})", s.keyNames[0], s.keyNames[1], s.keyNames[2], path);
         return s;
+    }
+
+    Appearance LoadAppearance()
+    {
+        const auto path = SettingsPath();
+        wchar_t size[16]{}, style[16]{};
+        GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
+        GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
+        Appearance a;
+        const auto is = [](const wchar_t* value, const wchar_t* name) { return CompareStringOrdinal(value, -1, name, -1, TRUE) == CSTR_EQUAL; };
+        if (is(size, L"small"))
+            a.size = WheelSize::Small;
+        else if (is(size, L"medium"))
+            a.size = WheelSize::Medium;
+        else if (is(size, L"large"))
+            a.size = WheelSize::Large;
+        a.style = is(style, L"glass") ? Style::Glass : Style::Solid;
+        a.hideCursor = GetPrivateProfileIntW(L"Appearance", L"HideCursor", 1, path.c_str()) != 0;
+        return a;
+    }
+
+    void SaveAppearance(const Appearance& a)
+    {
+        const auto path = SettingsPath();
+        const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
+        WritePrivateProfileStringW(L"Appearance", L"Size", sizes[static_cast<int>(a.size)], path.c_str());
+        WritePrivateProfileStringW(L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid", path.c_str());
+        WritePrivateProfileStringW(L"Appearance", L"HideCursor", a.hideCursor ? L"1" : L"0", path.c_str());
     }
 }

@@ -32,7 +32,9 @@ namespace sd
         ImageTransform,   // pixels in -> pixels out, in memory (fusable: no intermediate file)
         ImageMetadata,    // changes what metadata the output carries
         ImageEncode,      // pixels -> bytes; must be the last step of an image recipe
+        MediaEncode,      // audio/video file -> new file through ffmpeg (Media.h); a recipe's only step
         FileAction,       // acts on the file itself (clipboard, terminal, duplicate); a recipe's only step
+        Engine,           // run by a feature engine (Engine.h: PDF, archives, editors...); a recipe's only step
     };
 
     struct ActionDescriptor
@@ -49,6 +51,7 @@ namespace sd
     public:
         ActionRegistry();   // registers the built-in image actions
         const ActionDescriptor* Find(std::string_view id) const;
+        void Add(ActionDescriptor action) { m_actions.push_back(std::move(action)); }   // feature modules (Modules.cpp)
         const std::vector<ActionDescriptor>& All() const { return m_actions; }
 
     private:
