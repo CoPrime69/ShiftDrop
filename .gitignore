@@ -1,0 +1,25 @@
+# CMake / build output
+build/
+out/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+
+# vcpkg (manifest mode installs next to the build)
+vcpkg_installed/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.ipch
+*.aps
+*.pdb
+*.ilk
+*.obj
+*.exe
+
+# Packaging
+*.zip
