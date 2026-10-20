@@ -163,7 +163,10 @@ namespace sd
         if (msg == WM_NCCREATE)
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams));
         auto* self = reinterpret_cast<KeyboardController*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (!self)
+        // m_hwnd is still empty until CreateWindowExW returns, and Handle passes m_hwnd to
+        // DefWindowProcW: WM_NCCREATE sent to a null window returns FALSE and the creation fails
+        // with ERROR_INVALID_WINDOW_HANDLE (1400). Messages before then go straight to the default.
+        if (!self || self->m_hwnd.get() != hwnd)
         {
             if (msg == kMsgSelection)
                 delete reinterpret_cast<std::vector<std::wstring>*>(lParam);

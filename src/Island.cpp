@@ -530,8 +530,6 @@ namespace sd
             for (const auto& ring : m_rings)
             {
                 w += 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
-                if (!ring.key.empty())
-                    w += 8.f * s + TextWidth(ring.key, m_keyFont.Get()) + 12.f * s;
             }
             w += 14.f * s + TextWidth(L"Scroll to switch", m_hintFont.Get()) + 10.f * s;
             break;
@@ -584,7 +582,6 @@ namespace sd
         constexpr auto L = DWRITE_TEXT_ALIGNMENT_LEADING, C = DWRITE_TEXT_ALIGNMENT_CENTER, R = DWRITE_TEXT_ALIGNMENT_TRAILING;
         m_tabFont = MakeFormat(m_textFamily, 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_tabIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_keyFont = MakeFormat(m_textFamily, 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
         m_hintFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_subFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
@@ -592,7 +589,7 @@ namespace sd
         m_cancelFont = MakeFormat(m_iconFamily, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
         m_actionFont = MakeFormat(m_iconFamily, 12.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
         (void)R;
-        return m_tabFont && m_tabIconFont && m_keyFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont && m_actionFont;
+        return m_tabFont && m_tabIconFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont && m_actionFont;
     }
 
     float Island::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
@@ -628,9 +625,9 @@ namespace sd
         float x = box.left;
         for (const auto& ring : m_rings)
         {
-            float w = 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
-            if (!ring.key.empty())
-                w += 8.f * s + TextWidth(ring.key, m_keyFont.Get()) + 12.f * s;
+            // Names only, no Shift / Ctrl / Alt keycaps: scrolling reaches every wheel, and a key per
+            // wheel stops scaling as wheels are added.
+            const float w = 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
             tabs.push_back(D2D1::RectF(x, box.top, x + w, box.bottom));
             x += w;
         }
@@ -660,16 +657,6 @@ namespace sd
             tx += 18.f * s + 7.f * s;
             const float tw = TextWidth(ring.title, m_tabFont.Get());
             Text(ring.title, m_tabFont.Get(), D2D1::RectF(tx, t.top, tx + tw + 1.f, t.bottom), colour, alpha);
-            tx += tw;
-            if (!ring.key.empty())
-            {
-                tx += 8.f * s;
-                const float kw = TextWidth(ring.key, m_keyFont.Get()) + 12.f * s;
-                const auto cap = D2D1::RectF(tx, cy - 10.f * s, tx + kw, cy + 10.f * s);
-                m_rt->FillRoundedRectangle(D2D1::RoundedRect(cap, 5.f * s, 5.f * s),
-                                           Brush(Mix(m_palette.keycap, D2D1::ColorF(1, 1, 1, 0.24f), on), alpha).Get());
-                Text(ring.key, m_keyFont.Get(), cap, colour, alpha);
-            }
         }
         const float hx = x + 14.f * s;
         Text(L"Scroll to switch", m_hintFont.Get(), D2D1::RectF(hx, box.top, box.right, box.bottom), m_palette.panelTextDim, alpha);

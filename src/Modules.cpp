@@ -1,11 +1,13 @@
 #include "Engine.h"
 #include "inspect/InspectModule.h"
+#include "imagetools/ImageToolsModule.h"
 #include "shelf/ShelfModule.h"
 #include "pdf/PdfModule.h"
 #include "docs/DocsModule.h"
 #include "sheets/SheetsModule.h"
 #include "subtitles/SubtitlesModule.h"
 #include "officebridge/OfficeModule.h"
+#include "mediaeditor/MediaToolsModule.h"
 
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
@@ -21,6 +23,8 @@ namespace sd
             sheets::Module(),      // Spreadsheets: XLSX, XLS, ODS, CSV, TSV (M11, src/sheets)
             subtitles::Module(),   // Subtitles: SRT, VTT, TXT (M11, src/subtitles)
             office::Module(),      // Office bridge: exact PDFs and slide pictures (M11, src/officebridge)
+            MediaToolsModule(),   // video tools (M9) and audio tools (M10)
+            ImageToolsModule(),   // Crop, Redact, Share-safe, Remove metadata, src/imagetools
         };
         return modules;
     }
