@@ -1,6 +1,7 @@
 #include "formats/Heic.h"
 #include "ErrorText.h"
 #include "ImagePipeline.h"
+#include "Wic.h"
 
 #include <shlwapi.h>
 #include <wil/resource.h>
@@ -23,13 +24,6 @@ namespace sd::formats
 
         std::atomic<int> g_support{ -1 };    // HeicSupport once known, -1 before the first question
         std::atomic<int> g_override{ -1 };   // tests
-
-        ComPtr<IWICImagingFactory> Factory()
-        {
-            ComPtr<IWICImagingFactory> factory;
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            return factory;
-        }
 
         HRESULT EncodeHeif(IWICImagingFactory* factory, IWICBitmapSource* pixels, int quality, IStream* out)
         {
@@ -76,7 +70,7 @@ namespace sd::formats
         HeicSupport Probe()
         {
             auto com = wil::CoInitializeEx(COINIT_MULTITHREADED);
-            auto factory = Factory();
+            auto factory = wic::Factory();
             ComPtr<IWICBitmapEncoder> encoder;
             if (!factory || FAILED(factory->CreateEncoder(kContainerHeif, nullptr, &encoder)))
                 return HeicSupport::NoHeif;
@@ -99,7 +93,7 @@ namespace sd::formats
             static std::jthread worker;   // joined at exit; the probe takes well under a second
             std::call_once(once, [] {
                 // Quick answer first: with no HEIF encoder registered at all there is nothing to wait for.
-                auto factory = Factory();
+                auto factory = wic::Factory();
                 ComPtr<IWICBitmapEncoder> encoder;
                 if (!factory || FAILED(factory->CreateEncoder(kContainerHeif, nullptr, &encoder)))
                 {

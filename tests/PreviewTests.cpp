@@ -33,8 +33,8 @@ namespace
     HRESULT WritePhoto(const std::wstring& path, UINT width, UINT height)
     {
         using Microsoft::WRL::ComPtr;
-        ComPtr<IWICImagingFactory> factory;
-        HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+        const auto factory = wic::Factory();
+        HRESULT hr = factory ? S_OK : REGDB_E_CLASSNOTREG;
         ComPtr<IWICStream> stream;
         ComPtr<IWICBitmapEncoder> encoder;
         ComPtr<IWICBitmapFrameEncode> frame;

@@ -28,9 +28,9 @@ namespace sd::canvas
 
     // Decodes the first frame of `path` with its EXIF orientation applied, as the user sees it: WIC
     // for everything Windows decodes, libwebp for WebP, the format hooks (ImageHooks.h) for AVIF and
-    // SVG. `maxEdge` > 0 scales it down (high-quality)
-    // so its longer side is at most that, for previews. Needs COM on the calling thread.
-    HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge = 0);
+    // SVG. `maxEdge` > 0 scales it down (high-quality) so its longer side is at most that, for
+    // previews; a picture of more than `maxPixels` (after that) is refused. Needs COM on the calling thread.
+    HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge = 0, uint64_t maxPixels = UINT64_MAX);
 
     // The format an edited copy of a file is written in: the source's own (JPEG, PNG, WebP, AVIF,
     // TIFF, BMP, and HEIC where Windows' HEIF encoder is installed); JPEG for camera formats Windows
@@ -45,4 +45,12 @@ namespace sd::canvas
     HRESULT SaveRasterToFile(const Raster& image, const ImageFormatInfo& format, int quality, const std::wstring& path, std::wstring& error);
     // The same, into memory (for a container edit before the bytes go to disk).
     HRESULT EncodeRaster(const Raster& image, const ImageFormatInfo& format, int quality, std::vector<uint8_t>& bytes, std::wstring& error);
+
+    // An edited copy of the picture at `source`, in the format and quality edited copies use
+    // (EditedFormatFor its extension, EditedQuality): into `target` (a staging file) or into memory.
+    // `format` (optional) gets the format written.
+    HRESULT SaveEdited(const Raster& image, const std::wstring& source, const std::wstring& target, std::wstring& error,
+                       const ImageFormatInfo** format = nullptr);
+    HRESULT EncodeEdited(const Raster& image, const std::wstring& source, std::vector<uint8_t>& bytes, std::wstring& error,
+                         const ImageFormatInfo** format = nullptr);
 }

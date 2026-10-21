@@ -1,8 +1,10 @@
 #pragma once
 #include "Ffmpeg.h"
+#include "OutputPath.h"
 #include "PathUtil.h"
 #include "RecipeStore.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "formats/Pixels.h"
 #include "sandbox/Sandbox.h"
 
@@ -48,6 +50,15 @@ namespace sd::test
         std::filesystem::path m_path;
     };
 
+    // Sets the output naming style for one test and puts the default back afterwards.
+    struct NamingScope
+    {
+        explicit NamingScope(OutputNaming naming) { SetOutputNaming(naming); }
+        ~NamingScope() { SetOutputNaming(OutputNaming::Parentheses); }
+        NamingScope(const NamingScope&) = delete;
+        NamingScope& operator=(const NamingScope&) = delete;
+    };
+
     inline void WriteText(const std::wstring& path, const std::string& text)
     {
         std::ofstream(std::filesystem::path(path), std::ios::binary) << text;
@@ -64,8 +75,8 @@ namespace sd::test
     inline HRESULT WritePng(const std::wstring& path, UINT width, UINT height, bool noise = false)
     {
         using Microsoft::WRL::ComPtr;
-        ComPtr<IWICImagingFactory> factory;
-        HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+        const auto factory = wic::Factory();
+        HRESULT hr = factory ? S_OK : REGDB_E_CLASSNOTREG;
         ComPtr<IWICStream> stream;
         ComPtr<IWICBitmapEncoder> encoder;
         ComPtr<IWICBitmapFrameEncode> frame;
@@ -122,10 +133,10 @@ namespace sd::test
             height = static_cast<UINT>(h);
             return true;
         }
-        ComPtr<IWICImagingFactory> factory;
+        const auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
-        return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        return factory &&
                SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
                SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(frame->GetSize(&width, &height));
     }
@@ -163,12 +174,12 @@ namespace sd::test
     inline bool ReadPixels(const std::wstring& path, formats::Image& out)
     {
         using Microsoft::WRL::ComPtr;
-        ComPtr<IWICImagingFactory> factory;
+        const auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
-        return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        return factory &&
                SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(formats::FromWicSource(factory.Get(), frame.Get(), out));
+               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(wic::CopyBgra(factory.Get(), frame.Get(), out.width, out.height, out.bgra));
     }
 
     // A w x h PNG (WritePng's gradient) as bytes; the file it was written to is deleted.

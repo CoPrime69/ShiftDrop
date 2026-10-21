@@ -5,6 +5,8 @@
 #include "OutputPath.h"
 #include "Strings.h"
 
+#include <shlwapi.h>
+
 #include <filesystem>
 #include <format>
 
@@ -77,6 +79,15 @@ namespace sd
             RemoveStaging(m_path);
     }
 
+    HRESULT StagedOutput::OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const
+    {
+        if (m_path.empty() || m_folder)
+            return E_UNEXPECTED;
+        // fCreate=FALSE: the file was made new by CreateStaging, so this only ever opens our own file.
+        return SHCreateStreamOnFileEx(m_path.c_str(), STGM_WRITE | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr,
+                                      stream.ReleaseAndGetAddressOf());
+    }
+
     ItemResult StagedOutput::Commit(std::wstring_view suffix, std::wstring_view extension)
     {
         ItemResult result;
@@ -125,12 +136,13 @@ namespace sd
         return removed;
     }
 
-    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped)
+    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped,
+                             int64_t elapsedMs)
     {
         if (history)
         {
             const auto item = history->BeginItem(runId, source, L"");
-            history->FinishItem(item, skipped ? status::Skipped : status::Failed, L"", 0, "", error, 0);
+            history->FinishItem(item, skipped ? status::Skipped : status::Failed, L"", 0, "", error, elapsedMs);
         }
         ItemResult r;
         r.skipped = skipped;

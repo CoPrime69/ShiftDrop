@@ -6,6 +6,8 @@
 #include "Utf.h"
 #include "Undo.h"
 
+#include <wil/resource.h>
+
 #include <format>
 
 using namespace sd;
@@ -87,11 +89,11 @@ namespace
 {
     WICPixelFormatGUID PixelFormatOf(const std::wstring& path)
     {
-        Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+        const auto factory = wic::Factory();
         Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
         Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
         WICPixelFormatGUID format = GUID_WICPixelFormatUndefined;
-        if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+        if (factory &&
             SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
             SUCCEEDED(decoder->GetFrame(0, &frame)))
             frame->GetPixelFormat(&format);
@@ -170,6 +172,60 @@ TEST(Pipeline, DuplicateCopiesBytes)
     EXPECT_EQ(FileName(results[0].output), L"notes (copy).txt");
     EXPECT_EQ(ReadAll(results[0].output), "hello");
     EXPECT_FALSE(f.runner->Accepts(f.recipes.Get("duplicate"), f.dir.path().wstring()));   // folders: not yet
+}
+
+// Image and duplicate outputs go through StagedOutput like every engine's: a job that fails after
+// its staging file was made removes the "ShiftDrop" folder made for it, and is in history.
+TEST(Pipeline, FailedJobsLeaveNoOutputFolder)
+{
+    Fixture f;
+    NamingScope scope(OutputNaming::Subfolder);
+    const auto broken = f.dir / L"broken.png";
+    WriteText(broken, "not a picture");
+    const auto notes = f.dir / L"notes.txt";
+    WriteText(notes, "hello");
+    // Held open with no sharing, so the copy fails once its staging file exists.
+    const wil::unique_hfile lock(CreateFileW(notes.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    ASSERT_TRUE(lock);
+
+    for (const auto& [id, source] : { std::pair{ "to-jpg", broken }, std::pair{ "duplicate", notes } })
+    {
+        std::vector<ItemResult> results;
+        const auto run = f.Run(id, { source }, &results);
+        EXPECT_FALSE(results[0].ok) << id;
+        EXPECT_FALSE(std::filesystem::exists(f.dir / L"ShiftDrop")) << id;
+        const auto items = f.history->Items(run.id);
+        ASSERT_EQ(items.size(), 1u) << id;
+        EXPECT_EQ(items[0].status, status::Failed) << id;
+        EXPECT_TRUE(items[0].staging.empty()) << id;
+    }
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+}
+
+// An output that cannot even start (here a file named "ShiftDrop" is where the output folder goes)
+// is a failed row in history for every built-in path, not a silent gap.
+TEST(Pipeline, OutputThatCannotStartIsInHistory)
+{
+    Fixture f;
+    NamingScope scope(OutputNaming::Subfolder);
+    WriteText(f.dir / L"ShiftDrop", "a file, not a folder");
+    const auto png = f.dir / L"a.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(png, 8, 8));
+    const auto notes = f.dir / L"notes.txt";
+    WriteText(notes, "hello");
+
+    for (const auto& [id, source] : { std::pair{ "to-jpg", png }, std::pair{ "duplicate", notes } })
+    {
+        std::vector<ItemResult> results;
+        const auto run = f.Run(id, { source }, &results);
+        EXPECT_FALSE(results[0].ok) << id;
+        EXPECT_TRUE(results[0].error.starts_with(L"cannot write next to the source")) << id << ": " << Narrow(results[0].error);
+        const auto items = f.history->Items(run.id);
+        ASSERT_EQ(items.size(), 1u) << id;
+        EXPECT_EQ(items[0].status, status::Failed) << id;
+        EXPECT_EQ(items[0].error, results[0].error) << id;
+    }
+    EXPECT_EQ(ReadAll(f.dir / L"ShiftDrop"), "a file, not a folder");
 }
 
 TEST(Undo, RefusedWhenAnOutputChanged)

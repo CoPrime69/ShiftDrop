@@ -1,4 +1,5 @@
 #include "shelf/ShelfStore.h"
+#include "FileIo.h"
 #include "Log.h"
 #include "Strings.h"
 #include "Utf.h"
@@ -10,7 +11,6 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <sstream>
 
 namespace sd::shelf
 {
@@ -76,12 +76,10 @@ namespace sd::shelf
     SavedShelf Load(const std::wstring& path)
     {
         SavedShelf shelf;
-        std::ifstream in(std::filesystem::path(path), std::ios::binary);
-        if (!in)
+        std::string text;
+        if (!ReadFileBytes(path, text))
             return shelf;
-        std::stringstream text;
-        text << in.rdbuf();
-        if (!FromJson(text.str(), shelf))
+        if (!FromJson(text, shelf))
             log::Warn(L"shelf: {} is not a shelf file; starting empty", path);
         return shelf;
     }

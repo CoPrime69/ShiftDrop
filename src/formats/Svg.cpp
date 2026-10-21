@@ -201,7 +201,7 @@ namespace sd::formats
         const size_t row = static_cast<size_t>(out.width) * 4;
         for (uint32_t y = 0; y < out.height; ++y)
             std::memcpy(out.Row(y), src + static_cast<size_t>(y) * bitmap.stride(), row);
-        Unpremultiply(out);
+        Unpremultiply(out.bgra);
         return S_OK;
     }
 

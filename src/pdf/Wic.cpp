@@ -1,14 +1,11 @@
 #include "pdf/Wic.h"
-#include "ErrorText.h"
-#include "ImagePipeline.h"
-#include "Recipe.h"
+#include "../Wic.h"   // the core WIC helpers, not this folder's pdf/Wic.h
+#include "canvas/Raster.h"
 
 #include <wincodec.h>
-#include <wil/resource.h>
 #include <wrl/client.h>
 
 #include <algorithm>
-#include <format>
 
 namespace sd::pdf
 {
@@ -16,55 +13,6 @@ namespace sd::pdf
 
     namespace
     {
-        ComPtr<IWICImagingFactory> Factory()
-        {
-            ComPtr<IWICImagingFactory> factory;
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            return factory;
-        }
-
-        int OrientationOf(IWICBitmapFrameDecode* frame)
-        {
-            ComPtr<IWICMetadataQueryReader> reader;
-            if (FAILED(frame->GetMetadataQueryReader(&reader)))
-                return 1;
-            // JPEG keeps EXIF in APP1, TIFF in its first IFD. Tag 274 is Orientation.
-            for (const wchar_t* query : { L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}" })
-            {
-                PROPVARIANT value;
-                PropVariantInit(&value);
-                const HRESULT hr = reader->GetMetadataByName(query, &value);
-                int orientation = 0;
-                if (SUCCEEDED(hr) && value.vt == VT_UI2)
-                    orientation = value.uiVal;
-                PropVariantClear(&value);
-                if (orientation >= 1 && orientation <= 8)
-                    return orientation;
-            }
-            return 1;
-        }
-
-        HRESULT CopyBgra(IWICImagingFactory* factory, IWICBitmapSource* source, Bitmap& out)
-        {
-            ComPtr<IWICFormatConverter> converter;
-            HRESULT hr = factory->CreateFormatConverter(&converter);
-            if (SUCCEEDED(hr))
-                hr = converter->Initialize(source, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom);
-            UINT w = 0, h = 0;
-            if (SUCCEEDED(hr))
-                hr = converter->GetSize(&w, &h);
-            if (SUCCEEDED(hr) && (w == 0 || h == 0 || static_cast<uint64_t>(w) * h > 400'000'000ull))
-                hr = E_OUTOFMEMORY;   // more than 400 megapixels: refuse rather than allocate gigabytes
-            if (SUCCEEDED(hr))
-            {
-                out.width = w;
-                out.height = h;
-                out.bgra.resize(static_cast<size_t>(w) * h * 4);
-                hr = converter->CopyPixels(nullptr, w * 4, static_cast<UINT>(out.bgra.size()), out.bgra.data());
-            }
-            return hr;
-        }
-
         // Reads all of an HGLOBAL-backed stream into a string.
         HRESULT ReadBack(IStream* stream, std::string& out)
         {
@@ -103,51 +51,19 @@ namespace sd::pdf
 
     bool DecodeImageFile(const std::wstring& path, Bitmap& out, std::wstring& error)
     {
-        auto factory = Factory();
-        if (!factory)
-        {
-            error = L"WIC is unavailable";
+        canvas::Raster picture;
+        // Over 400 megapixels is refused rather than allocating gigabytes.
+        if (FAILED(canvas::LoadRaster(path, picture, error, 0, 400'000'000)))
             return false;
-        }
-        // Fast path: WIC reads the file and it needs no turning.
-        ComPtr<IWICBitmapDecoder> decoder;
-        ComPtr<IWICBitmapFrameDecode> frame;
-        if (SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-            SUCCEEDED(decoder->GetFrame(0, &frame)) && OrientationOf(frame.Get()) == 1)
-        {
-            const HRESULT hr = CopyBgra(factory.Get(), frame.Get(), out);
-            if (SUCCEEDED(hr))
-                return true;
-            error = HResultText(hr);
-            return false;
-        }
-        frame.Reset();
-        decoder.Reset();
-
-        // Otherwise the core pipeline (EXIF orientation, libwebp) encodes it upright as PNG in memory.
-        Recipe png;
-        png.steps.push_back(RecipeStep{ "image.encode", { { "format", "png" }, { "quality", 90 } } });
-        ComPtr<IStream> stream;
-        HRESULT hr = CreateStreamOnHGlobal(nullptr, TRUE, &stream);
-        if (SUCCEEDED(hr))
-            hr = RunImageRecipe(png, path, stream.Get(), {}, error);
-        const LARGE_INTEGER zero{};
-        if (SUCCEEDED(hr))
-            hr = stream->Seek(zero, STREAM_SEEK_SET, nullptr);
-        if (SUCCEEDED(hr))
-            hr = factory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
-        if (SUCCEEDED(hr))
-            hr = decoder->GetFrame(0, &frame);
-        if (SUCCEEDED(hr))
-            hr = CopyBgra(factory.Get(), frame.Get(), out);
-        if (FAILED(hr) && error.empty())
-            error = HResultText(hr);
-        return SUCCEEDED(hr);
+        out.width = picture.width;
+        out.height = picture.height;
+        out.bgra = std::move(picture.px);
+        return true;
     }
 
     bool ReadResolution(const std::wstring& path, double& dpiX, double& dpiY)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
         if (!factory || FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) ||
@@ -158,20 +74,20 @@ namespace sd::pdf
 
     int ReadOrientation(const std::wstring& path)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
         if (!factory || FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) ||
             FAILED(decoder->GetFrame(0, &frame)))
             return 1;
-        return OrientationOf(frame.Get());
+        return wic::ExifOrientation(frame.Get());
     }
 
     HRESULT EncodeImageFile(const Bitmap& image, const std::wstring& path, bool jpeg, int quality, double dpi)
     {
         if (image.Empty())
             return E_INVALIDARG;
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory)
             return E_FAIL;
         ComPtr<IWICBitmap> bitmap;
@@ -213,7 +129,7 @@ namespace sd::pdf
 
     HRESULT DecodeJpeg(const std::string& bytes, Samples& out)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory || bytes.empty())
             return E_FAIL;
         ComPtr<IWICStream> stream;
@@ -246,7 +162,7 @@ namespace sd::pdf
 
     HRESULT EncodeJpeg(const Samples& in, int quality, std::string& out)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory || (in.channels != 1 && in.channels != 3) || in.data.size() != static_cast<size_t>(in.width) * in.height * in.channels)
             return E_INVALIDARG;
         Samples bgr = in;
@@ -286,7 +202,7 @@ namespace sd::pdf
 
     HRESULT EncodePng(const Samples& in, std::string& out)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory || (in.channels != 1 && in.channels != 3 && in.channels != 4) || in.width == 0 || in.height == 0 ||
             in.data.size() != static_cast<size_t>(in.width) * in.height * in.channels)
             return E_INVALIDARG;
@@ -322,7 +238,7 @@ namespace sd::pdf
 
     HRESULT ResizeSamples(Samples& samples, uint32_t width, uint32_t height)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory || width == 0 || height == 0)
             return E_INVALIDARG;
         ComPtr<IWICBitmap> bitmap;

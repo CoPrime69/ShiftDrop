@@ -136,6 +136,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 ### G. File actions
 - [ ] File actions › **Copy** on 2 files, then Ctrl+V in another Explorer folder: both are copied
 - [ ] File actions › **Copy path**, paste in Notepad: one quoted path per line
+- [ ] With a clipboard manager running (Win+V history on), **Copy**, **Copy path**, **Copy text** and the inspector's Ctrl+C still work every time
 - [ ] File actions › **Terminal**: Windows Terminal (or PowerShell) opens in that folder
 - [ ] File actions › **Duplicate** on `notes.txt`: `notes (copy).txt` with the same content
 - [ ] File actions › **Move to…** on `photo.jpg` + `folder`: a folder picker titled "Move 2 items to" opens **in front** of Explorer; pick `C:\temp\sd-target`; both move there; the top panel says they moved
@@ -654,6 +655,8 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Settings › **Theme** › **Light** while Windows is dark: the wheel, the top panel, the card and Settings itself turn light at once; **Dark** the other way; **Follow Windows** follows it again
 - [ ] Settings › **Output names** › each style, converting `photo.jpg` twice: `photo (converted).png` / `photo (converted 2).png`, `photo-converted.png` / `photo-converted-2.png`, `photo_converted.png` / `photo_converted_2.png`, and the folder style: `ShiftDrop\photo.png` then `ShiftDrop\photo (2).png`. The card's predicted name matches each. No existing file is ever replaced
 - [ ] Folder style with a file called `ShiftDrop` (no extension) next to the photo: the convert fails with a message and the file is untouched
+- [ ] Folder style with a file called `ShiftDrop` next to a photo, a text file and a video: **PNG**, **Duplicate** and **MP4** each fail with "cannot write next to the source", and tray › **History** lists each as failed
+- [ ] Folder style, a broken `bad.png` (a text file renamed) on **JPG** in a folder with no `ShiftDrop` folder yet: the convert fails and no empty `ShiftDrop` folder is left behind
 - [ ] All four settings survive a restart (`[Appearance] Theme`, `[FileActions] Terminal` / `TerminalCommand`, `[Output] Naming` in settings.ini)
 - [ ] Select 12 photos, **File actions › Rename…**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
 - [ ] A pattern without `{n}` (two files would get the same name): those rows turn red, the status says why and **Rename** is greyed out; a name with `?` or ending in a dot is refused the same way; a name already taken in the folder is refused

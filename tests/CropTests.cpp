@@ -285,3 +285,38 @@ TEST(Crop, EngineWritesTheCropInTheSameFormat)
     ASSERT_TRUE(again.ok);
     EXPECT_EQ(FileName(again.output), L"photo (cropped 2).png");
 }
+
+// Crop, Redact and the photo tools share one answer to which files they take, and one way of
+// writing an edited copy (canvas/PictureEngine.h, canvas/Raster.h: SaveEdited).
+TEST(Crop, PictureEnginesShareWhatTheyTakeAndHowCopiesAreWritten)
+{
+    TempDir dir;
+    Recipes recipes{ dir };
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    for (const char* id : { "crop", "redact", "edit-photos" })
+    {
+        const auto& recipe = recipes.Get(id);
+        ASSERT_NE(runner.EngineFor(recipe), nullptr) << id;
+        EXPECT_TRUE(runner.Applies(recipe, dir / L"photo.jpg")) << id;
+        EXPECT_FALSE(runner.Applies(recipe, dir / L"clip.mp4")) << id;
+        std::wstring why;
+        EXPECT_FALSE(runner.EngineFor(recipe)->Accepts(recipe, dir / L"notes.txt", &why)) << id;
+        EXPECT_EQ(why, L"no image decoder for '.txt' on this PC") << id;
+    }
+
+    const Raster picture = Coordinates(40, 30);
+    std::wstring error;
+    const ImageFormatInfo* format = nullptr;
+    std::vector<uint8_t> bytes;
+    ASSERT_HRESULT_SUCCEEDED(canvas::EncodeEdited(picture, dir / L"a.JPEG", bytes, error, &format)) << Narrow(error);
+    ASSERT_NE(format, nullptr);
+    EXPECT_STREQ(format->id, "jpg");
+    EXPECT_GT(bytes.size(), 100u);
+    const auto target = dir / L"out.bin";
+    WriteText(target, "");
+    ASSERT_HRESULT_SUCCEEDED(canvas::SaveEdited(picture, dir / L"b.gif", target, error, &format)) << Narrow(error);
+    EXPECT_STREQ(format->id, "png");   // GIF is not written back: PNG keeps the pixels
+    Raster back;
+    ASSERT_HRESULT_SUCCEEDED(canvas::LoadRaster(target, back, error)) << Narrow(error);
+    EXPECT_EQ(back.px, picture.px);
+}

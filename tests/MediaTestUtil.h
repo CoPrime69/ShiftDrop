@@ -42,11 +42,11 @@ namespace sd::test
         return {};
     }
 
-    // Runs the test ffmpeg with `args` (after -hide_banner -nostdin -y) to make an input file.
+    // Runs the test ffmpeg with `args` (quietly, overwriting) to make an input file.
     inline bool Make(const std::vector<std::wstring>& args)
     {
         std::stop_source never;
-        std::vector<std::wstring> a{ L"-hide_banner", L"-nostdin", L"-y" };
+        std::vector<std::wstring> a{ L"-hide_banner", L"-nostdin", L"-loglevel", L"error", L"-y" };
         a.insert(a.end(), args.begin(), args.end());
         return TestFfmpeg()->Run(a, nullptr, never.get_token()).ok;
     }
@@ -61,9 +61,7 @@ namespace sd::test
         for (const auto first : { EditorTool::TrimVideo, EditorTool::TrimAudio })
             for (const auto tool : mediatools::SiblingTools(first))
             {
-                auto j = videotools::ToolRecipe(tool);
-                if (j.is_null())
-                    j = audiotools::ToolRecipe(tool);
+                const auto j = mediatools::IsVideoTool(tool) ? videotools::ToolRecipe(tool) : audiotools::ToolRecipe(tool);
                 if (j.value("id", std::string()) != id)
                     continue;
                 Recipe r;

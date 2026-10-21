@@ -1,9 +1,7 @@
 #include "PipelineRunner.h"
 #include "ErrorText.h"
-#include "Hash.h"
 #include "Log.h"
 #include "OutputPath.h"
-#include "PathUtil.h"
 #include "StagedOutput.h"
 #include "Utf.h"
 #include "formats/Frames.h"
@@ -11,7 +9,6 @@
 #include <windows.h>
 #include <wrl/client.h>
 
-#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <format>
@@ -161,10 +158,10 @@ namespace sd
                                    const std::function<void(double)>& progress) const
     {
         ItemResult result;
-        const auto started = std::chrono::steady_clock::now();
-        const std::function<int64_t()> elapsedMs = [started] {
-            return static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
+        const auto started = GetTickCount64();
+        // A file refused before any output was started still gets its history row.
+        const auto refuse = [&] {
+            return RecordFailure(m_history, runId, source, std::move(result.error), result.skipped, static_cast<int64_t>(GetTickCount64() - started));
         };
 
         std::wstring why;
@@ -187,133 +184,67 @@ namespace sd
             result.error = why;
         }
         if (result.skipped || !result.error.empty())
-            return RecordFailure(m_history, runId, source, std::move(result.error), result.skipped);
+            return refuse();
 
         if (const auto* e = EngineFor(recipe))
             return e->Run(recipe, runId, source, stop, progress);
-        if (recipe.IsFileAction())
-            return RunDuplicate(recipe, runId, source, elapsedMs);
-        if (recipe.IsMedia())
-            return RunMedia(recipe, runId, source, stop, progress, elapsedMs);
-        // An animated GIF or a multi-page TIFF keeps every frame (src/formats/Frames.h).
-        if (recipe.IsSingleEncode() && formats::FrameCount(source) > 1)
-            return formats::ConvertFrames(recipe, *recipe.OutputFormatFor(LowerExtension(source)), m_history, runId, source, stop, progress);
-
-        std::wstring staging;
-        Microsoft::WRL::ComPtr<IStream> stream;
-        if (const HRESULT hr = CreateStaging(source, staging, stream); FAILED(hr))
-        {
-            return RecordFailure(m_history, runId, source, std::format(L"cannot write next to the source: {}", HResultText(hr)));
-        }
-        // Recorded before any bytes are written, so a kill from here on is cleaned up at next start.
-        const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
-
-        std::wstring error;
-        // Resolved once: the bytes and the name's extension agree (Action.h: KeptFormatOf).
-        const auto* format = recipe.OutputFormatFor(LowerExtension(source));
-        HRESULT hr = RunImageRecipe(recipe, source, stream.Get(), stop, error, format);
-        stream.Reset();   // close the handle before renaming or deleting
-
-        std::wstring finalPath;
-        if (SUCCEEDED(hr))
-        {
-            hr = CommitStaging(staging, source, recipe.suffix, format->extension, finalPath);
-            if (FAILED(hr))
-                error = std::format(L"commit: {}", HResultText(hr));
-        }
-        if (FAILED(hr))
-        {
-            DeleteFileW(staging.c_str());
-            result.error = hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) ? L"cancelled" : error;
-            if (m_history)
-                m_history->FinishItem(item, status::Failed, L"", 0, "", result.error, elapsedMs());
-            return result;
-        }
-
-        result.ok = true;
-        result.output = finalPath;
-        const auto sha = Sha256File(finalPath, &result.size);
-        if (m_history)
-            m_history->FinishItem(item, status::Done, finalPath, result.size, sha, L"", elapsedMs());
-        return result;
-    }
-
-    // file.duplicate: copy to a staging name, then the same atomic commit as every other output, so a
-    // duplicate is recorded in history and can be undone like a conversion.
-    ItemResult PipelineRunner::RunDuplicate(const Recipe& recipe, int64_t runId, const std::wstring& source,
-                                            const std::function<int64_t()>& elapsedMs) const
-    {
-        ItemResult result;
-        if (recipe.steps[0].action != "file.duplicate")
+        if (recipe.IsFileAction() && recipe.steps[0].action != "file.duplicate")
         {
             result.error = L"this file action runs on the UI thread";   // copy, move, copy path, terminal
             return result;
         }
-        if (IsFolder(source))
+        // An animated GIF or a multi-page TIFF keeps every frame (src/formats/Frames.h).
+        if (!recipe.IsFileAction() && !recipe.IsMedia() && recipe.IsSingleEncode() && formats::FrameCount(source) > 1)
+            return formats::ConvertFrames(recipe, *recipe.OutputFormatFor(LowerExtension(source)), m_history, runId, source, stop, progress);
+
+        // The built-in paths write one file each, the same safe way as every engine. The history row
+        // is begun here, before any bytes are written, so a kill from now on is cleaned up at next start.
+        StagedOutput out(m_history, runId, source);
+        if (!out.Ready())
         {
-            result.error = L"folders can't be duplicated yet";
-            return result;
+            result.error = out.Error();
+            return refuse();
         }
-        std::wstring staging;
-        {
-            Microsoft::WRL::ComPtr<IStream> reserve;   // reserves a unique staging name
-            if (const HRESULT hr = CreateStaging(source, staging, reserve); FAILED(hr))
-            {
-                result.error = HResultText(hr);
-                return result;
-            }
-        }
-        const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
-        std::wstring finalPath;
-        HRESULT hr = CopyFileExW(source.c_str(), staging.c_str(), nullptr, nullptr, nullptr, 0) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
+        if (recipe.IsFileAction())
+            return RunDuplicate(recipe, source, out);
+        if (recipe.IsMedia())
+            return RunMedia(recipe, source, out, stop, progress);
+
+        // Resolved once: the bytes and the name's extension agree (Action.h: KeptFormatOf).
+        const auto* format = recipe.OutputFormatFor(LowerExtension(source));
+        std::wstring error;
+        Microsoft::WRL::ComPtr<IStream> stream;
+        HRESULT hr = out.OpenStream(stream);
         if (SUCCEEDED(hr))
-            hr = CommitStaging(staging, source, recipe.suffix, std::filesystem::path(source).extension().wstring(), finalPath);
+            hr = RunImageRecipe(recipe, source, stream.Get(), stop, error, format);
+        else
+            error = std::format(L"cannot write next to the source: {}", HResultText(hr));
+        stream.Reset();   // close the handle before renaming or deleting
         if (FAILED(hr))
-        {
-            DeleteFileW(staging.c_str());
-            result.error = HResultText(hr);
-            if (m_history)
-                m_history->FinishItem(item, status::Failed, L"", 0, "", result.error, elapsedMs());
-            return result;
-        }
-        result.ok = true;
-        result.output = finalPath;
-        const auto sha = Sha256File(finalPath, &result.size);
-        if (m_history)
-            m_history->FinishItem(item, status::Done, finalPath, result.size, sha, L"", elapsedMs());
-        return result;
+            return out.Fail(hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) ? L"cancelled" : error);
+        return out.Commit(recipe.suffix, format->extension);
+    }
+
+    // file.duplicate: copy to the staging name, then the same atomic commit as every other output, so
+    // a duplicate is recorded in history and can be undone like a conversion.
+    ItemResult PipelineRunner::RunDuplicate(const Recipe& recipe, const std::wstring& source, StagedOutput& out) const
+    {
+        if (!CopyFileExW(source.c_str(), out.Path().c_str(), nullptr, nullptr, nullptr, 0))
+            return out.Fail(HResultText(HRESULT_FROM_WIN32(GetLastError())));
+        return out.Commit(recipe.suffix, std::filesystem::path(source).extension().wstring());
     }
 
     // media.convert and media.compress: ffmpeg writes straight into the staging file (its muxer is
     // named with -f, since the staging name has no real extension), then the same atomic commit as
     // images. A quick probe first says what the input holds, so streams the target container plays
     // are copied as they are: a phone's H.264 MOV becomes an MP4 in a moment, with no quality lost.
-    ItemResult PipelineRunner::RunMedia(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
-                                        const std::function<void(double)>& progress, const std::function<int64_t()>& elapsedMs) const
+    ItemResult PipelineRunner::RunMedia(const Recipe& recipe, const std::wstring& source, StagedOutput& out, std::stop_token stop,
+                                        const std::function<void(double)>& progress) const
     {
-        ItemResult result;
-        std::wstring staging;
-        {
-            Microsoft::WRL::ComPtr<IStream> reserve;   // reserves a unique staging name; closed before ffmpeg opens it
-            if (const HRESULT hr = CreateStaging(source, staging, reserve); FAILED(hr))
-            {
-                result.error = std::format(L"cannot write next to the source: {}", HResultText(hr));
-                return result;
-            }
-        }
-        const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
-        const auto fail = [&](std::wstring error, bool cancelled) {
-            DeleteFileW(staging.c_str());
-            result.error = std::move(error);
-            result.skipped = cancelled;   // cancelled from the top panel: nothing was made, nothing failed
-            if (m_history)
-                m_history->FinishItem(item, cancelled ? status::Skipped : status::Failed, L"", 0, "", result.error, elapsedMs());
-            return result;
-        };
-
+        const std::wstring& staging = out.Path();
         const MediaInfo info = m_media->Probe(source);
         if (stop.stop_requested())
-            return fail(L"cancelled", true);
+            return out.Fail(L"cancelled", true);   // cancelled from the top panel: nothing was made, nothing failed
         const bool video = !info.videoCodec.empty();
         const auto needsH264 = [&] {
             if (!video)
@@ -388,17 +319,8 @@ namespace sd
             extension = video ? L".mp4" : L".m4a";
         }
         if (!run.ok)
-            return fail(run.error, run.cancelled);
-
-        std::wstring finalPath;
-        if (const HRESULT hr = CommitStaging(staging, source, recipe.suffix, extension, finalPath); FAILED(hr))
-            return fail(std::format(L"commit: {}", HResultText(hr)), false);
-        result.ok = true;
-        result.output = finalPath;
-        const auto sha = Sha256File(finalPath, &result.size);
-        if (m_history)
-            m_history->FinishItem(item, status::Done, finalPath, result.size, sha, L"", elapsedMs());
-        return result;
+            return out.Fail(run.error, run.cancelled);
+        return out.Commit(recipe.suffix, extension);
     }
 
     // media.compress into `staging`. A size target (targetMB, or percent of the source) is met by

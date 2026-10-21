@@ -1,4 +1,5 @@
 #include "ocr/OcrEngine.h"
+#include "Clipboard.h"
 #include "Log.h"
 #include "PathUtil.h"
 #include "StagedOutput.h"
@@ -142,7 +143,7 @@ namespace sd::ocr
                 if (all.empty())
                     return RecordFailure(m_history, runId, sources.front(), firstError.empty() ? std::wstring(L"no text found") : firstError);
                 std::wstring error;
-                if (!SetClipboardText(all, error))
+                if (!clipboard::SetText(nullptr, all, &error))
                     return RecordFailure(m_history, runId, sources.front(), error);
                 RecordDone(m_history, runId, sources.front());
                 ItemResult result;

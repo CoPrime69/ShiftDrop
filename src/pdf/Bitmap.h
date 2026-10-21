@@ -1,4 +1,6 @@
 #pragma once
+#include "formats/Pixels.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -25,7 +27,7 @@ namespace sd::pdf
             if (a == 255)
                 continue;
             for (size_t c = 0; c < 3; ++c)
-                b.bgra[i + c] = static_cast<uint8_t>((b.bgra[i + c] * a + 255u * (255u - a)) / 255u);
+                b.bgra[i + c] = formats::OnWhite(b.bgra[i + c], a);
             b.bgra[i + 3] = 255;
         }
     }

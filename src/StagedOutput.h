@@ -56,6 +56,9 @@ namespace sd
         bool Ready() const { return !m_path.empty(); }
         const std::wstring& Error() const { return m_error; }
         const std::wstring& Path() const { return m_path; }   // staging path to write
+        // Opens the (empty, reserved) staging file for an encoder that writes to a stream. Release
+        // the stream before Commit or Fail, which rename or delete the file.
+        HRESULT OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const;
 
         // Renames into place, hashes, records Done. On a rename error returns a failed result.
         ItemResult Commit(std::wstring_view suffix, std::wstring_view extension);
@@ -80,7 +83,9 @@ namespace sd
     bool RemoveStaging(const std::wstring& path);
 
     // History rows for an item that never got a StagedOutput: a failed (or skipped) one, returned as
-    // its result, and a finished one that wrote no file (Copy text: the result is on the clipboard).
-    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped = false);
+    // its result (`elapsedMs`: how long the checks took), and a finished one that wrote no file (Copy
+    // text: the result is on the clipboard).
+    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped = false,
+                             int64_t elapsedMs = 0);
     void RecordDone(HistoryStore* history, int64_t runId, const std::wstring& source);
 }

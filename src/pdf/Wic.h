@@ -12,8 +12,8 @@
 // any thread with COM initialised.
 namespace sd::pdf
 {
-    // Decodes `path` upright (EXIF orientation applied) to BGRA. Formats WIC lacks but the app reads
-    // anyway (WebP) go through the core image pipeline.
+    // Decodes `path` upright (EXIF orientation applied) to BGRA, as canvas::LoadRaster does (WebP,
+    // AVIF and SVG too).
     bool DecodeImageFile(const std::wstring& path, Bitmap& out, std::wstring& error);
 
     // The file's resolution in dots per inch, or false when it has none (or WIC can't read it).

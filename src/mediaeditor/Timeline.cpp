@@ -1,5 +1,6 @@
 #include "mediaeditor/Timeline.h"
 #include "FormatText.h"
+#include "Strings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,11 +33,7 @@ namespace sd::mediatools
 
     bool ParseTimecode(std::wstring_view text, int64_t& us)
     {
-        // Trim spaces.
-        while (!text.empty() && iswspace(text.front()))
-            text.remove_prefix(1);
-        while (!text.empty() && iswspace(text.back()))
-            text.remove_suffix(1);
+        text = Trim(text);
         if (text.empty())
             return false;
         // Up to three ':'-separated fields; only the last may have a fraction.

@@ -1,5 +1,6 @@
 #include "RecipeStore.h"
 #include "Engine.h"
+#include "FileIo.h"
 #include "Log.h"
 #include "Utf.h"
 
@@ -10,7 +11,6 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <sstream>
 
 namespace sd
 {
@@ -151,12 +151,11 @@ namespace sd
 
         for (const auto& path : files)
         {
-            std::ifstream in(path, std::ios::binary);
-            std::stringstream text;
-            text << in.rdbuf();
+            std::string text;
+            ReadFileBytes(path.wstring(), text);   // an unreadable file parses as empty and is reported below
             Recipe r;
             std::string error;
-            if (!ParseRecipe(text.str(), registry, r, error))
+            if (!ParseRecipe(text, registry, r, error))
             {
                 m_errors.push_back(std::format(L"{}: {}", path.filename().wstring(), Widen(error)));
                 log::Warn(L"recipes: {} ignored: {}", path.wstring(), Widen(error));

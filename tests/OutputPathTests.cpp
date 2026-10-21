@@ -47,13 +47,6 @@ TEST(OutputPath, CommitNeverOverwrites)
 
 namespace
 {
-    // Sets the naming style for one test and puts the default back afterwards.
-    struct NamingScope
-    {
-        explicit NamingScope(OutputNaming naming) { SetOutputNaming(naming); }
-        ~NamingScope() { SetOutputNaming(OutputNaming::Parentheses); }
-    };
-
     // Writes `text` through a staging file and commits it as an output of `source`.
     std::wstring Commit(const std::wstring& source, const char* text)
     {

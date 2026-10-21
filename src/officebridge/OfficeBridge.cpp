@@ -1,9 +1,11 @@
 #include "officebridge/OfficeBridge.h"
 #include "Log.h"
+#include "Media.h"
 #include "OutputPath.h"
 #include "PathUtil.h"
 #include "TempPath.h"
 #include "Utf.h"
+#include "sandbox/Sandbox.h"
 
 #include <objbase.h>
 #include <shlobj.h>
@@ -74,17 +76,6 @@ namespace sd::office
             return {};
         }
 
-        std::wstring Quote(const std::wstring& arg)
-        {
-            // Our paths never end in a backslash before the closing quote, except a bare drive or
-            // folder; double any trailing backslashes so the quote is not escaped.
-            std::wstring q = L"\"" + arg;
-            size_t slashes = 0;
-            while (slashes < arg.size() && arg[arg.size() - 1 - slashes] == L'\\')
-                ++slashes;
-            q.append(slashes, L'\\');
-            return q + L"\"";
-        }
     }
 
     Family FamilyOf(std::wstring_view path)
@@ -162,8 +153,8 @@ namespace sd::office
     std::wstring LibreOfficeCommandLine(const std::wstring& soffice, const std::wstring& profileUrl, const std::wstring& outDir,
                                         const std::wstring& source)
     {
-        return Quote(soffice) + L" --headless --invisible --norestore --nologo --nodefault --nolockcheck --nofirststartwizard " +
-               Quote(L"-env:UserInstallation=" + profileUrl) + L" --convert-to pdf --outdir " + Quote(outDir) + L" " + Quote(source);
+        return QuoteArg(soffice) + L" --headless --invisible --norestore --nologo --nodefault --nolockcheck --nofirststartwizard " +
+               QuoteArg(L"-env:UserInstallation=" + profileUrl) + L" --convert-to pdf --outdir " + QuoteArg(outDir) + L" " + QuoteArg(source);
     }
 
     std::wstring SlideFileName(int index, int count, std::wstring_view extension)
@@ -204,36 +195,25 @@ namespace sd::office
         }
         const std::filesystem::path outDir(temp.Path());
 
-        auto commandLine = LibreOfficeCommandLine(soffice, FileUrl(profile.wstring()), outDir.wstring(), job.source);
-
-        wil::unique_handle processJob(CreateJobObjectW(nullptr, nullptr));
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if (!processJob || !SetInformationJobObject(processJob.get(), JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+        // A plain child (LibreOffice needs its profile and the user's file) in a kill-on-close job, so
+        // it never outlives us. soffice.exe starts soffice.bin, and it needs its program folder as the
+        // current folder and its windows hidden.
+        sandbox::LaunchSpec spec;
+        spec.exe = soffice;
+        spec.commandLine = LibreOfficeCommandLine(soffice, FileUrl(profile.wstring()), outDir.wstring(), job.source);
+        spec.appContainer = false;
+        spec.limits.noChildren = false;
+        spec.limits.noUi = false;
+        spec.workingDir = std::filesystem::path(soffice).parent_path().wstring();
+        spec.hideWindow = true;
+        auto launched = sandbox::Launch(spec);
+        if (!launched)
         {
-            result.error = L"cannot create a job object for LibreOffice";
+            result.error = launched.error;
             return result;
         }
-        STARTUPINFOW si{};
-        si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi{};
-        const auto programDir = std::filesystem::path(soffice).parent_path().wstring();
-        if (!CreateProcessW(soffice.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
-                            CREATE_SUSPENDED | CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS, nullptr, programDir.c_str(), &si, &pi))
-        {
-            result.error = std::format(L"cannot start LibreOffice ({})", GetLastError());
-            return result;
-        }
-        wil::unique_handle process(pi.hProcess), thread(pi.hThread);
-        if (!AssignProcessToJobObject(processJob.get(), process.get()))
-        {
-            TerminateProcess(process.get(), 1);
-            result.error = L"cannot put LibreOffice in a job object";
-            return result;
-        }
-        ResumeThread(thread.get());
+        const HANDLE process = launched.process.get();
+        const HANDLE processJob = launched.job.get();
         if (job.progress)
             job.progress(0.1);
 
@@ -243,9 +223,9 @@ namespace sd::office
         for (;;)
         {
             JOBOBJECT_BASIC_ACCOUNTING_INFORMATION info{};
-            const bool any = QueryInformationJobObject(processJob.get(), JobObjectBasicAccountingInformation, &info, sizeof(info), nullptr)
+            const bool any = QueryInformationJobObject(processJob, JobObjectBasicAccountingInformation, &info, sizeof(info), nullptr)
                                  ? info.ActiveProcesses > 0
-                                 : WaitForSingleObject(process.get(), 0) == WAIT_TIMEOUT;
+                                 : WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
             if (!any)
                 break;
             if (job.stop.stop_requested())
@@ -262,8 +242,8 @@ namespace sd::office
         }
         if (result.cancelled || timedOut)
         {
-            TerminateJobObject(processJob.get(), 1);
-            WaitForSingleObject(process.get(), 5000);
+            TerminateJobObject(processJob, 1);
+            WaitForSingleObject(process, 5000);
             result.error = result.cancelled ? L"cancelled" : std::format(L"LibreOffice took longer than {} minutes", job.timeoutMs / 60000);
             return result;
         }
@@ -272,7 +252,7 @@ namespace sd::office
         if (FileSize(produced.wstring()) == 0)   // missing or empty
         {
             DWORD code = 0;
-            GetExitCodeProcess(process.get(), &code);
+            GetExitCodeProcess(process, &code);
             result.error = std::format(L"LibreOffice could not convert the file (exit code {})", code);
             return result;
         }

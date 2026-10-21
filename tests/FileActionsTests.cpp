@@ -1,4 +1,8 @@
+#include "Clipboard.h"
 #include "FileActions.h"
+
+#include <shellapi.h>
+#include <shlobj.h>
 
 #include <gtest/gtest.h>
 
@@ -62,4 +66,64 @@ TEST(Terminal, EmptyCustomCommandMeansWindowsTerminal)
         ASSERT_FALSE(t.empty()) << command;
         EXPECT_EQ(t[0].exe, L"wt.exe") << command;
     }
+}
+
+namespace
+{
+    // The clipboard's block in `format`, copied out (empty when there is none).
+    std::vector<uint8_t> ClipboardBytes(UINT format)
+    {
+        std::vector<uint8_t> bytes;
+        if (!OpenClipboard(nullptr))
+            return bytes;
+        if (HANDLE h = GetClipboardData(format))
+            if (const auto* p = static_cast<const uint8_t*>(GlobalLock(h)))
+            {
+                bytes.assign(p, p + GlobalSize(h));
+                GlobalUnlock(h);
+            }
+        CloseClipboard();
+        return bytes;
+    }
+}
+
+TEST(Clipboard, TextReplacesWhatWasThere)
+{
+    std::wstring error;
+    ASSERT_TRUE(clipboard::SetText(nullptr, L"first", &error));
+    ASSERT_TRUE(clipboard::SetText(nullptr, L"\"C:\\a b\\photo.png\"", &error));
+    const auto bytes = ClipboardBytes(CF_UNICODETEXT);
+    ASSERT_GE(bytes.size(), sizeof(wchar_t));
+    EXPECT_EQ(std::wstring(reinterpret_cast<const wchar_t*>(bytes.data())), L"\"C:\\a b\\photo.png\"");
+}
+
+TEST(Clipboard, FilesAsExplorerCopiesThemWithAPicture)
+{
+    const std::vector<std::wstring> files{ L"C:\\a\\one.png", L"D:\\two words.txt" };
+    const std::vector<uint8_t> png{ 0x89, 'P', 'N', 'G' }, dib(48, 7);
+    ASSERT_TRUE(clipboard::SetFiles(nullptr, files, DROPEFFECT_COPY, png, dib));
+
+    ASSERT_TRUE(OpenClipboard(nullptr));
+    std::vector<std::wstring> listed;
+    if (const auto drop = static_cast<HDROP>(GetClipboardData(CF_HDROP)))
+        for (UINT i = 0, n = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0); i < n; ++i)
+        {
+            wchar_t path[MAX_PATH]{};
+            DragQueryFileW(drop, i, path, MAX_PATH);
+            listed.push_back(path);
+        }
+    CloseClipboard();
+    EXPECT_EQ(listed, files);
+
+    const auto effect = ClipboardBytes(RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT));
+    ASSERT_GE(effect.size(), sizeof(DWORD));
+    EXPECT_EQ(*reinterpret_cast<const DWORD*>(effect.data()), static_cast<DWORD>(DROPEFFECT_COPY));
+    auto pngBack = ClipboardBytes(RegisterClipboardFormatW(L"PNG"));
+    pngBack.resize(std::min(pngBack.size(), png.size()));   // GlobalSize may round up
+    EXPECT_EQ(pngBack, png);
+    EXPECT_GE(ClipboardBytes(CF_DIB).size(), dib.size());
+
+    // Without a picture, only the files: no stale picture from before.
+    ASSERT_TRUE(clipboard::SetFiles(nullptr, files, DROPEFFECT_COPY));
+    EXPECT_TRUE(ClipboardBytes(RegisterClipboardFormatW(L"PNG")).empty());
 }

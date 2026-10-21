@@ -3,6 +3,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "formats/Avif.h"
 #include "formats/Frames.h"
 
@@ -146,16 +147,9 @@ namespace
         return image;
     }
 
-    ComPtr<IWICImagingFactory> Factory()
-    {
-        ComPtr<IWICImagingFactory> factory;
-        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-        return factory;
-    }
-
     HRESULT WriteTiff(const std::wstring& path, const std::vector<formats::Image>& pages)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         ComPtr<IWICStream> stream;
         ComPtr<IWICBitmapEncoder> encoder;
         RETURN_IF_FAILED(factory->CreateStream(&stream));

@@ -3,6 +3,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "canvas/Raster.h"
 #include "formats/Avif.h"
 #include "formats/Heic.h"

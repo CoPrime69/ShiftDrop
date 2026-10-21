@@ -4,6 +4,7 @@
 #include "mediaeditor/EditorWindow.h"
 #include "Log.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "audiotools/AudioTools.h"
 #include "videotools/VideoTools.h"
 
@@ -108,10 +109,10 @@ namespace sd::mediatools
         // A picture for the visualizer's preview, flattened onto black, at most `maxSide` across.
         bool LoadPicture(const std::wstring& path, int maxSide, Frame& out)
         {
-            ComPtr<IWICImagingFactory> wic;
+            const auto wic = wic::Factory();
             ComPtr<IWICBitmapDecoder> decoder;
             ComPtr<IWICBitmapFrameDecode> frame;
-            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))) ||
+            if (!wic ||
                 FAILED(wic->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) ||
                 FAILED(decoder->GetFrame(0, &frame)))
                 return false;

@@ -1,5 +1,6 @@
 #include "inspect/InspectorWindow.h"
 #include "Brand.h"
+#include "Clipboard.h"
 #include "DialogWindow.h"
 #include "Ffmpeg.h"
 #include "Log.h"
@@ -49,27 +50,6 @@ namespace sd::inspect
                     out += value[i];
             }
             return out;
-        }
-
-        bool CopyText(HWND owner, const std::wstring& text)
-        {
-            if (!OpenClipboard(owner))
-                return false;
-            EmptyClipboard();
-            bool ok = false;
-            if (HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t)))
-            {
-                if (auto* p = static_cast<wchar_t*>(GlobalLock(mem)))
-                {
-                    std::copy(text.c_str(), text.c_str() + text.size() + 1, p);
-                    GlobalUnlock(mem);
-                    ok = SetClipboardData(CF_UNICODETEXT, mem) != nullptr;
-                }
-                if (!ok)
-                    GlobalFree(mem);
-            }
-            CloseClipboard();
-            return ok;
         }
 
         // What the worker and the window share. The window may close while a file is still being
@@ -379,7 +359,7 @@ namespace sd::inspect
                         text += L"\r\n";
                     }
                 }
-                if (CopyText(m_hwnd, text))
+                if (clipboard::SetText(m_hwnd, text))
                     SetWindowTextW(m_status, rows.size() == 1 ? std::format(L"Copied {}", rows.front()->name).c_str()
                                                               : std::format(L"Copied {} fields", rows.size()).c_str());
             }

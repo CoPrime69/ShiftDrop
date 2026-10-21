@@ -10,6 +10,7 @@
 #include "FormatText.h"
 #include "HistoryStore.h"
 #include "JobQueue.h"
+#include "MediaTestUtil.h"
 #include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "PdfTestUtil.h"
@@ -117,15 +118,6 @@ namespace
         }
     };
     const auto* g_table = ::testing::AddGlobalTestEnvironment(new Table);
-
-    // ffmpeg as a tool for making inputs (not timed).
-    bool Make(const std::vector<std::wstring>& args)
-    {
-        std::vector<std::wstring> all{ L"-hide_banner", L"-nostdin", L"-loglevel", L"error", L"-y" };
-        all.insert(all.end(), args.begin(), args.end());
-        std::stop_source never;
-        return TestFfmpeg()->Run(all, nullptr, never.get_token()).ok;
-    }
 
     // A 4000 x 3000 "photo": smooth colour fields with fine grain, saved as a quality-90 JPEG
     // (about what a 12 MP phone camera writes).
@@ -737,11 +729,11 @@ TEST(Bench, WebpOptions)
     SD_BENCH_ONLY();
     const auto& in = In();
     using Microsoft::WRL::ComPtr;
-    ComPtr<IWICImagingFactory> factory;
+    const auto factory = wic::Factory();
     ComPtr<IWICBitmapDecoder> decoder;
     ComPtr<IWICBitmapFrameDecode> frame;
     ComPtr<IWICFormatConverter> bgra;
-    ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)));
+    ASSERT_TRUE(factory);
     ASSERT_HRESULT_SUCCEEDED(factory->CreateDecoderFromFilename(in.photo.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder));
     ASSERT_HRESULT_SUCCEEDED(decoder->GetFrame(0, &frame));
     ASSERT_HRESULT_SUCCEEDED(factory->CreateFormatConverter(&bgra));

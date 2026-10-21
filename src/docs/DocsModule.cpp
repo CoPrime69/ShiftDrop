@@ -270,18 +270,13 @@ namespace sd::docs
             std::string pdf;
             if (!PagesPreviewPdf(path, pdf, error))
                 return false;
-            const auto temp = TempFilePath(L"pages", L".pdf");
-            {
-                wil::unique_hfile f(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr));
-                if (!f)
-                {
-                    error = L"cannot write a temporary file";
-                    return false;
-                }
-            }
+            const auto temp = TempFilePath(L"pages", L".pdf");   // a fresh name of our own
             auto remove = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
-            if (!WriteFileBytes(temp, pdf, WriteMode::Existing, &error))
+            if (!WriteFileBytes(temp, pdf, WriteMode::New))
+            {
+                error = L"cannot write a temporary file";
                 return false;
+            }
             return ReadPdfDocument(temp, doc, stop, error);
         }
         default:

@@ -30,43 +30,25 @@ namespace sd::formats
         return S_OK;
     }
 
-    HRESULT FromWicSource(IWICImagingFactory* factory, IWICBitmapSource* source, Image& out)
+    std::vector<uint8_t> FlattenToBgr(const uint8_t* bgra, uint32_t width, uint32_t height, uint32_t& stride)
     {
-        Microsoft::WRL::ComPtr<IWICBitmapSource> bgra = source;
-        WICPixelFormatGUID format{};
-        RETURN_IF_FAILED(source->GetPixelFormat(&format));
-        if (format != GUID_WICPixelFormat32bppBGRA)
+        stride = (width * 3 + 3) & ~3u;
+        std::vector<uint8_t> out(static_cast<size_t>(stride) * height);
+        for (uint32_t y = 0; y < height; ++y)
         {
-            Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
-            RETURN_IF_FAILED(factory->CreateFormatConverter(&converter));
-            RETURN_IF_FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
-                                                   WICBitmapPaletteTypeCustom));
-            bgra = converter;
+            const uint8_t* s = bgra + static_cast<size_t>(y) * width * 4;
+            uint8_t* d = out.data() + static_cast<size_t>(y) * stride;
+            for (uint32_t x = 0; x < width; ++x, s += 4, d += 3)
+                for (int c = 0; c < 3; ++c)
+                    d[c] = OnWhite(s[c], s[3]);
         }
-        UINT w = 0, h = 0;
-        RETURN_IF_FAILED(bgra->GetSize(&w, &h));
-        const UINT64 bytes = UINT64{ w } * h * 4;
-        if (w == 0 || h == 0)
-            return E_INVALIDARG;
-        if (bytes > 0xFFFFFFFFull)
-            return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);
-        out.width = w;
-        out.height = h;
-        out.bgra.resize(static_cast<size_t>(bytes));
-        return bgra->CopyPixels(nullptr, w * 4, static_cast<UINT>(bytes), out.bgra.data());
+        return out;
     }
 
-    void Unpremultiply(Image& image)
+    void Unpremultiply(std::vector<uint8_t>& bgra)
     {
-        for (size_t i = 0; i + 3 < image.bgra.size(); i += 4)
-        {
-            uint8_t* p = &image.bgra[i];
-            const unsigned a = p[3];
-            if (a == 0 || a == 255)
-                continue;
-            for (int c = 0; c < 3; ++c)
-                p[c] = static_cast<uint8_t>(std::min(255u, (p[c] * 255u + a / 2) / a));
-        }
+        for (size_t i = 0; i + 3 < bgra.size(); i += 4)
+            UnpremultiplyPixel(&bgra[i]);
     }
 
     void RotateAntiClockwise(Image& image, int quarterTurns)

@@ -129,39 +129,6 @@ namespace sd::subtitles
             return AsciiLower(body.substr(0, end));
         }
 
-        // Entity references decoded ("&amp;" -> "&"); an "&" that starts no known reference stays.
-        std::string DecodeEntities(std::string_view s)
-        {
-            std::string out;
-            out.reserve(s.size());
-            for (size_t i = 0; i < s.size(); ++i)
-            {
-                if (s[i] == '&')
-                {
-                    const size_t semi = s.find(';', i + 1);
-                    if (semi != std::string_view::npos && semi - i <= 12)
-                    {
-                        auto name = s.substr(i + 1, semi - i - 1);
-                        std::string decoded;
-                        if (name == "lrm")
-                            decoded = "\xE2\x80\x8E";
-                        else if (name == "rlm")
-                            decoded = "\xE2\x80\x8F";
-                        else
-                            decoded = docs::DecodeEntity(name);
-                        if (!decoded.empty())
-                        {
-                            out += decoded;
-                            i = semi;
-                            continue;
-                        }
-                    }
-                }
-                out += s[i];
-            }
-            return out;
-        }
-
         bool StartsEntity(std::string_view s)
         {
             // s starts after the "&".
@@ -417,7 +384,7 @@ namespace sd::subtitles
             if (t.kind == Token::Text)
             {
                 if (!inRubyText)
-                    out += DecodeEntities(t.text);
+                    out += docs::DecodeEntities(t.text);
             }
             else if (t.kind == Token::Tag)
             {
@@ -441,7 +408,7 @@ namespace sd::subtitles
             if (t.kind == Token::Text)
             {
                 if (!inRubyText)
-                    out += DecodeEntities(t.text);
+                    out += docs::DecodeEntities(t.text);
             }
             else if (t.kind == Token::Tag)
             {
