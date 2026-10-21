@@ -148,6 +148,30 @@ TEST(Ask, AnswersComeFromTheUiThread)
     EXPECT_EQ(ask::Choose(Sample(), {}), 2);
 }
 
+TEST(Ask, ChooseNowAsksOnTheCallingThread)
+{
+    // No one to ask, then the tests' answers: the same routes as Choose.
+    EXPECT_EQ(ask::ChooseNow(nullptr, Sample()), 2);
+    DWORD answeredOn = 0;
+    ask::SetAnswers([&](const ask::Question& q) {
+        answeredOn = GetCurrentThreadId();
+        return q.choices.front().id;
+    }, {});
+    EXPECT_EQ(ask::ChooseNow(nullptr, Sample()), 1);
+    EXPECT_EQ(answeredOn, GetCurrentThreadId());
+    ask::SetAnswers({}, {});
+
+    // With the UI: the TaskDialog opens on this thread at once (no worker, no queue). Without Common
+    // Controls 6 (the Windows test runner) it can't open and the answer is Cancel; under Wine the
+    // "user" picks Two.
+    ask::InstallUi();
+    auto user = User(L"Ask test", [](HWND box) { PostMessageW(box, TDM_CLICK_BUTTON, 2, 0); });
+    const int answer = ask::ChooseNow(nullptr, Sample());
+    user.request_stop();
+    ask::UninstallUi();
+    EXPECT_TRUE(answer == ask::kCancel || answer == 2) << answer;
+}
+
 TEST(Ask, ThePasswordBoxHandsOverWhatWasTyped)
 {
     ask::InstallUi();

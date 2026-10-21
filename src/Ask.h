@@ -1,6 +1,8 @@
 #pragma once
 #include "Secret.h"
 
+#include <windows.h>
+
 #include <cstdint>
 #include <functional>
 #include <stop_token>
@@ -9,8 +11,9 @@
 
 // Questions a running job asks the user: the password of an archive, whether to print all of a
 // very long spreadsheet, whether to save every frame of a long GIF. The job runs on a worker; the
-// question is shown on the UI thread the way the Normalize chooser asks (a TaskDialog with command
-// links and Cancel; a small masked box for a password) while the worker waits for the answer.
+// question is shown on the UI thread (a TaskDialog with command links and Cancel; a small masked box
+// for a password) while the worker waits for the answer. A question asked on the UI thread itself
+// (Normalize's "how loud?") goes through ChooseNow and is shown at once.
 //
 // It cannot deadlock: the UI thread never waits for a worker, questions are shown one at a time, and
 // the job's stop token (the × in the top panel, or quitting) closes an open question as Cancel and
@@ -42,9 +45,9 @@ namespace sd::ask
     // cancels or `stop` is requested.
     int Choose(const Question& question, std::stop_token stop);
 
-    // From the UI thread: shows `question` at once, as Choose does, and returns the answer. For a
-    // window's own question, such as "Close without saving?".
-    int ChooseNow(const Question& question);
+    // From the UI thread: shows `question` over `owner` (may be null) at once and returns a choice's
+    // id, or kCancel. The tests' answers and the unattended answer apply as they do to Choose.
+    int ChooseNow(HWND owner, const Question& question);
 
     struct PasswordRequest
     {

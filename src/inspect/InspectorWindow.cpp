@@ -1,11 +1,11 @@
 #include "inspect/InspectorWindow.h"
 #include "Brand.h"
+#include "DialogWindow.h"
 #include "Ffmpeg.h"
 #include "Log.h"
 #include "inspect/InspectModule.h"
 #include "inspect/Metadata.h"
 #include "inspect/MetadataReader.h"
-#include "resource.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -31,7 +31,6 @@ namespace sd::inspect
         constexpr UINT kMsgRead = WM_APP + 1;   // wParam: file index, lParam: FileMetadata*, owned by the receiver
 
         // DIPs, scaled by the window's DPI.
-        constexpr int kWidth = 620, kHeight = 560, kMinWidth = 360, kMinHeight = 260;
         constexpr int kMargin = 10, kGap = 6, kSearchH = 24, kStatusH = 18, kTabsH = 28;
 
         std::wstring FileName(const std::wstring& path)
@@ -85,74 +84,38 @@ namespace sd::inspect
             std::stop_source stop;
         };
 
-        class InspectorWindow
+        // One per Inspect drop; it deletes itself when its window closes (OnNcDestroy).
+        class InspectorWindow final : public DialogWindow
         {
         public:
             InspectorWindow(std::vector<std::wstring> files, std::shared_ptr<const FfmpegEngine> ffmpeg)
-                : m_paths(std::move(files)), m_ffmpeg(std::move(ffmpeg))
+                // In light mode the classic "dialog" face, like the history window.
+                : DialogWindow(GetModuleHandleW(nullptr),
+                               { .className = kClass, .width = 620, .height = 560, .minWidth = 360, .minHeight = 260, .lightBackground = COLOR_BTNFACE }),
+                  m_paths(std::move(files)), m_ffmpeg(std::move(ffmpeg))
             {
                 m_files.resize(m_paths.size());
                 m_loaded.assign(m_paths.size(), false);
             }
 
-            bool Create(HWND owner)
+            bool Show(HWND owner)
             {
-                static const bool registered = [] {
-                    WNDCLASSEXW wc{ sizeof(wc) };
-                    wc.lpfnWndProc = WndProc;
-                    wc.hInstance = GetModuleHandleW(nullptr);
-                    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-                    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-                    wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(IDI_APPICON));
-                    wc.lpszClassName = kClass;
-                    return RegisterClassExW(&wc) != 0;
-                }();
-                if (!registered)
-                    return false;
                 (void)owner;   // a top-level window of its own: it outlives the wheel and shows on the taskbar
                 const std::wstring title = m_paths.size() == 1 ? std::format(L"Inspect: {}", FileName(m_paths.front()))
                                                                : std::format(L"Inspect: {} files", m_paths.size());
-                m_hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                                         kWidth, kHeight, nullptr, nullptr, GetModuleHandleW(nullptr), this);
-                if (!m_hwnd)
+                if (!Create(title.c_str()))
                     return false;
-                CreateChildren();
-                const UINT dpi = GetDpiForWindow(m_hwnd);
-                RECT r{ 0, 0, MulDiv(kWidth, static_cast<int>(dpi), 96), MulDiv(kHeight, static_cast<int>(dpi), 96) };
-                AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_CONTROLPARENT, dpi);
-                SetWindowPos(m_hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-                ApplyDpi(dpi);
                 Fill();
-                ShowWindow(m_hwnd, SW_SHOWNORMAL);
-                SetForegroundWindow(m_hwnd);   // the user just asked for it (the drop)
-                SetFocus(m_search);
+                Present(m_search);   // the user just asked for it (the drop)
                 StartReading();
                 return true;
             }
 
         private:
-            static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+            void OnNcDestroy() override
             {
-                if (msg == WM_NCCREATE)
-                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams));
-                auto* self = reinterpret_cast<InspectorWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-                if (msg == kMsgRead)
-                {
-                    std::unique_ptr<FileMetadata> read(reinterpret_cast<FileMetadata*>(lParam));
-                    if (self)
-                        self->OnRead(static_cast<size_t>(wParam), std::move(read));
-                    return 0;
-                }
-                if (!self)
-                    return DefWindowProcW(hwnd, msg, wParam, lParam);
-                if (msg == WM_NCDESTROY)
-                {
-                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                    self->m_shared->stop.request_stop();
-                    delete self;   // one window, one object: it goes with its window
-                    return DefWindowProcW(hwnd, msg, wParam, lParam);
-                }
-                return self->Handle(hwnd, msg, wParam, lParam);
+                m_shared->stop.request_stop();
+                delete this;   // one window, one object: it goes with its window
             }
 
             // Keys for the search box and the list (no dialog manager in the app's message loop):
@@ -207,12 +170,9 @@ namespace sd::inspect
                 return DefSubclassProc(hwnd, msg, wParam, lParam);
             }
 
-            void CreateChildren()
+            void CreateChildren() override
             {
-                const HINSTANCE instance = GetModuleHandleW(nullptr);
-                const auto id = [](int i) { return reinterpret_cast<HMENU>(static_cast<INT_PTR>(i)); };
-                m_tabs = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_TABSTOP | WS_CLIPSIBLINGS | TCS_SINGLELINE | TCS_FOCUSNEVER,
-                                         0, 0, 0, 0, m_hwnd, id(kIdTabs), instance, nullptr);
+                m_tabs = Control(WC_TABCONTROLW, L"", WS_TABSTOP | WS_CLIPSIBLINGS | TCS_SINGLELINE | TCS_FOCUSNEVER, kIdTabs);
                 for (size_t i = 0; i < m_paths.size(); ++i)
                 {
                     auto name = FileName(m_paths[i]);
@@ -221,15 +181,12 @@ namespace sd::inspect
                     item.pszText = name.data();
                     TabCtrl_InsertItem(m_tabs, static_cast<int>(i), &item);
                 }
-                if (m_paths.size() > 1)
-                    ShowWindow(m_tabs, SW_SHOWNA);
-                m_search = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                                           0, 0, 0, 0, m_hwnd, id(kIdSearch), instance, nullptr);
+                if (m_paths.size() < 2)
+                    ShowWindow(m_tabs, SW_HIDE);   // tabs only for several files
+                m_search = Control(WC_EDITW, L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdSearch, WS_EX_CLIENTEDGE);
                 // TRUE: the hint stays while the box has the focus and is empty.
                 SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search fields and values (Ctrl+F)"));
-                m_list = CreateWindowExW(0, WC_LISTVIEWW, L"",
-                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
-                                         0, 0, 0, 0, m_hwnd, id(kIdList), instance, nullptr);
+                m_list = Control(WC_LISTVIEWW, L"", WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, kIdList);
                 ListView_SetExtendedListViewStyle(m_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP | LVS_EX_INFOTIP);
                 const wchar_t* titles[] = { L"Field", L"Value" };
                 for (int i = 0; i < 2; ++i)
@@ -241,27 +198,20 @@ namespace sd::inspect
                     ListView_InsertColumn(m_list, i, &col);
                 }
                 ListView_EnableGroupView(m_list, TRUE);
-                m_status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, 0, 0, 0, m_hwnd,
-                                           id(kIdStatus), instance, nullptr);
+                m_status = Control(WC_STATICW, L"", SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, kIdStatus);
                 SetWindowSubclass(m_search, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this));
                 SetWindowSubclass(m_list, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this));
             }
 
-            int Px(int dip) const { return MulDiv(dip, static_cast<int>(m_dpi), 96); }
+            void OnDpiChanged() override { ListView_SetColumnWidth(m_list, 0, Px(190)); }
 
-            void ApplyDpi(UINT dpi)
+            void OnThemeChanged() override
             {
-                m_dpi = dpi;
-                NONCLIENTMETRICSW metrics{ sizeof(metrics) };
-                if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi))
-                    m_font.reset(CreateFontIndirectW(&metrics.lfMessageFont));
-                for (HWND child : { m_tabs, m_search, m_list, m_status })
-                    SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(m_font.get()), TRUE);
-                ListView_SetColumnWidth(m_list, 0, Px(190));
-                Layout();
+                ThemeList(m_list);
+                SetTheme({ m_search }, L"DarkMode_CFD");
             }
 
-            void Layout()
+            void Layout() override
             {
                 RECT rc{};
                 GetClientRect(m_hwnd, &rc);
@@ -460,26 +410,13 @@ namespace sd::inspect
                     Copy(command);
             }
 
-            LRESULT Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+            LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam) override
             {
                 switch (msg)
                 {
-                case WM_SIZE:
-                    Layout();
+                case kMsgRead:
+                    OnRead(static_cast<size_t>(wParam), std::unique_ptr<FileMetadata>(reinterpret_cast<FileMetadata*>(lParam)));
                     return 0;
-                case WM_GETMINMAXINFO:
-                {
-                    auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
-                    info->ptMinTrackSize = { Px(kMinWidth), Px(kMinHeight) };
-                    return 0;
-                }
-                case WM_DPICHANGED:
-                {
-                    const auto* r = reinterpret_cast<const RECT*>(lParam);
-                    SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
-                    ApplyDpi(HIWORD(wParam));
-                    return 0;
-                }
                 case WM_ACTIVATE:
                     if (LOWORD(wParam) != WA_INACTIVE && m_focus)
                         SetFocus(m_focus);   // back where it was
@@ -507,10 +444,10 @@ namespace sd::inspect
                     return 0;
                 }
                 case WM_CLOSE:
-                    DestroyWindow(hwnd);
+                    DestroyWindow(m_hwnd);
                     return 0;
                 default:
-                    return DefWindowProcW(hwnd, msg, wParam, lParam);
+                    return DialogWindow::Handle(msg, wParam, lParam);
                 }
             }
 
@@ -522,11 +459,8 @@ namespace sd::inspect
             std::vector<Field> m_rows;   // the list's rows, by item lParam
             size_t m_tab = 0;
 
-            HWND m_hwnd = nullptr;   // destroys itself (and this object) when closed
             HWND m_tabs = nullptr, m_search = nullptr, m_list = nullptr, m_status = nullptr;
             HWND m_focus = nullptr;
-            wil::unique_hfont m_font;
-            UINT m_dpi = 96;
         };
 
         void Open(HWND owner, const std::vector<std::wstring>& files, std::shared_ptr<const FfmpegEngine> ffmpeg)
@@ -534,7 +468,7 @@ namespace sd::inspect
             if (files.empty())
                 return;
             auto window = std::make_unique<InspectorWindow>(files, std::move(ffmpeg));
-            if (window->Create(owner))
+            if (window->Show(owner))
                 window.release();   // owned by its window from here on (see WM_NCDESTROY)
             else
                 log::Error(L"inspect: could not open the window ({})", GetLastError());

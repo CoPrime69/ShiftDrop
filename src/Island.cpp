@@ -67,25 +67,13 @@ namespace sd
 
     bool Island::Create()
     {
-        WNDCLASSEXW wc{ sizeof(wc) };
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = m_instance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_HAND);
-        wc.lpszClassName = kClassName;
-        RegisterClassExW(&wc);
-        m_hwnd.reset(CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
-                                     kClassName, SD_NAME, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, m_instance, this));
-        if (!m_hwnd ||
-            FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.ReleaseAndGetAddressOf())) ||
-            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                       reinterpret_cast<IUnknown**>(m_dwrite.ReleaseAndGetAddressOf()))))
+        m_hwnd.reset(CreatePanel(m_instance, kClassName, WndProc, WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
+                                 SD_NAME, this, IDC_HAND));
+        if (!m_hwnd || !InitGraphics())
         {
             log::Error(L"island: could not create the top panel");
             return false;
         }
-        m_canvas = std::make_unique<Canvas>(m_d2d.Get());
-        m_textFamily = TextFamily(m_dwrite.Get());
-        m_iconFamily = IconFamily(m_dwrite.Get());
         m_a11y = std::make_unique<a11y::TextElement>(m_hwnd.get());
         return true;
     }
@@ -465,25 +453,16 @@ namespace sd
     {
         if (!m_hwnd)
             return;
-        if (!m_animating)
-        {
-            m_animating = true;
-            m_lastFrame = GetTickCount64();
-            // ~64 fps (the timer rounds up to the system tick); the result timeout also runs here.
-            SetTimer(m_hwnd.get(), kTimerFrame, 10, nullptr);
-        }
+        m_frames.Start(m_hwnd.get(), kTimerFrame);   // the result timeout also runs on it
         Render();
     }
 
     void Island::OnFrame()
     {
         const ULONGLONG now = GetTickCount64();
-        const float dt = static_cast<float>(std::min<ULONGLONG>(now - m_lastFrame, 50));
-        m_lastFrame = now;
+        const float dt = m_frames.Tick(now);
         const auto approach = [dt](float& value, float target, float tau) {
-            value += (target - value) * (1.f - std::exp(-dt / tau));
-            if (std::abs(target - value) < 0.002f * std::max(1.f, std::abs(target)))
-                value = target;
+            panel::Approach(value, target, dt, tau, 0.002f * std::max(1.f, std::abs(target)));
         };
 
         if (m_retracting)
@@ -495,8 +474,7 @@ namespace sd
                 m_retracting = false;
                 m_state = State::Hidden;
                 ShowWindow(m_hwnd.get(), SW_HIDE);
-                KillTimer(m_hwnd.get(), kTimerFrame);
-                m_animating = false;
+                m_frames.Stop(m_hwnd.get(), kTimerFrame);
                 return;
             }
         }
@@ -537,10 +515,7 @@ namespace sd
         const bool moving = m_presenceT < 1.f || m_contentT < 1.f || m_w != ContentWidth() || m_h != ContentHeight() ||
                             m_tabPos != static_cast<float>(m_ring);
         if (!moving && m_state != State::Progress && m_state != State::Result)
-        {
-            KillTimer(m_hwnd.get(), kTimerFrame);
-            m_animating = false;
-        }
+            m_frames.Stop(m_hwnd.get(), kTimerFrame);
     }
 
     // ---- Content size ----------------------------------------------------------------------------
@@ -599,22 +574,6 @@ namespace sd
 
     // ---- Drawing ---------------------------------------------------------------------------------
 
-    ComPtr<IDWriteTextFormat> Island::MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align) const
-    {
-        ComPtr<IDWriteTextFormat> format;
-        if (FAILED(m_dwrite->CreateTextFormat(family.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                              dip * m_scale, L"", &format)))
-            return nullptr;
-        format->SetTextAlignment(align);
-        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-        ComPtr<IDWriteInlineObject> ellipsis;
-        if (SUCCEEDED(m_dwrite->CreateEllipsisTrimmingSign(format.Get(), &ellipsis)))
-            format->SetTrimming(&trimming, ellipsis.Get());
-        return format;
-    }
-
     bool Island::EnsureTextFormats()
     {
         if (m_tabFont && m_fontScale == m_scale)
@@ -631,31 +590,6 @@ namespace sd
         m_actionFont = MakeFormat(m_iconFamily, 12.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
         (void)R;
         return m_tabFont && m_tabIconFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont && m_actionFont;
-    }
-
-    float Island::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
-    {
-        ComPtr<IDWriteTextLayout> layout;
-        DWRITE_TEXT_METRICS metrics{};
-        if (text.empty() || !format ||
-            FAILED(m_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, 10000.f, 100.f, &layout)) ||
-            FAILED(layout->GetMetrics(&metrics)))
-            return 0.f;
-        return std::ceil(metrics.widthIncludingTrailingWhitespace);
-    }
-
-    ComPtr<ID2D1SolidColorBrush> Island::Brush(const D2D1_COLOR_F& color, float alpha)
-    {
-        ComPtr<ID2D1SolidColorBrush> brush;
-        m_rt->CreateSolidColorBrush(WithAlpha(color, alpha), &brush);
-        return brush;
-    }
-
-    void Island::Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color, float alpha)
-    {
-        if (text.empty() || !format || alpha <= 0.f)
-            return;
-        m_rt->DrawText(text.c_str(), static_cast<UINT32>(text.size()), format, rect, Brush(color, alpha).Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
     void Island::DrawSwitcher(const D2D1_RECT_F& box, float alpha)

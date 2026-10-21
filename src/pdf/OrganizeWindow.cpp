@@ -1710,11 +1710,7 @@ namespace sd::pdf
         q.heading = L"Close without saving?";
         q.text = L"Your changes to the pages will be lost.";
         q.choices = { { 1, L"Close without saving", L"" } };
-        EnableWindow(window, FALSE);   // the question is this window's: nothing else happens meanwhile
-        const int answer = ask::ChooseNow(q);
-        EnableWindow(window, TRUE);
-        SetForegroundWindow(window);
-        return answer == 1;
+        return ask::ChooseNow(window, q) == 1;   // modal over the window
     }
 
     D2D1_COLOR_F FileTagColor(uint32_t file)
