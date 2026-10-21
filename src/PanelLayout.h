@@ -10,15 +10,16 @@ namespace sd::panel
     // scale its names and hint were too small to read at a glance, above all on 1440p screens.
     inline constexpr float kScale = 1.4f;
 
-    // Settings › Top panel size: a share of that size, 100% (as above) to 300% in 10% steps, saved
-    // as [Appearance] PanelSize in settings.ini. It is on top of the tray's Size setting.
-    inline constexpr int kSizeMinPercent = 100, kSizeMaxPercent = 300, kSizeStepPercent = 10;
+    // Settings › Top panel size: a share of that size, 50% to 300% in 10% steps (100% is the size
+    // above, and the default), saved as [Appearance] PanelSize in settings.ini. It is on top of the
+    // tray's Size setting.
+    inline constexpr int kSizeMinPercent = 50, kSizeMaxPercent = 300, kSizeStepPercent = 10, kSizeDefaultPercent = 100;
     // `percent` kept to that range and rounded to a step (a hand-edited 155 reads as 160).
     int SizePercent(int percent);
 
     // Pixels per DIP for the panel, from the wheel's (theme::ScaleFor: DPI times the Size setting)
     // and the Top panel size.
-    inline float Scale(float wheelScale, int sizePercent = kSizeMinPercent)
+    inline float Scale(float wheelScale, int sizePercent = kSizeDefaultPercent)
     {
         return wheelScale * kScale * static_cast<float>(SizePercent(sizePercent)) / 100.f;
     }
@@ -47,7 +48,7 @@ namespace sd::panel
 
     // `scale` (Scale with the Top panel size), made smaller where it would not fit a monitor whose
     // work area is `workWidth` x `workHeight` pixels, but never smaller than `base` (Scale at 100%,
-    // the size before the slider). It fits when the switcher's tabs, with their full names (each
+    // the size before the slider); a `scale` below `base` (under 100%) is kept as it is. It fits when the switcher's tabs, with their full names (each
     // name's width in DIPs in `namesDip`) and the smallest gaps, go across the screen, and the
     // window with its shadow room reaches no lower than half way down it.
     float FitScale(float scale, float base, const std::vector<float>& namesDip, float workWidth, float workHeight);
