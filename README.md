@@ -5,7 +5,7 @@ Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 | Hold | Wheel | Slices so far |
 |---|---|---|
-| Shift | Convert | Images (also from AVIF, HEIC and SVG): PNG, JPG, WebP, AVIF, HEIC (with Windows' HEIF codec), TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
+| Shift | Convert | Images (also from AVIF, HEIC and SVG): PNG, JPG, WebP, AVIF, HEIC (with Windows' HEIF codec), TIFF, BMP, Web (a recipe: resize + WebP); an animated GIF or multi-page TIFF keeps every frame. Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
 | Ctrl | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB; for video Trim…, Crop…, Speed…, Join…, Frames…, Split…, Redact…; for audio Normalize, Trim…, Channels…, Bleep…, Visualizer…; PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF. Images: Crop, Redact (cover text, faces and personal details), Share-safe (verified metadata scrub with a review step; also video and audio) |
 | Alt | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Remove metadata (images, video, audio) |
 

@@ -4,6 +4,7 @@
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "formats/Frames.h"
 #include "inspect/MetadataReader.h"
 
 #include <windows.h>
@@ -436,6 +437,19 @@ namespace sd::preview
             detail.push_back(MetadataLoss(facts->meta));
         }
         p.detail = Join(detail);
+        // An animated GIF or a multi-page TIFF converts every frame (formats/Frames.h): say so, and
+        // give no size, since the estimate below would be for one frame.
+        if (const uint32_t frames = recipe.IsSingleEncode() ? formats::FrameCount(first) : 1; frames > 1)
+        {
+            const auto* format = recipe.OutputFormatFor(ext);
+            const auto kind = formats::FramesOutputFor(ext, format ? format->id : "");
+            if (kind == formats::FramesOutput::Folder && files.size() == 1)
+                p.name = PredictOutputName(first, L"frames", L"");
+            if (kind == formats::FramesOutput::Animation)
+                p.format += L", animated";
+            p.detail = Join({ std::format(L"{} {}", frames, ext == L".gif" ? L"frames" : L"pages"), p.detail });
+            return p;
+        }
         if (partial)
         {
             Prediction quick = p;

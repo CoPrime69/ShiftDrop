@@ -9,6 +9,7 @@
 #include <functional>
 #include <set>
 #include <stop_token>
+#include <wincodec.h>
 #include <string>
 
 namespace sd
@@ -42,6 +43,11 @@ namespace sd
     // Writes the encoded bytes to `out`. `error` gets a readable reason on failure.
     HRESULT RunImageRecipe(const Recipe& recipe, const std::wstring& source, IStream* out, std::stop_token stop,
                            std::wstring& error);
+
+    // Encodes one picture (any WIC pixel format) as `format` at `quality`, the way the last step of an
+    // image recipe does: flattened on white for formats without alpha, through libwebp or a format
+    // hook where WIC has no encoder. Used for each frame of a multi-frame conversion (src/formats).
+    HRESULT EncodePicture(IWICBitmapSource* pixels, const ImageFormatInfo& format, int quality, IStream* out, std::wstring& error);
 
     // The highest quality in [low, high] whose encoded size (from `sizeAt`, -1 on error) is at most
     // `target`, or -1 if none fits. Used by image.compress; exposed for tests.

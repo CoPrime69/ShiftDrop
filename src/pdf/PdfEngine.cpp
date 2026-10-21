@@ -4,6 +4,7 @@
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "Utf.h"
+#include "formats/Frames.h"
 #include "pdf/ImagePdf.h"
 #include "pdf/PageRenderer.h"
 #include "pdf/PdfCompress.h"
@@ -283,7 +284,27 @@ namespace sd::pdf
                         return out.Fail(kCancelled, true);
                     ImageSource image;
                     std::wstring error;
-                    if (!IsReadableImage(sources[i]) || !LoadImageSource(sources[i], image, error))
+                    // A multi-page TIFF (or an animated GIF) gives a page per frame (src/formats/Frames.h).
+                    if (formats::FrameCount(sources[i]) > 1)
+                    {
+                        double dpiX = 0, dpiY = 0;   // the first page's resolution sizes them all (scans share one)
+                        if (!ReadResolution(sources[i], dpiX, dpiY))
+                            dpiX = dpiY = 0;
+                        const HRESULT hr = formats::ForEachFrame(sources[i], stop, [&](const formats::Image& frame, uint32_t, uint32_t, int) {
+                            ImageSource page;
+                            page.dpiX = dpiX;
+                            page.dpiY = dpiY;
+                            page.pixels.width = frame.width;
+                            page.pixels.height = frame.height;
+                            page.pixels.bgra = frame.bgra;
+                            return pdf.AddPage(page, nullptr, error);
+                        }, error);
+                        if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED))
+                            return out.Fail(kCancelled, true);
+                        if (FAILED(hr) || !error.empty())
+                            return out.Fail(std::format(L"{}: {}", FileNameOf(sources[i]), error));
+                    }
+                    else if (!IsReadableImage(sources[i]) || !LoadImageSource(sources[i], image, error))
                     {
                         log::Warn(L"images to pdf: {} skipped: {}", sources[i], error);
                         skipped.push_back(FileNameOf(sources[i]));
