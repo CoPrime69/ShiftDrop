@@ -86,6 +86,7 @@ namespace sd
         m_canvas = std::make_unique<Canvas>(m_d2d.Get());
         m_textFamily = TextFamily(m_dwrite.Get());
         m_iconFamily = IconFamily(m_dwrite.Get());
+        m_a11y = std::make_unique<a11y::WheelElement>(m_hwnd.get(), static_cast<a11y::WheelView&>(*this));
 
         m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), this);
         const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get());
@@ -111,6 +112,7 @@ namespace sd
         if (m_registered && m_hwnd)
             RevokeDragDrop(m_hwnd.get());   // releases OLE's reference to m_dropTarget
         m_registered = false;
+        m_a11y.reset();   // before the window: it tells UIA the window's elements are gone
         m_hwnd.reset();
         m_dropTarget.Reset();
     }
@@ -172,6 +174,10 @@ namespace sd
             if (self && self->m_inDrag && self->m_mode == Mode::Wheel && self->m_appearance.hideCursor)
                 self->m_cursor.Hide();
             return 0;
+        case WM_GETOBJECT:
+            if (LRESULT result = 0; self && self->m_a11y && self->m_a11y->OnGetObject(wParam, lParam, result))
+                return result;
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         default:
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -179,8 +185,11 @@ namespace sd
 
     void Overlay::SetMode(Mode mode)
     {
+        const bool closed = m_mode == Mode::Wheel && mode != Mode::Wheel;
         m_mode = mode;
         m_captureScroll = mode == Mode::Probe || mode == Mode::Wheel;
+        if (closed && m_a11y)
+            m_a11y->Closed();
     }
 
     // ---- Layout ----------------------------------------------------------------------------------
@@ -484,6 +493,8 @@ namespace sd
         else if (Explains(m_hot))
             m_why = m_hot;
         KillTimer(m_hwnd.get(), kTimerMore);
+        if (m_a11y)
+            m_a11y->SlicesChanged(true);
         Animate();
         NotifyHighlight();
     }
@@ -513,6 +524,8 @@ namespace sd
         // Still dwelling on "More" during a drag: keep turning.
         if (!m_click && !m_keyHot && m_layout.IsMore(m_hot))
             SetTimer(m_hwnd.get(), kTimerMore, kMoreDwellMs, nullptr);
+        if (m_a11y)
+            m_a11y->SlicesChanged(true);
         Animate();
         NotifyHighlight();
     }
@@ -647,6 +660,8 @@ namespace sd
 
     void Overlay::NotifyHighlight()
     {
+        if (m_a11y)
+            m_a11y->HighlightChanged();
         if (!m_events.highlighted)
             return;
         WheelHighlight h;
@@ -663,6 +678,70 @@ namespace sd
             return;
         m_lastHighlight = key;
         m_events.highlighted(h);
+    }
+
+    // ---- Screen readers (a11y::WheelView) --------------------------------------------------------
+
+    std::wstring Overlay::ViewTitle() const
+    {
+        std::wstring title = static_cast<size_t>(m_ring) < m_rings.size() ? m_rings[static_cast<size_t>(m_ring)].title : std::wstring();
+        if (m_layout.pages > 1)
+            title += std::format(L"{}page {} of {}", title.empty() ? L"" : L", ", m_layout.page + 1, m_layout.pages);
+        return title;
+    }
+
+    a11y::WheelView::Slice Overlay::ViewSlice(size_t index) const
+    {
+        Slice out;
+        if (index >= m_shown.size())
+            return out;
+        const auto& s = m_shown[index];
+        // The label, then what the centre would show for it; a detail that already starts with the
+        // label ("PNG, lossless") stands alone.
+        out.name = s.label;
+        const auto add = [&out](const std::wstring& part) {
+            if (part.empty())
+                return;
+            if (part.starts_with(out.name))
+                out.name = part;
+            else
+                out.name += L", " + part;
+        };
+        if (!s.enabled)
+            out.name += s.detail.empty() ? std::wstring(L", not available") : L", not available: " + s.detail;
+        else
+        {
+            add(s.headline);
+            add(s.detail);
+        }
+        out.enabled = s.enabled;
+
+        // The tile's extent: its corners and a few points along its arcs, in screen pixels.
+        const int slot = static_cast<int>(index);
+        const float mid = m_layout.MidDeg(slot), half = m_layout.SpanDeg(slot) / 2.f;
+        const auto band = m_layout.BandOf(slot);
+        float l = 1e9f, t = 1e9f, r = -1e9f, b = -1e9f;
+        for (int k = 0; k <= 4; ++k)
+            for (const float radius : { band.inner, band.outer })
+            {
+                const float rad = (mid - half + half * static_cast<float>(k) / 2.f) * std::numbers::pi_v<float> / 180.f;
+                const float x = m_c.x + radius * m_scale * std::sin(rad), y = m_c.y - radius * m_scale * std::cos(rad);
+                l = std::min(l, x), r = std::max(r, x), t = std::min(t, y), b = std::max(b, y);
+            }
+        out.bounds = RECT{ m_origin.x + static_cast<LONG>(std::floor(l)), m_origin.y + static_cast<LONG>(std::floor(t)),
+                           m_origin.x + static_cast<LONG>(std::ceil(r)), m_origin.y + static_cast<LONG>(std::ceil(b)) };
+        return out;
+    }
+
+    int Overlay::ViewHighlighted() const
+    {
+        return m_mode == Mode::Wheel && m_hot >= 0 && m_hot < static_cast<int>(m_shown.size()) ? m_hot : -1;
+    }
+
+    int Overlay::ViewSliceAt(POINT screen) const
+    {
+        const int slot = m_mode == Mode::Wheel ? HitTest(screen) : kOutside;
+        return slot >= 0 && slot < static_cast<int>(m_shown.size()) ? slot : -1;
     }
 
     // ---- Keyboard and click mode -----------------------------------------------------------------
@@ -805,6 +884,8 @@ namespace sd
         if (!m_announced && m_events.shown)
             m_events.shown(m_ring, m_monitor);
         m_announced = true;
+        if (m_a11y)
+            m_a11y->SlicesChanged(opening);
         Animate();
         NotifyHighlight();
         log::Info(L"overlay: {} with {} file(s), first: {}", m_click ? L"opened on a selection" : L"DragEnter", files.size(), files.front());
