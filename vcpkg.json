@@ -16,6 +16,9 @@
       "features": [ "aom", "dav1d" ]
     },
     "lunasvg",
+    "miniz",
+    "pugixml",
+    "md4c",
     "gtest"
   ],
   "vcpkg-configuration": {
