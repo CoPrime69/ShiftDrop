@@ -11,7 +11,8 @@ struct archive;
 
 namespace sd::archive
 {
-    // Writes one archive file with libarchive: ZIP (Deflate, UTF-8 names with the UTF-8 flag set),
+    // Writes one archive file with libarchive: ZIP (Deflate, or stored for what is compressed already;
+    // UTF-8 names with the UTF-8 flag set),
     // TAR.GZ (POSIX pax, UTF-8 names) or 7z (LZMA2). Runs in our own process: what it reads are the
     // user's own files or entries the parent has already checked.
     class ArchiveWriter
@@ -32,6 +33,10 @@ namespace sd::archive
         struct archive* m_a = nullptr;
         WriteFormat m_format = WriteFormat::Zip;
     };
+
+    // Names a ZIP stores without Deflate, by extension: photos, video, music, archives and Office files,
+    // which are compressed already.
+    bool IsCompressedAlready(const std::wstring& name);
 
     // Packs files and folders into one archive at `output` (a staging file). Each item goes in under
     // its own name ("Photos/..." for a folder); links and junctions inside folders are skipped, so a

@@ -321,6 +321,44 @@ TEST_F(ArchiveTest, RoundTripsEveryWritableFormat)
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
 }
 
+TEST(Archive, PhotosVideoAndArchivesAreCompressedAlready)
+{
+    for (const wchar_t* name : { L"IMG_0001.JPG", L"Photos/clip.mp4", L"song.flac", L"backup.7z", L"Report.docx" })
+        EXPECT_TRUE(IsCompressedAlready(name)) << Narrow(name);
+    for (const wchar_t* name : { L"notes.txt", L"main.cpp", L"scan.bmp", L"photo.jpg/readme", L"jpg", L"" })
+        EXPECT_FALSE(IsCompressedAlready(name)) << Narrow(name);
+}
+
+TEST_F(ArchiveTest, ZipStoresWhatIsCompressedAlready)
+{
+    const auto root = dir / L"Trip";
+    std::filesystem::create_directories(root);
+    std::string noise(200'000, '\0');
+    std::mt19937 rng(3);
+    for (auto& c : noise)
+        c = static_cast<char>(rng());
+    WriteText(root + L"\\photo.jpg", noise);
+    WriteText(root + L"\\notes.txt", std::string(50'000, 'a'));
+    const auto expected = Tree(root);
+    const auto packed = Batch("archive-folder-zip", { root });
+    ASSERT_TRUE(packed.ok) << Narrow(packed.error);
+
+    // Each local file header: "PK\3\4", the method at +8 (0 stored, 8 deflate), the name at +30.
+    const auto bytes = ReadAll(packed.output);
+    std::map<std::string, int> methods;
+    for (size_t at = bytes.find("PK\x03\x04"); at != std::string::npos && at + 30 <= bytes.size(); at = bytes.find("PK\x03\x04", at + 4))
+    {
+        const auto u16 = [&](size_t o) { return static_cast<uint8_t>(bytes[at + o]) | (static_cast<uint8_t>(bytes[at + o + 1]) << 8); };
+        methods[bytes.substr(at + 30, u16(26))] = u16(8);
+    }
+    EXPECT_EQ(methods["Trip/photo.jpg"], 0);
+    EXPECT_EQ(methods["Trip/notes.txt"], 8);
+
+    const auto unpacked = Run("archive-extract", packed.output);
+    ASSERT_TRUE(unpacked.ok) << Narrow(unpacked.error);
+    EXPECT_EQ(Tree(unpacked.output), expected);
+}
+
 TEST_F(ArchiveTest, ZipNamesAreUtf8WithTheFlagSet)
 {
     const auto file = dir / kUnicode;

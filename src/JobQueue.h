@@ -20,6 +20,11 @@ namespace sd
 
         enum class Apartment { Mta, Sta };
         explicit JobQueue(unsigned threads, Apartment apartment = Apartment::Mta);
+
+        // Workers for jobs that each keep one core busy (images, sound through ffmpeg): one per
+        // logical processor but one, so the rest of the PC stays responsive, and at most 8 (a 12 MP
+        // photo needs about 150 MB while it converts).
+        static unsigned PoolThreads();
         ~JobQueue();
         JobQueue(const JobQueue&) = delete;
         JobQueue& operator=(const JobQueue&) = delete;
