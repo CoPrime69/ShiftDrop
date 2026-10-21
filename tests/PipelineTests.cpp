@@ -5,6 +5,8 @@
 #include "Utf.h"
 #include "Undo.h"
 
+#include <format>
+
 using namespace sd;
 using namespace sd::test;
 
@@ -261,4 +263,24 @@ TEST(Pipeline, CompressFitsTheTargetAndShrinksOnlyWhenNeeded)
     const auto again = f.runner->Run(f.recipes.Get("image-under-1mb"), runId, shrunk.output, std::stop_token{});
     EXPECT_FALSE(again.ok);
     EXPECT_EQ(Narrow(again.error), "already under 1 MB");
+}
+
+TEST(Pipeline, ReduceSizeEndsAtMostItsShareOfTheSource)
+{
+    Fixture f;
+    const auto source = f.dir / L"photo.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(source, 1600, 1200, true));
+    const auto before = std::filesystem::file_size(source);
+    for (const int smaller : { 90, 50, 20 })
+    {
+        const auto id = std::format("reduce-image-{}", smaller);
+        const auto& recipe = f.recipes.Get(id);
+        EXPECT_EQ(recipe.ring, "reduce");
+        const auto runId = f.history->BeginRun(recipe, 1);
+        const auto result = f.runner->Run(recipe, runId, source, std::stop_token{});
+        ASSERT_TRUE(result.ok) << id << ": " << Narrow(result.error);
+        EXPECT_LE(std::filesystem::file_size(result.output), before * static_cast<uintmax_t>(100 - smaller) / 100) << id;
+        std::filesystem::remove(result.output);
+    }
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
 }
