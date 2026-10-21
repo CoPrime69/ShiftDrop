@@ -11,6 +11,7 @@ namespace sd
         {
         case Ring::Convert: return "convert";
         case Ring::Tools: return "tools";
+        case Ring::Reduce: return "reduce";
         default: return "files";
         }
     }
@@ -21,6 +22,7 @@ namespace sd
         {
         case Ring::Convert: return L"Convert";
         case Ring::Tools: return L"Tools";
+        case Ring::Reduce: return L"Reduce size";
         default: return L"File actions";
         }
     }
@@ -53,13 +55,23 @@ namespace sd
             // First run (the installer may already have written [Startup]): write the defaults so the
             // user can see what is configurable.
             WritePrivateProfileStringW(L"Gesture", L"Convert", L"Shift", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"Tools", L"Ctrl", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"Files", L"Alt", path.c_str());
+            WritePrivateProfileStringW(L"Gesture", L"Tools", L"None", path.c_str());
+            WritePrivateProfileStringW(L"Gesture", L"Files", L"None", path.c_str());
             WritePrivateProfileStringW(L"Gesture", L"; Allowed", L"Shift | Ctrl | Alt | None  (the Win key is not supported)", path.c_str());
+            WritePrivateProfileStringW(L"Gesture", L"KeysVersion", L"2", path.c_str());
+        }
+        else if (GetPrivateProfileIntW(L"Gesture", L"KeysVersion", 1, path.c_str()) < 2)
+        {
+            // Files from 0.5.0 and earlier wrote Tools=Ctrl and Files=Alt. Shift is now the only key
+            // (sections switch by scrolling), so those two are turned off once; a later hand edit stays.
+            WritePrivateProfileStringW(L"Gesture", L"Tools", L"None", path.c_str());
+            WritePrivateProfileStringW(L"Gesture", L"Files", L"None", path.c_str());
+            WritePrivateProfileStringW(L"Gesture", L"KeysVersion", L"2", path.c_str());
+            log::Info(L"settings: Ctrl and Alt no longer open wheels; Shift and scrolling reach every section");
         }
 
         Settings s;
-        const wchar_t* keys[kRingCount] = { L"Convert", L"Tools", L"Files" };
+        const wchar_t* keys[kRingCount] = { L"Convert", L"Tools", L"Reduce", L"Files" };
         for (int i = 0; i < kRingCount; ++i)
         {
             wchar_t buf[32]{};
@@ -90,7 +102,7 @@ namespace sd
                     s.keys[j] = 0;
                     s.keyNames[j] = L"off";
                 }
-        log::Info(L"settings: Convert={}, Tools={}, Files={} ({})", s.keyNames[0], s.keyNames[1], s.keyNames[2], path);
+        log::Info(L"settings: Convert={}, Tools={}, Reduce={}, Files={} ({})", s.keyNames[0], s.keyNames[1], s.keyNames[2], s.keyNames[3], path);
         return s;
     }
 

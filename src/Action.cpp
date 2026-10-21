@@ -73,7 +73,7 @@ namespace sd
             { ParamSpec{ "axis", ParamType::Enum, 0, 0, { "horizontal", "vertical" }, "horizontal" } } });
         m_actions.push_back(ActionDescriptor{ "image.strip_metadata", L"Strip metadata", StepKind::ImageMetadata, {} });
 
-        // File actions (Alt wheel). They take any file or folder and produce no new image.
+        // File actions wheel. They take any file or folder and produce no new image.
         m_actions.push_back(ActionDescriptor{ "file.copy", L"Copy", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.move", L"Move to", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.copy_path", L"Copy path", StepKind::FileAction, {} });
