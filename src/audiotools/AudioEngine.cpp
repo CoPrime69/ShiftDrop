@@ -99,8 +99,13 @@ namespace sd::audiotools
         config.cButtons = static_cast<UINT>(std::size(buttons));
         config.pButtons = buttons;
         config.nDefaultButton = 16;
+        // Looked up at run time: TaskDialogIndirect is only in Common Controls 6, which the app's
+        // manifest selects; a static import would stop the test runner (no manifest) from loading.
+        using TaskDialogFn = HRESULT(WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
+        const HMODULE comctl = LoadLibraryW(L"comctl32.dll");
+        const auto taskDialog = comctl ? reinterpret_cast<TaskDialogFn>(GetProcAddress(comctl, "TaskDialogIndirect")) : nullptr;
         int picked = 0;
-        if (FAILED(TaskDialogIndirect(&config, &picked, nullptr, nullptr)) || (picked != 16 && picked != 14 && picked != 23))
+        if (!taskDialog || FAILED(taskDialog(&config, &picked, nullptr, nullptr)) || (picked != 16 && picked != 14 && picked != 23))
             return false;
         target = -picked;
         return true;
