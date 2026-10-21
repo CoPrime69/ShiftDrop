@@ -67,6 +67,7 @@ namespace sd
         const wchar_t* aliases;  // source extensions that already are this format, e.g. ".jpg.jpeg.jpe.jfif"
         bool keepsAlpha;
         bool lossy;
+        bool windowsCodec = false;   // written by an optional Windows codec (HEIC): "same" turns it into JPG
     };
     const std::vector<ImageFormatInfo>& ImageFormats();
     const ImageFormatInfo* FindImageFormat(std::string_view id);
