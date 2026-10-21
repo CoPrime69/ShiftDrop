@@ -342,8 +342,10 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
         {
             if (!Shaders().ok)
                 return E_FAIL;
+            // An unknown id gives D2DERR_EFFECT_IS_NOT_REGISTERED or, on Windows 10 and 11,
+            // HRESULT_FROM_WIN32(ERROR_NOT_FOUND).
             HRESULT hr = dc->CreateEffect(kInfo[kind].clsid, &out);
-            if (hr != D2DERR_EFFECT_IS_NOT_REGISTERED)
+            if (hr != D2DERR_EFFECT_IS_NOT_REGISTERED && hr != HRESULT_FROM_WIN32(ERROR_NOT_FOUND))
                 return hr;
             ComPtr<ID2D1Factory> base;
             dc->GetFactory(&base);
