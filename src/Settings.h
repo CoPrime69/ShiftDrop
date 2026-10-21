@@ -40,7 +40,7 @@ namespace sd
     enum class Style { Solid, Glass };                      // Glass: frosted, blurred background
     struct Appearance
     {
-        WheelSize size = WheelSize::Auto;
+        WheelSize size = WheelSize::Medium;   // the default for a new install (Prakhar 2026-10-21)
         Style style = Style::Solid;
     };
     Appearance LoadAppearance();
@@ -69,7 +69,7 @@ namespace sd
         TerminalChoice terminal = TerminalChoice::WindowsTerminal;
         std::wstring terminalCommand;                        // Custom: a command line, {folder} for the folder
         OutputNaming naming = OutputNaming::Parentheses;     // [Output] Naming=parentheses|dash|underscore|subfolder
-        int panelSize = 100;                                 // [Appearance] PanelSize=100..300, percent (panel::SizePercent)
+        int panelSize = 100;                                 // [Appearance] PanelSize=50..300, percent (panel::SizePercent)
         bool operator==(const Preferences&) const = default;
     };
     Preferences LoadPreferences();

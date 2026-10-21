@@ -259,8 +259,12 @@ TEST(Panel, SizePercentKeepsToTheSlidersSteps)
     EXPECT_EQ(panel::SizePercent(155), 160);   // a hand edit lands on the nearest step
     EXPECT_EQ(panel::SizePercent(154), 150);
     EXPECT_EQ(panel::SizePercent(99), 100);
-    EXPECT_EQ(panel::SizePercent(0), 100);
-    EXPECT_EQ(panel::SizePercent(-40), 100);
+    EXPECT_EQ(panel::SizePercent(50), 50);
+    EXPECT_EQ(panel::SizePercent(70), 70);
+    EXPECT_EQ(panel::SizePercent(55), 60);
+    EXPECT_EQ(panel::SizePercent(49), 50);
+    EXPECT_EQ(panel::SizePercent(0), 50);
+    EXPECT_EQ(panel::SizePercent(-40), 50);
     EXPECT_EQ(panel::SizePercent(301), 300);
     EXPECT_EQ(panel::SizePercent(100000), 300);
 }
@@ -278,7 +282,9 @@ TEST(Panel, SizeSliderMultipliesTheSizeSetting)
             EXPECT_FLOAT_EQ(panel::Scale(wheel, 160), 1.6f * panel::Scale(wheel)) << dpi;
             EXPECT_FLOAT_EQ(panel::Scale(wheel, 300), 3.f * panel::Scale(wheel)) << dpi;
             EXPECT_FLOAT_EQ(panel::Scale(wheel, 999), panel::Scale(wheel, 300)) << dpi;
-            EXPECT_FLOAT_EQ(panel::Scale(wheel, 10), panel::Scale(wheel, 100)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 50), 0.5f * panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 80), 0.8f * panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 10), panel::Scale(wheel, 50)) << dpi;
         }
     // Small, Medium and Large keep their order at any slider value.
     EXPECT_LT(panel::Scale(SizeScale(WheelSize::Small, 1.f, 1080.f), 200), panel::Scale(SizeScale(WheelSize::Medium, 1.f, 1080.f), 200));
@@ -315,7 +321,10 @@ TEST(Panel, SizeSliderNeverRunsOffTheScreen)
             const float asked = panel::Scale(SizeScale(size, dpi, height), percent);
             const float s = panel::FitScale(asked, base, names, width, height);
             EXPECT_LE(s, asked + 1e-5f) << percent;
-            EXPECT_GE(s, base) << percent;   // never smaller than before the slider
+            if (percent <= 100)
+                EXPECT_FLOAT_EQ(s, asked) << percent;   // 100% and below are drawn as asked
+            else
+                EXPECT_GE(s, base) << percent;   // growth is cut back, but never below 100%
             if (s > base + 1e-4f)
             {
                 // Grown: every name is still whole and the window stays in the top half of the screen.
@@ -349,6 +358,8 @@ TEST(Panel, SizeSliderNeverRunsOffTheScreen)
     EXPECT_NEAR(bottom(wide), 200.f, 0.01f);
     // A screen too small for any growth keeps the size it had.
     EXPECT_FLOAT_EQ(panel::FitScale(9.f, 2.52f, names, 800.f, 560.f), 2.52f);
+    // Below 100% the panel is smaller even there.
+    EXPECT_FLOAT_EQ(panel::FitScale(1.26f, 2.52f, names, 800.f, 560.f), 1.26f);
 }
 
 TEST(Panel, SizeSliderIsSavedInAppearance)
@@ -378,7 +389,13 @@ TEST(Panel, SizeSliderIsSavedInAppearance)
     EXPECT_EQ(LoadPreferences(ini).panelSize, 160);
     WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"900", ini.c_str());
     EXPECT_EQ(LoadPreferences(ini).panelSize, 300);
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"20", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 50);
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"50", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 50);
     WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"big", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 100);
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"0", ini.c_str());
     EXPECT_EQ(LoadPreferences(ini).panelSize, 100);
 }
 
@@ -524,10 +541,14 @@ TEST(Panel, AppearanceHasNoHideCursorSetting)
     EXPECT_EQ(b.size, WheelSize::Small);
     EXPECT_EQ(b.style, Style::Glass);
 
-    // No file: Auto and Solid.
+    // No file: Medium and Solid.
     const auto c = LoadAppearance(dir / L"missing.ini");
-    EXPECT_EQ(c.size, WheelSize::Auto);
+    EXPECT_EQ(c.size, WheelSize::Medium);
     EXPECT_EQ(c.style, Style::Solid);
+    // A saved Auto is still read as Auto.
+    a.size = WheelSize::Auto;
+    SaveAppearance(a, ini);
+    EXPECT_EQ(LoadAppearance(ini).size, WheelSize::Auto);
 }
 
 // ---- The dragged item's picture over the wheel --------------------------------------------------

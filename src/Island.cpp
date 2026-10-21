@@ -129,7 +129,7 @@ namespace sd
     {
         m_monitor = monitor;
         // The tray's Size setting and the monitor's DPI and height, as for the wheel, then larger,
-        // then the Top panel size: as much of it as fits this monitor (never less than at 100%).
+        // then the Top panel size: as much of it as fits this monitor (never cut below 100%).
         MONITORINFO mi{ sizeof(mi) };
         GetMonitorInfoW(monitor, &mi);
         const float wheel = ScaleFor(monitor, m_appearance.size);

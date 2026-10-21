@@ -26,7 +26,7 @@ namespace sd::panel
                            static_cast<float>(namesDip.size()) * (2.f * kTabPadMinDip + kIconDip + kIconGapMinDip);
         const float across = workWidth / (tabs + 2.f * kInsetDip + 2.f * kScreenRoomDip);
         const float down = workHeight / 2.f / (kTopGapDip + kMaxHeightDip + kPadDip);
-        return std::max(base, std::min({ scale, across, down }));
+        return std::min(scale, std::max(base, std::min(across, down)));
     }
 
     Switcher FitSwitcher(const std::vector<float>& names, float hint, float scale, float available)

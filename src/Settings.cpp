@@ -120,13 +120,13 @@ namespace sd
     Appearance LoadAppearance(const std::wstring& path)
     {
         wchar_t size[16]{}, style[16]{};
-        GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
+        GetPrivateProfileStringW(L"Appearance", L"Size", L"medium", size, ARRAYSIZE(size), path.c_str());
         GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
         Appearance a;
-        if (EqualsNoCase(size, L"small"))
+        if (EqualsNoCase(size, L"auto"))
+            a.size = WheelSize::Auto;
+        else if (EqualsNoCase(size, L"small"))
             a.size = WheelSize::Small;
-        else if (EqualsNoCase(size, L"medium"))
-            a.size = WheelSize::Medium;
         else if (EqualsNoCase(size, L"large"))
             a.size = WheelSize::Large;
         a.style = EqualsNoCase(style, L"glass") ? Style::Glass : Style::Solid;
@@ -211,8 +211,9 @@ namespace sd
         command.resize(GetPrivateProfileStringW(L"FileActions", L"TerminalCommand", L"", command.data(), static_cast<DWORD>(command.size()),
                                                 path.c_str()));
         p.terminalCommand = std::move(command);
-        const int size = static_cast<int>(GetPrivateProfileIntW(L"Appearance", L"PanelSize", panel::kSizeMinPercent, path.c_str()));
-        p.panelSize = panel::SizePercent(size);
+        // Text that is not a number reads as 0, and 0 or less as the default rather than the smallest size.
+        const int size = static_cast<int>(GetPrivateProfileIntW(L"Appearance", L"PanelSize", panel::kSizeDefaultPercent, path.c_str()));
+        p.panelSize = size > 0 ? panel::SizePercent(size) : panel::kSizeDefaultPercent;
         if (p.panelSize != size)
             log::Warn(L"settings: [Appearance] PanelSize={} is not {} to {} in steps of {}; using {}", size, panel::kSizeMinPercent,
                       panel::kSizeMaxPercent, panel::kSizeStepPercent, p.panelSize);

@@ -41,6 +41,14 @@ namespace sd::pdf
     // Removes folders more than a day old (left behind when the app stopped with a page view open).
     void RemoveOldEditFolders();
 
+    // The files of one edit in `folder`, without the extension: the render the editor opens ("page
+    // <serial>-<n>") or the result (`result`: "edit <serial>-<n>", a .png beside the .pdf).
+    std::wstring EditFileStem(const std::wstring& folder, bool result, unsigned serial, size_t n);
+    // The first serial after `after` that no file in `folder` uses yet. A page view opened again on
+    // the same folder (Back, then More... again) counts afresh, and must not write over the edited
+    // pages its plan still points at (or show an earlier edit's picture for a new one).
+    unsigned FreeEditSerial(const std::wstring& folder, unsigned after);
+
     // The editor for `pictures` (UI thread; the window that shows it lives in the app).
     std::unique_ptr<canvas::ICanvasTool> MakePageTool(PageTool tool, const std::vector<std::wstring>& pictures);
 
