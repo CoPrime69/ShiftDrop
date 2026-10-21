@@ -1,29 +1,22 @@
-#include "pdf/EditorWindow.h"
+#include "EditorFrame.h"
 #include "Brand.h"
-#include "Log.h"
-#include "Theme.h"
 #include "resource.h"
 
-#include <dwmapi.h>
+#include <shellscalingapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
 
-namespace sd::pdf
+namespace sd
 {
     namespace
     {
-        constexpr wchar_t kClass[] = L"" SD_NAME L".PdfEditor";
-
-        D2D1_COLOR_F Rgb(uint32_t rgb, float alpha = 1.f)
-        {
-            return D2D1::ColorF(((rgb >> 16) & 0xFF) / 255.f, ((rgb >> 8) & 0xFF) / 255.f, (rgb & 0xFF) / 255.f, alpha);
-        }
+        constexpr wchar_t kClass[] = L"" SD_NAME L".Editor";
 
         bool Same(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b) { return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a; }
     }
 
-    EditorWindow::EditorWindow()
+    EditorFrame::EditorFrame(bool opaque) : m_opaque(opaque)
     {
         D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.GetAddressOf());
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.GetAddressOf()));
@@ -35,44 +28,28 @@ namespace sd::pdf
         LoadColors();
     }
 
-    EditorWindow::~EditorWindow() = default;
+    EditorFrame::~EditorFrame() = default;
 
-    void EditorWindow::LoadColors()
+    void EditorFrame::LoadColors()
     {
-        const auto palette = theme::Current(Style::Solid);
-        Colors c;
-        c.dark = palette.dark;
-        c.accent = palette.accent;
-        c.textOnAccent = palette.textOnAccent;
-        if (c.dark)
-        {
-            c.background = Rgb(0x202020);
-            c.surface = Rgb(0x2D2D2D);
-            c.line = Rgb(0xFFFFFF, 0.10f);
-            c.text = Rgb(0xFFFFFF);
-            c.textDim = Rgb(0xFFFFFF, 0.62f);
-            c.selection = theme::WithAlpha(palette.accent, 0.30f);
-            c.hover = Rgb(0xFFFFFF, 0.06f);
-        }
-        else
-        {
-            c.background = Rgb(0xF3F3F3);
-            c.surface = Rgb(0xFFFFFF);
-            c.line = Rgb(0x000000, 0.10f);
-            c.text = Rgb(0x1A1A1A);
-            c.textDim = Rgb(0x000000, 0.60f);
-            c.selection = theme::WithAlpha(palette.accent, 0.22f);
-            c.hover = Rgb(0x000000, 0.04f);
-        }
-        m_colors = c;
+        m_colors = theme::EditorColors();
         if (m_hwnd)
-        {
-            const BOOL dark = c.dark;
-            DwmSetWindowAttribute(m_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-        }
+            theme::ApplyDarkCaption(m_hwnd, m_colors.dark, theme::ToColorRef(m_colors.window));
     }
 
-    bool EditorWindow::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show)
+    EditorFrame::Monitor EditorFrame::CursorMonitor()
+    {
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        const HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO info{ sizeof(info) };
+        GetMonitorInfoW(monitor, &info);
+        UINT dpiX = 96, dpiY = 96;
+        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
+        return { info.rcWork, dpiX };
+    }
+
+    bool EditorFrame::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show)
     {
         static const bool registered = [] {
             WNDCLASSEXW wc{ sizeof(wc) };
@@ -88,33 +65,33 @@ namespace sd::pdf
             return false;
         m_minDip = { minWidthDip, minHeightDip };
 
-        // Open on the monitor the user is working on (where the drop happened).
-        POINT cursor{};
-        GetCursorPos(&cursor);
-        MONITORINFO monitor{ sizeof(monitor) };
-        GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &monitor);
-        const RECT work = monitor.rcWork;
-        m_hwnd = CreateWindowExW(0, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, work.left + 40, work.top + 40, 400, 300, nullptr, nullptr,
-                                 GetModuleHandleW(nullptr), this);
-        if (!m_hwnd)
-            return false;
-        LoadColors();   // the title bar's dark mode needs the window
-        m_dpi = GetDpiForWindow(m_hwnd);
-        RECT r{ 0, 0, MulDiv(widthDip, static_cast<int>(m_dpi), 96), MulDiv(heightDip, static_cast<int>(m_dpi), 96) };
-        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, m_dpi);
+        // Open on the monitor the user is working on (where the drop happened), centred.
+        const auto monitor = CursorMonitor();
+        const RECT work = monitor.work;
+        const int dpi = static_cast<int>(monitor.dpi);
+        RECT r{ 0, 0, MulDiv(widthDip, dpi, 96), MulDiv(heightDip, dpi, 96) };
+        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW, monitor.dpi);
         const int w = std::min<int>(r.right - r.left, work.right - work.left);
         const int h = std::min<int>(r.bottom - r.top, work.bottom - work.top);
-        SetWindowPos(m_hwnd, nullptr, work.left + (work.right - work.left - w) / 2, work.top + (work.bottom - work.top - h) / 2, w, h,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        // WM_NCCREATE stores the handle in m_hwnd (messages arrive before CreateWindowEx returns).
+        if (!CreateWindowExW(WS_EX_APPWINDOW, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, work.left + (work.right - work.left - w) / 2,
+                             work.top + (work.bottom - work.top - h) / 2, w, h, nullptr, nullptr, GetModuleHandleW(nullptr), this) ||
+            !m_hwnd)
+            return false;
+        m_dpi = GetDpiForWindow(m_hwnd);
+        LoadColors();   // the title bar needs the window
         if (show)
-        {
-            ShowWindow(m_hwnd, SW_SHOWNORMAL);
-            SetForegroundWindow(m_hwnd);   // we are answering the user's drop
-        }
+            Present();
         return true;
     }
 
-    void EditorWindow::Close()
+    void EditorFrame::Present()
+    {
+        ShowWindow(m_hwnd, SW_SHOWNORMAL);
+        SetForegroundWindow(m_hwnd);   // we are answering the user's drop
+    }
+
+    void EditorFrame::Close()
     {
         if (m_hwnd)
         {
@@ -123,25 +100,25 @@ namespace sd::pdf
         }
     }
 
-    D2D1_SIZE_F EditorWindow::ClientDip() const
+    D2D1_SIZE_F EditorFrame::ClientDip() const
     {
         RECT r{};
         GetClientRect(m_hwnd, &r);
         return D2D1::SizeF(static_cast<float>(r.right) / Scale(), static_cast<float>(r.bottom) / Scale());
     }
 
-    D2D1_POINT_2F EditorWindow::DipFromLParam(LPARAM lParam) const
+    D2D1_POINT_2F EditorFrame::DipFromLParam(LPARAM lParam) const
     {
         return D2D1::Point2F(static_cast<float>(GET_X_LPARAM(lParam)) / Scale(), static_cast<float>(GET_Y_LPARAM(lParam)) / Scale());
     }
 
-    void EditorWindow::Invalidate() const
+    void EditorFrame::Invalidate() const
     {
         if (m_hwnd)
             InvalidateRect(m_hwnd, nullptr, FALSE);
     }
 
-    ID2D1SolidColorBrush* EditorWindow::Brush(const D2D1_COLOR_F& color)
+    ID2D1SolidColorBrush* EditorFrame::Brush(const D2D1_COLOR_F& color)
     {
         for (const auto& b : m_brushes)
             if (Same(b.color, color))
@@ -155,7 +132,7 @@ namespace sd::pdf
         return brush.Get();
     }
 
-    IDWriteTextFormat* EditorWindow::TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
+    IDWriteTextFormat* EditorFrame::TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
     {
         for (const auto& f : m_formats)
             if (!f.icon && f.size == sizeDip && f.weight == weight && f.align == align)
@@ -176,7 +153,7 @@ namespace sd::pdf
         return format.Get();
     }
 
-    IDWriteTextFormat* EditorWindow::IconFormat(float sizeDip)
+    IDWriteTextFormat* EditorFrame::IconFormat(float sizeDip)
     {
         for (const auto& f : m_formats)
             if (f.icon && f.size == sizeDip)
@@ -192,14 +169,19 @@ namespace sd::pdf
         return format.Get();
     }
 
-    void EditorWindow::DrawText(std::wstring_view text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color)
+    void EditorFrame::DrawText(std::wstring_view text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color)
     {
         if (format && m_rt && !text.empty())
             if (auto* brush = Brush(color))
                 m_rt->DrawText(text.data(), static_cast<UINT32>(text.size()), format, rect, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
-    void EditorWindow::DrawButtons(ID2D1RenderTarget* rt)
+    float EditorFrame::TextWidth(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight)
+    {
+        return theme::TextWidth(m_dwrite.Get(), text, TextFormat(sizeDip, weight));
+    }
+
+    void EditorFrame::DrawButtons(ID2D1RenderTarget* rt)
     {
         const auto& c = m_colors;
         auto* label = TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -211,27 +193,19 @@ namespace sd::pdf
                 continue;
             const bool hot = b.enabled && static_cast<int>(i) == m_hot;
             const bool pressed = hot && static_cast<int>(i) == m_pressed;
-            D2D1_COLOR_F fill = b.primary ? c.accent : c.surface;
-            if (hot)
-                fill = theme::Mix(fill, c.dark ? D2D1::ColorF(1, 1, 1, 1) : D2D1::ColorF(0, 0, 0, 1), pressed ? 0.16f : 0.08f);
+            D2D1_COLOR_F fill = b.primary ? (pressed ? theme::WithAlpha(c.accent, 0.85f) : hot ? c.accentHover : c.accent)
+                                          : (pressed ? c.controlDown : hot ? c.controlHover : c.control);
             const float alpha = b.enabled ? 1.f : 0.4f;
             const auto rr = D2D1::RoundedRect(b.rect, 4.f, 4.f);
             if (auto* brush = Brush(theme::WithAlpha(fill, alpha)))
                 rt->FillRoundedRectangle(rr, brush);
             if (!b.primary)
-                if (auto* brush = Brush(c.line))
+                if (auto* brush = Brush(c.controlLine))
                     rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(b.rect.left + 0.5f, b.rect.top + 0.5f, b.rect.right - 0.5f, b.rect.bottom - 0.5f), 4.f, 4.f),
                                              brush, 1.f);
-            const D2D1_COLOR_F ink = theme::WithAlpha(b.primary ? c.textOnAccent : c.text, alpha);
+            const D2D1_COLOR_F ink = theme::WithAlpha(b.primary ? c.onAccent : c.text, alpha);
             // Icon and text centred together.
-            float textWidth = 0;
-            Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-            if (label && SUCCEEDED(m_dwrite->CreateTextLayout(b.text.c_str(), static_cast<UINT32>(b.text.size()), label, 1000.f, 40.f, &layout)))
-            {
-                DWRITE_TEXT_METRICS m{};
-                layout->GetMetrics(&m);
-                textWidth = m.widthIncludingTrailingWhitespace;
-            }
+            const float textWidth = theme::TextWidth(m_dwrite.Get(), b.text, label);
             const float iconWidth = b.icon ? 22.f : 0.f;
             const float total = iconWidth + textWidth;
             const float x = (b.rect.left + b.rect.right - total) / 2.f;
@@ -244,7 +218,7 @@ namespace sd::pdf
         }
     }
 
-    int EditorWindow::ButtonAt(D2D1_POINT_2F p) const
+    int EditorFrame::ButtonAt(D2D1_POINT_2F p) const
     {
         for (size_t i = 0; i < m_buttons.size(); ++i)
         {
@@ -255,30 +229,31 @@ namespace sd::pdf
         return -1;
     }
 
-    bool EditorWindow::EnsureTarget()
+    bool EditorFrame::EnsureTarget()
     {
         if (m_rt)
             return true;
         RECT r{};
         GetClientRect(m_hwnd, &r);
         const auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                                                        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+                                                        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, m_opaque ? D2D1_ALPHA_MODE_IGNORE : D2D1_ALPHA_MODE_PREMULTIPLIED),
                                                         static_cast<float>(m_dpi), static_cast<float>(m_dpi));
         const auto hwndProps = D2D1::HwndRenderTargetProperties(m_hwnd, D2D1::SizeU(static_cast<UINT32>(r.right), static_cast<UINT32>(r.bottom)));
         if (FAILED(m_d2d->CreateHwndRenderTarget(props, hwndProps, &m_rt)))
             return false;
-        m_rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        if (!m_opaque)
+            m_rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);   // no ClearType on a transparent target
         ++m_generation;
         return true;
     }
 
-    void EditorWindow::Render()
+    void EditorFrame::Render()
     {
         if (!EnsureTarget())
             return;
         m_rt->BeginDraw();
         m_rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        m_rt->Clear(m_colors.background);
+        m_rt->Clear(m_colors.window);
         Paint(m_rt.Get(), m_rt->GetSize());
         if (m_rt->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
         {
@@ -288,15 +263,15 @@ namespace sd::pdf
         }
     }
 
-    LRESULT CALLBACK EditorWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    LRESULT CALLBACK EditorFrame::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         if (msg == WM_NCCREATE)
         {
-            auto* self = static_cast<EditorWindow*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
+            auto* self = static_cast<EditorFrame*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
             self->m_hwnd = hwnd;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
-        auto* self = reinterpret_cast<EditorWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        auto* self = reinterpret_cast<EditorFrame*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         if (!self)
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         if (msg == WM_NCDESTROY)
@@ -309,7 +284,7 @@ namespace sd::pdf
         return self->Handle(msg, wParam, lParam);
     }
 
-    LRESULT EditorWindow::Handle(UINT msg, WPARAM wParam, LPARAM lParam)
+    LRESULT EditorFrame::Handle(UINT msg, WPARAM wParam, LPARAM lParam)
     {
         switch (msg)
         {
@@ -337,6 +312,7 @@ namespace sd::pdf
             const auto* r = reinterpret_cast<const RECT*>(lParam);
             SetWindowPos(m_hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
             Layout(ClientDip());
+            OnDpiChanged();
             Invalidate();
             return 0;
         }
@@ -348,13 +324,11 @@ namespace sd::pdf
             info->ptMinTrackSize = { r.right - r.left, r.bottom - r.top };
             return 0;
         }
-        case WM_SETTINGCHANGE:
-            if (lParam && wcscmp(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet") == 0)
-            {
-                LoadColors();
-                m_brushes.clear();
-                Invalidate();
-            }
+        case WM_SETTINGCHANGE:   // light or dark ("ImmersiveColorSet")
+        case WM_THEMECHANGED:
+        case WM_DWMCOLORIZATIONCOLORCHANGED:   // the accent colour
+            LoadColors();
+            Invalidate();
             break;
         case WM_MOUSEMOVE:
         {
@@ -413,8 +387,7 @@ namespace sd::pdf
             }
             break;
         case WM_CLOSE:
-            OnClosing();
-            DestroyWindow(m_hwnd);
+            RequestClose();   // may delete this
             return 0;
         default:
             break;

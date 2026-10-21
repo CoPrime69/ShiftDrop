@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Colours, sizes, motion and the frosted-glass snapshot shared by the wheel and the top panel.
@@ -29,6 +30,31 @@ namespace sd::theme
     // Settings > Theme: follow Windows, or always light or dark. Every window that asks Current()
     // follows it: the wheel, the top panel, the shelf, Settings and the editors. UI thread.
     void SetChoice(ThemeChoice choice);
+
+    // The colours of the Direct2D editors (the PDF page view and Merge list, the picture editor, the
+    // video and audio timeline editor), light or dark like everything else that asks Current(), with
+    // the accent adjusted so it reads well on them.
+    struct EditorPalette
+    {
+        bool dark = true;
+        D2D1_COLOR_F window;              // behind everything; the title bar is tinted with it
+        D2D1_COLOR_F panel;               // side panels, lists and grids
+        D2D1_COLOR_F stage, track;        // the picture and the timeline wells
+        D2D1_COLOR_F line, text, textDim, textFaint;
+        D2D1_COLOR_F control, controlHover, controlDown, controlLine;   // buttons and fields
+        D2D1_COLOR_F accent, accentHover, onAccent;
+        D2D1_COLOR_F accentSoft;          // the selection
+        D2D1_COLOR_F danger, dangerSoft, focus, shadow;
+    };
+    EditorPalette EditorColors();
+
+    // The title bar of `hwnd` light or dark; on Windows 11 also filled with `caption` (left as
+    // Windows draws it by default).
+    void ApplyDarkCaption(HWND hwnd, bool dark, COLORREF caption = CLR_INVALID);
+    COLORREF ToColorRef(const D2D1_COLOR_F& c);
+
+    // How wide `text` is in `format` (with `typography`, such as tabular figures, if given), in DIPs.
+    float TextWidth(IDWriteFactory* dwrite, std::wstring_view text, IDWriteTextFormat* format, IDWriteTypography* typography = nullptr);
 
     // The GDI colours of the windows built from standard controls (Settings, History, Rename, the
     // inspector), light or dark like everything else that asks Current(). `lightBackground` is the

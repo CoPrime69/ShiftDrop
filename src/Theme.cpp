@@ -149,6 +149,86 @@ namespace sd::theme
         return p;
     }
 
+    EditorPalette EditorColors()
+    {
+        const auto t = Current(Style::Solid);
+        const auto luminance = [](const D2D1_COLOR_F& c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; };
+        const auto lighter = [](const D2D1_COLOR_F& c, float by) { return Mix(c, D2D1::ColorF(1, 1, 1, 1), by); };
+        EditorPalette c{};
+        c.dark = t.dark;
+        if (c.dark)
+        {
+            c.window = Rgba(0x202023, 1.f);
+            c.panel = Rgba(0x28282C, 1.f);
+            c.stage = Rgba(0x141416, 1.f);
+            c.track = Rgba(0x18181B, 1.f);
+            c.line = Rgba(0xFFFFFF, 0.08f);
+            c.text = Rgba(0xF3F3F5, 1.f);
+            c.textDim = Rgba(0xF3F3F5, 0.66f);
+            c.textFaint = Rgba(0xF3F3F5, 0.38f);
+            c.control = Rgba(0x36363C, 1.f);
+            c.controlHover = Rgba(0x404047, 1.f);
+            c.controlDown = Rgba(0x2E2E33, 1.f);
+            c.controlLine = Rgba(0xFFFFFF, 0.07f);
+            // Windows draws accent fills lighter in dark mode, with dark text when they get bright.
+            c.accent = lighter(t.accent, 0.22f);
+            c.accentHover = lighter(t.accent, 0.34f);
+            c.danger = Rgba(0xFF7A7A, 1.f);
+            c.shadow = Rgba(0x000000, 0.5f);
+        }
+        else
+        {
+            c.window = Rgba(0xF3F3F5, 1.f);
+            c.panel = Rgba(0xFBFBFC, 1.f);
+            c.stage = Rgba(0xE2E2E7, 1.f);
+            c.track = Rgba(0xE9E9ED, 1.f);
+            c.line = Rgba(0x000000, 0.09f);
+            c.text = Rgba(0x1A1A1E, 1.f);
+            c.textDim = Rgba(0x1A1A1E, 0.66f);
+            c.textFaint = Rgba(0x1A1A1E, 0.40f);
+            c.control = Rgba(0xFFFFFF, 1.f);
+            c.controlHover = Rgba(0xF5F5F7, 1.f);
+            c.controlDown = Rgba(0xEBEBEF, 1.f);
+            c.controlLine = Rgba(0x000000, 0.12f);
+            c.accent = luminance(t.accent) > 0.55f ? Mix(t.accent, D2D1::ColorF(0, 0, 0, 1), 0.3f) : t.accent;
+            c.accentHover = lighter(c.accent, 0.12f);
+            c.danger = Rgba(0xC42B1C, 1.f);
+            c.shadow = Rgba(0x000000, 0.18f);
+        }
+        c.onAccent = luminance(c.accent) > 0.6f ? Rgba(0x111114, 1.f) : Rgba(0xFFFFFF, 1.f);
+        c.accentSoft = WithAlpha(c.accent, c.dark ? 0.22f : 0.16f);
+        c.dangerSoft = WithAlpha(c.danger, 0.24f);
+        c.focus = c.text;
+        return c;
+    }
+
+    COLORREF ToColorRef(const D2D1_COLOR_F& c)
+    {
+        return RGB(static_cast<int>(c.r * 255), static_cast<int>(c.g * 255), static_cast<int>(c.b * 255));
+    }
+
+    void ApplyDarkCaption(HWND hwnd, bool dark, COLORREF caption)
+    {
+        const BOOL on = dark;
+        DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &on, sizeof(on));
+        if (caption != CLR_INVALID)
+            DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR, Windows 11 */, &caption, sizeof(caption));
+    }
+
+    float TextWidth(IDWriteFactory* dwrite, std::wstring_view text, IDWriteTextFormat* format, IDWriteTypography* typography)
+    {
+        ComPtr<IDWriteTextLayout> layout;
+        DWRITE_TEXT_METRICS metrics{};
+        if (text.empty() || !dwrite || !format ||
+            FAILED(dwrite->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), format, 10000.f, 100.f, &layout)))
+            return 0.f;
+        if (typography)
+            layout->SetTypography(typography, { 0, static_cast<UINT32>(text.size()) });
+        if (FAILED(layout->GetMetrics(&metrics)))
+            return 0.f;
+        return metrics.widthIncludingTrailingWhitespace;
+    }
+
     DialogColors Dialog(int lightBackground)
     {
         DialogColors c;

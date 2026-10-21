@@ -1,4 +1,5 @@
 #pragma once
+#include "Theme.h"
 #include "mediaeditor/EditorLayout.h"
 
 #include <windows.h>
@@ -10,33 +11,26 @@
 #include <string>
 #include <vector>
 
-// The editor's look: colours that follow the Windows light/dark setting and accent, text styles, and
-// a handful of controls drawn with Direct2D (buttons, segmented choices, toggles, sliders, text fields,
+// The timeline editor's control kit, drawn with Direct2D in the editor palette (theme::EditorColors):
+// text styles and a handful of controls (buttons, segmented choices, toggles, sliders, text fields,
 // list rows). The window lays the controls out each time something changes and routes input to them.
 namespace sd::mediatools::ui
 {
-    struct Colors
-    {
-        bool dark = true;
-        D2D1_COLOR_F window, panel, stage, track, line, text, textDim, textFaint;
-        D2D1_COLOR_F control, controlHover, controlDown, controlLine;
-        D2D1_COLOR_F accent, accentHover, onAccent, accentSoft;
-        D2D1_COLOR_F danger, dangerSoft, focus, shadow;
-    };
-    Colors CurrentColors();
-    D2D1_COLOR_F Alpha(D2D1_COLOR_F c, float a);
     D2D1_RECT_F ToD2D(const RectF& r);
 
     enum class Font { Title, Body, BodyStrong, Small, Caption, Icon, IconSmall, Number, NumberLarge };
 
-    // Text formats, brushes and drawing helpers for one render target.
+    // Text styles, a brush and drawing helpers for one render target.
     class Painter
     {
     public:
-        bool Init(IDWriteFactory* dwrite);
-        void Begin(ID2D1RenderTarget* rt, const Colors& colors);
+        // The window's text formats (EditorFrame's cache): one-line, vertically centred, trimmed.
+        using FormatFn = std::function<IDWriteTextFormat*(float sizeDip, DWRITE_FONT_WEIGHT weight, bool icon)>;
+        bool Init(IDWriteFactory* dwrite, const FormatFn& format);
+        // Each paint; `device` is the target's DeviceGeneration (the brush is remade for a new one).
+        void Begin(ID2D1RenderTarget* rt, const theme::EditorPalette& colors, unsigned device);
         ID2D1RenderTarget* Rt() const { return m_rt; }
-        const Colors& C() const { return m_c; }
+        const theme::EditorPalette& C() const { return m_c; }
 
         ID2D1SolidColorBrush* Brush(const D2D1_COLOR_F& color);
         void Fill(const RectF& r, const D2D1_COLOR_F& color, float radius = 0);
@@ -58,7 +52,8 @@ namespace sd::mediatools::ui
 
         IDWriteFactory* m_dwrite = nullptr;
         ID2D1RenderTarget* m_rt = nullptr;
-        Colors m_c{};
+        unsigned m_device = 0;
+        theme::EditorPalette m_c{};
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_formats[9];
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_brush;
         Microsoft::WRL::ComPtr<IDWriteTypography> m_tabular;

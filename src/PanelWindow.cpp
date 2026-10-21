@@ -53,13 +53,7 @@ namespace sd
 
     float PanelWindow::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
     {
-        ComPtr<IDWriteTextLayout> layout;
-        DWRITE_TEXT_METRICS metrics{};
-        if (text.empty() || !format ||
-            FAILED(m_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, 10000.f, 100.f, &layout)) ||
-            FAILED(layout->GetMetrics(&metrics)))
-            return 0.f;
-        return std::ceil(metrics.widthIncludingTrailingWhitespace);
+        return std::ceil(theme::TextWidth(m_dwrite.Get(), text, format));
     }
 
     ComPtr<ID2D1SolidColorBrush> PanelWindow::Brush(const D2D1_COLOR_F& color, float alpha)

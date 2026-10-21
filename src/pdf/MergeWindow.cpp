@@ -5,7 +5,7 @@
 #include "Log.h"
 #include "Theme.h"
 #include "UiThread.h"
-#include "pdf/EditorWindow.h"
+#include "EditorFrame.h"
 #include "pdf/OrganizeWindow.h"
 #include "pdf/PageEdits.h"
 #include "pdf/PdfDoc.h"
@@ -47,7 +47,7 @@ namespace sd::pdf
             long long pages = -2;
         };
 
-        class MergeWindow final : public EditorWindow
+        class MergeWindow final : public EditorFrame
         {
         public:
             MergeWindow(const std::vector<std::wstring>& files, bool edit, Done done) : m_files(files), m_edit(edit), m_done(std::move(done))
@@ -322,7 +322,7 @@ namespace sd::pdf
                 DrawText(hint, TextFormat(12.f), D2D1::RectF(kMargin, 32.f, size.width - kMargin, 50.f), notice ? c.text : c.textDim);
 
                 const auto list = ListRect(size);
-                if (auto* b = Brush(c.surface))
+                if (auto* b = Brush(c.panel))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(list, 6.f, 6.f), b);
                 rt->PushAxisAlignedClip(list, D2D1_ANTIALIAS_MODE_ALIASED);
                 const auto [first, end] = m_scroll.Visible(m_items.size(), list.bottom - list.top);
@@ -332,7 +332,7 @@ namespace sd::pdf
                     const auto row = D2D1::RectF(list.left + 4.f, top + 2.f, list.right - 4.f, top + kRowH - 2.f);
                     const bool dragged = m_drag.dragging && i == m_focus;
                     if (i == m_focus)
-                        if (auto* b = Brush(dragged ? theme::WithAlpha(c.selection, 0.5f) : c.selection))
+                        if (auto* b = Brush(dragged ? theme::WithAlpha(c.accentSoft, 0.5f) : c.accentSoft))
                             rt->FillRoundedRectangle(D2D1::RoundedRect(row, 4.f, 4.f), b);
                     const auto& item = m_items[i];
                     DrawText(std::format(L"{}", i + 1), TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
