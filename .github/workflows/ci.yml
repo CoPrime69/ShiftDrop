@@ -72,18 +72,27 @@ jobs:
           github-token: ${{ github.token }}
           path: reused
 
+      # A wildcard upload path keeps the folders after the wildcard, so flatten first: the release
+      # job expects the installer at the top of the artifact, as a full build uploads it.
+      - name: Flatten the reused files
+        if: steps.find.outputs.run-id != ''
+        run: |
+          mkdir -p flat/setup flat/exe
+          cp reused/ShiftDrop-Setup-*/*.exe flat/setup/
+          cp reused/ShiftDrop-[0-9a-f]*/ShiftDrop.exe flat/exe/
+
       - uses: actions/upload-artifact@v4
         if: steps.find.outputs.run-id != ''
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
-          path: reused/ShiftDrop-Setup-*/*.exe
+          path: flat/setup
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: steps.find.outputs.run-id != ''
         with:
           name: ShiftDrop-${{ github.sha }}
-          path: reused/ShiftDrop-[0-9a-f]*/ShiftDrop.exe
+          path: flat/exe
           if-no-files-found: error
 
       # Our ffmpeg build and its source tarball, for the release (absent when that run used BtbN's).
