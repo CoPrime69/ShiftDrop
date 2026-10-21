@@ -60,7 +60,8 @@ namespace sd::preview
     std::wstring MetadataLoss(const MetadataFacts& facts);
 
     // The first free output name, as StagedOutput will pick it: "photo (converted).webp", then
-    // "photo (converted 2).webp"... Looks at the disk.
+    // "photo (converted 2).webp"... Looks at the disk. In the Subfolder naming style the name starts
+    // with "ShiftDrop\".
     std::wstring PredictOutputName(const std::wstring& source, const std::wstring& suffix, const std::wstring& extension);
 
     // Media: the bitrates in a planned ffmpeg command line (Media.h's OutputArgs / CompressArgs),

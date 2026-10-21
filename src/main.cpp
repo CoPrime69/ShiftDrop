@@ -8,7 +8,7 @@
 //                time (each in its own ffmpeg process, see Ffmpeg.h)
 //   audio workers JobQueue threads for sound-only ffmpeg runs, which use one core each, so several
 //                files convert at once
-//   shell worker one STA thread for IFileOperation work (Move to…)
+//   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
 #include "Brand.h"
 #include "DropTarget.h"
@@ -42,7 +42,9 @@
 #include "Features.h"
 #include "SettingsWindow.h"
 #include "ocr/Ocr.h"
+#include "rename/RenameWindow.h"
 #include "shelf/ShelfWindow.h"
+#include "toast/Toasts.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -70,7 +72,7 @@ namespace sd
         constexpr size_t kMaxSlices = 60;            // two rings hold 16; past that the wheel pages (keyboard/WheelLayout.h)
 
         // What a finished batch is called in its notification.
-        enum class BatchKind { Convert, Tools, Duplicate, Move };
+        enum class BatchKind { Convert, Tools, Duplicate, Move, Rename };
 
         struct FileOutcome
         {
@@ -200,6 +202,7 @@ namespace sd
             if (a == "file.copy_path") return { 0xE71B };          // Link
             if (a == "file.terminal") return { 0xE756 };           // CommandPrompt
             if (a == "file.duplicate") return { 0xE8A5 };          // Document
+            if (a == "file.rename") return { 0xE8AC };             // Rename
             return { 0xE9F5 };                                     // Processing (a generic recipe)
         }
 
@@ -232,6 +235,23 @@ namespace sd
             }
             SHOpenFolderAndSelectItems(folderPidl.get(), static_cast<UINT>(children.size()), children.data(), 0);
         }
+
+        // A click on a finished batch's toast (Toasts.h): show the outputs, or open the one output.
+        // Paths that are gone by now (moved, undone) are left out; with none left, their folder opens.
+        void OnToastClick(const toast::Activation& click)
+        {
+            std::vector<std::wstring> present;
+            for (const auto& p : click.paths)
+                if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES)
+                    present.push_back(p);
+            if (click.verb == toast::Verb::Open && !present.empty())
+                ShellExecuteW(nullptr, nullptr, present.front().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            else if (!present.empty())
+                RevealInExplorer(present);
+            else if (const auto folder = std::filesystem::path(click.paths.front()).parent_path().wstring();
+                     GetFileAttributesW(folder.c_str()) != INVALID_FILE_ATTRIBUTES)
+                ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        }
     }
 
     class App
@@ -246,6 +266,8 @@ namespace sd
         bool Init()
         {
             m_settings = LoadSettings();
+            m_preferences = LoadPreferences();
+            ApplyPreferences();
             startup::ApplyAtLaunch();
             m_icon.reset(static_cast<HICON>(LoadImageW(m_instance, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
                                                        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR)));
@@ -338,11 +360,20 @@ namespace sd
             if (!m_overlay->Create())
                 return false;
             m_overlay->SetAppearance(m_appearance);
-            m_settingsWindow = std::make_unique<SettingsWindow>(m_instance, [this](const Features& f) { ApplyFeatures(f); });
+            m_settingsWindow = std::make_unique<SettingsWindow>(
+                m_instance, [this](const Features& f) { ApplyFeatures(f); },
+                [this](const Preferences& p) {
+                    m_preferences = p;
+                    SavePreferences(m_preferences);
+                    ApplyPreferences();
+                });
+            m_renameWindow = std::make_unique<RenameWindow>(m_instance);
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
             m_tray.Add(m_hwnd.get(), m_icon.get(), IdleTip());
+            // Real toasts need the installer's Start menu shortcut; without it, balloons as before.
+            m_toasts = toast::Start(OnToastClick);
 
             // M4: the predicted-output card, the inspector window, keyboard picking and the wheel on
             // Explorer's selection. None of them is needed for the drag gesture, so a failure only logs.
@@ -405,6 +436,8 @@ namespace sd
                 if (m_historyWindow && m_historyWindow->PreTranslate(m))
                     continue;
                 if (m_settingsWindow && m_settingsWindow->PreTranslate(m))
+                    continue;
+                if (m_renameWindow && m_renameWindow->PreTranslate(m))
                     continue;
                 TranslateMessage(&m);
                 DispatchMessageW(&m);
@@ -504,6 +537,7 @@ namespace sd
                 m_preview.reset();     // joins the prediction worker
                 m_shelf.reset();       // revokes its drop target; OLE is still initialised
                 m_overlay.reset();
+                toast::Stop();
                 m_tray.Remove();
                 m_hwnd.release();   // the window is being destroyed by the system right now
                 PostQuitMessage(0);
@@ -579,7 +613,7 @@ namespace sd
                 break;
             case IDM_SETTINGS:
                 if (m_settingsWindow)
-                    m_settingsWindow->Show(BuildSettingsTree(), m_features);
+                    m_settingsWindow->Show(BuildSettingsTree(), m_features, m_preferences);
                 break;
             case IDM_SHOW_SHELF:
                 if (m_shelf)
@@ -922,6 +956,24 @@ namespace sd
                 m_keyboard->SetRingKeys(SectionKeys());
         }
 
+        // The Settings window's other choices: the theme takes effect the next time a window opens,
+        // output names with the next output, the terminal with the next Terminal slice.
+        void ApplyPreferences()
+        {
+            theme::SetChoice(m_preferences.theme);
+            SetOutputNaming(m_preferences.naming);
+            SetTerminalChoice(m_preferences.terminal, m_preferences.terminalCommand);
+        }
+
+        // Where outputs went, for the result's second line: "next to the originals", "to Desktop".
+        std::wstring SavedWhere(const std::wstring& savedTo) const
+        {
+            const bool subfolder = m_preferences.naming == OutputNaming::Subfolder;
+            if (savedTo.empty())
+                return subfolder ? std::format(L"in a \u201c{}\u201d folder next to the originals", kOutputSubfolder) : L"next to the originals";
+            return subfolder ? std::format(L"to {}\\{}", FolderName(savedTo), kOutputSubfolder) : std::format(L"to {}", FolderName(savedTo));
+        }
+
         // Every slice, by section and by the kind of file it is for, for the Settings window.
         SettingsTree BuildSettingsTree() const
         {
@@ -1143,6 +1195,12 @@ namespace sd
                     StartMove(*recipe, std::move(drop.files), drop.virtualDrop != nullptr);
                     return;
                 }
+                if (action == "file.rename")
+                {
+                    m_island->HideSwitcher();   // the Rename window comes first
+                    StartRename(*recipe, std::move(drop.files));
+                    return;
+                }
                 if (action != "file.duplicate")
                 {
                     // Copy, Copy path, Terminal: instant, nothing written to disk, so no history.
@@ -1314,6 +1372,35 @@ namespace sd
             });
         }
 
+        // The Rename window asks for the names; they are then given on the shell thread, as one undoable
+        // history run.
+        void StartRename(const Recipe& recipe, std::vector<std::wstring> files)
+        {
+            m_renameWindow->Show(std::move(files), [this, recipe](std::vector<Rename> renames) {
+                const uint64_t token = m_islandBatch = m_nextBatch++;
+                m_island->ShowProgress(std::format(L"Renaming {}\u2026", Count(renames.size(), L"item")), renames.size());
+                m_shellJobs->Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token](std::stop_token) {
+                    int64_t runId = 0;
+                    const auto outcomes = RenameItems(recipe, renames, history, runId);
+                    auto done = std::make_unique<BatchResult>();
+                    done->kind = BatchKind::Rename;
+                    done->label = recipe.label;
+                    done->runId = runId;
+                    done->token = token;
+                    for (const auto& o : outcomes)
+                    {
+                        ItemResult r;
+                        r.ok = o.ok;
+                        r.skipped = o.skipped;
+                        r.output = o.destination;
+                        r.error = o.error;
+                        done->files.push_back(FileOutcome{ o.source, std::move(r) });
+                    }
+                    PostBatch(notify, std::move(done));
+                });
+            });
+        }
+
         void OnBatchDone(std::unique_ptr<BatchResult> batch)
         {
             m_tray.SetTip(IdleTip());
@@ -1358,6 +1445,9 @@ namespace sd
                 title = all ? std::format(L"Moved {} to {}", Count(ok, L"item"), batch->label)
                             : std::format(L"Moved {} of {} to {}", ok, total, batch->label);
                 break;
+            case BatchKind::Rename:
+                title = all ? std::format(L"Renamed {}", Count(ok, L"item")) : std::format(L"Renamed {} of {}", ok, total);
+                break;
             }
             // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
             if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
@@ -1375,20 +1465,17 @@ namespace sd
                             break;
                         }
                 }
-                else if (batch->kind == BatchKind::Move)
+                else if (batch->kind == BatchKind::Move || batch->kind == BatchKind::Rename)
                     sub = L"Undo from History in the tray menu";
                 else if (!outputs.empty())
-                    sub = batch->savedTo.empty() ? std::wstring(L"Saved next to the originals \u00b7 Undo from History")
-                                                 : std::format(L"Saved to {} \u00b7 Undo from History", FolderName(batch->savedTo));
+                    sub = std::format(L"Saved {} \u00b7 Undo from History", SavedWhere(batch->savedTo));
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
                 if (batch->cancelled)
                 {
                     // Asked for, so not a failure: say what is left on disk.
                     outcome = Island::Outcome::Partial;
                     title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
-                    sub = ok == 0                  ? std::wstring(L"Nothing was saved")
-                          : batch->savedTo.empty() ? std::wstring(L"Finished files are saved next to the originals")
-                                                   : std::format(L"Finished files are saved to {}", FolderName(batch->savedTo));
+                    sub = ok == 0 ? std::wstring(L"Nothing was saved") : L"Finished files are saved " + SavedWhere(batch->savedTo);
                 }
                 // Outputs can be carried on from the panel: dragged into an app, floated, copied.
                 const bool carry = m_shelf && !outputs.empty();
@@ -1396,10 +1483,12 @@ namespace sd
             }
             else
             {
-                // A later job owns the panel; this one reports the old way.
+                // A later job owns the panel: this one says so in a toast (with Open folder and Open),
+                // or a balloon where toasts are not available.
                 if (ok > 0 && m_history)
                     details += L"Undo: tray menu > History";
-                m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
+                if (!m_toasts || !toast::Show(toast::Content{ title, details, outputs }))
+                    m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
             }
             log::Info(L"batch (run {}): {} ok, {} skipped, {} failed", batch->runId, ok, skipped, failed);
             if (m_historyWindow)
@@ -1457,6 +1546,7 @@ namespace sd
         HINSTANCE m_instance;
         bool m_autostart;   // launched by the Run key at login
         Settings m_settings;
+        Preferences m_preferences;           // the Settings window's choices besides the slices
         wil::unique_hicon m_icon;
         wil::unique_hwnd m_hwnd;
         UINT m_taskbarCreated = 0;
@@ -1477,6 +1567,7 @@ namespace sd
         Features m_features;                 // what Settings turned off
         std::vector<Ring> m_sections;        // the sections on the wheel, in order (BuildRings)
         std::unique_ptr<SettingsWindow> m_settingsWindow;
+        std::unique_ptr<RenameWindow> m_renameWindow;
         std::vector<ocr::Language> m_ocrLanguages;   // as the tray menu last listed them
         std::unique_ptr<Shelf> m_shelf;      // after the island: results hand it their outputs
         uint64_t m_nextBatch = 1;
@@ -1490,6 +1581,7 @@ namespace sd
         bool m_digitDown[kDigitKeys]{};       // the same for the section number keys   // wheel keys' state at the last poll, to see fresh presses
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
+        bool m_toasts = false;               // toast::Start succeeded
         POINT m_watchdogPt{};
     };
 }
@@ -1548,9 +1640,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         {
             sd::startup::Disable();
             sd::shellverb::Unregister();
+            sd::toast::Unregister();
             sd::sandbox::RemoveProfile();   // the sandbox's AppContainer profile (S6)
         }
         return quit ? 0 : 1;
+    }
+    // A click on a toast after ShiftDrop quit: COM starts this exe to take it, and nothing else runs.
+    if (sd::HasArg(sd::toast::kActivatedArg) || sd::HasArg(L"-Embedding"))
+    {
+        if (FAILED(OleInitialize(nullptr)))
+            return 1;
+        auto oleUninit = wil::scope_exit([] { OleUninitialize(); });
+        sd::log::Init();
+        return sd::toast::ServeActivation(sd::OnToastClick);
     }
     // "--wheel <paths>" from Explorer's right-click entry: one process per selected item.
     auto wheelPaths = sd::wheelrequest::WheelPaths(sd::wheelrequest::CommandLineArgs());
