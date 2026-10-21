@@ -158,6 +158,7 @@ namespace sd::mediatools
         void PaintWaveform(ui::Painter& p);
         void PaintTrackOverlay(ui::Painter& p);
         void PaintFooter(ui::Painter& p);
+        void DrawControl(ui::Painter& p, const ui::Control& c, const ui::DrawState& s);
         ID2D1Bitmap* BitmapOf(Picture& picture);
         void DrawCover(ui::Painter& p, ID2D1Bitmap* bitmap, const RectF& slot, float opacity = 1.f);
         void Handles(ui::Painter& p, const RectF& r, bool edges);

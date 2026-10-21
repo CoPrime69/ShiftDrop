@@ -1064,7 +1064,7 @@ namespace sd::pdf
                 m_buttons[kPrev].enabled = any && m_focus > 0;
                 m_buttons[kNext].enabled = any && m_focus + 1 < m_plan.size();
                 m_buttons[kBack].enabled = m_buttons[kSave].enabled = any;
-                DrawButtons(rt);
+                DrawButtons();
                 RequestThumbnails();
                 RequestPreview();
             }

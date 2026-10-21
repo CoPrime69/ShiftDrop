@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-// The timeline editor's control kit, drawn with Direct2D in the editor palette (theme::EditorColors):
-// text styles and a handful of controls (buttons, segmented choices, toggles, sliders, text fields,
-// list rows). The window lays the controls out each time something changes and routes input to them.
+// The timeline editor's text styles and its controls (buttons, segmented choices, toggles, sliders,
+// text fields, list rows), in the editor palette (theme::EditorColors). The window lays the controls
+// out each time something changes, routes input to them and draws them with EditorFrame's kit.
 namespace sd::mediatools::ui
 {
     D2D1_RECT_F ToD2D(const RectF& r);
@@ -90,7 +90,6 @@ namespace sd::mediatools::ui
         const wchar_t* glyph = nullptr;
         bool on = false;         // chosen segment, toggle on, selected row
         bool enabled = true;
-        int segment = 0;         // 0 only, 1 first, 2 middle, 3 last (rounded ends of a segmented group)
         double value = 0;        // slider position 0..1
         std::wstring tip;        // shown in the footer while hovered
         std::function<void()> click;
@@ -107,5 +106,4 @@ namespace sd::mediatools::ui
         bool selectAll = false;
         bool invalid = false;
     };
-    void DrawControl(Painter& p, const Control& c, const DrawState& s);
 }

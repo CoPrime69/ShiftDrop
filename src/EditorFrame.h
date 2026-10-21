@@ -14,8 +14,8 @@
 // The frame every Direct2D editor window shares: the PDF page view and Merge list, the picture editor
 // (canvas) and the video and audio timeline editor. An ordinary resizable top-level window drawn
 // with Direct2D in DIPs at the monitor's DPI, in the editor palette (theme::EditorColors, light or
-// dark like the rest of the app, title bar included), with cached brushes and text formats, and
-// push buttons drawn and hit-tested here. Modeless: each window owns itself and deletes itself when
+// dark like the rest of the app, title bar included), with cached brushes and text formats, the
+// control kit every editor draws its controls with, and push buttons drawn and hit-tested here. Modeless: each window owns itself and deletes itself when
 // it is destroyed. UI thread only.
 namespace sd
 {
@@ -94,9 +94,39 @@ namespace sd
         float TextWidth(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL);
 
         std::vector<Button> m_buttons;
-        void DrawButtons(ID2D1RenderTarget* rt);
+        void DrawButtons();
         // The button under a point, or -1.
         int ButtonAt(D2D1_POINT_2F p) const;
+
+        // ---- Controls: one look for every editor --------------------------------------------------
+        // Push buttons (m_buttons above and the editors' own), tool-bar icons, segmented choices,
+        // switches, sliders and text fields, in the palette, with their hover, pressed, disabled and
+        // keyboard-focus states. The editor lays them out, tracks their state and draws their labels;
+        // labels of disabled controls are drawn at kDisabledAlpha like the controls.
+        struct ControlState
+        {
+            bool enabled = true;
+            bool hot = false;       // under the mouse
+            bool pressed = false;   // the mouse is down on it
+            bool focused = false;   // has the keyboard focus: drawn with a ring
+        };
+        static constexpr float kControlRadius = 4.f;
+        static constexpr float kControlText = 13.f;   // the size of control labels
+        static constexpr float kDisabledAlpha = 0.4f;
+        void DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s);
+        // A glyph alone, filled only while hot, pressed or `on`.
+        void DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s);
+        // One option of a segmented choice.
+        void DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s);
+        // An on/off switch, `r` 40 x 20 DIPs.
+        void DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s);
+        // A slider's bar `track` (4 DIPs high), filled from `from` to `value` (both 0..1), and its thumb.
+        void DrawSlider(const D2D1_RECT_F& track, float value, float from, ControlState s);
+        // A text field's box; the editor draws its text and caret inside.
+        void DrawField(const D2D1_RECT_F& r, bool editing, bool invalid, ControlState s);
+        void DrawFocusRing(const D2D1_RECT_F& r, float radius);
+        void FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius);
+        void StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius);   // inside `r`
 
         static bool Ctrl() { return GetKeyState(VK_CONTROL) < 0; }
         static bool Shift() { return GetKeyState(VK_SHIFT) < 0; }
