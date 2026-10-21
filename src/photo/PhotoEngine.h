@@ -19,6 +19,7 @@ namespace sd::photo
     {
         std::wstring device;   // "GPU", "WARP", "CPU"
         int64_t ms = 0;
+        std::wstring note;     // why the CPU drew it, when the GPU couldn't
     };
 
     // The renders the engine runs, exposed for tests. Each fills `out` at full size.

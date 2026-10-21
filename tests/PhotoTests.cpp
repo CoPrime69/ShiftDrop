@@ -106,6 +106,13 @@ namespace
 
     bool HaveGpu() { return gpu::Device::Get() != nullptr; }
 
+    // Wine's Direct2D has no custom effects; everywhere else they must work.
+    bool UnderWine()
+    {
+        const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        return ntdll && GetProcAddress(ntdll, "wine_get_version");
+    }
+
     HRESULT WriteImage(const std::wstring& path, const Raster& r, const char* exifMake = nullptr)
     {
         const auto& format = canvas::EditedFormatFor(LowerExtension(path));
@@ -749,8 +756,9 @@ TEST(Photo, GpuMatchesTheCpu)
     std::wstring error;
     RenderInfo info;
     ASSERT_HRESULT_SUCCEEDED(RenderAdjusted(in, a, gpuOut, error, &info, true)) << Narrow(error);
-    if (info.device == L"CPU")
-        GTEST_SKIP() << "the device can't run the photo effects (Wine)";
+    if (info.device == L"CPU" && UnderWine())
+        GTEST_SKIP() << "Wine's Direct2D can't run custom effects: " << Narrow(info.note);
+    ASSERT_NE(info.device, L"CPU") << "the photo effects didn't run on the GPU: " << Narrow(info.note);
     ASSERT_HRESULT_SUCCEEDED(RenderAdjusted(in, a, cpuOut, error, nullptr, false));
     EXPECT_LT(MeanAbsDiff(gpuOut, cpuOut), 2.0) << "on " << Narrow(info.device);
 }
@@ -925,7 +933,7 @@ TEST(PhotoTiming, TwelveMegapixels)
     if (HaveGpu())
     {
         ASSERT_HRESULT_SUCCEEDED(RenderAdjusted(big, a, out, error, &info, true));
-        std::printf("[ timing ] edit 12 MP: %lld ms on %s\n", static_cast<long long>(info.ms), Narrow(info.device).c_str());
+        std::printf("[ timing ] edit 12 MP: %lld ms on %s %s\n", static_cast<long long>(info.ms), Narrow(info.device).c_str(), Narrow(info.note).c_str());
         BackgroundParams bp;
         bp.aspect = "4:5";
         if (SUCCEEDED(RenderBackground(big, bp, nullptr, out, error, &info)))
