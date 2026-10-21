@@ -28,6 +28,20 @@
       "cacheVariables": {
         "SHIFTDROP_M0": "ON"
       }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI: x64 Release with Ninja and sccache (from a Developer PowerShell)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "sccache",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
+        "SHIFTDROP_M0": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -40,6 +54,10 @@
       "name": "x64-release-m0",
       "configurePreset": "x64-release-m0",
       "configuration": "Release"
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci"
     }
   ],
   "testPresets": [
@@ -49,6 +67,16 @@
       "configuration": "Release",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 4
       }
     }
   ]
