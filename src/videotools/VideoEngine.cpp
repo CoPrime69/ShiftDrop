@@ -44,19 +44,19 @@ namespace sd::videotools
         const json& ToolRecipes()
         {
             static const json all = json::parse(R"([
-  { "id": "video-trim", "label": "Trim\u2026", "description": "Trim Video: keep a part of it", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
+  { "id": "video-trim", "label": "Trim", "description": "Trim Video: keep a part of it", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
     "steps": [ { "action": "video.trim" } ] },
-  { "id": "video-crop", "label": "Crop\u2026", "description": "Crop Video: exact size, 16:9, 9:16, 1:1, 4:5", "ring": "tools", "suffix": "cropped", "icon": "E7A8",
+  { "id": "video-crop", "label": "Crop", "description": "Crop Video: exact size, 16:9, 9:16, 1:1, 4:5", "ring": "tools", "suffix": "cropped", "icon": "E7A8",
     "steps": [ { "action": "video.crop" } ] },
-  { "id": "video-speed", "label": "Speed\u2026", "description": "Change Video Speed: 0.25x to 4x, pitch kept", "ring": "tools", "suffix": "speed", "icon": "EC49",
+  { "id": "video-speed", "label": "Speed", "description": "Change Video Speed: 0.25x to 4x, pitch kept", "ring": "tools", "suffix": "speed", "icon": "EC49",
     "steps": [ { "action": "video.speed" } ] },
-  { "id": "video-join", "label": "Join\u2026", "description": "Join Videos into one MP4, in the order you choose", "ring": "tools", "suffix": "joined", "icon": "E71B",
+  { "id": "video-join", "label": "Join", "description": "Join Videos into one MP4, in the order you choose", "ring": "tools", "suffix": "joined", "icon": "E71B",
     "steps": [ { "action": "video.join" } ] },
-  { "id": "video-frames", "label": "Frames\u2026", "description": "Save Video Frames as full-size PNGs", "ring": "tools", "suffix": "frames", "icon": "E722",
+  { "id": "video-frames", "label": "Frames", "description": "Save Video Frames as full-size PNGs", "ring": "tools", "suffix": "frames", "icon": "E722",
     "steps": [ { "action": "video.frames" } ] },
-  { "id": "video-split", "label": "Split\u2026", "description": "Split Video at points you pick, or into equal parts", "ring": "tools", "suffix": "parts", "icon": "E8C6",
+  { "id": "video-split", "label": "Split", "description": "Split Video at points you pick, or into equal parts", "ring": "tools", "suffix": "parts", "icon": "E8C6",
     "steps": [ { "action": "video.split" } ] },
-  { "id": "video-redact", "label": "Redact\u2026", "description": "Redact Video: blur or cover areas, each for its own time", "ring": "tools", "suffix": "redacted", "icon": "E72E",
+  { "id": "video-redact", "label": "Redact", "description": "Redact Video: blur or cover areas, each for its own time", "ring": "tools", "suffix": "redacted", "icon": "E72E",
     "steps": [ { "action": "video.redact" } ] }
 ])");
             return all;

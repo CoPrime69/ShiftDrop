@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "Theme.h"
 #include "keyboard/KeyNav.h"
+#include "keyboard/WheelLabels.h"
 #include "keyboard/WheelLayout.h"
 
 #include <windows.h>
@@ -17,6 +18,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -141,6 +143,7 @@ namespace sd
         DWORD OnDragOver(POINT pt, DWORD allowed) override;
         void OnDragLeave() override;
         void OnDrop(const std::vector<std::wstring>& files, POINT pt) override;
+        void OnDragPicture(const RECT* aroundCursor) override;
 
     private:
         enum class Mode { Hidden, Probe, Wheel, Closing };
@@ -183,10 +186,21 @@ namespace sd
         int ViewSliceAt(POINT screen) const override;
 
         bool EnsureTextFormats();
+        // A centred, never-trimmed format of `dip` DIPs (labels at the size FitLabels chose), in the
+        // text font or the icon font.
+        IDWriteTextFormat* SizedFormat(DWRITE_FONT_WEIGHT weight, float dip, bool wrap = false, bool icon = false);
+        std::vector<wheel::FittedLabel> FitShown(const std::vector<WheelSlice>& slices, const wheel::Layout& layout);
+        std::optional<wheel::Rect> PictureRect() const;   // the drag picture over the centre, DIPs from it
+        std::wstring BadgeDetail() const;                 // the highlighted slice's detail, or its reason
+        D2D1_SIZE_F BadgeSize();                          // DIPs
+        void UpdateCentrePlan();
         void Render();
         void DrawScene();
-        void DrawSlices(const std::vector<WheelSlice>& slices, const wheel::Layout& layout, const std::vector<float>& hotT, float alpha, float rotation);
+        void DrawSlices(const std::vector<WheelSlice>& slices, const std::vector<wheel::FittedLabel>& fits, const wheel::Layout& layout,
+                        const std::vector<float>& hotT, float alpha, float rotation);
         void DrawCentre();
+        void DrawCentreLine(const std::wstring& text, const D2D1_RECT_F& line, float alpha);
+        void DrawBadge();
         D2D1_POINT_2F Polar(float radius, float degrees) const;   // 0° = 12 o'clock, clockwise
         Microsoft::WRL::ComPtr<ID2D1Geometry> TileGeometry(size_t count, size_t index, float inner, float outer);
 
@@ -203,6 +217,7 @@ namespace sd
         std::unique_ptr<a11y::WheelElement> m_a11y;   // the wheel as UI Automation sees it
 
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_labelFont, m_formatFont, m_iconFont, m_countFont, m_ringFont, m_detailFont;
+        std::map<int, Microsoft::WRL::ComPtr<IDWriteTextFormat>> m_sizedFonts;   // SizedFormat's, for m_fontScale
 
         // Layout, in window pixels.
         HMONITOR m_monitor = nullptr;
@@ -232,6 +247,7 @@ namespace sd
         WheelContent m_content;       // every slice for m_files on this wheel
         wheel::Layout m_layout, m_prevLayout;
         std::vector<WheelSlice> m_shown, m_prevShown;   // the visible slots (this page, plus "More")
+        std::vector<wheel::FittedLabel> m_fits, m_prevFits;   // their labels as drawn
         bool m_keyHot = false;        // m_hot was picked by key: the mouse takes over only when it moves
         POINT m_keyAnchor{};          // where the cursor was when the key picked it
         bool m_click = false;         // click mode (no drag)
@@ -241,6 +257,12 @@ namespace sd
         std::vector<std::wstring> m_files;
         POINT m_lastPt{};
         theme::Palette m_palette{};
+        // The drag picture (the source's icon or thumbnail), px from the cursor; none without one or in
+        // click mode. Over the centre it would hide the count, which then moves into a badge beside it.
+        std::optional<RECT> m_picture;
+        bool m_badge = false;          // the count is in the badge
+        float m_badgeT = 0.f;          // 0..1, the centre's text fading into the badge
+        D2D1_POINT_2F m_badgeAt{};     // the badge's centre, window px
 
         // Animation: all 0..1. Driven by a ~64 fps timer that stops once everything has settled.
         FrameClock m_frames;

@@ -82,7 +82,7 @@ folder:
 | `StagedOutput`, `OutputPath` | Staging, naming and the no-replace commit |
 | `HistoryStore`, `Hash`, `Undo`, `HistoryWindow` | SQLite history, SHA-256, undo, the History window |
 | `JobQueue` | The worker threads |
-| `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to… |
+| `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to folder |
 | `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
 | `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
@@ -98,7 +98,7 @@ folder:
 | `mediaeditor/`, `videotools/`, `audiotools/` | The timeline editor and the video and audio tools |
 | `docs/`, `sheets/`, `subtitles/`, `officebridge/` | Documents, spreadsheets, subtitles, the Office bridge |
 | `archive/`, `sandbox/` | Archives, the AppContainer launcher and the worker |
-| `rename/`, `toast/` | Rename…, Windows toasts |
+| `rename/`, `toast/` | Rename, Windows toasts |
 
 `tests/` has one GoogleTest file per module (`PdfTests.cpp` for `src/pdf`), plus `TestMain.cpp` and
 shared helpers.
@@ -111,7 +111,7 @@ shared helpers.
 | Pool workers (MTA) | Image recipes, PDF pages and most feature engines. One per logical processor minus one, at most 8 (`JobQueue::PoolThreads`) |
 | Media worker | One thread for video: one ffmpeg run already uses every core, so videos go one at a time |
 | Audio workers | Sound-only ffmpeg runs use one core each, so several run side by side (same count as the pool) |
-| Shell worker (STA) | `IFileOperation` work such as Move to… and Rename… |
+| Shell worker (STA) | `IFileOperation` work such as Move to folder and Rename |
 | Office worker (STA) | Word, Excel and PowerPoint exports through COM, apart from the shell worker so a long export never holds up a move |
 | Shelf worker (STA) | Float shelf thumbnails, missing-file checks, clipboard pictures |
 | Predictor worker | The predicted-output card, so the wheel never waits |
@@ -187,6 +187,12 @@ Up to 8 slices sit on one ring, 9 to 16 on two, and more page through a "More" s
 ([keyboard/WheelLayout.h](../src/keyboard/WheelLayout.h)). The Glass style captures the screen behind
 the wheel when it opens, shrinks it and blurs it. Size and style come from the tray menu.
 
+No label is cut off with "…" ([keyboard/WheelLabels.h](../src/keyboard/WheelLabels.h)). Each is
+measured with DirectWrite and checked against its tile's real shape (both arcs and both straight
+sides, a few DIPs in): one line at full size, else two lines broken at a space, then both a little
+smaller down to a readable minimum. Only then is it shortened ("Under 10 MB" to "≤10 MB", then words
+it shares with other slices), never into something another slice reads.
+
 **The drag picture.** The drag source draws a picture of what is dragged (Explorer: the icon or
 thumbnail and the full name; a browser: the image) in a topmost window of its own. The shell shows it
 only over drop targets that hand their drag events to the drag-image helper (`IDropTargetHelper`)
@@ -197,7 +203,9 @@ wheel. It sets an empty `DROPIMAGE_NOIMAGE` drop description while over the whee
 the top panel and the predicted-output card open after the drag began and are topmost too, so they
 would cover the picture's window: `KeepDragImageOnTop` moves any of ours that are above it to just
 below it (the window's handle is in the drag's data object as "DragWindow"). The mouse pointer is
-never hidden.
+never hidden. Over the centre the picture would hide the count, so the wheel reads where it is
+(`DragImageRect`: its size and the cursor's spot in it, from "DragImageBits") and, while the cursor
+is on the centre, shows the count in a small badge just beside it instead.
 
 **The predicted-output card** ([preview/Predictor.h](../src/preview/Predictor.h)) appears under the
 wheel when a slice is highlighted. On its own worker thread, it encodes small samples of a picture to
@@ -272,7 +280,7 @@ for the whole drop when the engine is a batch engine), on the lane the recipe as
 - **Media recipes** (`media.convert`, `media.compress`) build an ffmpeg command line from the
   probed input in [Media.h](../src/Media.h) and run it (see [The ffmpeg process](#the-ffmpeg-process)).
   Streams the target container can hold are copied, not re-encoded.
-- **File actions** (Copy, Copy path, Terminal, Duplicate, Move to…, Rename…) run on the UI or shell
+- **File actions** (Copy, Copy path, Terminal, Duplicate, Move to folder, Rename) run on the UI or shell
   thread.
 - **Everything else** goes to the feature engine that handles the recipe (see
   [Feature modules](#feature-modules)).
@@ -442,8 +450,8 @@ can read the file. If the database can't be opened, conversions still work, with
 - **Conversions and Duplicate**: every output is hashed again first. If any changed since ShiftDrop
   wrote it, nothing is undone, because deleting it would lose the user's edit. Otherwise the outputs
   go to the Recycle Bin through `IFileOperation`. Nothing is deleted permanently.
-- **Move to…** moves each item back, and is refused if something new sits at an original location.
-- **Rename…** gives each item its old name back, refused if another file has that name now.
+- **Move to folder** moves each item back, and is refused if something new sits at an original location.
+- **Rename** gives each item its old name back, refused if another file has that name now.
 - Outputs the user already deleted are skipped and reported.
 
 The History window (tray menu > History…) lists runs newest first, with Undo and Show files.

@@ -50,7 +50,7 @@ takes a second or two.
 
 ### Tools
 
-- **Images:** Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Crop, and Inspect (every
+- **Images:** Rotate right and left, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Crop, and Inspect (every
   metadata field, searchable).
 - **Photo editors**, with a live preview drawn on the GPU: Edit (light, colour, detail, dehaze,
   clarity, noise, grain), Annotate (arrows, text, shapes, callouts, numbers, magnifiers, pictures,
@@ -75,7 +75,7 @@ shows the size now, and hovering a slice shows the size it will come out at.
 
 ### File actions
 
-Copy, Move to…, Copy path, Terminal (opens in the file's folder), Duplicate, Rename… (new names from
+Copy, Move to folder, Copy path, Terminal (opens in the file's folder), Duplicate, Rename (new names from
 a pattern), Float (a shelf at the screen edge that holds files until you drag them into any app),
 Share (the Windows share sheet), Remove metadata, and Zip (one ZIP of everything dropped).
 

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <map>
 #include <numeric>
+#include <optional>
 
 using namespace sd;
 using namespace sd::test;
@@ -175,10 +176,36 @@ namespace
         DWORD OnDragOver(POINT, DWORD allowed) override { return SafeEffect(allowed); }
         void OnDragLeave() override { ++left; }
         void OnDrop(const std::vector<std::wstring>& f, POINT) override { dropped = f; }
+        void OnDragPicture(const RECT* r) override
+        {
+            pictures += 1;
+            picture = r ? std::optional<RECT>(*r) : std::nullopt;
+        }
 
         std::vector<std::wstring> entered, dropped;
         int left = 0;
+        int pictures = 0;
+        std::optional<RECT> picture;
     };
+
+    // "DragImageBits" as the drag-source helper stores it: an SHDRAGIMAGE (size, the cursor's spot,
+    // the bitmap handle, the colour key), then the pixels.
+    void PutDragImage(FakeData& data, LONG w, LONG h, LONG x, LONG y)
+    {
+        struct
+        {
+            SIZE size;
+            POINT offset;
+            UINT64 bitmap;
+            COLORREF key;
+        } image{ { w, h }, { x, y }, 0, 0 };
+        data.Put(Format(L"DragImageBits"), &image, sizeof(image));
+    }
+
+    bool SameRect(const std::optional<RECT>& r, LONG l, LONG t, LONG right, LONG b)
+    {
+        return r && r->left == l && r->top == t && r->right == right && r->bottom == b;
+    }
 
     // The badge the data object carries (CFSTR_DROPDESCRIPTION), or -1 for none.
     int Badge(FakeData& data, std::wstring* message = nullptr)
@@ -595,6 +622,50 @@ TEST(DragPicture, ReadsTheDragWindow)
     data->Put(format, "x", 1);   // too short
     EXPECT_EQ(DragImageWindow(data.Get()), nullptr);
     EXPECT_EQ(DragImageWindow(nullptr), nullptr);
+}
+
+TEST(DragPicture, ReadsWhereThePictureIs)
+{
+    auto data = Microsoft::WRL::Make<FakeData>();
+    EXPECT_FALSE(DragImageRect(data.Get(), POINT{ 500, 400 }));   // no picture
+    // A 96 x 80 picture held 40 px from its left and 30 from its top: around the cursor.
+    PutDragImage(*data.Get(), 96, 80, 40, 30);
+    EXPECT_TRUE(SameRect(DragImageRect(data.Get(), POINT{ 500, 400 }), -40, -30, 56, 50));
+    // Sizes no picture has, or a cursor off the picture, are not trusted.
+    PutDragImage(*data.Get(), 0, 80, 0, 0);
+    EXPECT_FALSE(DragImageRect(data.Get(), POINT{}));
+    PutDragImage(*data.Get(), 96, 80000, 10, 10);
+    EXPECT_FALSE(DragImageRect(data.Get(), POINT{}));
+    PutDragImage(*data.Get(), 96, 80, 200, 10);
+    EXPECT_FALSE(DragImageRect(data.Get(), POINT{}));
+    data->Put(Format(L"DragImageBits"), "abc", 3);   // too short
+    EXPECT_FALSE(DragImageRect(data.Get(), POINT{}));
+    EXPECT_FALSE(DragImageRect(nullptr, POINT{}));
+}
+
+TEST(DragPicture, TheWheelLearnsWhereThePictureIs)
+{
+    FakeWheel wheel;
+    auto helper = Microsoft::WRL::Make<FakeHelper>();
+    auto target = Microsoft::WRL::Make<DropTarget>(kWheel, &wheel, helper);
+    auto data = FileDrag({ L"C:\\photos\\holiday.jpg" });
+    PutDragImage(*data.Get(), 100, 100, 50, 60);
+    DWORD effect = DROPEFFECT_COPY;
+    target->DragEnter(data.Get(), 0, POINTL{ 300, 200 }, &effect);
+    EXPECT_EQ(wheel.pictures, 1);
+    EXPECT_TRUE(SameRect(wheel.picture, -50, -60, 50, 40));
+    target->DragLeave();
+
+    // No picture (or no helper to show one): the wheel is told so.
+    auto plain = FileDrag({ L"C:\\a.png" });
+    target->DragEnter(plain.Get(), 0, POINTL{ 1, 1 }, &effect);
+    EXPECT_EQ(wheel.pictures, 2);
+    EXPECT_FALSE(wheel.picture);
+    target->DragLeave();
+    auto bare = Microsoft::WRL::Make<DropTarget>(kWheel, &wheel, nullptr);
+    bare->DragEnter(data.Get(), 0, POINTL{ 1, 1 }, &effect);
+    EXPECT_FALSE(wheel.picture);
+    bare->DragLeave();
 }
 
 TEST(DragPicture, OurWindowsGoBelowThePicture)

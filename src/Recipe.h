@@ -42,6 +42,9 @@ namespace sd
         // Compress / Fit to… recipes: their results are for sending somewhere, so they can be carried.
         bool IsCompress() const { return IsMediaCompress() || (!steps.empty() && steps.back().action == "image.compress"); }
         bool IsFileAction() const { return steps.size() == 1 && steps[0].action.starts_with("file."); }
+        // Its wheel slice is its label alone, in bold (format names and media presets say it best);
+        // every other slice has an icon above its label.
+        bool NameOnlySlice() const { return !icon && (IsSingleEncode() || IsMedia() || steps.empty()); }
         // The first step's text param `key` ("format": what a document or office recipe makes), or empty.
         std::string FirstParam(const char* key) const;
     };
