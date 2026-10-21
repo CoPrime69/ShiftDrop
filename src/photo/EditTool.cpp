@@ -96,6 +96,8 @@ namespace sd::photo
             return;
         }
         m_host->RunAsync([this, raster](std::stop_token) -> std::function<void()> {
+            std::wstring error;
+            fx::CompileShaders(error);   // once per process, here rather than on the first preview
             auto haze = std::make_shared<const HazeModel>(AnalyseHaze(*raster));
             return [this, raster, haze] {
                 if (m_photo.raster != raster)

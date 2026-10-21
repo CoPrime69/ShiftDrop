@@ -136,9 +136,8 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
         {
             static Compiled compiled;
             std::call_once(compiled.once, [] {
+                // Windows' own copy only (System32), never one planted next to the app.
                 HMODULE dll = LoadLibraryExW(L"d3dcompiler_47.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-                if (!dll)
-                    dll = LoadLibraryW(L"d3dcompiler_47.dll");
                 const auto compile = dll ? reinterpret_cast<pD3DCompile>(reinterpret_cast<void*>(GetProcAddress(dll, "D3DCompile"))) : nullptr;
                 if (!compile)
                 {
