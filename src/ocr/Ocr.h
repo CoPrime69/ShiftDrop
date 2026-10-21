@@ -30,9 +30,18 @@ namespace sd::ocr
         std::wstring language;            // BCP-47 tag of the recogniser that ran, "en-US"
     };
 
-    // Installed by WinOcr.cpp at startup; both null where Windows OCR is not compiled in (MinGW tests).
+    // An OCR language Windows has installed.
+    struct Language
+    {
+        std::wstring tag;    // BCP-47, "en-US"
+        std::wstring name;   // as Windows names it, "English (United States)"
+    };
+
+    // Installed by WinOcr.cpp at startup; all null where Windows OCR is not compiled in (MinGW tests).
     struct Hooks
     {
+        // The installed OCR languages, in Windows' order. Cheap, may be called on the UI thread.
+        std::vector<Language> (*languages)() = nullptr;
         // Is OCR usable on this PC? `why` explains a "no" (no OCR language installed...). Cheap, may be
         // called on the UI thread.
         bool (*available)(std::wstring* why) = nullptr;
@@ -43,7 +52,13 @@ namespace sd::ocr
     Hooks& Platform();
 
     // Convenience wrappers that say why when OCR is not compiled in.
+    std::vector<Language> Languages();
     bool Available(std::wstring* why);
+
+    // Which language Recognize reads: a tag from Languages(), or empty for automatic (the user's own
+    // languages first). Set from the tray menu; read on worker threads.
+    void SetLanguage(const std::wstring& tag);
+    std::wstring LanguageChoice();
     bool Recognize(const pdf::Bitmap& image, Result& out, std::wstring& error);
 
     // Words in a piece of text: runs of non-space characters that hold a letter or a digit.

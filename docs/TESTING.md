@@ -317,6 +317,16 @@ Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 - [ ] A PDF of scans on **−70%**: `(reduced).pdf` at most 30% of the size; a PDF of mostly text gets as small as it can and the panel says it could not get smaller; one that cannot shrink at all leaves no file
 - [ ] Three files: the centre shows their total size, and hovering shows the total they come out at
 
+### U. Settings and tray entries
+- [ ] Right-click the tray icon: **Settings…**, **History…** and **Show Float shelf** are near the top
+- [ ] **Settings…** opens a window (dark when Windows is dark) with Convert, Tools, Reduce size and File actions, each split by kind of file (Photos, Video, Audio, PDF, Any file…) with a tick on every line
+- [ ] Untick **TIFF** under Convert › Photos: drag a photo, press Shift: TIFF is gone and the other formats share the circle evenly; tick it again: it is back
+- [ ] Untick **Convert › Video**: a video's Convert wheel has no video formats; Photos shows a partly ticked box when only some of its slices are on; clicking a partly ticked line ticks everything under it
+- [ ] Untick the whole **Tools** section: scrolling goes Convert, Reduce size, File actions (no Tools tab in the top panel); unticking the last section left is refused with a note
+- [ ] **Turn everything on** ticks everything again; quitting and starting again keeps your choices (`[Features]` in settings.ini)
+- [ ] **Show Float shelf** with an empty shelf: it opens saying "Drop files here to keep them"; drop a file on it: it stays; Clear hides it
+- [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
+
 ### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
 

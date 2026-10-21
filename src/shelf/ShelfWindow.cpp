@@ -372,6 +372,17 @@ namespace sd
         RequestThumbnails();
     }
 
+    void Shelf::Reveal()
+    {
+        if (!m_hwnd)
+            return;
+        log::Info(L"shelf: shown from the tray ({} item(s))", m_items.size());
+        Show(false);
+        WantOpen(true);
+        if (m_edge != Edge::None)
+            ScheduleFold(kPeekMs);   // a pinned shelf folds back as usual once the pointer is elsewhere
+    }
+
     std::vector<std::wstring> Shelf::PathsOf(const std::vector<size_t>& indices) const
     {
         std::vector<std::wstring> paths;
@@ -1407,6 +1418,8 @@ namespace sd
                 RoundButton(r.remove, kGlyphRemove, m_hover.part == Part::Remove, true, alpha);
             }
         }
+        if (n == 0)
+            Text(L"Drop files here to keep them", m_detailFont.Get(), l.list, c.dim, alpha);
         // Scroll position, when there is more than fits.
         if (const float max = shelf::MaxScroll(m_metrics, n); max > 0.f)
         {
@@ -1444,6 +1457,7 @@ namespace sd
         const size_t selected = m_selection.Count();
         const auto label = !m_note.empty() ? m_note
                            : selected > 0  ? std::format(L"Drag {} selected into an app", selected)
+                           : n == 0        ? std::wstring(L"Nothing on the shelf yet")
                            : n == 1        ? std::wstring(L"Drag it into an app")
                                            : std::format(L"Drag all {} into an app", n);
         const float lx = f.left + 10.f * s + t + static_cast<float>(stack > 0 ? stack - 1 : 0) * 4.f * s + 12.f * s;
@@ -1519,7 +1533,7 @@ namespace sd
         // Content fades in once the panel has mostly unfolded; the tab's fades out first.
         const float contentAlpha = EaseOutCubic(std::clamp((m_open - 0.55f) / 0.45f, 0.f, 1.f));
         const float tabAlpha = std::clamp(1.f - m_open * 2.5f, 0.f, 1.f);
-        if (contentAlpha > 0.f && !m_items.empty())
+        if (contentAlpha > 0.f)
         {
             ComPtr<ID2D1RoundedRectangleGeometry> clip;
             ComPtr<ID2D1Layer> layer;
