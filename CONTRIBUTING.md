@@ -79,6 +79,14 @@ codec, format and filter the argument builders use is listed there, and CI rebui
 
 ## Pull requests
 
+Only the maintainer pushes to this repository. To send a change:
+
+1. Fork the repository on GitHub and clone your fork.
+2. Create a branch from `main` for your change.
+3. Push the branch to your fork and open a pull request against `main` here.
+4. CI runs once the maintainer approves it for your first pull request. The maintainer reviews the
+   change, may ask for edits, and merges it.
+
 - One topic per pull request. A refactor and a feature are two pull requests.
 - CI must be green: build, unit tests, the offline check and the installer smoke test.
 - Add or update unit tests for anything that can run without a person at the mouse.
