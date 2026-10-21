@@ -10,7 +10,7 @@
 // through the normal image converters, so SVG becomes PNG, JPG, WebP, AVIF, PDF and the rest.
 namespace sd::formats
 {
-    inline constexpr uint32_t kSvgDefaultLongSide = 1024;   // for an SVG that states no size
+    inline constexpr uint32_t kSvgDefaultLongSide = 2048;   // for an SVG that states no size
     inline constexpr uint32_t kSvgMaxSide = 16384;          // a stated size larger than this is scaled down
 
     struct SvgSize

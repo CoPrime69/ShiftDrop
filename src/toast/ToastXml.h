@@ -1,11 +1,12 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-// What a finished batch's toast says and what its buttons do, as the XML Windows' toast platform
-// takes (Windows.UI.Notifications). Pure, so it is tested; Toasts.h shows it.
+// When a finished batch gets a toast, what it says and what its buttons do, as the XML Windows'
+// toast platform takes (Windows.UI.Notifications). Pure, so it is tested; Toasts.h shows it.
 namespace sd::toast
 {
     // The AppUserModelID the toasts are shown under, and the COM class Windows starts when one is
@@ -37,6 +38,15 @@ namespace sd::toast
         std::wstring text;                  // a line or two under it
         std::vector<std::wstring> outputs;  // what the buttons act on; none: a toast with no buttons
     };
+    // A batch that runs longer than this may have lost the user's eye, so it gets a toast even when
+    // its own top panel showed the result.
+    inline constexpr std::chrono::seconds kLongJob{ 10 };
+    // Does a finished batch get a toast (a balloon where toasts can't be shown)? When a later batch
+    // owns the top panel, always, as before. When the panel showed this one, only if it took longer
+    // than kLongJob and was not cancelled (the user was there to press the ×). One batch, one answer,
+    // so a batch of many files is one toast.
+    bool ShouldNotify(bool shownInPanel, std::chrono::milliseconds took, bool cancelled);
+
     // The toast: title and text, a click shows the outputs, "Open folder" does the same and "Open"
     // (only for a single output) opens it.
     std::wstring BuildXml(const Content& content);

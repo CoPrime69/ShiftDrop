@@ -344,10 +344,20 @@ namespace sd::pdf
             std::wstring text;
         };
 
+        // An image drawn by Do: the image and the corners of the unit square it fills, on the page.
+        struct RawImage
+        {
+            QPDFObjectHandle image;
+            double x[4] = {}, y[4] = {};
+        };
+
         class Walker : public QPDFObjectHandle::ParserCallbacks
         {
         public:
-            Walker(bool text, std::map<QPDFObjGen, Placement>* placements) : m_text(text), m_placements(placements) {}
+            Walker(bool text, std::map<QPDFObjGen, Placement>* placements, std::vector<RawImage>* draws = nullptr)
+                : m_text(text), m_placements(placements), m_draws(draws)
+            {
+            }
 
             void Run(QPDFPageObjectHelper& page)
             {
@@ -555,6 +565,19 @@ namespace sd::pdf
                         p.width = std::max(p.width, std::hypot(m_gs.ctm.a, m_gs.ctm.b));
                         p.height = std::max(p.height, std::hypot(m_gs.ctm.c, m_gs.ctm.d));
                     }
+                    if (m_draws)
+                    {
+                        RawImage draw;
+                        draw.image = xobject;
+                        const double ux[4] = { 0, 1, 0, 1 }, uy[4] = { 0, 0, 1, 1 };
+                        const Matrix& m = m_gs.ctm;
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            draw.x[i] = ux[i] * m.a + uy[i] * m.c + m.e;
+                            draw.y[i] = ux[i] * m.b + uy[i] * m.d + m.f;
+                        }
+                        m_draws->push_back(std::move(draw));
+                    }
                     return;
                 }
                 if (subtype != "/Form" || m_depth >= 12)
@@ -597,6 +620,7 @@ namespace sd::pdf
 
             bool m_text;
             std::map<QPDFObjGen, Placement>* m_placements;
+            std::vector<RawImage>* m_draws;
             State m_gs;
             std::vector<State> m_stack;
             Matrix m_tm, m_tlm;
@@ -809,9 +833,10 @@ namespace sd::pdf
         return out;
     }
 
-    PageLines ExtractPageLines(QPDFPageObjectHelper& page)
+    PageLines ExtractPageLines(QPDFPageObjectHelper& page, std::vector<DrawnImage>* images)
     {
-        Walker walker(true, nullptr);
+        std::vector<RawImage> draws;
+        Walker walker(true, nullptr, images ? &draws : nullptr);
         walker.Run(page);
         // Which way does most of the text run? Weighted by characters, to the nearest quarter turn.
         size_t votes[4] = {};
@@ -834,6 +859,23 @@ namespace sd::pdf
             t.size = s.size > 0 ? s.size : 10.0;
             t.text = std::move(s.text);
             spans.push_back(std::move(t));
+        }
+        if (images)
+        {
+            for (auto& draw : draws)
+            {
+                DrawnImage d{ std::move(draw.image), 1e300, 1e300, -1e300, -1e300 };
+                for (int i = 0; i < 4; ++i)
+                {
+                    double x = 0, y = 0;
+                    Unrotate(quarter, draw.x[i], draw.y[i], x, y);
+                    d.left = std::min(d.left, x);
+                    d.bottom = std::min(d.bottom, y);
+                    d.right = std::max(d.right, x);
+                    d.top = std::max(d.top, y);
+                }
+                images->push_back(std::move(d));
+            }
         }
         return JoinSpans(spans);
     }

@@ -146,12 +146,12 @@ file is never replaced.
   Office while ShiftDrop runs, restart ShiftDrop.
 - **HEIC** needs Windows' "HEIF Image Extensions" to read and "HEVC Video Extensions" to save, both
   from the Microsoft Store. Without them the HEIC slices are dimmed and say what to install. Edits to
-  a HEIC (Rotate, Crop and so on) are saved as JPG.
+  a HEIC (Rotate, Crop and so on) are saved as HEIC when Windows can save HEIC, and as JPG otherwise.
 - **RAR** files can be extracted and converted to other archive formats, but not created.
 - **Pages** files can be read only when they carry the preview PDF most of them have. ShiftDrop
   can't write Pages files.
-- **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists. Pictures and
-  page layout are not kept. There is no PDF to XLSX or PDF to PPTX.
+- **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists, and the
+  pictures between the paragraphs. Page layout is not kept. There is no PDF to XLSX or PDF to PPTX.
 - **No background removal**, or anything else that needs a machine-learning model.
 - **H.264 video** is encoded with your graphics card's encoder, Windows' Media Foundation encoder or
   OpenH264. x264 and x265 are GPL, so they aren't included.

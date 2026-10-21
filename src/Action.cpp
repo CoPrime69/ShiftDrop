@@ -1,4 +1,5 @@
 #include "Action.h"
+#include "ImageHooks.h"
 #include "Media.h"
 
 namespace sd
@@ -50,6 +51,23 @@ namespace sd
             if (IsAlreadyFormat(f, ext))
                 return &f;
         return nullptr;
+    }
+
+    const ImageFormatInfo* KeptFormatOf(const std::wstring& ext, bool windowsEncoderReady)
+    {
+        const auto* own = FormatOfExtension(ext);
+        if (own && own->windowsCodec && !windowsEncoderReady)
+            return FindImageFormat("jpg");
+        return own;
+    }
+
+    const ImageFormatInfo* KeptFormatOf(const std::wstring& ext)
+    {
+        const auto* own = FormatOfExtension(ext);
+        if (!own || !own->windowsCodec)
+            return own;
+        const auto* hook = EncodeHookFor(own->id);
+        return KeptFormatOf(ext, hook && hook->CanEncode(nullptr));
     }
 
     ActionRegistry::ActionRegistry()

@@ -283,6 +283,42 @@ namespace sd::pdf
         return hr;
     }
 
+    HRESULT EncodePng(const Samples& in, std::string& out)
+    {
+        auto factory = Factory();
+        if (!factory || (in.channels != 1 && in.channels != 3 && in.channels != 4) || in.width == 0 || in.height == 0 ||
+            in.data.size() != static_cast<size_t>(in.width) * in.height * in.channels)
+            return E_INVALIDARG;
+        Samples bgr = in;
+        if (bgr.channels == 4)
+            for (size_t i = 0; i + 3 < bgr.data.size(); i += 4)
+                std::swap(bgr.data[i], bgr.data[i + 2]);
+        else
+            SwapRedBlue(bgr);
+        WICPixelFormatGUID format = bgr.channels == 4 ? GUID_WICPixelFormat32bppBGRA : FormatOf(bgr);
+        const WICPixelFormatGUID wanted = format;
+        ComPtr<IWICBitmap> bitmap;
+        ComPtr<IStream> stream;
+        ComPtr<IWICBitmapEncoder> encoder;
+        ComPtr<IWICBitmapFrameEncode> frame;
+        HRESULT hr = factory->CreateBitmapFromMemory(bgr.width, bgr.height, format, bgr.width * bgr.channels, static_cast<UINT>(bgr.data.size()),
+                                                     bgr.data.data(), &bitmap);
+        if (SUCCEEDED(hr)) hr = CreateStreamOnHGlobal(nullptr, TRUE, &stream);
+        if (SUCCEEDED(hr)) hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
+        if (SUCCEEDED(hr)) hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+        if (SUCCEEDED(hr)) hr = encoder->CreateNewFrame(&frame, nullptr);
+        if (SUCCEEDED(hr)) hr = frame->Initialize(nullptr);
+        if (SUCCEEDED(hr)) hr = frame->SetSize(bgr.width, bgr.height);
+        if (SUCCEEDED(hr)) hr = frame->SetPixelFormat(&format);
+        if (SUCCEEDED(hr) && format != wanted)
+            hr = E_FAIL;   // the PNG encoder takes gray, BGR and BGRA as they are
+        if (SUCCEEDED(hr)) hr = frame->WriteSource(bitmap.Get(), nullptr);
+        if (SUCCEEDED(hr)) hr = frame->Commit();
+        if (SUCCEEDED(hr)) hr = encoder->Commit();
+        if (SUCCEEDED(hr)) hr = ReadBack(stream.Get(), out);
+        return hr;
+    }
+
     HRESULT ResizeSamples(Samples& samples, uint32_t width, uint32_t height)
     {
         auto factory = Factory();

@@ -118,6 +118,7 @@ add_library(shiftdrop_core STATIC
   src/pdf/PdfCompress.cpp
   src/pdf/PdfContent.cpp
   src/pdf/PdfDoc.cpp
+  src/pdf/PdfImages.cpp
   src/pdf/PdfEngine.cpp
   src/pdf/PdfModule.cpp
   src/pdf/PdfText.cpp

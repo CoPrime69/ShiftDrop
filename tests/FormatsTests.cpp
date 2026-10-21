@@ -102,15 +102,18 @@ TEST(Formats, SvgSizeDefaults)
     EXPECT_EQ(SvgRasterSize(true, 200, 100, 0, 0).height, 100u);
     EXPECT_EQ(SvgRasterSize(true, 16, 16, 0, 0).width, 16u);   // a small icon stays small
     EXPECT_EQ(SvgRasterSize(true, 99.6f, 10, 0, 0).width, 100u);
-    // No size: 1024 px on the long side, in the viewBox's shape...
-    EXPECT_EQ(SvgRasterSize(false, 24, 12, 0, 0).width, 1024u);
-    EXPECT_EQ(SvgRasterSize(false, 24, 12, 0, 0).height, 512u);
-    EXPECT_EQ(SvgRasterSize(false, 10, 40, 0, 0).height, 1024u);
-    EXPECT_EQ(SvgRasterSize(false, 10, 40, 0, 0).width, 256u);
+    // No size: 2048 px on the long side, in the viewBox's shape...
+    EXPECT_EQ(formats::kSvgDefaultLongSide, 2048u);
+    EXPECT_EQ(SvgRasterSize(false, 24, 12, 0, 0).width, 2048u);
+    EXPECT_EQ(SvgRasterSize(false, 24, 12, 0, 0).height, 1024u);
+    EXPECT_EQ(SvgRasterSize(false, 10, 40, 0, 0).height, 2048u);
+    EXPECT_EQ(SvgRasterSize(false, 10, 40, 0, 0).width, 512u);
+    EXPECT_EQ(SvgRasterSize(false, 3000, 1000, 0, 0).width, 2048u);   // a big viewBox is no size either
+    EXPECT_EQ(SvgRasterSize(false, 3000, 1000, 0, 0).height, 683u);
     // ...or the drawing's, or square.
-    EXPECT_EQ(SvgRasterSize(false, 0, 0, 300, 150).height, 512u);
-    EXPECT_EQ(SvgRasterSize(false, 0, 0, 0, 0).width, 1024u);
-    EXPECT_EQ(SvgRasterSize(false, 0, 0, 0, 0).height, 1024u);
+    EXPECT_EQ(SvgRasterSize(false, 0, 0, 300, 150).height, 1024u);
+    EXPECT_EQ(SvgRasterSize(false, 0, 0, 0, 0).width, 2048u);
+    EXPECT_EQ(SvgRasterSize(false, 0, 0, 0, 0).height, 2048u);
     // An enormous stated size is capped.
     EXPECT_EQ(SvgRasterSize(true, 100000, 50000, 0, 0).width, formats::kSvgMaxSide);
     EXPECT_EQ(SvgRasterSize(true, 100000, 50000, 0, 0).height, formats::kSvgMaxSide / 2);
@@ -145,7 +148,7 @@ TEST(Formats, SvgToPngKeepsOwnSizeAndTransparency)
     EXPECT_EQ(Px(png, 150, 50)[3], 0);   // nothing drawn: transparent
 }
 
-TEST(Formats, SvgWithoutSizeIs1024OnTheLongSide)
+TEST(Formats, SvgWithoutSizeIs2048OnTheLongSide)
 {
     Fixture f;
     const auto svg = f.dir / L"icon.svg";
@@ -154,14 +157,14 @@ TEST(Formats, SvgWithoutSizeIs1024OnTheLongSide)
     ASSERT_TRUE(result.ok) << Narrow(result.error);
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(result.output, w, h));
-    EXPECT_EQ(w, 1024u);
-    EXPECT_EQ(h, 512u);
+    EXPECT_EQ(w, 2048u);
+    EXPECT_EQ(h, 1024u);
     // The preview card reads the same size without drawing.
     uint32_t pw = 0, ph = 0;
     ASSERT_NE(DecodeHookFor(L".svg"), nullptr);
     ASSERT_TRUE(DecodeHookFor(L".svg")->ReadSize(svg, pw, ph));
-    EXPECT_EQ(pw, 1024u);
-    EXPECT_EQ(ph, 512u);
+    EXPECT_EQ(pw, 2048u);
+    EXPECT_EQ(ph, 1024u);
 }
 
 TEST(Formats, SvgConvertsToEveryImageFormatAndPdf)
@@ -422,11 +425,96 @@ TEST(Formats, HeicSourceWithoutCodecIsExplained)
     EXPECT_FALSE(f.runner.Applies(toJpg, f.dir / L"notes.txt"));
 }
 
+TEST(Formats, KeptFormatWritesHeicOnlyWithTheEncoder)
+{
+    // The choice itself, with the encoder's presence given.
+    for (const wchar_t* ext : { L".heic", L".heif", L".hif" })
+    {
+        EXPECT_STREQ(KeptFormatOf(ext, true)->id, "heic") << Narrow(ext);
+        EXPECT_STREQ(KeptFormatOf(ext, false)->id, "jpg") << Narrow(ext);
+    }
+    // Formats WIC or our own encoders always write are themselves either way.
+    const std::pair<const wchar_t*, const char*> own[] = { { L".jpeg", "jpg" }, { L".png", "png" }, { L".webp", "webp" },
+                                                           { L".avif", "avif" }, { L".tif", "tiff" }, { L".bmp", "bmp" } };
+    for (const auto& [ext, id] : own)
+    {
+        EXPECT_STREQ(KeptFormatOf(ext, true)->id, id) << Narrow(ext);
+        EXPECT_STREQ(KeptFormatOf(ext, false)->id, id) << Narrow(ext);
+    }
+    // Nothing writes these back; the caller picks.
+    EXPECT_EQ(KeptFormatOf(L".gif", true), nullptr);
+    EXPECT_EQ(KeptFormatOf(L".svg", false), nullptr);
+
+    // Wired to the HEIF encoder's detection: only Ready writes HEIC. Checking (the moment after
+    // start) and both missing-codec answers write JPG, as before.
+    for (const auto support : { formats::HeicSupport::Checking, formats::HeicSupport::NoHeif, formats::HeicSupport::NoHevc })
+    {
+        formats::OverrideHeicSupportForTests(support);
+        EXPECT_STREQ(KeptFormatOf(L".heic")->id, "jpg");
+    }
+    formats::OverrideHeicSupportForTests(formats::HeicSupport::Ready);
+    EXPECT_STREQ(KeptFormatOf(L".heic")->id, "heic");
+    EXPECT_STREQ(KeptFormatOf(L".png")->id, "png");
+    formats::OverrideHeicSupportForTests(std::nullopt);
+}
+
+TEST(Formats, HeicThroughToolsStaysHeicWithTheEncoder)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    const auto heic = dir / L"IMG_0001.heic";
+    // Resize, Rotate, Flip, Scale ("same") and the editors (Crop, Redact, Edit Photos, metadata).
+    formats::OverrideHeicSupportForTests(formats::HeicSupport::Ready);
+    for (const char* id : { "rotate-right", "rotate-left", "flip", "max-1920", "max-1080", "half-size" })
+    {
+        const auto& r = recipes.Get(id);
+        EXPECT_STREQ(r.OutputFormatFor(L".heic")->id, "heic") << id;
+        EXPECT_EQ(r.OutputExtensionFor(L".heic"), L".heic") << id;
+        EXPECT_FALSE(runner.IsNoOp(r, heic)) << id;   // still turned or resized, though the format stays
+    }
+    EXPECT_STREQ(canvas::EditedFormatFor(L".heic").id, "heic");
+    EXPECT_STREQ(canvas::EditedFormatFor(L".hif").id, "heic");
+    EXPECT_STREQ(recipes.Get("compress-image").OutputFormatFor(L".heic")->id, "jpg");   // Compress: the upload format, as before
+
+    formats::OverrideHeicSupportForTests(formats::HeicSupport::NoHevc);
+    for (const char* id : { "rotate-right", "max-1920" })
+    {
+        EXPECT_STREQ(recipes.Get(id).OutputFormatFor(L".heic")->id, "jpg") << id;
+        EXPECT_EQ(recipes.Get(id).OutputExtensionFor(L".heic"), L".jpg") << id;
+    }
+    EXPECT_STREQ(canvas::EditedFormatFor(L".heic").id, "jpg");
+    formats::OverrideHeicSupportForTests(std::nullopt);
+}
+
+TEST(Formats, ImageRecipeWritesTheFormatItIsGiven)
+{
+    // The runner resolves "same" once and hands it down, so a file's bytes always match its name even
+    // if the HEIF encoder check finishes in between.
+    Fixture f;
+    const auto png = f.dir / L"photo.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(png, 64, 48, false));
+    ComPtr<IStream> memory;
+    ASSERT_HRESULT_SUCCEEDED(CreateStreamOnHGlobal(nullptr, TRUE, &memory));
+    std::wstring error;
+    ASSERT_HRESULT_SUCCEEDED(RunImageRecipe(f.recipes.Get("to-tiff"), png, memory.Get(), {}, error, FindImageFormat("jpg"))) << Narrow(error);
+    LARGE_INTEGER zero{};
+    memory->Seek(zero, STREAM_SEEK_SET, nullptr);
+    unsigned char magic[2]{};
+    ULONG got = 0;
+    ASSERT_HRESULT_SUCCEEDED(memory->Read(magic, 2, &got));
+    ASSERT_EQ(got, 2u);
+    EXPECT_EQ(magic[0], 0xFF);   // a JPEG (SOI), not the recipe's TIFF
+    EXPECT_EQ(magic[1], 0xD8);
+}
+
 TEST(Formats, HeicSameFormatBecomesJpgAndHeifIsAlreadyHeic)
 {
     TempDir dir;
     Recipes recipes(dir);
+    formats::OverrideHeicSupportForTests(formats::HeicSupport::NoHeif);
     EXPECT_STREQ(recipes.Get("rotate-right").OutputFormatFor(L".heic")->id, "jpg");
+    formats::OverrideHeicSupportForTests(std::nullopt);
     EXPECT_STREQ(recipes.Get("rotate-right").OutputFormatFor(L".avif")->id, "avif");
     EXPECT_STREQ(recipes.Get("to-heic").OutputFormatFor(L".png")->id, "heic");
     PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
@@ -455,6 +543,24 @@ TEST(Formats, HeicRoundTripWhereWindowsHasTheCodec)
     ASSERT_TRUE(ImageSize(back.output, w, h));
     EXPECT_EQ(w, 640u);
     EXPECT_EQ(h, 480u);
+
+    // Rotate keeps it HEIC, turned.
+    const auto turned = f.Run("rotate-right", heic.output);
+    ASSERT_TRUE(turned.ok) << Narrow(turned.error);
+    EXPECT_EQ(std::filesystem::path(turned.output).extension(), L".heic");
+    ASSERT_TRUE(ImageSize(turned.output, w, h));
+    EXPECT_EQ(w, 480u);
+    EXPECT_EQ(h, 640u);
+    // So does an edited copy (Crop, Redact...), flattened on white like JPEG.
+    canvas::Raster raster;
+    std::wstring error;
+    ASSERT_HRESULT_SUCCEEDED(canvas::LoadRaster(png, raster, error)) << Narrow(error);
+    const auto& kept = canvas::EditedFormatFor(L".heic");
+    ASSERT_STREQ(kept.id, "heic");
+    const auto edited = f.dir / L"edited.heic";
+    ASSERT_HRESULT_SUCCEEDED(canvas::SaveRasterToFile(raster, kept, canvas::EditedQuality(kept), edited, error)) << Narrow(error);
+    ASSERT_TRUE(ImageSize(edited, w, h));
+    EXPECT_EQ(w, 640u);
 }
 
 // ---- The image editors (Crop, Redact, Share-safe) take these formats too -------------------------
@@ -475,9 +581,11 @@ TEST(Formats, EditorsReadAvifAndSvgAndWriteAvif)
     EXPECT_EQ(raster.At(10, 10)[1], 255);
     EXPECT_EQ(raster.At(70, 10)[3], 0);
 
-    // An edited AVIF stays AVIF; an edited HEIC becomes JPEG (Windows' encoder is optional); SVG becomes PNG.
+    // An edited AVIF stays AVIF; an edited HEIC becomes JPEG without Windows' HEIF encoder; SVG becomes PNG.
     EXPECT_STREQ(canvas::EditedFormatFor(L".avif").id, "avif");
+    formats::OverrideHeicSupportForTests(formats::HeicSupport::NoHeif);
     EXPECT_STREQ(canvas::EditedFormatFor(L".heic").id, "jpg");
+    formats::OverrideHeicSupportForTests(std::nullopt);
     EXPECT_STREQ(canvas::EditedFormatFor(L".svg").id, "png");
     const auto avif = f.dir / L"edited.avif";
     ASSERT_HRESULT_SUCCEEDED(canvas::SaveRasterToFile(raster, *FindImageFormat("avif"), canvas::EditedQuality(*FindImageFormat("avif")), avif, error))

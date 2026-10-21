@@ -254,8 +254,8 @@ namespace sd::canvas
 
     const ImageFormatInfo& EditedFormatFor(const std::wstring& ext)
     {
-        if (const auto* own = FormatOfExtension(ext); own && !own->windowsCodec)   // HEIC: Windows' optional codec, so JPEG
-            return *own;
+        if (const auto* kept = KeptFormatOf(ext))   // HEIC: HEIC with Windows' HEIF encoder, else JPEG
+            return *kept;
         static const wchar_t* const kCamera[] = { L".heic", L".heif", L".hif", L".avif", L".jxr", L".wdp", L".hdp", L".jxl", L".dng",
                                                   L".cr2", L".cr3", L".nef", L".arw", L".orf", L".rw2", L".raf", L".srw", L".pef" };
         for (const wchar_t* c : kCamera)
@@ -274,14 +274,21 @@ namespace sd::canvas
     {
         if (image.Empty() || image.px.size() < static_cast<size_t>(image.width) * image.height * 4)
             return Fail(error, L"encode", E_INVALIDARG);
-        if (const auto* hook = EncodeHookFor(format.id))   // AVIF (src/formats)
+        if (const auto* hook = EncodeHookFor(format.id))   // AVIF, HEIC (src/formats)
         {
             auto factory = Factory();
             ComPtr<IWICBitmap> bitmap;
             if (!factory)
                 return Fail(error, L"WIC", REGDB_E_CLASSNOTREG);
-            if (const HRESULT hr = factory->CreateBitmapFromMemory(image.width, image.height, GUID_WICPixelFormat32bppBGRA, image.width * 4,
-                                                                   static_cast<UINT>(image.px.size()), const_cast<BYTE*>(image.px.data()), &bitmap);
+            // A format without alpha (HEIC) gets the picture flattened on white, as JPEG does.
+            UINT stride = image.width * 4;
+            std::vector<uint8_t> flat;
+            if (!format.keepsAlpha)
+                flat = FlattenOnWhite(image, stride);
+            const auto& px = format.keepsAlpha ? image.px : flat;
+            if (const HRESULT hr = factory->CreateBitmapFromMemory(image.width, image.height,
+                                                                   format.keepsAlpha ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat24bppBGR,
+                                                                   stride, static_cast<UINT>(px.size()), const_cast<BYTE*>(px.data()), &bitmap);
                 FAILED(hr))
                 return Fail(error, L"encode", hr);
             std::wstring why;

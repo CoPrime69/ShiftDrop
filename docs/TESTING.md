@@ -218,14 +218,15 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Three files: the centre shows their total size, and hovering shows the total they come out at
 
 ### N. PDF, text from anything and Share
-Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a scanned PDF (a phone
-scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
+Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a two-column PDF
+(`paper.pdf`, e.g. a journal article), a scanned PDF (a phone scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
 one taken sideways), a PNG with transparency, and a PDF with a password.
 
 - [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
 - [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
 - [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
 - [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop `paper.pdf` on **TXT** and on **Markdown**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
 - [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
 - [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
 - [ ] Drag two PDFs, open **Tools**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
@@ -433,23 +434,24 @@ AVIF
 HEIC
 - [ ] With both extensions installed: the iPhone `.heic` on PNG and JPG works; the photo is upright
 - [ ] With both installed: the photo (JPG) on **HEIC** gives `photo (converted).heic`, which Photos opens
-- [ ] The `.heic` on the Tools wheel's Rotate: the result is a JPG (on purpose: it opens everywhere)
+- [ ] With both installed: the `.heic` on the Tools wheel's Rotate, 1920 px and 50%: each result is a `.heic` (turned, smaller), which Photos opens
+- [ ] On a PC that opens the `.heic` but can't save HEIC (the HEIC slice for a JPG is dimmed): the same slices give a `.jpg`, and the card on hover already says JPG
 - [ ] Without HEVC Video Extensions (uninstall it, or use a PC that lacks it): the HEIC slice is dimmed and the log says `wheel: 'HEIC' dimmed: install "HEVC Video Extensions"...`; the other slices still work
 - [ ] Without HEIF Image Extensions: dragging the `.heic` dims every Convert slice and the centre says "Needs HEIF Image Extensions"; the HEIC slice for a JPG is dimmed, and the log line names both extensions to install
 - [ ] Install the missing extension and restart ShiftDrop: the slices come back
 
 SVG
 - [ ] The SVG with a size on PNG: the PNG has exactly the SVG's width and height, transparent around the drawing
-- [ ] The viewBox-only SVG on PNG: 1024 px on its long side, sharp edges, transparent background
+- [ ] The viewBox-only SVG on PNG: 2048 px on its long side, in the viewBox's shape, sharp edges, transparent background
 - [ ] The SVG with text on PNG: the text is drawn (Arial / Segoe UI / Times look-alikes), not missing
 - [ ] SVG on JPG: white background where the SVG is transparent; on WebP and AVIF: transparency kept
 - [ ] SVG on **PDF** (Convert wheel): a one-page PDF with the drawing; several SVGs together give one page each
-- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 1024×512)
+- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 2048×1024 for the viewBox-only one)
 - [ ] An `.svgz` (gzipped SVG) works the same as `.svg`
 - [ ] A broken SVG (rename a `.txt` to `.svg`): the job fails with "not a readable SVG" and leaves nothing behind
 
 Crop, Redact and Share-safe
-- [ ] The `.avif` on Crop: the cropped result is an `.avif`; the `.heic` on Crop: a `.jpg`; the SVG on Crop: a `.png` with the transparency kept
+- [ ] The `.avif` on Crop: the cropped result is an `.avif`; the `.heic` on Crop: a `.heic` with both HEIC extensions installed, else a `.jpg`; the SVG on Crop: a `.png` with the transparency kept
 - [ ] The `.avif` on Share-safe: a clean `.avif` comes out
 
 Animated GIFs and multi-page TIFFs
@@ -536,6 +538,9 @@ Documents
 - [ ] Drop the `.rtfd` folder with **Shift**: the documents slices appear; **DOCX** includes its pictures
 - [ ] Drop the `.pages` file on **DOCX**: the text arrives (from its preview PDF); a newer `.pages` with no preview PDF says so in the panel
 - [ ] Drop the text PDF with **Shift**: besides the PDF slices of section N there are **DOCX**, **EPUB** and **HTML**; the DOCX has the text reflowed with headings and bullets
+- [ ] Drop a PDF with photos or charts (a Word report saved as PDF) on **DOCX**: each picture sits between the paragraphs it sat between in the PDF, about the size it had on the page and never wider than the text, as a normal inline picture in Word. A logo on every page appears once; bullets and thin rules don't appear as pictures
+- [ ] The same PDF on **EPUB**: the pictures show in the e-book app. On **HTML**: a folder `… (converted)` holds the page and `images/`, and Edge shows the pictures
+- [ ] A scanned PDF on **DOCX**: the text comes from OCR, and the page scans are not added as pictures
 
 Spreadsheets
 - [ ] Drag `book.xlsx` with **Shift**: ODS, CSV, TSV and PDF (no XLSX)
@@ -558,6 +563,7 @@ Office bridge (with Microsoft Office)
 - [ ] Drop `report.docx` and `book.xlsx` on **Exact PDF**: the PDFs match Word's and Excel's own PDF export; Task Manager shows no WINWORD.EXE or EXCEL.EXE left afterwards
 - [ ] Drop a password-protected DOCX on **Exact PDF**: it fails with a message instead of a hidden password prompt
 - [ ] Start an Exact PDF of a large deck and press × in the top panel: it stops, nothing is left next to the deck, and PowerPoint (if we started it) is gone from Task Manager
+- [ ] Start an Exact PDF of a large deck, then drop another file on **Move to…** (or **Rename…**): the move is done at once, while the export keeps running
 
 Office bridge (LibreOffice only, no Microsoft Office)
 - [ ] The deck shows **Exact PDF** but not the slide pictures; the PDF comes out right, no LibreOffice window appears, and a LibreOffice window you already had open is not disturbed
@@ -628,6 +634,9 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 ### Y. Toasts, more settings, Rename and screen readers
 - [ ] Installed copy: convert a long video and drop a photo on **PNG** while it runs; when the video finishes a Windows toast (not a balloon) says so, with **Open folder** and **Open**. **Open folder** selects the output in Explorer, **Open** plays it
 - [ ] Two outputs in that toast: only **Open folder**, and it selects both. Quit ShiftDrop and click a toast still in the notification centre: Explorer opens all the same, and no tray icon appears
+- [ ] Installed copy: one job that takes over 10 seconds (a long video on MP4, or 50 photos on AVIF), with nothing else dropped: the top panel shows the result and a toast with **Open folder** (and **Open** for one output) also appears; a batch of many files gives one toast, not one per file
+- [ ] A job under 10 seconds (one photo on PNG): the panel only, no toast. Cancel a long job with the panel's ×: no toast
+- [ ] Settings > System > Notifications, ShiftDrop off: a long job shows no toast
 - [ ] Portable copy (no Start menu shortcut): the same case shows the old balloon; Focus assist on (Do not disturb): no toast, the result is in the notification centre
 - [ ] Settings › **Terminal**: Windows Terminal, PowerShell and Command Prompt each open at the dropped folder from **File actions › Terminal**; **Custom command** with `code {folder}` opens VS Code there; the command box is greyed out unless Custom is picked
 - [ ] Settings › **Theme** › **Light** while Windows is dark: the wheel, the top panel, the card and Settings itself turn light at once; **Dark** the other way; **Follow Windows** follows it again

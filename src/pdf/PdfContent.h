@@ -9,7 +9,8 @@
 #include <vector>
 
 // Reading a page's content stream with QPDF's parser: the text it shows (with positions and sizes,
-// for TXT and Markdown) and where it draws each image (for Compress PDF's resolution target).
+// for TXT and Markdown) and where it draws each image (for Compress PDF's resolution target, and
+// for the pictures of PDF to DOCX, EPUB and HTML).
 //
 // Text decoding covers what simple PDFs use: ToUnicode CMaps (any font), WinAnsi / MacRoman /
 // Standard encodings with /Differences glyph names (simple fonts), widths from /Widths and /W.
@@ -19,7 +20,14 @@ namespace sd::pdf
 {
     // The page's text in reading orientation: if most of it runs sideways (a landscape scan turned
     // with /Rotate, or rotated content), coordinates are turned so lines run left to right.
-    PageLines ExtractPageLines(QPDFPageObjectHelper& page);
+    // With `images`, it also gets every image XObject the page draws (in drawing order), as the box
+    // it fills in that same frame.
+    struct DrawnImage
+    {
+        QPDFObjectHandle image;
+        double left = 0, bottom = 0, right = 0, top = 0;
+    };
+    PageLines ExtractPageLines(QPDFPageObjectHelper& page, std::vector<DrawnImage>* images = nullptr);
 
     // Largest size each image XObject is drawn at on this page, in points (width, height of the
     // unit square after the current transformation), keyed by the image's object id.

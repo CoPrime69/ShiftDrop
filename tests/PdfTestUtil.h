@@ -71,4 +71,64 @@ namespace sd::test
         w.Object(catalog, std::format("<< /Type /Catalog /Pages {} 0 R >>", pages));
         w.Finish(catalog, 0);
     }
+
+    // An image XObject for WritePicturePdf: the inside of its dictionary without /Length (and without
+    // /Filter when `flate` deflates the data), and optionally another of the list as its /SMask.
+    struct TestImage
+    {
+        std::string dict;
+        std::string data;
+        bool flate = false;
+        int smask = -1;
+    };
+
+    // Like WriteTextPdf, with the images as /Im0, /Im1, ... in every page's resources.
+    inline void WritePicturePdf(const std::wstring& path, const std::vector<std::string>& contents, const std::vector<TestImage>& images)
+    {
+        pdf::PdfWriter w(path);
+        const int catalog = w.NewObject(), pages = w.NewObject(), font = w.NewObject();
+        w.Object(font, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+        std::vector<int> ids;
+        for (size_t i = 0; i < images.size(); ++i)
+            ids.push_back(w.NewObject());
+        std::string xobjects;
+        for (size_t i = 0; i < images.size(); ++i)
+        {
+            std::string dict = images[i].dict;
+            if (images[i].smask >= 0)
+                dict += std::format(" /SMask {} 0 R", ids[static_cast<size_t>(images[i].smask)]);
+            if (images[i].flate)
+                w.FlateStream(ids[i], dict, images[i].data);
+            else
+                w.Stream(ids[i], dict, images[i].data);
+            xobjects += std::format(" /Im{} {} 0 R", i, ids[i]);
+        }
+        std::string kids;
+        for (const auto& content : contents)
+        {
+            const int c = w.NewObject(), page = w.NewObject();
+            w.Stream(c, "", content);
+            w.Object(page, std::format("<< /Type /Page /Parent {} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {} 0 R >> "
+                                       "/XObject <<{} >> >> /Contents {} 0 R >>",
+                                       pages, font, xobjects, c));
+            kids += std::format(" {} 0 R", page);
+        }
+        w.Object(pages, std::format("<< /Type /Pages /Kids [{} ] /Count {} >>", kids, contents.size()));
+        w.Object(catalog, std::format("<< /Type /Catalog /Pages {} 0 R >>", pages));
+        w.Finish(catalog, 0);
+    }
+
+    // Raw RGB samples, w x h, with R = x * 6, G = y * 8, B = 128: easy to check after a round trip.
+    inline std::string RgbRamp(uint32_t w, uint32_t h)
+    {
+        std::string data;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x)
+            {
+                data += static_cast<char>(x * 6);
+                data += static_cast<char>(y * 8);
+                data += static_cast<char>(128);
+            }
+        return data;
+    }
 }

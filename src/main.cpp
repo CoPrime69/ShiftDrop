@@ -9,6 +9,7 @@
 //   audio workers JobQueue threads for sound-only ffmpeg runs, which use one core each, so several
 //                files convert at once
 //   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
+//   office worker one STA thread for Word, Excel and PowerPoint exports, so moves never wait on them
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
 #include "Ask.h"
 #include "Brand.h"
@@ -55,6 +56,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <filesystem>
 #include <format>
@@ -88,6 +90,7 @@ namespace sd
             std::wstring savedTo;  // files dragged out of an app: the folder the outputs went to
             int64_t runId = 0;     // history run (0 when history is unavailable)
             uint64_t token = 0;    // which batch, so its progress and result reach the top panel
+            std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();   // a long one also gets a toast
             bool cancelled = false;
             std::vector<FileOutcome> files;
         };
@@ -312,15 +315,12 @@ namespace sd
             RemoveStaleVirtualDrops(VirtualDropRoot());
 
             const unsigned threads = JobQueue::PoolThreads();
-            m_jobs = std::make_unique<JobQueue>(threads);
-            m_mediaJobs = std::make_unique<JobQueue>(1);
-            m_audioJobs = std::make_unique<JobQueue>(threads);
-            m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
-            log::Info(L"jobs: {0} worker thread(s) + 1 video thread + {0} audio thread(s) + 1 shell thread", threads);
+            m_lanes = std::make_unique<JobLanes>(threads);
+            log::Info(L"jobs: {0} worker thread(s) + 1 video thread + {0} audio thread(s) + 1 shell thread + 1 office thread", threads);
             // The H.264 encoder test (a few tiny encodes, about a second) runs now, on the media thread,
             // instead of delaying the first video conversion.
             if (m_media->Available())
-                m_mediaJobs->Submit([media = m_media](std::stop_token) { media->H264(); });
+                m_lanes->For(JobLane::Media).Submit([media = m_media](std::stop_token) { media->H264(); });
 
             m_features = LoadFeatures();
             std::vector<WheelRing> rings = BuildRings();
@@ -531,10 +531,9 @@ namespace sd
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
                 ask::UninstallUi();    // an open question closes as Cancel; its job stops with the rest
-                m_jobs.reset();        // stops and joins workers; results still in flight are freed (see PostBatch)
-                m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
-                m_audioJobs.reset();
-                m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
+                // Stops and joins every lane (results still in flight are freed, see PostBatch): kills a
+                // running ffmpeg, cancels an office export, waits for a move in progress.
+                m_lanes.reset();
                 m_historyWindow.reset();
                 m_keyboard.reset();    // before the overlay it drives
                 m_preview.reset();     // joins the prediction worker
@@ -1251,9 +1250,9 @@ namespace sd
             // deleted) and the rest are skipped. Files already finished stay.
             m_island->ShowProgress(verb + L"\u2026", files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
             // Video and audio go through the media queue, one file at a time; images use every worker;
-            // shell work goes to the STA thread. A batch action (join, merge, zip) is one job for all files.
-            const JobLane lane = m_runner->Lane(recipe);
-            JobQueue& queue = lane == JobLane::Media ? *m_mediaJobs : lane == JobLane::Audio ? *m_audioJobs : lane == JobLane::Shell ? *m_shellJobs : *m_jobs;
+            // shell work and office exports each have an STA thread. A batch action (join, merge, zip) is
+            // one job for all files.
+            JobQueue& queue = m_lanes->For(m_runner->Lane(recipe));
             if (const auto* engine = m_runner->EngineFor(recipe); engine && engine->IsBatch(recipe))
             {
                 state->result.files.resize(1);
@@ -1353,12 +1352,13 @@ namespace sd
             const uint64_t token = m_islandBatch = m_nextBatch++;
             m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FileName(folder).empty() ? folder : FileName(folder)),
                                    files.size());
-            m_shellJobs->Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
-                                 history = m_history.get(), token](std::stop_token) {
+            m_lanes->For(JobLane::Shell).Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
+                                                 history = m_history.get(), token, started = std::chrono::steady_clock::now()](std::stop_token) {
                 int64_t runId = 0;
                 const auto outcomes = MoveToFolder(recipe, files, folder, history, runId);
                 auto done = std::make_unique<BatchResult>();
                 done->kind = BatchKind::Move;
+                done->started = started;
                 done->label = FileName(folder).empty() ? folder : FileName(folder);   // "D:\" has no file name
                 done->runId = runId;
                 done->token = token;
@@ -1382,11 +1382,13 @@ namespace sd
             m_renameWindow->Show(std::move(files), [this, recipe](std::vector<Rename> renames) {
                 const uint64_t token = m_islandBatch = m_nextBatch++;
                 m_island->ShowProgress(std::format(L"Renaming {}\u2026", Count(renames.size(), L"item")), renames.size());
-                m_shellJobs->Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token](std::stop_token) {
+                m_lanes->For(JobLane::Shell).Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token,
+                                                     started = std::chrono::steady_clock::now()](std::stop_token) {
                     int64_t runId = 0;
                     const auto outcomes = RenameItems(recipe, renames, history, runId);
                     auto done = std::make_unique<BatchResult>();
                     done->kind = BatchKind::Rename;
+                    done->started = started;
                     done->label = recipe.label;
                     done->runId = runId;
                     done->token = token;
@@ -1455,7 +1457,8 @@ namespace sd
             // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
             if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
                 title = batch->files[0].result.message;
-            if (batch->token == m_islandBatch)
+            const bool shownInPanel = batch->token == m_islandBatch;
+            if (shownInPanel)
             {
                 // The panel: one line on what happened, one on where (or what went wrong first).
                 std::wstring sub;
@@ -1484,16 +1487,18 @@ namespace sd
                 const bool carry = m_shelf && !outputs.empty();
                 m_island->ShowResult(outcome, title, sub, carry ? m_shelf->CarryActions(outputs) : Island::ResultActions{});
             }
-            else
+            // A later job owns the panel, or this one took long enough that the user may have looked
+            // away: a toast says so (with Open folder and Open), or a balloon where toasts are not
+            // available. Windows' own setting for ShiftDrop's notifications (and Do not disturb) applies.
+            const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - batch->started);
+            if (toast::ShouldNotify(shownInPanel, took, batch->cancelled))
             {
-                // A later job owns the panel: this one says so in a toast (with Open folder and Open),
-                // or a balloon where toasts are not available.
                 if (ok > 0 && m_history)
                     details += L"Undo: tray menu > History";
                 if (!m_toasts || !toast::Show(toast::Content{ title, details, outputs }))
                     m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
             }
-            log::Info(L"batch (run {}): {} ok, {} skipped, {} failed", batch->runId, ok, skipped, failed);
+            log::Info(L"batch (run {}): {} ok, {} skipped, {} failed, {:.1f} s", batch->runId, ok, skipped, failed, took.count() / 1000.0);
             if (m_historyWindow)
                 m_historyWindow->Refresh();
         }
@@ -1560,10 +1565,7 @@ namespace sd
         std::unique_ptr<HistoryStore> m_history;
         std::shared_ptr<const FfmpegEngine> m_media;
         std::unique_ptr<PipelineRunner> m_runner;
-        std::unique_ptr<JobQueue> m_jobs;
-        std::unique_ptr<JobQueue> m_mediaJobs;
-        std::unique_ptr<JobQueue> m_audioJobs;
-        std::unique_ptr<JobQueue> m_shellJobs;
+        std::unique_ptr<JobLanes> m_lanes;
         Appearance m_appearance;
         std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it
         std::unique_ptr<Overlay> m_overlay;

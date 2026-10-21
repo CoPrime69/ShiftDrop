@@ -104,6 +104,7 @@ and the tests that need ffmpeg skip themselves.
 |---|---|---|
 | `x64-release` | configure, build, test | Visual Studio 2022 generator, x64, triplet `x64-windows-static`, output in `build\x64-release`, Release configuration |
 | `x64-release-m0` | configure, build | The same with `SHIFTDROP_M0=ON`: a placeholder build that draws a plain circle and only logs each drop. Useful when you work on the mouse hook or the drop target alone. Output in `build\x64-release-m0` |
+| `ci` | configure, build, test | What CI uses: the Ninja generator, Release, every compile through [sccache](https://github.com/mozilla/sccache) (it must be on `PATH`), vcpkg's ports in `build\vcpkg_installed`, output in `build\ci`, tests four at a time. Run it from a Developer PowerShell |
 
 ```powershell
 cmake --preset x64-release
@@ -130,12 +131,15 @@ The build makes:
   configure time.
 - `build\x64-release\Release\shiftdrop_tests.exe`, the unit tests.
 
-The placeholder build, as CI builds it:
+The placeholder build:
 
 ```powershell
 cmake --preset x64-release-m0 -DSHIFTDROP_TESTS=OFF
 cmake --build --preset x64-release-m0
 ```
+
+CI builds it with the `ci` preset instead (`-DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF`, then
+`cmake --build --preset ci --target ShiftDrop`).
 
 ## Run it
 
@@ -268,15 +272,34 @@ times two builds against each other with the app's own arguments:
 ## How CI fits together
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on every push to `main`, every pull
-request and every `v*` tag. It has two jobs:
+request and every `v*` tag. Its jobs:
 
 1. **ffmpeg** (Ubuntu): runs `build-ffmpeg.sh` and uploads the result as `ffmpeg-custom-<commit>`.
    It is cached on the script and the components list, so it only rebuilds when one of them changes.
    Setting the repository variable `SHIFTDROP_FFMPEG` to `btbn` skips it, and the build then ships
    the pinned BtbN build instead.
-2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures, builds, runs the
-   unit tests, prints the photo and ffmpeg timings, runs the offline check, builds the placeholder
-   build, builds the installer, runs the installer smoke test and uploads the installer and the exe.
+2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures with the `ci`
+   preset, builds the app, runs the offline check, builds the installer, runs the installer smoke
+   test and uploads the installer and the exe.
+3. **tests** (Windows Server 2022, at the same time as build): builds the unit tests with the same
+   ffmpeg and runs them all, four at a time.
+4. **placeholder** (Windows Server 2022, at the same time): builds the placeholder gesture build
+   (`SHIFTDROP_M0=ON`), the app target only.
+5. **release** (tags only): publishes the installer once the three jobs above passed.
+
+The Windows jobs share their setup and configure steps through
+[.github/actions/configure](../.github/actions/configure/action.yml). Every compile goes through
+sccache, which keeps the object files in the GitHub Actions cache, so a push that changes a few
+files only recompiles those, and a library the three jobs all link is compiled once for all of
+them. A pull request reads the cache that `main`'s runs wrote, plus its own. The installed vcpkg
+ports are cached as a folder, keyed on `vcpkg.json`, the triplet and the compiler version; when that
+cache is there, configure doesn't run vcpkg at all. Otherwise vcpkg installs them from its own
+binary cache, also kept between runs. ctest keeps each test's time from the last run, so it starts
+the slowest tests first.
+
+The timing steps (the photo tools' 12 MP export times, and our ffmpeg against the BtbN build) run on
+tags, on runs started by hand and on pull requests labelled `bench`. The unit tests run the photo
+timing test on every push all the same; the timing step only prints its numbers.
 
 The speed benchmark runs only when asked: label a pull request `bench`, or start the workflow by hand
 ("Run workflow" on the Actions page) with "bench" ticked. Its table goes on the run's summary page.

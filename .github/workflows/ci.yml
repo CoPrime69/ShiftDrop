@@ -54,26 +54,21 @@ jobs:
           path: build/ffmpeg-custom
           if-no-files-found: error
 
+  # The app and its installer. The unit tests run beside it in the "tests" job, and the placeholder
+  # build in the "placeholder" job: the three Windows jobs share one compiler cache, so the libraries
+  # they all link are compiled once and come out of the cache for the others.
   build:
     needs: ffmpeg
     # Also when the ffmpeg job was skipped (SHIFTDROP_FFMPEG=btbn): get-ffmpeg.ps1 then falls back.
     if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
     runs-on: windows-2022
-    env:
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
     steps:
       - uses: actions/checkout@v4
 
-      # vcpkg's built packages are cached between runs, keyed on the manifest.
-      - uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}\vcpkg-cache
-          key: vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-
-
       # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
-      # that pins its URL and hash.
+      # that pins its URL and hash. Only needed without our own build.
       - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success'
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
@@ -84,7 +79,7 @@ jobs:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
-      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
+      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe.
       # Our own build when the ffmpeg job made one, else the pinned BtbN build.
       - name: Get ffmpeg
         shell: pwsh
@@ -96,78 +91,33 @@ jobs:
         shell: pwsh
         run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
 
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+      - uses: ./.github/actions/configure
         with:
-          arch: x64
+          options: -DSHIFTDROP_TESTS=OFF
 
-      - name: Configure
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          # The runner's vcpkg clone can be older than our builtin-baseline commit; fetch so it resolves.
-          git -C $env:VCPKG_ROOT fetch --quiet origin
-          cmake --preset x64-release
-
+      # ShiftDrop.exe, and ShiftDropWorker.exe with it.
       - name: Build
-        run: cmake --build --preset x64-release
-
-      - name: Unit tests
-        run: ctest --preset x64-release
-
-      # The speed benchmark (Bench.*, skipped in the unit tests above) only runs when asked: "Run
-      # workflow" with "bench" ticked, or a pull request labelled "bench". Its table goes into the
-      # run's summary page.
-      - name: Speed benchmark
-        if: (github.event_name == 'workflow_dispatch' && inputs.bench) || contains(github.event.pull_request.labels.*.name, 'bench')
-        shell: pwsh
-        run: |
-          $env:SHIFTDROP_BENCH = '1'
-          $env:SHIFTDROP_FFMPEG = (Resolve-Path build/engines/ffmpeg.exe).Path
-          $env:SHIFTDROP_BENCH_OUT = $env:GITHUB_STEP_SUMMARY
-          build/x64-release/Release/shiftdrop_tests.exe --gtest_filter=Bench.*
-          if ($LASTEXITCODE) { exit 1 }
-
-      # The photo tools' export times for a 12 MP photo, printed for the log (the runner has no GPU,
-      # so this is WARP: a floor, not what a PC with a graphics card gets).
-      - name: Photo timings
-        run: build\x64-release\Release\shiftdrop_tests.exe --gtest_filter=PhotoTiming.*
-
-      # Our ffmpeg.exe against the full BtbN build it replaces, with the app's own arguments.
-      - name: ffmpeg timing (ours vs BtbN)
-        if: needs.ffmpeg.result == 'success'
-        shell: pwsh
-        run: |
-          ./scripts/get-ffmpeg.ps1 -Btbn -Out build/engines-btbn
-          ./scripts/time-ffmpeg.ps1 -New build/engines/ffmpeg.exe -NewName ours -Old build/engines-btbn/ffmpeg.exe -OldName BtbN
+        run: cmake --build --preset ci --target ShiftDrop
 
       - name: Offline check (no networking imports)
         shell: pwsh
         run: |
-          ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
-          ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDropWorker.exe
-
-      - name: Build the placeholder gesture build too
-        shell: pwsh
-        run: |
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          cmake --preset x64-release-m0 -DSHIFTDROP_TESTS=OFF
-          cmake --build --preset x64-release-m0
+          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
+          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
 
       # Inno Setup ships on the windows-2022 image; install it only if a future image drops it.
       - name: Build the installer
         shell: pwsh
         run: |
           $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
-          ./scripts/make-notices.ps1
+          ./scripts/make-notices.ps1 -Installed build/vcpkg_installed/x64-windows-static
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
-          & $iscc /Qp "/DAppVersion=$version" installer/ShiftDrop.iss
+          & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" installer/ShiftDrop.iss
           if ($LASTEXITCODE) { exit 1 }
           $setup = Get-Item "build/installer/ShiftDrop-Setup-$version.exe"
           $lines = @("### Installer: $([math]::Round($setup.Length / 1MB, 1)) MB", '', '| Packaged file | MB |', '|---|---:|')
-          foreach ($f in @(Get-Item build/x64-release/Release/ShiftDrop.exe, build/x64-release/Release/ShiftDropWorker.exe) + @(Get-ChildItem build/engines -File)) {
+          foreach ($f in @(Get-Item build/ci/ShiftDrop.exe, build/ci/ShiftDropWorker.exe) + @(Get-ChildItem build/engines -File)) {
             $lines += "| $($f.Name) | $([math]::Round($f.Length / 1MB, 2)) |"
           }
           $lines | ForEach-Object { Write-Host $_ }
@@ -194,16 +144,127 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ShiftDrop-${{ github.sha }}
-          path: build/x64-release/Release/ShiftDrop.exe
+          path: build/ci/ShiftDrop.exe
 
-      # A version tag (v0.2.0) publishes the installer as a GitHub Release.
+  tests:
+    needs: ffmpeg
+    if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
+    runs-on: windows-2022
+    env:
+      # The timing steps (photo tools, our ffmpeg vs BtbN) print numbers for a person to read, so
+      # they run on tags, manual runs and pull requests labelled "bench", not on every push.
+      SD_TIMINGS: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success' || env.SD_TIMINGS == 'true'
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      # Before Configure: CMake hands engines/ffmpeg.exe to the tests. The same ffmpeg.exe as the
+      # build job ships.
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
+
+      - uses: ./.github/actions/configure
+        with:
+          save-caches: 'true'
+
+      - name: Build the tests
+        run: cmake --build --preset ci --target shiftdrop_tests
+
+      # Each test's time from the last run, so ctest starts the slowest ones first.
+      - uses: actions/cache@v4
+        with:
+          path: build/ci/Testing/Temporary/CTestCostData.txt
+          key: ctest-costs-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ctest-costs-
+
+      # In parallel (the test preset sets the job count): each test runs in its own process, with its
+      # own temporary folder (tests/TestUtil.h names it after the process).
+      - name: Unit tests
+        run: ctest --preset ci
+
+      # The speed benchmark (Bench.*, skipped in the unit tests above) only runs when asked: "Run
+      # workflow" with "bench" ticked, or a pull request labelled "bench". Its table goes into the
+      # run's summary page.
+      - name: Speed benchmark
+        if: (github.event_name == 'workflow_dispatch' && inputs.bench) || contains(github.event.pull_request.labels.*.name, 'bench')
+        shell: pwsh
+        run: |
+          $env:SHIFTDROP_BENCH = '1'
+          $env:SHIFTDROP_FFMPEG = (Resolve-Path build/engines/ffmpeg.exe).Path
+          $env:SHIFTDROP_BENCH_OUT = $env:GITHUB_STEP_SUMMARY
+          build/ci/shiftdrop_tests.exe --gtest_filter=Bench.*
+          if ($LASTEXITCODE) { exit 1 }
+
+      # The photo tools' export times for a 12 MP photo, printed for the log (the runner has no GPU,
+      # so this is WARP: a floor, not what a PC with a graphics card gets). The unit tests run the
+      # same test on every push; this prints its numbers.
+      - name: Photo timings
+        if: env.SD_TIMINGS == 'true'
+        run: build\ci\shiftdrop_tests.exe --gtest_filter=PhotoTiming.*
+
+      # Our ffmpeg.exe against the full BtbN build it replaces, with the app's own arguments.
+      - name: ffmpeg timing (ours vs BtbN)
+        if: env.SD_TIMINGS == 'true' && needs.ffmpeg.result == 'success'
+        shell: pwsh
+        run: |
+          ./scripts/get-ffmpeg.ps1 -Btbn -Out build/engines-btbn
+          ./scripts/time-ffmpeg.ps1 -New build/engines/ffmpeg.exe -NewName ours -Old build/engines-btbn/ffmpeg.exe -OldName BtbN
+
+  # The placeholder gesture build (SHIFTDROP_M0, the x64-release-m0 preset's build) only changes the
+  # app's own sources, so it builds the app target alone.
+  placeholder:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/configure
+        with:
+          options: -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF
+
+      - name: Build the placeholder gesture build
+        run: cmake --build --preset ci --target ShiftDrop
+
+  # A version tag (v0.2.0) publishes the installer as a GitHub Release, once the app, the tests and
+  # the placeholder build all passed.
+  release:
+    needs: [ffmpeg, build, tests, placeholder]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.placeholder.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ShiftDrop-Setup-${{ github.sha }}
+          path: build/installer
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $env:SD_VERSION = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          $env:SD_SETUP = "build/installer/ShiftDrop-Setup-$env:SD_VERSION.exe"
           if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
+          if (-not (Test-Path $env:SD_SETUP)) { throw "$env:SD_SETUP is missing from the build job's artifact" }
           # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
           $files = @($env:SD_SETUP)
           if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {

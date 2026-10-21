@@ -1,6 +1,11 @@
+#include "JobQueue.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "officebridge/OfficeBridge.h"
+
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 using namespace sd;
 using namespace sd::office;
@@ -90,5 +95,91 @@ TEST(Office, SlicesOnlyWhenAnAppIsInstalled)
     EXPECT_FALSE(runner.Applies(recipes.Get("office-to-jpg"), dir / L"report.docx"));
     const auto* engine = runner.EngineFor(recipes.Get("office-to-pdf"));
     ASSERT_NE(engine, nullptr);
-    EXPECT_EQ(engine->Lane(recipes.Get("office-to-pdf")), JobLane::Shell);
+    EXPECT_EQ(engine->Lane(recipes.Get("office-to-pdf")), JobLane::Office);
+}
+
+namespace
+{
+    // Stands in for an office export that runs until the test lets it finish (or the lane stops).
+    class BlockedExport final : public IEngine
+    {
+    public:
+        bool Handles(const Recipe&) const override { return true; }
+        bool Applies(const Recipe&, const std::wstring&) const override { return true; }
+        bool Accepts(const Recipe&, const std::wstring&, std::wstring*) const override { return true; }
+        JobLane Lane(const Recipe&) const override { return JobLane::Office; }
+
+        ItemResult Run(const Recipe&, int64_t, const std::wstring&, std::stop_token stop, const ProgressFn&) const override
+        {
+            std::unique_lock lock(m_mutex);
+            m_started = true;
+            m_cv.notify_all();
+            m_cv.wait(lock, stop, [&] { return m_release; });
+            m_finished = !stop.stop_requested();
+            m_cv.notify_all();
+            return ItemResult{ true };
+        }
+
+        bool WaitStarted()
+        {
+            std::unique_lock lock(m_mutex);
+            return m_cv.wait_for(lock, std::chrono::seconds(10), [&] { return m_started; });
+        }
+        bool Finished() const
+        {
+            std::scoped_lock lock(m_mutex);
+            return m_finished;
+        }
+        void Release()
+        {
+            std::scoped_lock lock(m_mutex);
+            m_release = true;
+            m_cv.notify_all();
+        }
+        bool WaitFinished()
+        {
+            std::unique_lock lock(m_mutex);
+            return m_cv.wait_for(lock, std::chrono::seconds(10), [&] { return m_finished; });
+        }
+
+    private:
+        mutable std::mutex m_mutex;
+        mutable std::condition_variable_any m_cv;
+        mutable bool m_started = false, m_release = false, m_finished = false;
+    };
+}
+
+TEST(Office, MovesDoNotWaitBehindAnExport)
+{
+    EXPECT_EQ(JobLanes::Threads(JobLane::Office, 4), 1u);
+    EXPECT_EQ(JobLanes::Threads(JobLane::Shell, 4), 1u);
+    EXPECT_EQ(JobLanes::Threads(JobLane::Pool, 4), 4u);
+
+    JobLanes lanes(2);
+    EXPECT_NE(&lanes.For(JobLane::Office), &lanes.For(JobLane::Shell));
+    BlockedExport exporter;
+    const Recipe recipe;
+    lanes.For(exporter.Lane(recipe)).Submit([&](std::stop_token stop) { exporter.Run(recipe, 0, L"talk.pptx", stop, {}); });
+    ASSERT_TRUE(exporter.WaitStarted());
+
+    // A move on the shell lane runs to the end while the export is still busy.
+    std::mutex m;
+    std::condition_variable cv;
+    bool moved = false, sta = false;
+    lanes.For(JobLane::Shell).Submit([&](std::stop_token) {
+        APTTYPE type{};
+        APTTYPEQUALIFIER qualifier{};
+        sta = SUCCEEDED(CoGetApartmentType(&type, &qualifier)) && type == APTTYPE_STA;
+        std::scoped_lock lock(m);
+        moved = true;
+        cv.notify_all();
+    });
+    {
+        std::unique_lock lock(m);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(10), [&] { return moved; }));
+    }
+    EXPECT_TRUE(sta);
+    EXPECT_FALSE(exporter.Finished());
+    exporter.Release();
+    EXPECT_TRUE(exporter.WaitFinished());
 }

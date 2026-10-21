@@ -45,8 +45,9 @@ namespace sd::office
                 return true;
             }
 
-            // COM objects of Office need a single-threaded apartment, and one app at a time.
-            JobLane Lane(const Recipe&) const override { return JobLane::Shell; }
+            // COM objects of Office need a single-threaded apartment, and one app at a time. The lane is
+            // their own: an export can take minutes, and Move to... must not wait behind it.
+            JobLane Lane(const Recipe&) const override { return JobLane::Office; }
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {
