@@ -5,6 +5,7 @@
 #include "FileActions.h"
 #include "Log.h"
 #include "PanelLayout.h"
+#include "UiThread.h"
 #include "Utf.h"
 #include "shelf/Carry.h"
 
@@ -89,15 +90,6 @@ namespace sd
             c.danger = p.dark ? p.error : D2D1::ColorF(0xC42B1C, 1.f);
             c.shadow = p.shadow;
             return c;
-        }
-
-        template <class T>
-        void PostOwned(HWND hwnd, UINT msg, std::unique_ptr<T> payload)
-        {
-            // If the window is gone the post fails and the payload is freed here.
-            auto* raw = payload.release();
-            if (!PostMessageW(hwnd, msg, 0, reinterpret_cast<LPARAM>(raw)))
-                std::unique_ptr<T> reclaim(raw);
         }
 
         // Only a definite "not there" drops an item; an unplugged network drive or a locked file keeps it.
