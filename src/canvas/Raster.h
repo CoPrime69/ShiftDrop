@@ -33,8 +33,8 @@ namespace sd::canvas
     HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge = 0);
 
     // The format an edited copy of a file is written in: the source's own (JPEG, PNG, WebP, AVIF,
-    // TIFF, BMP); JPEG for camera formats Windows can read but we don't always write (HEIC, JXR, raw);
-    // PNG for the rest (GIF, ICO, SVG...).
+    // TIFF, BMP, and HEIC where Windows' HEIF encoder is installed); JPEG for camera formats Windows
+    // can read but we don't write (HEIC without that encoder, JXR, raw); PNG for the rest (GIF, ICO, SVG...).
     const ImageFormatInfo& EditedFormatFor(const std::wstring& lowerExtension);
     // JPEG 92, WebP 90, AVIF 80; ignored by lossless formats.
     int EditedQuality(const ImageFormatInfo& format);

@@ -67,11 +67,19 @@ namespace sd
         const wchar_t* aliases;  // source extensions that already are this format, e.g. ".jpg.jpeg.jpe.jfif"
         bool keepsAlpha;
         bool lossy;
-        bool windowsCodec = false;   // written by an optional Windows codec (HEIC): "same" turns it into JPG
+        bool windowsCodec = false;   // written by an optional Windows codec (HEIC): kept only when it is installed
     };
     const std::vector<ImageFormatInfo>& ImageFormats();
     const ImageFormatInfo* FindImageFormat(std::string_view id);
     bool IsAlreadyFormat(const ImageFormatInfo& format, const std::wstring& lowerExtension);
-    // The format a file already is, or nullptr (HEIC, GIF, ... are decoded but not re-encoded as such).
+    // The format a file already is, or nullptr (GIF, SVG, ... are decoded but not re-encoded as such).
     const ImageFormatInfo* FormatOfExtension(const std::wstring& lowerExtension);
+    // The format an edit that keeps a picture's format (Rotate, Resize, Crop...) writes it in: its own.
+    // One written by an optional Windows codec (HEIC) stays itself only when `windowsEncoderReady`,
+    // and is JPG otherwise, so a rotated iPhone photo is still a small photo. nullptr: nothing writes
+    // this type back (GIF, SVG...); the caller picks.
+    const ImageFormatInfo* KeptFormatOf(const std::wstring& lowerExtension, bool windowsEncoderReady);
+    // The same, asking the format's encoder hook (ImageHooks.h) whether it can write here. HEIC's
+    // answer is detected once, a moment after start, then cached; JPG until it is known.
+    const ImageFormatInfo* KeptFormatOf(const std::wstring& lowerExtension);
 }

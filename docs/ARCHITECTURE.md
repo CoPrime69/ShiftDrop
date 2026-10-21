@@ -452,7 +452,8 @@ touches it.
 
 **Toasts.** An installed copy has a Start menu shortcut with an app ID and a toast activator, so
 ShiftDrop can show real Windows toasts with Open folder and Open buttons
-([toast/](../src/toast)). A portable copy without the shortcut falls back to a tray balloon.
+([toast/](../src/toast)). A finished batch gets one when a later job has taken the top panel, or
+when it took over 10 seconds. A portable copy without the shortcut falls back to a tray balloon.
 
 **The log** ([Log.h](../src/Log.h)) is thread-safe UTF-8, one file per day. It records startup
 (versions, which codecs WIC has, where ffmpeg is, which H.264 encoder won), each job, and every

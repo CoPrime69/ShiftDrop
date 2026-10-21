@@ -57,6 +57,13 @@ namespace sd::toast
         return a;
     }
 
+    bool ShouldNotify(bool shownInPanel, std::chrono::milliseconds took, bool cancelled)
+    {
+        if (!shownInPanel)
+            return true;
+        return !cancelled && took > kLongJob;
+    }
+
     std::wstring EscapeXml(std::wstring_view text)
     {
         std::wstring out;

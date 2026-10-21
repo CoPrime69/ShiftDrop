@@ -434,23 +434,24 @@ AVIF
 HEIC
 - [ ] With both extensions installed: the iPhone `.heic` on PNG and JPG works; the photo is upright
 - [ ] With both installed: the photo (JPG) on **HEIC** gives `photo (converted).heic`, which Photos opens
-- [ ] The `.heic` on the Tools wheel's Rotate: the result is a JPG (on purpose: it opens everywhere)
+- [ ] With both installed: the `.heic` on the Tools wheel's Rotate, 1920 px and 50%: each result is a `.heic` (turned, smaller), which Photos opens
+- [ ] On a PC that opens the `.heic` but can't save HEIC (the HEIC slice for a JPG is dimmed): the same slices give a `.jpg`, and the card on hover already says JPG
 - [ ] Without HEVC Video Extensions (uninstall it, or use a PC that lacks it): the HEIC slice is dimmed and the log says `wheel: 'HEIC' dimmed: install "HEVC Video Extensions"...`; the other slices still work
 - [ ] Without HEIF Image Extensions: dragging the `.heic` dims every Convert slice and the centre says "Needs HEIF Image Extensions"; the HEIC slice for a JPG is dimmed, and the log line names both extensions to install
 - [ ] Install the missing extension and restart ShiftDrop: the slices come back
 
 SVG
 - [ ] The SVG with a size on PNG: the PNG has exactly the SVG's width and height, transparent around the drawing
-- [ ] The viewBox-only SVG on PNG: 1024 px on its long side, sharp edges, transparent background
+- [ ] The viewBox-only SVG on PNG: 2048 px on its long side, in the viewBox's shape, sharp edges, transparent background
 - [ ] The SVG with text on PNG: the text is drawn (Arial / Segoe UI / Times look-alikes), not missing
 - [ ] SVG on JPG: white background where the SVG is transparent; on WebP and AVIF: transparency kept
 - [ ] SVG on **PDF** (Convert wheel): a one-page PDF with the drawing; several SVGs together give one page each
-- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 1024×512)
+- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 2048×1024 for the viewBox-only one)
 - [ ] An `.svgz` (gzipped SVG) works the same as `.svg`
 - [ ] A broken SVG (rename a `.txt` to `.svg`): the job fails with "not a readable SVG" and leaves nothing behind
 
 Crop, Redact and Share-safe
-- [ ] The `.avif` on Crop: the cropped result is an `.avif`; the `.heic` on Crop: a `.jpg`; the SVG on Crop: a `.png` with the transparency kept
+- [ ] The `.avif` on Crop: the cropped result is an `.avif`; the `.heic` on Crop: a `.heic` with both HEIC extensions installed, else a `.jpg`; the SVG on Crop: a `.png` with the transparency kept
 - [ ] The `.avif` on Share-safe: a clean `.avif` comes out
 
 Animated GIFs and multi-page TIFFs
@@ -624,6 +625,9 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 ### Y. Toasts, more settings, Rename and screen readers
 - [ ] Installed copy: convert a long video and drop a photo on **PNG** while it runs; when the video finishes a Windows toast (not a balloon) says so, with **Open folder** and **Open**. **Open folder** selects the output in Explorer, **Open** plays it
 - [ ] Two outputs in that toast: only **Open folder**, and it selects both. Quit ShiftDrop and click a toast still in the notification centre: Explorer opens all the same, and no tray icon appears
+- [ ] Installed copy: one job that takes over 10 seconds (a long video on MP4, or 50 photos on AVIF), with nothing else dropped: the top panel shows the result and a toast with **Open folder** (and **Open** for one output) also appears; a batch of many files gives one toast, not one per file
+- [ ] A job under 10 seconds (one photo on PNG): the panel only, no toast. Cancel a long job with the panel's ×: no toast
+- [ ] Settings > System > Notifications, ShiftDrop off: a long job shows no toast
 - [ ] Portable copy (no Start menu shortcut): the same case shows the old balloon; Focus assist on (Do not disturb): no toast, the result is in the notification centre
 - [ ] Settings › **Terminal**: Windows Terminal, PowerShell and Command Prompt each open at the dropped folder from **File actions › Terminal**; **Custom command** with `code {folder}` opens VS Code there; the command box is greyed out unless Custom is picked
 - [ ] Settings › **Theme** › **Light** while Windows is dark: the wheel, the top panel, the card and Settings itself turn light at once; **Dark** the other way; **Follow Windows** follows it again
