@@ -292,6 +292,7 @@ if(SHIFTDROP_TESTS)
     tests/ShareSafeTests.cpp
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
+    tests/BenchTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).

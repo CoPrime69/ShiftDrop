@@ -5,6 +5,14 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # "Run workflow" on the Actions page; with "bench" ticked it also runs the speed benchmark.
+  workflow_dispatch:
+    inputs:
+      bench:
+        description: Run the speed benchmark (tests/BenchTests.cpp) and add its table to the summary
+        type: boolean
+        default: true
 
 permissions:
   contents: write   # only the tag-triggered "Publish release" step writes (it creates the release)
@@ -55,6 +63,19 @@ jobs:
 
       - name: Unit tests
         run: ctest --preset x64-release
+
+      # The speed benchmark (Bench.*, skipped in the unit tests above) only runs when asked: "Run
+      # workflow" with "bench" ticked, or a pull request labelled "bench". Its table goes into the
+      # run's summary page.
+      - name: Speed benchmark
+        if: (github.event_name == 'workflow_dispatch' && inputs.bench) || contains(github.event.pull_request.labels.*.name, 'bench')
+        shell: pwsh
+        run: |
+          $env:SHIFTDROP_BENCH = '1'
+          $env:SHIFTDROP_FFMPEG = (Resolve-Path build/engines/ffmpeg.exe).Path
+          $env:SHIFTDROP_BENCH_OUT = $env:GITHUB_STEP_SUMMARY
+          build/x64-release/Release/shiftdrop_tests.exe --gtest_filter=Bench.*
+          if ($LASTEXITCODE) { exit 1 }
 
       - name: Offline check (no networking imports)
         shell: pwsh
