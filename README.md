@@ -4,12 +4,13 @@ Drag a file, hold a key, and a wheel appears under the cursor. Drop on a slice t
 Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 Drag a file and press **Shift**: the wheel opens on the section that suits the file best. Turn the
-mouse wheel to step through the sections (Convert, Tools, File actions) in order, round and round.
+mouse wheel to step through the sections (Convert, Tools, Reduce size, File actions) in order, round and round.
 
 | Section | Slices so far |
 |---|---|
 | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them). Archives (ZIP, TAR, TGZ, GZ, 7z, RAR): Extract, ZIP, TAR.GZ, 7z. Folders: ZIP, TAR.GZ, 7z |
 | Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB; for video Trim…, Crop…, Speed…, Join…, Frames…, Split…, Redact…; for audio Normalize, Trim…, Channels…, Bleep…, Visualizer…; PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF. Images: Crop, Redact (cover text, faces and personal details), Share-safe (verified metadata scrub with a review step; also video and audio) |
+| Reduce size | 90%, 80% … 20% smaller, for photos, video, audio and PDFs. The centre shows the size now; hover a slice to see the size it comes out at |
 | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Remove metadata (images, video, audio), Zip (one ZIP of everything dropped) |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.

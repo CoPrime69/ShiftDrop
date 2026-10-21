@@ -30,6 +30,7 @@ namespace sd
         wchar_t icon = 0;        // Segoe Fluent Icons / MDL2 glyph; 0 = text only (format names)
         bool mirrorIcon = false; // e.g. rotate left drawn as a mirrored rotate right
         std::wstring detail;     // shown in the centre while the slice is hovered, e.g. "WebP, quality 85"
+        std::wstring headline;   // if set, replaces the centre's big text while hovered (Reduce size: the new size)
     };
 
     struct WheelContent

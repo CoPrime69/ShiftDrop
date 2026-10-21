@@ -34,6 +34,7 @@
 #include "keyboard/ShellVerb.h"
 #include "keyboard/WheelRequest.h"
 #include "preview/PreviewCard.h"
+#include "preview/Prediction.h"
 #include "sandbox/Sandbox.h"
 #include "shelf/ShelfWindow.h"
 
@@ -254,8 +255,8 @@ namespace sd
 
             std::vector<WheelRing> rings;
 #if !SHIFTDROP_M0
-            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), Folder.
-            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE8B7 };
+            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), BackToWindow (arrows in), Folder.
+            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE73F, 0xE8B7 };
             for (int i = 0; i < kRingCount; ++i)
                 rings.push_back(WheelRing{ RingTitle(static_cast<Ring>(i)), m_settings.keys[i] ? m_settings.keyNames[i] : L"",
                                            kRingIcons[i], static_cast<Ring>(i) == Ring::Convert });
@@ -312,7 +313,8 @@ namespace sd
             else if (!m_startWheel.empty())
                 m_keyboard->Queue(m_startWheel);
 
-            const UINT keys[kRingCount] = { m_settings.keys[0], m_settings.keys[1], m_settings.keys[2] };
+            UINT keys[kRingCount]{};
+            std::copy(m_settings.keys.begin(), m_settings.keys.end(), keys);
             if (!hook::Install(m_hwnd.get(), keys))
             {
                 log::Error(L"hook: SetWindowsHookExW(WH_MOUSE_LL) failed ({})", GetLastError());
@@ -690,6 +692,20 @@ namespace sd
                 forAll.insert(forAll.end(), forAny.begin(), forAny.end());
             const auto& shown = forAll.empty() ? onRing : forAll;
 
+            // Reduce size: the centre shows how big the files are now.
+            uint64_t totalBytes = 0;
+            if (ring == Ring::Reduce)
+            {
+                for (const auto& f : files)
+                {
+                    WIN32_FILE_ATTRIBUTE_DATA data{};
+                    if (GetFileAttributesExW(f.c_str(), GetFileExInfoStandard, &data) && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                        totalBytes += (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                }
+                if (totalBytes > 0)
+                    content.centerText = preview::SizeText(totalBytes);
+            }
+
             std::wstring firstReason;
             bool anyEnabled = false;
             for (const Recipe* recipe : shown)
@@ -712,6 +728,16 @@ namespace sd
                 const auto look = SliceLook(*recipe);
                 content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror,
                                                      recipe->description.empty() ? recipe->label : recipe->description });
+                if (ring == Ring::Reduce && totalBytes > 0)
+                {
+                    // Hovered, the centre shows the size it comes out at over the size it has now.
+                    const int percent = ReducePercent(*recipe);
+                    if (percent > 0)
+                    {
+                        content.slices.back().headline = L"\u2248 " + preview::SizeText(totalBytes * static_cast<uint64_t>(percent) / 100);
+                        content.slices.back().detail = L"was " + preview::SizeText(totalBytes);
+                    }
+                }
                 anyEnabled |= all && anyToDo;
             }
             if (!anyEnabled && !firstReason.empty())
@@ -723,6 +749,15 @@ namespace sd
             }
 #endif
             return content;
+        }
+
+        // A Reduce size recipe's target, as a percentage of the source's size (10 for "90% smaller").
+        static int ReducePercent(const Recipe& recipe)
+        {
+            for (const auto& step : recipe.steps)
+                if (const int percent = step.params.value("percent", 0); percent > 0)
+                    return percent;
+            return 0;
         }
 
         // The wheel's centre when none of its slices can take the dragged files.
