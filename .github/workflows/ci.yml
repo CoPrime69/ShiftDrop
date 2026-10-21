@@ -56,6 +56,11 @@ jobs:
       - name: Unit tests
         run: ctest --preset x64-release
 
+      # The photo tools' export times for a 12 MP photo, printed for the log (the runner has no GPU,
+      # so this is WARP: a floor, not what a PC with a graphics card gets).
+      - name: Photo timings
+        run: build\x64-release\Release\shiftdrop_tests.exe --gtest_filter=PhotoTiming.*
+
       - name: Offline check (no networking imports)
         shell: pwsh
         run: |

@@ -24,6 +24,8 @@ namespace sd
         // video)? The wheel shows only such recipes, so a video gets video formats and a photo image
         // formats.
         bool Applies(const Recipe& recipe, const std::wstring& path) const;
+        // Is it meant for a drop of this many files (IEngine::AppliesToDrop: a collage needs two)?
+        bool AppliesToDrop(const Recipe& recipe, size_t fileCount) const;
         // Can this recipe take this file? `why` explains a "no" (shown in the wheel's centre / logs).
         bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why = nullptr) const;
         // True when running the recipe would be pointless: a one-step "to PNG" on a PNG.

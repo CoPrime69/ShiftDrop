@@ -502,6 +502,53 @@ Animated GIFs and multi-page TIFFs
 - [ ] A one-frame GIF on PNG: an ordinary `name (converted).png`, no folder
 - [ ] Undo (History) on a frames folder moves the whole folder to the Recycle Bin
 
+### W. Photo tools: Edit, Annotate, Background, Collage (M8)
+Have ready: a 12 MP phone photo (JPEG with camera, date and GPS), a hazy or foggy landscape, a noisy night shot, a screenshot (PNG), a PNG with transparency, and four photos of different shapes (portrait, landscape, square).
+
+Tools wheel
+- [ ] Drag the phone photo, press **Shift** and scroll to the Tools wheel: Edit, Annotate, Background are there; Collage is not
+- [ ] Drag two or more photos: Collage is there too (with 17 image tools the wheel pages: 15 slices and More)
+- [ ] Drag a video or a PDF: none of the four photo tools are there
+
+Edit Photos
+- [ ] Drop the phone photo on **Edit**: the editor opens with Presets and four tabs (Light, Colour, Detail, Effects); every slider moves the picture live, with no lag at fit and at 100 %
+- [ ] Press and hold on the picture: the original shows with an "Original" tag; let go: the edit is back
+- [ ] Auto brightens a dark photo sensibly; each preset (Vivid, Soft, Warm, Cool, Mono, Film) looks like its name; Original and Reset clear everything
+- [ ] Dehaze +60 on the hazy landscape: the fog lifts without dark halos round the horizon; −40 adds haze
+- [ ] Clarity +60: local contrast up, no halos round edges; −60 softens
+- [ ] Noise reduction 70 on the night shot: smooth skies, edges still sharp; Grain 40 adds film grain that stays the same at every zoom
+- [ ] Ctrl+Z / Ctrl+Y undo and redo slider moves (one step per drag)
+- [ ] Save: `photo (edited).jpg` next to the photo; Properties > Details keeps camera, date and GPS; it opens upright
+- [ ] The day's log (tray > Open logs folder) has "photo: edit 4000x3000 -> 4000x3000 on GPU in N ms" (WARP on a PC without a graphics card); record N for a 12 MP photo here
+- [ ] Drop five photos: one editor (the first photo), Save all makes five edited copies with the same settings
+- [ ] PNG stays PNG with its transparency; WebP stays WebP
+
+Annotate Photos
+- [ ] Drop the screenshot on **Annotate**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
+- [ ] Text: click, type, Shift+Enter for a new line, Enter to finish; click it again (selected) to edit; Esc on an empty text removes it
+- [ ] Box and Circle (Shift keeps them even; Filled toggle), Callout (press on the subject, drag to where the bubble goes, type), Number (1, 2, 3 in the order placed; deleting 1 renumbers), Magnifier (press on a detail, drag the loupe; its grips change the spot and the magnification)
+- [ ] Pen and Highlighter draw smooth strokes; the highlighter is see-through and doesn't darken where it overlaps itself
+- [ ] Insert picture: pick a PNG logo; it lands in the middle and can be moved and resized by its corners
+- [ ] Select a mark: colour, width and size change it; To front and Delete work; arrows nudge it (Shift by ten); the letter keys V A T B O C N M P H switch tools
+- [ ] Drop three screenshots: the switcher in the panel moves between them, each keeps its own marks; Save writes only those with marks (the rest are skipped)
+- [ ] Save: `screenshot (annotated).png`; the marks look as in the editor at 100 %
+
+Add a Background
+- [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
+- [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
+- [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
+- [ ] Save: `logo (background).png`; a JPEG source gives a JPEG with its EXIF
+
+Create a Collage
+- [ ] Drop the four photos on **Collage**: "Opening 4 photos…", then a grid; Row and Column keep every photo whole; Featured makes the first one large
+- [ ] Drag a photo onto another: they swap; Shuffle and Reverse change the order; Undo puts it back
+- [ ] Shape (grid and featured), Longer side (type 2000), Spacing, Rounded corners, background colour and "Show whole photos" all change the preview live
+- [ ] Save: one `first-photo (collage).jpg` (named after the first photo in the collage), the longer side as typed, no camera or GPS in its details
+
+GPU and speed
+- [ ] On a laptop with a graphics card and on a VM without one (WARP): every preview works; the log names the device
+- [ ] Unplug or update the graphics driver while an editor is open (or change the display): the preview comes back
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
