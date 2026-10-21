@@ -33,9 +33,16 @@ namespace sd::ocr
             return text.empty() ? std::format(L"Windows OCR failed (0x{:08X})", static_cast<uint32_t>(e.code().value)) : text;
         }
 
-        // The user's own languages first (the first one Windows can read), else any installed one.
+        // The language picked in the tray menu; else the user's own languages first (the first one
+        // Windows can read), else any installed one.
         wmo::OcrEngine CreateEngine()
         {
+            if (const auto tag = LanguageChoice(); !tag.empty())
+            {
+                if (auto chosen = wmo::OcrEngine::TryCreateFromLanguage(winrt::Windows::Globalization::Language(winrt::hstring(tag))))
+                    return chosen;
+                log::Warn(L"ocr: {} is no longer installed; reading with the automatic choice", tag);
+            }
             auto engine = wmo::OcrEngine::TryCreateFromUserProfileLanguages();
             if (engine)
                 return engine;
@@ -43,6 +50,21 @@ namespace sd::ocr
                 if ((engine = wmo::OcrEngine::TryCreateFromLanguage(language)))
                     return engine;
             return nullptr;
+        }
+
+        std::vector<Language> InstalledLanguages()
+        {
+            std::vector<Language> out;
+            try
+            {
+                for (const auto& language : wmo::OcrEngine::AvailableRecognizerLanguages())
+                    out.push_back(Language{ std::wstring(language.LanguageTag()), std::wstring(language.DisplayName()) });
+            }
+            catch (const winrt::hresult_error& e)
+            {
+                log::Warn(L"ocr: cannot list languages: {}", Message(e));
+            }
+            return out;
         }
 
         constexpr const wchar_t* kNoLanguage = L"no OCR language is installed (Settings > Time & language > Language)";
@@ -173,6 +195,7 @@ namespace sd::ocr
         }
 
         const bool g_installed = [] {
+            Platform().languages = &InstalledLanguages;
             Platform().available = &IsAvailable;
             Platform().recognize = &RecognizeBitmap;
             return true;

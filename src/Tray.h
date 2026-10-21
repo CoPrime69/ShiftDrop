@@ -18,6 +18,23 @@ namespace sd
         bool checked = false;
     };
 
+    // A submenu with one radio-checked choice a feature adds (shown under Style).
+    struct TrayChoice
+    {
+        std::wstring text;                 // the submenu's name
+        UINT baseId = 0;                   // item i sends baseId + i
+        std::vector<std::wstring> items;
+        int checked = 0;
+    };
+
+    // What features add to the tray menu.
+    struct TrayExtras
+    {
+        bool shelf = false;                // "Show Float shelf"
+        std::vector<TrayChoice> choices;
+        std::vector<TrayToggle> toggles;
+    };
+
     // The notification-area icon, its context menu and balloon notifications.
     // On Windows 10/11 a balloon (NIF_INFO) is shown as a toast attributed to this app.
     class Tray
@@ -29,7 +46,7 @@ namespace sd
         void SetTip(std::wstring_view tip);
         void Balloon(std::wstring_view title, std::wstring_view text, DWORD infoFlags = NIIF_INFO);
         // WM_COMMAND with IDM_* goes to the owner window.
-        void ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance, const std::vector<TrayToggle>& toggles = {});
+        void ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance, const TrayExtras& extras = {});
 
     private:
         NOTIFYICONDATAW Base(UINT flags) const;

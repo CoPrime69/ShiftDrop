@@ -91,14 +91,17 @@ namespace sd
             log::Warn(L"tray: balloon failed");
     }
 
-    void Tray::ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance, const std::vector<TrayToggle>& toggles)
+    void Tray::ShowMenu(POINT anchor, bool startWithWindows, const Appearance& appearance, const TrayExtras& extras)
     {
         wil::unique_hmenu menu(CreatePopupMenu());
         if (!menu)
             return;
         AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, press Shift, scroll for sections");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu.get(), MF_STRING, IDM_SETTINGS, L"Settings\x2026");
         AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
+        if (extras.shelf)
+            AppendMenuW(menu.get(), MF_STRING, IDM_SHOW_SHELF, L"Show Float shelf");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
@@ -115,8 +118,18 @@ namespace sd
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(size.release()), L"Size");
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(style.release()), L"Style");
         AppendMenuW(menu.get(), MF_STRING | (appearance.hideCursor ? MF_CHECKED : MF_UNCHECKED), IDM_HIDE_CURSOR, L"Hide cursor over the wheel");
+        for (const auto& c : extras.choices)
+        {
+            wil::unique_hmenu sub(CreatePopupMenu());
+            if (!sub || c.items.empty())
+                continue;
+            for (size_t i = 0; i < c.items.size(); ++i)
+                AppendMenuW(sub.get(), MF_STRING, c.baseId + static_cast<UINT>(i), c.items[i].c_str());
+            CheckMenuRadioItem(sub.get(), c.baseId, c.baseId + static_cast<UINT>(c.items.size()) - 1, c.baseId + static_cast<UINT>(c.checked), MF_BYCOMMAND);
+            AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(sub.release()), c.text.c_str());
+        }
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
-        for (const auto& t : toggles)
+        for (const auto& t : extras.toggles)
             AppendMenuW(menu.get(), MF_STRING | (t.checked ? MF_CHECKED : MF_UNCHECKED), t.id, t.text.c_str());
         AppendMenuW(menu.get(), MF_STRING | (startWithWindows ? MF_CHECKED : MF_UNCHECKED), IDM_START_WITH_WINDOWS, L"Start with Windows");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);

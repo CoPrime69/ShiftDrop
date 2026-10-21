@@ -4,6 +4,7 @@
 
 #include <cwctype>
 #include <format>
+#include <mutex>
 
 namespace sd::ocr
 {
@@ -11,6 +12,29 @@ namespace sd::ocr
     {
         static Hooks hooks;   // filled in by WinOcr.cpp's static initialiser, before main()
         return hooks;
+    }
+
+    namespace
+    {
+        std::mutex g_languageLock;
+        std::wstring g_language;   // empty: automatic
+    }
+
+    void SetLanguage(const std::wstring& tag)
+    {
+        std::lock_guard lock(g_languageLock);
+        g_language = tag;
+    }
+
+    std::wstring LanguageChoice()
+    {
+        std::lock_guard lock(g_languageLock);
+        return g_language;
+    }
+
+    std::vector<Language> Languages()
+    {
+        return Platform().languages ? Platform().languages() : std::vector<Language>{};
     }
 
     bool Available(std::wstring* why)
