@@ -340,6 +340,41 @@ TEST(FfmpegComponents, EveryArgumentBuilderIsCovered)
         EXPECT_TRUE(Listed(c, "protocols", p)) << p;
 }
 
+TEST(FfmpegComponents, TestClipsCanBeMade)
+{
+    // The tests make their clips with generated inputs (-f lavfi -i "testsrc=...") and filters
+    // (-af/-vf): those must be in the build too, or the media tests fail on the bundled exe.
+    const auto c = Load();
+    ASSERT_FALSE(c.empty());
+    const auto testsDir = ComponentsFile().parent_path().parent_path() / "tests";
+    ASSERT_TRUE(std::filesystem::is_directory(testsDir)) << testsDir.string();
+    const std::wregex graph(LR"(L"(?:-i|-af|-vf|-filter_complex)", (?:std::format\()?L"([^"]*)")");
+    std::set<std::string> filters;
+    for (const auto& e : std::filesystem::directory_iterator(testsDir))
+    {
+        if (e.path().extension() != ".cpp")
+            continue;
+        std::ifstream in(e.path(), std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), {});
+        const std::wstring wide(text.begin(), text.end());   // the graphs are ASCII
+        for (std::wsregex_iterator it(wide.begin(), wide.end(), graph), end; it != end; ++it)
+        {
+            std::wstring g = (*it)[1].str();
+            // Only filtergraphs: an -i value is a graph when it names a source ("sine=..."), not a file.
+            if (g.find(L'=') == std::wstring::npos || g.starts_with(L"fd:"))
+                continue;
+            // C++ escapes in the source: "\\," is an escaped comma in the graph.
+            for (size_t at; (at = g.find(L"\\\\")) != std::wstring::npos;)
+                g.replace(at, 2, L"\\");
+            AddFilters(g, filters);
+        }
+    }
+    EXPECT_TRUE(filters.contains("sine")) << "no test graphs found in " << testsDir.string();
+    for (const auto& f : filters)
+        if (f != "subtitles")   // the sandbox test only checks that such a graph is refused
+            EXPECT_TRUE(Listed(c, "filters", f)) << "filter " << f << " is used by a test but not in scripts/ffmpeg-components.txt";
+}
+
 TEST(FfmpegComponents, EveryDroppableFileDecodes)
 {
     // Each extension the wheel takes as video or audio (Media.cpp) needs its demuxer.

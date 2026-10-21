@@ -51,7 +51,7 @@ try {
     $jobs = [ordered]@{
         'MP4 (stream copy)' = { param($b) @('-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'copy', '-c:a', 'copy', '-movflags', '+faststart', '-f', 'mp4') }
         'MP4 (H.264 re-encode)' = { param($b) @('-map', '0:v:0?', '-map', '0:a:0?', '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2') + (H264Args $b.H264) + @('-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-f', 'mp4') }
-        'WebM (VP9 + Opus)' = { param($b) @('-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libvpx-vp9', '-crf', '32', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '5', '-c:a', 'libopus', '-b:a', '128k', '-f', 'webm') }
+        'WebM (VP9 + Opus)' = { param($b) @('-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libvpx-vp9', '-crf', '32', '-b:v', '0', '-row-mt', '1', '-deadline', 'realtime', '-cpu-used', '6', '-c:a', 'libopus', '-b:a', '128k', '-f', 'webm') }
         'MP3' = { param($b) @('-map', '0:a:0', '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-f', 'mp3') }
         'Decode only' = { param($b) @('-map', '0', '-f', 'null') }
     }

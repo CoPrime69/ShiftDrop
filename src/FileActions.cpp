@@ -5,6 +5,7 @@
 #include <shlobj.h>
 #include <wil/resource.h>
 
+#include <cwctype>
 #include <filesystem>
 #include <format>
 #include <map>
@@ -62,16 +63,99 @@ namespace sd
             return std::filesystem::path(path).parent_path().wstring();
         }
 
-        bool Launch(const wchar_t* exe, const std::wstring& args, const std::wstring& folder)
+        bool Launch(const TerminalLaunch& t)
         {
             SHELLEXECUTEINFOW sei{ sizeof(sei) };
             sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
-            sei.lpFile = exe;
-            sei.lpParameters = args.c_str();
-            sei.lpDirectory = folder.c_str();
+            sei.lpFile = t.exe.c_str();
+            sei.lpParameters = t.args.c_str();
+            sei.lpDirectory = t.folder.c_str();
             sei.nShow = SW_SHOWNORMAL;
             return ShellExecuteExW(&sei) != FALSE;
         }
+
+        struct TerminalSetting
+        {
+            TerminalChoice choice = TerminalChoice::WindowsTerminal;
+            std::wstring custom;
+        };
+        TerminalSetting& Terminal()
+        {
+            static TerminalSetting setting;   // UI thread only
+            return setting;
+        }
+
+        std::wstring_view Trim(std::wstring_view s)
+        {
+            while (!s.empty() && std::iswspace(s.front()))
+                s.remove_prefix(1);
+            while (!s.empty() && std::iswspace(s.back()))
+                s.remove_suffix(1);
+            return s;
+        }
+    }
+
+    std::vector<TerminalLaunch> TerminalCommands(TerminalChoice choice, std::wstring_view custom, const std::wstring& folder)
+    {
+        // A trailing backslash ("C:\") would escape the closing quote on the command line.
+        const auto quotable = folder.ends_with(L'\\') ? folder + L"." : folder;
+        std::vector<TerminalLaunch> out;
+        const auto powershell = [&] {
+            out.push_back({ L"pwsh.exe", L"-NoExit", folder });
+            out.push_back({ L"powershell.exe", L"-NoExit", folder });
+        };
+        const auto command = Trim(custom);
+        if (choice == TerminalChoice::Custom && !command.empty())
+        {
+            // The program is the first word, or the quoted part ("C:\Program Files\...\app.exe").
+            std::wstring_view program, rest;
+            if (command.front() == L'"')
+            {
+                const size_t close = command.find(L'"', 1);
+                program = close == std::wstring_view::npos ? command.substr(1) : command.substr(1, close - 1);
+                rest = close == std::wstring_view::npos ? std::wstring_view{} : command.substr(close + 1);
+            }
+            else
+            {
+                const size_t space = command.find_first_of(L" \t");
+                program = command.substr(0, space);
+                rest = space == std::wstring_view::npos ? std::wstring_view{} : command.substr(space);
+            }
+            std::wstring args(Trim(rest));
+            constexpr std::wstring_view kPlaceholder = L"{folder}";
+            for (size_t at = args.find(kPlaceholder); at != std::wstring::npos; at = args.find(kPlaceholder, at))
+            {
+                const bool quoted = at > 0 && args[at - 1] == L'"';
+                const auto value = quoted ? quotable : L"\"" + quotable + L"\"";
+                args.replace(at, kPlaceholder.size(), value);
+                at += value.size();
+            }
+            if (!Trim(program).empty())
+            {
+                out.push_back({ std::wstring(Trim(program)), std::move(args), folder });
+                return out;
+            }
+        }
+        switch (choice)
+        {
+        case TerminalChoice::PowerShell:
+            powershell();
+            break;
+        case TerminalChoice::CommandPrompt:
+            out.push_back({ L"cmd.exe", L"/K", folder });
+            break;
+        default:
+            // Windows Terminal if installed (wt.exe is an app execution alias), else PowerShell.
+            out.push_back({ L"wt.exe", std::format(L"-d \"{}\"", quotable), folder });
+            powershell();
+            break;
+        }
+        return out;
+    }
+
+    void SetTerminalChoice(TerminalChoice choice, std::wstring custom)
+    {
+        Terminal() = TerminalSetting{ choice, std::move(custom) };
     }
 
     wil::unique_hglobal MakeDropFiles(const std::vector<std::wstring>& files)
@@ -141,11 +225,10 @@ namespace sd
         else if (actionId == "file.terminal")
         {
             const auto folder = FolderOf(files[0]);
-            // Windows Terminal if installed (wt.exe is an app execution alias), else PowerShell.
-            // A trailing backslash ("C:\") would escape the closing quote on the command line.
-            const auto quoted = folder.ends_with(L'\\') ? folder + L"." : folder;
-            r.ok = Launch(L"wt.exe", std::format(L"-d \"{}\"", quoted), folder) ||
-                   Launch(L"powershell.exe", L"-NoExit", folder);
+            const auto& setting = Terminal();
+            for (const auto& t : TerminalCommands(setting.choice, setting.custom, folder))
+                if ((r.ok = Launch(t)))
+                    break;
             r.message = r.ok ? std::format(L"Opened a terminal in {}.", folder) : L"Could not start a terminal.";
         }
         else
