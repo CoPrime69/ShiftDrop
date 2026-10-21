@@ -1,7 +1,7 @@
 #pragma once
 #include "Accessibility.h"
-#include "Canvas.h"
 #include "DropTarget.h"
+#include "PanelWindow.h"
 #include "Settings.h"
 #include "Theme.h"
 #include "keyboard/KeyNav.h"
@@ -85,7 +85,7 @@ namespace sd
     // right-click entry): hover or arrows to pick, click or Enter to run, Esc or a click outside to close.
     //
     // Screen readers see it as a list of its slices and hear the slice under the cursor (Accessibility.h).
-    class Overlay final : public IDropSink, private a11y::WheelView
+    class Overlay final : public IDropSink, private a11y::WheelView, private PanelWindow
     {
     public:
         using ContentProvider = std::function<WheelContent(const std::vector<std::wstring>& files, int ring)>;
@@ -183,15 +183,12 @@ namespace sd
         int ViewSliceAt(POINT screen) const override;
 
         bool EnsureTextFormats();
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight) const;
         void Render();
         void DrawScene();
         void DrawSlices(const std::vector<WheelSlice>& slices, const wheel::Layout& layout, const std::vector<float>& hotT, float alpha, float rotation);
         void DrawCentre();
         D2D1_POINT_2F Polar(float radius, float degrees) const;   // 0° = 12 o'clock, clockwise
         Microsoft::WRL::ComPtr<ID2D1Geometry> TileGeometry(size_t count, size_t index, float inner, float outer);
-        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> Brush(const D2D1_COLOR_F& color, float alpha = 1.f);
-        void Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color, float alpha = 1.f);
 
         HINSTANCE m_instance;
         std::vector<WheelRing> m_rings;
@@ -205,17 +202,10 @@ namespace sd
         bool m_registered = false;
         std::unique_ptr<a11y::WheelElement> m_a11y;   // the wheel as UI Automation sees it
 
-        Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
-        Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;
-        std::unique_ptr<Canvas> m_canvas;
-        ID2D1RenderTarget* m_rt = nullptr;   // valid between Canvas::Begin and End
-        std::wstring m_textFamily, m_iconFamily;
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_labelFont, m_formatFont, m_iconFont, m_countFont, m_ringFont, m_detailFont;
-        float m_fontScale = 0.f;
 
         // Layout, in window pixels.
         HMONITOR m_monitor = nullptr;
-        float m_scale = 1.f;          // pixels per DIP (monitor DPI and the Size setting)
         POINT m_origin{};             // window top-left, screen px
         SIZE m_size{};
         D2D1_POINT_2F m_c{};          // wheel centre: the cursor when it opened, moved in near a screen edge
@@ -253,9 +243,8 @@ namespace sd
         theme::Palette m_palette{};
 
         // Animation: all 0..1. Driven by a ~64 fps timer that stops once everything has settled.
-        bool m_animating = false;
+        FrameClock m_frames;
         bool m_motion = true;         // Windows' animation effects setting
-        ULONGLONG m_lastFrame = 0;
         float m_openT = 1.f, m_switchT = 1.f, m_closeT = 0.f;
         float m_away = 0.f, m_awayTarget = 0.f;   // cursor past the tiles toward the window edge: the wheel fades
         bool m_dropped = false;                   // closing after a drop (not because the cursor left)

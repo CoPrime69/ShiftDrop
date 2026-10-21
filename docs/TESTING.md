@@ -151,6 +151,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] **Show files** (or double-click a row): Explorer opens with the outputs selected
 - [ ] Esc closes the history window; Tab moves between the list and the buttons
 - [ ] Drag the history window to a monitor with another scaling: text and buttons stay crisp and correctly sized
+- [ ] Windows in dark mode: the history window is dark like Settings (title bar, list, its header and buttons); switch Windows to light while it is open and it turns light at once, with its grey face as before
 
 ### I. Start with Windows, recipes, recovery
 - [ ] First start: tray menu shows **Start with Windows** ticked; `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` lists `ShiftDrop` pointing at this exe with `--autostart`
@@ -327,6 +328,7 @@ Inspector
 - [ ] Drop three files (photo, video, song) on Inspect: one window with three tabs; the video tab lists Media, Video track 1, Audio track 1, chapters and tags
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
+- [ ] Windows in dark mode: the inspector is dark (title bar, search box, list and its group headings readable); switching Windows to light while it is open turns it light
 
 ### Q. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
