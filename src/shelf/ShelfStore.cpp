@@ -27,6 +27,7 @@ namespace sd::shelf
             j["x"] = *shelf.x;
             j["y"] = *shelf.y;
         }
+        j["shown"] = shelf.shown;
         return j.dump(2);
     }
 
@@ -48,6 +49,8 @@ namespace sd::shelf
             out.x = x->get<int>();
             out.y = y->get<int>();
         }
+        if (const auto shown = j.find("shown"); shown != j.end() && shown->is_boolean())
+            out.shown = shown->get<bool>();
         shelf = std::move(out);
         return true;
     }
@@ -116,6 +119,21 @@ namespace sd::shelf
             result.resize(limit);
         items = std::move(result);
         return fresh;
+    }
+
+    bool Visibility::Switch(bool on)
+    {
+        if (on == m_on)
+            return false;
+        m_on = on;
+        return true;
+    }
+
+    size_t Visibility::Put(std::vector<std::wstring>& items, const std::vector<std::wstring>& files, size_t limit)
+    {
+        if (std::any_of(files.begin(), files.end(), [](const std::wstring& f) { return !f.empty(); }))
+            m_on = true;
+        return AddToTop(items, files, limit);
     }
 
     size_t RemoveIf(std::vector<std::wstring>& items, const std::function<bool(const std::wstring&)>& gone)

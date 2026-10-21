@@ -101,7 +101,7 @@ namespace sd
         AppendMenuW(menu.get(), MF_STRING, IDM_SETTINGS, L"Settings\x2026");
         AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
         if (extras.shelf)
-            AppendMenuW(menu.get(), MF_STRING, IDM_SHOW_SHELF, L"Show Float shelf");
+            AppendMenuW(menu.get(), MF_STRING | (extras.shelfOn ? MF_CHECKED : MF_UNCHECKED), IDM_SHOW_SHELF, L"Show Float shelf");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);

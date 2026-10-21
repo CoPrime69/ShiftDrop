@@ -81,8 +81,12 @@ namespace sd
         if (m_accepting)
         {
             m_data = data;
-            // The picture stays, but no "+ Copy" badge under it: the wheel says what will happen.
-            SetDropDescription(data, DROPIMAGE_NOIMAGE);
+            // The picture stays, but no "+ Copy" badge under it unless the sink names one: the wheel
+            // says what will happen.
+            if (const wchar_t* label = m_sink->DropLabel())
+                SetDropDescription(data, *effect == DROPEFFECT_LINK ? DROPIMAGE_LINK : DROPIMAGE_COPY, label);
+            else
+                SetDropDescription(data, DROPIMAGE_NOIMAGE);
         }
         if (m_helper)
         {

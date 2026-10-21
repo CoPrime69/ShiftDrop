@@ -1,4 +1,5 @@
 #pragma once
+#include "DropTarget.h"
 #include "Island.h"
 #include "JobQueue.h"
 #include "PanelWindow.h"
@@ -23,10 +24,13 @@ namespace sd
     // The Float shelf: a small always-on-top panel that holds files until you drag them somewhere.
     //
     // Files arrive from the Float slice on the File-actions wheel, from a job's result in the top
-    // panel, or by dropping them on the shelf itself. Each shows its thumbnail and name; drag one, a
-    // selection or all of them out into any app. Drop it near a screen edge and it pins there, folding
-    // into a slim tab until the mouse (or a drag) comes back. It remembers its files and place across
-    // restarts (shelf.json next to settings.ini), drops files that disappear, and hides when empty.
+    // panel, or by dropping them on the shelf itself (from Explorer, the desktop or a browser). Each
+    // shows its thumbnail and name; drag one, a selection or all of them out into any app. Drop it
+    // near a screen edge and it pins there, folding into a slim tab until the mouse (or a drag) comes
+    // back. It stays on screen while it is switched on, empty or not (an empty shelf is a drop
+    // target); its close button and the tray's "Show Float shelf" switch it off and on
+    // (shelf::Visibility). It remembers its files, its place and whether it is on across restarts
+    // (shelf.json next to settings.ini), and drops files that disappear.
     //
     // Like the wheel and the top panel it is a layered window drawn with Direct2D (Canvas): pixels
     // with alpha 0 let clicks through, so the folded tab takes no more room than it shows. Unlike
@@ -34,7 +38,7 @@ namespace sd
     // Thumbnails, existence checks and clipboard pictures are made on its own worker thread.
     //
     // Created, used and destroyed on the UI thread, before OleUninitialize.
-    class Shelf : private PanelWindow
+    class Shelf final : private PanelWindow, private IDropSink
     {
     public:
         Shelf(HINSTANCE instance, std::wstring storePath);
@@ -42,15 +46,16 @@ namespace sd
         Shelf(const Shelf&) = delete;
         Shelf& operator=(const Shelf&) = delete;
 
-        // Registers the "file.float" action and loads the saved shelf (shown if it has files).
+        // Registers the "file.float" action and loads the saved shelf (shown if it was on).
         bool Create();
         void SetAppearance(const Appearance& appearance);
 
-        // Puts the files at the top of the shelf and shows it.
+        // Puts the files at the top of the shelf and shows it (switching it on if it was off).
         void Add(const std::vector<std::wstring>& files);
-        // The tray's "Show Float shelf": opens it where it was, empty or not, so files can be dropped on
-        // it. An empty shelf goes away with Clear (or once its last file is dragged out).
-        void Reveal();
+        // The tray's "Show Float shelf" (ticked while it is on). On, it opens where it was, empty or
+        // not; off, it hides and keeps its files. Saved, so it lasts across restarts.
+        bool IsOn() const { return m_shown.On(); }
+        void SwitchOn(bool on);
 
         // Convert-and-carry for a finished job's outputs in the top panel: drag them out, put them on
         // the shelf, copy them. The actions do nothing once the shelf is gone.
@@ -60,12 +65,15 @@ namespace sd
         // Returns the line to show ("Copied ...").
         std::wstring Copy(const std::vector<std::wstring>& files);
 
-        // Called by the shelf's drop target (OLE, UI thread).
-        bool OnDragEnter(const std::vector<std::wstring>& files);
-        void OnDragLeave();
-        void OnDrop(const std::vector<std::wstring>& files);
-
     private:
+        // IDropSink, from the app's drop target (DropTarget.h; OLE, UI thread). A drop only puts the
+        // files on the shelf: copy, never move, and no wheel.
+        bool OnDragEnter(const std::vector<std::wstring>& files, POINT pt) override;
+        DWORD OnDragOver(POINT pt, DWORD allowed) override;
+        void OnDragLeave() override;
+        void OnDrop(const std::vector<std::wstring>& files, POINT pt) override;
+        const wchar_t* DropLabel() const override { return L"Add to the Float shelf"; }
+
         struct Item
         {
             std::wstring path;
@@ -79,6 +87,7 @@ namespace sd
         struct ThumbResult;
         struct CheckResult;
         struct ClipboardJob;
+        struct KeepJob;
 
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam);
@@ -93,6 +102,8 @@ namespace sd
         void CheckFiles();
         void OnThumb(std::unique_ptr<ThumbResult> result);
         void OnCheck(std::unique_ptr<CheckResult> result);
+        void OnKeep(std::unique_ptr<KeepJob> job);
+        void ShowNote(std::wstring note);
 
         // Showing, hiding, folding.
         void Show(bool peek);
@@ -122,6 +133,8 @@ namespace sd
         void StartDragOut(std::vector<size_t> indices);
         void EndMove();
         void TogglePin();
+        void Press(shelf::Part part);           // a header button, by click or keyboard
+        void MoveButtonFocus(bool back);        // Tab and Shift+Tab: the list, then the header buttons
         void Open(const std::vector<size_t>& indices);
         void MoveFocus(int delta, bool extend);
         void ScrollIntoView(size_t index);
@@ -134,8 +147,10 @@ namespace sd
         void RoundButton(const shelf::Box& box, wchar_t glyph, bool hover, bool danger, float alpha);
         void DrawThumb(Item& item, const shelf::Box& box, float alpha);
         void DrawPanel(const shelf::Layout& layout, float alpha);
+        void DrawDropZone(const shelf::Box& box, float alpha);
         void DrawTab(const shelf::Box& tab, float alpha);
         void Render();
+        void PlaceTips(const shelf::Layout* layout);   // the header buttons' tooltips follow them
 
         HINSTANCE m_instance;
         std::wstring m_storePath;
@@ -145,9 +160,12 @@ namespace sd
         wil::unique_hwnd m_hwnd;
         Microsoft::WRL::ComPtr<IDropTarget> m_dropTarget;
         bool m_registered = false;
+        HWND m_tips = nullptr;   // tooltips for the header buttons; owned by m_hwnd, destroyed with it
+        Microsoft::WRL::ComPtr<ID2D1StrokeStyle> m_dashes;   // the empty shelf's drop outline
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_titleFont, m_nameFont, m_detailFont, m_iconFont, m_smallIconFont, m_countFont, m_footerFont;
 
         // Content.
+        shelf::Visibility m_shown;   // switched on (on screen) or off
         std::vector<Item> m_items;   // newest first
         shelf::Selection m_selection;
         size_t m_focus = 0;          // the keyboard's current item
@@ -181,6 +199,7 @@ namespace sd
         shelf::Hit m_hover, m_press;
         bool m_pressed = false, m_moving = false, m_tracking = false, m_mouseInside = false;
         bool m_active = false;         // has the keyboard
+        shelf::Part m_keyPart = shelf::Part::None;   // Tab focus: None = the list, else a header button
         bool m_menu = false;           // a context menu is open
         bool m_dropHover = false;      // files are being dragged over the shelf
         bool m_draggingOut = false;    // our own drag: never accept it back

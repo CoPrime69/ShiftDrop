@@ -97,6 +97,104 @@ TEST(Shelf, SaveAndLoad)
     EXPECT_TRUE(Load(path).items.empty());
 }
 
+TEST(Shelf, OnOrOffIsSaved)
+{
+    // Switched off (the tray item or the close button): saved, and a restart keeps it off.
+    SavedShelf off;
+    off.items = { L"C:\\a.png" };
+    off.shown = false;
+    SavedShelf b;
+    ASSERT_TRUE(FromJson(ToJson(off), b));
+    EXPECT_FALSE(b.shown);
+    EXPECT_EQ(b.items, off.items);   // its files stay while it is off
+    // A file from before the setting, or a value that is not true or false: on.
+    SavedShelf c;
+    ASSERT_TRUE(FromJson(R"({ "items": [] })", c));
+    EXPECT_TRUE(c.shown);
+    ASSERT_TRUE(FromJson(R"({ "items": [], "shown": "no" })", c));
+    EXPECT_TRUE(c.shown);
+}
+
+// ---- Showing and hiding ----------------------------------------------------------------------------
+
+TEST(Shelf, EmptyButOnStaysOnScreen)
+{
+    Visibility shown;   // first run: on
+    EXPECT_TRUE(shown.On());
+    std::vector<std::wstring> items = { L"C:\\a.png", L"C:\\b.png" };
+    RemoveIf(items, [](const std::wstring&) { return true; });   // removed, cleared or deleted
+    ASSERT_TRUE(items.empty());
+    EXPECT_TRUE(shown.On());   // an empty shelf stays, to drop files on
+
+    // Empty, it is a drop target: no footer, no clear button, the space below the header for a drop.
+    const Metrics m(1.25f);
+    const Box panel{ 0, 0, m.width, PanelHeight(m, 0) };
+    const auto l = LayOut(panel, m, 0, 0);
+    EXPECT_TRUE(l.rows.empty());
+    EXPECT_EQ(l.footer, Box{});
+    EXPECT_EQ(l.clear, Box{});
+    EXPECT_GT(l.drop.Height(), m.row);
+    EXPECT_GE(l.drop.top, l.header.bottom);
+    EXPECT_LE(l.drop.bottom, panel.bottom - m.inset);
+    EXPECT_GE(l.drop.left, panel.left + m.inset);
+    const auto centre = [&](const Box& b) { return HitTest(l, (b.left + b.right) / 2, (b.top + b.bottom) / 2); };
+    EXPECT_EQ(centre(l.pin), (Hit{ Part::Pin }));
+    EXPECT_EQ(centre(l.close), (Hit{ Part::Close }));
+    EXPECT_EQ(centre(l.drop), (Hit{}));
+    // With files it has its footer and no drop target.
+    const auto full = LayOut(Box{ 0, 0, m.width, PanelHeight(m, 1) }, m, 1, 0);
+    EXPECT_EQ(full.drop, Box{});
+    EXPECT_GT(full.footer.Height(), 0.f);
+}
+
+TEST(Shelf, CloseSwitchesItOff)
+{
+    TempDir dir;
+    const auto path = dir / L"shelf.json";
+    Visibility shown;
+    EXPECT_TRUE(shown.Switch(false));   // the close button: changed, so the shelf saves it
+    EXPECT_FALSE(shown.On());           // hidden, and unticked in the tray
+    EXPECT_FALSE(shown.Switch(false));  // closing again changes nothing
+    SavedShelf saved;
+    saved.items = { dir / L"keep.png" };
+    saved.shown = shown.On();
+    ASSERT_TRUE(Save(path, saved));
+    const auto restarted = Load(path);
+    EXPECT_FALSE(Visibility(restarted.shown).On());   // still off after a restart
+    EXPECT_EQ(restarted.items, saved.items);
+    // Ticking "Show Float shelf" brings it back, files and all.
+    Visibility again(restarted.shown);
+    EXPECT_TRUE(again.Switch(true));
+    EXPECT_TRUE(again.On());
+}
+
+TEST(Shelf, FilesPutOnItAreKeptAndShown)
+{
+    // A drop on the shelf and a result's Float button both put files the same way.
+    Visibility off(false);
+    std::vector<std::wstring> dropped = { L"C:\\a.png" };
+    std::vector<std::wstring> carried = dropped;
+    const std::vector<std::wstring> files = { L"C:\\new.txt", L"c:/A.PNG", L"C:\\new.txt" };
+    EXPECT_EQ(off.Put(dropped, files), 1u);
+    EXPECT_TRUE(off.On());   // files put on a closed shelf bring it back to show them
+    Visibility on;
+    EXPECT_EQ(on.Put(carried, files), 1u);
+    // The same list either way: the new file on top once, the one already there moved up, not twice.
+    EXPECT_EQ(dropped, carried);
+    EXPECT_EQ(dropped, (std::vector<std::wstring>{ L"C:\\new.txt", L"c:/A.PNG" }));
+    // Kept across a restart like any other.
+    SavedShelf saved;
+    saved.items = dropped;
+    SavedShelf back;
+    ASSERT_TRUE(FromJson(ToJson(saved), back));
+    EXPECT_EQ(back.items, dropped);
+    // Nothing put: a closed shelf stays closed.
+    Visibility closed(false);
+    std::vector<std::wstring> none;
+    EXPECT_EQ(closed.Put(none, { L"" }), 0u);
+    EXPECT_FALSE(closed.On());
+}
+
 // ---- Items and selection ---------------------------------------------------------------------------
 
 TEST(Shelf, AddPutsNewestOnTopWithoutDuplicates)
@@ -272,6 +370,12 @@ TEST(Shelf, HitTestFindsEachPart)
     };
     EXPECT_EQ(at(l.pin), (Hit{ Part::Pin }));
     EXPECT_EQ(at(l.clear), (Hit{ Part::Clear }));
+    EXPECT_EQ(at(l.close), (Hit{ Part::Close }));
+    // The header's buttons, left to right, never overlap each other or the title.
+    EXPECT_LE(l.title.right, l.clear.left);
+    EXPECT_LE(l.clear.right, l.pin.left);
+    EXPECT_LE(l.pin.right, l.close.left);
+    EXPECT_LE(l.close.right, l.panel.right);
     EXPECT_EQ(at(l.title), (Hit{ Part::Header }));
     EXPECT_EQ(at(l.footer), (Hit{ Part::Footer }));
     const auto& row = l.rows[1];

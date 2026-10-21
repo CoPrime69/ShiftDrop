@@ -50,7 +50,7 @@ namespace sd::shelf
         explicit Metrics(float scale);
         float scale;
         float width;         // panel width
-        float header;        // title row with the pin and clear buttons
+        float header;        // title row with the clear, pin and close buttons
         float row;           // one item
         float footer;        // the "drag all" handle
         float inset;         // panel edge to content
@@ -64,7 +64,7 @@ namespace sd::shelf
     float PanelHeight(const Metrics& m, size_t count);
     float MaxScroll(const Metrics& m, size_t count);
 
-    enum class Part { None, Header, Pin, Clear, Item, Reveal, Remove, Footer };
+    enum class Part { None, Header, Pin, Clear, Close, Item, Reveal, Remove, Footer };
     struct Hit
     {
         Part part = Part::None;
@@ -79,10 +79,13 @@ namespace sd::shelf
     };
     struct Layout
     {
-        Box panel, header, title, pin, clear, list, footer;
+        Box panel, header, title, pin, clear, close, list, footer;
+        Box drop;                   // an empty shelf's drop target, over the list and the footer
         std::vector<RowBox> rows;   // rows at least partly inside the list, top to bottom
     };
-    // Lays out a panel showing `count` items scrolled down by `scroll` pixels (clamped).
+    // Lays out a panel showing `count` items scrolled down by `scroll` pixels (clamped). The header's
+    // buttons from the right: close, pin, clear. An empty shelf has no clear button and no footer
+    // (both empty boxes, never hit): the space below the header is one drop target instead.
     Layout LayOut(const Box& panel, const Metrics& m, size_t count, float scroll);
     // What is under a point. Rows only count inside the list (a scrolled-away row is not hit).
     Hit HitTest(const Layout& layout, float x, float y);
