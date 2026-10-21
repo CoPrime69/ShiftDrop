@@ -291,7 +291,8 @@ request and every `v*` tag. Its jobs:
    (`SHIFTDROP_M0=ON`), the app target only.
 6. **timings** (tags, runs started by hand, pull requests labelled `bench`): the speed benchmark,
    the photo tools' 12 MP export times and our ffmpeg against the BtbN build.
-7. **release** (tags only): publishes the installer once every job above passed.
+7. **release** (pushes to main and `v*` tags): publishes the GitHub Release for `SD_VERSION` once
+   everything above passed, if that version has none yet (see below).
 
 **A push to main reuses its pull request's run.** Every pull-request run marks the tree it tested
 (an artifact named `tested-tree-<tree>`). When a push to main has the tree of a pull-request run
@@ -320,9 +321,15 @@ its numbers.
 The speed benchmark runs only when asked: label a pull request `bench`, or start the workflow by hand
 ("Run workflow" on the Actions page) with "bench" ticked. Its table goes on the run's summary page.
 
-A tag `v<version>` that matches `SD_VERSION` in `src/Brand.h` publishes a GitHub Release with the
-installer and, for the custom ffmpeg build, the ffmpeg source tarball. A tag that doesn't match
-fails the release step.
+**Releases.** After a push to main passes (built here or reused), the release job reads
+`SD_VERSION` from `src/Brand.h`. If there is no release `v<SD_VERSION>` yet, it creates it on that
+commit, which also creates the tag, with the installer and, for our own ffmpeg build, the ffmpeg
+source tarball. Otherwise it does nothing, so bumping `SD_VERSION` is what makes the next release.
+The notes say how to install, list the titles of the pull requests merged since the previous
+release (all of them for the first one) and warn that the installer isn't code-signed yet; they
+are built from titles only, and the job fails rather than publish notes that name an AI tool. A
+pushed tag `v<version>` builds in full and publishes the same way; a tag that doesn't match
+`SD_VERSION` fails the release job.
 
 ## When something goes wrong
 

@@ -86,6 +86,24 @@ jobs:
           path: reused/ShiftDrop-[0-9a-f]*/ShiftDrop.exe
           if-no-files-found: error
 
+      # Our ffmpeg build and its source tarball, for the release (absent when that run used BtbN's).
+      - uses: actions/download-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        continue-on-error: true
+        with:
+          pattern: ffmpeg-custom-*
+          run-id: ${{ steps.find.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: reused-ffmpeg
+          merge-multiple: true
+
+      - uses: actions/upload-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: reused-ffmpeg
+          if-no-files-found: ignore
+
   # ShiftDrop's own small LGPL ffmpeg.exe (scripts/build-ffmpeg.sh): only the codecs, formats and
   # filters the app uses (scripts/ffmpeg-components.txt), cross-compiled with MinGW-w64. Cached on the
   # script and the list, so it is only rebuilt when one of them changes. Setting the repository
@@ -429,41 +447,91 @@ jobs:
       - name: Build the placeholder gesture build
         run: cmake --build --preset ci --target ShiftDrop
 
-  # A version tag (v0.2.0) publishes the installer as a GitHub Release, once the app, every test
-  # shard, the installer smoke test and the placeholder build passed.
+  # Publishes a GitHub Release for SD_VERSION (src/Brand.h) once it has passed everything above:
+  # on a push to main (the reused pull-request build or a full one) when there is no release
+  # v<SD_VERSION> yet, which also creates that tag, and on a pushed v* tag. A version that already
+  # has its release is left alone.
   release:
-    needs: [ffmpeg, build, tests, installer, placeholder]
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.installer.result == 'success' && needs.placeholder.result == 'success' }}
+    needs: [reuse, ffmpeg, build, tests, installer, placeholder]
+    if: ${{ !cancelled() && !inputs.cache-only && github.event_name == 'push' && ((needs.reuse.result == 'success' && needs.reuse.outputs.run-id != '') || (needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.installer.result == 'success' && needs.placeholder.result == 'success')) }}
     runs-on: ubuntu-24.04
     permissions:
-      contents: write   # creates the release
+      contents: write   # creates the release and its tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Is there a release for this version?
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          if ("${{ github.ref_type }}" -eq 'tag' -and "${{ github.ref_name }}" -ne "v$version") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $version in src/Brand.h" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          gh release view "v$version" --repo $env:REPO --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            "Release v$version already exists: nothing to publish." | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+            "publish=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "publish=true" >> $env:GITHUB_OUTPUT
+          }
+          exit 0
+
       - uses: actions/download-artifact@v4
+        if: steps.version.outputs.publish == 'true'
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
           path: build/installer
 
+      # Absent when the build shipped the BtbN ffmpeg (SHIFTDROP_FFMPEG=btbn).
       - uses: actions/download-artifact@v4
-        if: needs.ffmpeg.result == 'success'
+        if: steps.version.outputs.publish == 'true'
+        continue-on-error: true
         with:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
+      # The notes are built from pull-request titles only: what was merged since the last release
+      # (every merged pull request for the first one).
       - name: Publish release
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          $env:SD_VERSION = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
-          $env:SD_SETUP = "build/installer/ShiftDrop-Setup-$env:SD_VERSION.exe"
-          if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
-          if (-not (Test-Path $env:SD_SETUP)) { throw "$env:SD_SETUP is missing from the installer job's artifact" }
-          # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
-          $files = @($env:SD_SETUP)
-          if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
-            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
-            $files += "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
+          $version = '${{ steps.version.outputs.version }}'
+          $setup = "build/installer/ShiftDrop-Setup-$version.exe"
+          if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts" }
+          $since = gh api "repos/$env:REPO/releases?per_page=1" --jq '.[0].created_at // empty'
+          $prs = @{}
+          foreach ($line in @(gh api --paginate "repos/$env:REPO/pulls?state=closed&base=main&per_page=100" --jq '.[] | select(.merged_at != null) | [.number, .merged_at, .title] | @tsv') +
+                            @(gh api "repos/$env:REPO/commits/$env:GITHUB_SHA/pulls" --jq '.[] | [.number, (.merged_at // "now"), .title] | @tsv')) {
+            if (-not $line) { continue }
+            $number, $merged, $title = $line -split "`t", 3
+            if ($since -and $merged -ne 'now' -and [datetime]$merged -le [datetime]$since) { continue }
+            $prs[[int]$number] = $title
           }
-          gh release create "${{ github.ref_name }}" @files --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."
+          $notes = @(
+            "Download **ShiftDrop-Setup-$version.exe** and run it. It installs for your Windows user only and needs no admin rights.",
+            '',
+            "## What's in this build",
+            ''
+          )
+          if ($prs.Count) { $notes += $prs.Keys | Sort-Object | ForEach-Object { "- $($prs[$_]) (#$_)" } } else { $notes += '- Maintenance changes' }
+          $notes += @(
+            '',
+            "The installer isn't code-signed yet, so Windows SmartScreen may warn the first time you run it (""Windows protected your PC""): choose **More info**, then **Run anyway**."
+          )
+          $text = $notes -join "`n"
+          if ($text -match '(?i)claude|anthropic') { throw 'The release notes mention a name they must not; nothing was published.' }
+          $text | Set-Content build/release-notes.md -Encoding utf8
+          Write-Host $text
+          # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
+          $files = @($setup)
+          if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
+            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
+            $files += "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
+          }
+          gh release create "v$version" @files --repo $env:REPO --target $env:GITHUB_SHA --title "ShiftDrop $version" --notes-file build/release-notes.md
+          if ($LASTEXITCODE) { exit 1 }
+          "Published [v$version](https://github.com/$env:REPO/releases/tag/v$version)" >> $env:GITHUB_STEP_SUMMARY
