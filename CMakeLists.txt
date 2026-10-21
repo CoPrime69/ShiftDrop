@@ -66,6 +66,7 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  src/VirtualDrop.cpp
   # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -292,6 +293,7 @@ if(SHIFTDROP_TESTS)
     tests/ShareSafeTests.cpp
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
+    tests/VirtualDropTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).

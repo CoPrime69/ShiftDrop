@@ -141,4 +141,25 @@ namespace sd
         WritePrivateProfileStringW(L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid", path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"HideCursor", a.hideCursor ? L"1" : L"0", path.c_str());
     }
+
+    namespace
+    {
+        constexpr const wchar_t* kVirtualOutputs[] = { L"desktop", L"downloads", L"ask" };
+    }
+
+    VirtualOutput LoadVirtualOutput()
+    {
+        wchar_t value[16]{};
+        GetPrivateProfileStringW(L"Output", L"VirtualFiles", L"desktop", value, ARRAYSIZE(value), SettingsPath().c_str());
+        for (int i = 0; i < 3; ++i)
+            if (CompareStringOrdinal(value, -1, kVirtualOutputs[i], -1, TRUE) == CSTR_EQUAL)
+                return static_cast<VirtualOutput>(i);
+        log::Warn(L"settings: [Output] VirtualFiles='{}' is not desktop, downloads or ask; using desktop", value);
+        return VirtualOutput::Desktop;
+    }
+
+    void SaveVirtualOutput(VirtualOutput choice)
+    {
+        WritePrivateProfileStringW(L"Output", L"VirtualFiles", kVirtualOutputs[static_cast<int>(choice)], SettingsPath().c_str());
+    }
 }

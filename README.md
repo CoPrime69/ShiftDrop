@@ -14,6 +14,7 @@ mouse wheel to step through the sections (Convert, Tools, Reduce size, File acti
 | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Remove metadata (images, video, audio), Zip (one ZIP of everything dropped) |
 
 Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
+Pictures dragged straight out of a browser and attachments dragged out of Outlook or Thunderbird work too: their results go to your Desktop (tray menu > Save browser drops to: Desktop, Downloads or Ask every time).
 A panel at the top of the screen shows which section you are on, then the job's progress and result. The tray menu sets the
 size (Auto adapts to your screen) and the style (Solid or Glass).
 

@@ -329,6 +329,21 @@ Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 - [ ] **Show Float shelf** with an empty shelf: it opens saying "Drop files here to keep them"; drop a file on it: it stays; Clear hides it
 - [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
 
+### W. Files dragged out of browsers and mail apps
+These drags carry no real file (no path), only a name and the contents. ShiftDrop saves them in
+`%LOCALAPPDATA%\ShiftDrop\dropped` when they are dropped, runs the slice on that copy and writes the
+result to the Desktop (or the folder chosen below); the copy is deleted when the job is done.
+- [ ] Edge and Chrome: drag a picture off a web page (a PNG or JPG; WebP if the page serves it), press Shift: the wheel shows image formats for it (named after the picture), with the predicted name on the card; drop on **PNG**: `name (converted).png` appears on the Desktop and the panel says "Saved to Desktop"
+- [ ] The same in Firefox, and with **Tools › 50%**: `name (edited).png` on the Desktop
+- [ ] Do it twice: the second result is `name (converted 2).png`, the first one is untouched
+- [ ] **File actions › Copy**: the picture is saved on the Desktop (`name.png`, or `name (2).png` if that is taken) and pasting in Explorer pastes it; **Float** puts that saved copy on the shelf; **Duplicate** writes `name (copy).png` on the Desktop; **Move to…** saves it into the folder you pick
+- [ ] Outlook (classic): drag an attachment (a PDF or a photo) out of a mail with Shift: its slices show; convert it: the result is on the Desktop. Drag a whole mail onto **File actions › Copy**: a `.msg` is saved on the Desktop and opens in Outlook
+- [ ] Thunderbird: drag an attachment with Shift: the same
+- [ ] A large attachment (50 MB or more): the top panel shows "Saving 1 dropped file…" with progress before the job starts
+- [ ] Tray › **Save browser drops to** › **Downloads**: the next result is in Downloads; **Ask every time**: a folder picker ("Save here") comes first, Cancel saves nothing; **Desktop** again: back to the Desktop. The choice survives a restart (`[Output] VirtualFiles` in settings.ini)
+- [ ] After a few drops, `%LOCALAPPDATA%\ShiftDrop\dropped` is empty (quit with a job running, start again: it is emptied at startup)
+- [ ] Real files from Explorer still convert next to themselves
+
 ### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
 

@@ -16,10 +16,11 @@ namespace sd
         bool CreateStagingFolder(const std::wstring& source, std::wstring& path)
         {
             const std::filesystem::path src(source);
+            const std::filesystem::path dir(OutputFolder(source));
             thread_local std::mt19937 rng{ std::random_device{}() };
             for (int attempt = 0; attempt < 16; ++attempt)
             {
-                const auto candidate = (src.parent_path() / std::format(L"~{}.{:08x}.sdpart", src.stem().wstring(), static_cast<unsigned>(rng()))).wstring();
+                const auto candidate = (dir / std::format(L"~{}.{:08x}.sdpart", src.stem().wstring(), static_cast<unsigned>(rng()))).wstring();
                 if (CreateDirectoryW(candidate.c_str(), nullptr))
                 {
                     path = candidate;
@@ -38,7 +39,9 @@ namespace sd
         if (!place.folder.empty() || !place.stem.empty())
         {
             // OutputPath names outputs after a path's folder and stem; a made-up path with a dummy
-            // extension gives exactly the stem asked for, dots and all ("photos.2024").
+            // extension gives exactly the stem asked for, dots and all ("photos.2024"). A folder inside
+            // a drop folder stays redirected (OutputFolder), so outputs of dragged-in files still land
+            // where the user chose.
             const std::filesystem::path src(source);
             const auto dir = place.folder.empty() ? src.parent_path() : std::filesystem::path(place.folder);
             m_namedAfter = (dir / ((place.stem.empty() ? src.stem().wstring() : place.stem) + L".x")).wstring();

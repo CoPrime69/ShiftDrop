@@ -283,6 +283,14 @@ namespace sd
             Animate();
     }
 
+    void Island::Pump()
+    {
+        // Only this window's WM_TIMER: nothing else gets to run (and re-enter) in the meantime.
+        MSG m{};
+        while (m_hwnd && PeekMessageW(&m, m_hwnd.get(), WM_TIMER, WM_TIMER, PM_REMOVE))
+            DispatchMessageW(&m);
+    }
+
     void Island::OnMouse(UINT msg, POINT pt)
     {
         if (m_state != State::Progress || !m_onCancel || m_cancelled)

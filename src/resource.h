@@ -18,6 +18,8 @@
 #define IDM_SHOW_SHELF  40032
 #define IDM_OCR_BASE    40040
 #define IDM_OCR_LAST    40069
+// "Save browser drops to": base + the VirtualOutput value (see Settings.h)
+#define IDM_VIRTUAL_BASE 40090
 // Size and Style submenus: base + the WheelSize / Style value (see Settings.h)
 #define IDM_SIZE_BASE   40010
 #define IDM_STYLE_BASE  40020
