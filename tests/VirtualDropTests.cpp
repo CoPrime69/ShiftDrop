@@ -405,6 +405,21 @@ TEST(VirtualDrop, KeptCopiesNeverReplaceAnything)
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
 }
 
+TEST(VirtualDrop, KeepingSeveralKeepsWhatItCan)
+{
+    // What a drop on the Float shelf and the wheel's hand-on actions keep: each one that can be kept.
+    TempDir dir;
+    const auto out = dir / L"out";
+    std::filesystem::create_directories(out);
+    WriteText(dir / L"a.png", "a");
+    WriteText(dir / L"b.png", "b");
+    std::wstring error;
+    const auto kept = KeepVirtualFiles({ dir / L"a.png", dir / L"gone.png", dir / L"b.png" }, out, error);
+    EXPECT_EQ(kept, (std::vector<std::wstring>{ out + L"\\a.png", out + L"\\b.png" }));
+    EXPECT_NE(error.find(L"gone.png"), std::wstring::npos);   // the first that failed says why
+    EXPECT_EQ(ReadAll(out + L"\\b.png"), "b");
+}
+
 TEST(VirtualDrop, StaleDropFoldersAreRemoved)
 {
     TempDir dir;

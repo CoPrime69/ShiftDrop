@@ -149,6 +149,8 @@ over two seconds, which is what a silently removed hook looks like.
 ## The drop target
 
 [DropTarget.h](../src/DropTarget.h) is the window's `IDropTarget`. It reads `CF_HDROP` for real files.
+The Float shelf registers the same class with itself as the sink, so files dropped on it (from
+Explorer, or virtual files from a browser, kept with `KeepVirtualFiles`) are read the same way.
 
 Over a slice it always answers `DROPEFFECT_COPY`, or `LINK` when the source doesn't offer copy, and
 never `MOVE`. Explorer treats Shift-drag as "move", and with `MOVE` the source would delete the
@@ -467,7 +469,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 | `settings.ini` | All settings (below) |
 | `history.db` | Run history for undo |
 | `recipes\*.json` | Your own recipes; `web-ready.json` is written as an example the first time |
-| `shelf.json` | What is on the Float shelf |
+| `shelf.json` | What is on the Float shelf, where it is, and whether it is switched on |
 | `logs\shiftdrop-YYYYMMDD.log` | One log file per day |
 | `dropped\` | Temporary copies of files dragged out of browsers and mail apps |
 | `libreoffice\` | A private LibreOffice profile for the Office bridge, if LibreOffice is used |
