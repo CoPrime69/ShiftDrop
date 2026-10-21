@@ -230,11 +230,18 @@ namespace
                     const TimeRange range{ 1'000'000, 4'000'000 };
                     add(videotools::TrimArgs(in, ext, clip, range, true, e, out));
                     add(videotools::TrimArgs(in, ext, clip, range, false, e, out));
+                    for (const bool remove : { false, true })
+                        for (const bool fade : { false, true })
+                            add(videotools::TrimArgs(in, ext, clip, range, true, e, out, { remove, fade }));
                     add(videotools::CropArgs(in, ext, clip, { 10, 10, 640, 360 }, 1280, 720, e, out));
                     add(videotools::CropArgs(in, ext, clip, { 10, 10, 640, 360 }, 640, 360, e, out));
                     add(videotools::SpeedArgs(in, ext, clip, 0.25, e, out));
                     add(videotools::SpeedArgs(in, ext, clip, 4, e, out));
+                    add(videotools::SpeedArgs(in, ext, clip, 0.25, e, out, false));
+                    add(videotools::SpeedArgs(in, ext, clip, 4, e, out, false));
                     add(videotools::FrameToPngArgs(in, 1'500'000, clip.media.fps, out));
+                    add(videotools::FrameSequenceArgs(in, { videotools::FramePick::Every, 30, 1 }, L"C:\\frames"));
+                    add(videotools::FrameSequenceArgs(in, { videotools::FramePick::PerSecond, 30, 2.5 }, L"C:\\frames"));
                     add(videotools::SplitCopyArgs(in, ext, { 2'000'000, 5'000'000 }, L"C:\\parts", L"clip"));
                     add(videotools::SplitPartArgs(in, ext, clip, range, e, out));
                     add(videotools::RedactArgs(in, ext, clip, { { { 0, 0, 100, 100 }, range, true }, { { 50, 50, 80, 80 }, range, false } }, e, out));
@@ -265,14 +272,17 @@ namespace
                 for (const bool mono : { false, true })
                     for (const bool swap : { false, true })
                         add(audiotools::ChannelsArgs(in, ext, song, { mono, swap, 0.8, 1.2 }, out));
-                for (const bool tone : { false, true })
-                    add(audiotools::BleepArgs(in, ext, song, { { 1'000'000, 2'000'000 }, { 3'000'000, 3'500'000 } }, tone, out));
+                for (const auto sound : { audiotools::BleepSound::Tone, audiotools::BleepSound::Silence, audiotools::BleepSound::Duck })
+                    add(audiotools::BleepArgs(in, ext, song, { { 1'000'000, 2'000'000 }, { 3'000'000, 3'500'000 } }, sound, audiotools::kDuckDb, out));
             }
         for (const auto& song : songs)
             for (const auto e : kEncoders)
                 for (const auto shape : { audiotools::Shape::Landscape, audiotools::Shape::Portrait, audiotools::Shape::Square })
                 {
-                    add(audiotools::WaveformVideoArgs(in, song, shape, e, out));
+                    for (const auto style : { audiotools::VisualStyle::Bars, audiotools::VisualStyle::Wave, audiotools::VisualStyle::Circle,
+                                              audiotools::VisualStyle::Square, audiotools::VisualStyle::Vertical, audiotools::VisualStyle::Picture })
+                        for (const wchar_t* image : { L"", L"C:\\background.jpg" })
+                            add(audiotools::VisualizerArgs(in, image, song, style, shape, e, out));
                     add(audiotools::StillVideoArgs(in, L"C:\\cover.png", song, shape, e, out));
                 }
         add(audiotools::CoverArtArgs(in, out));
@@ -284,7 +294,10 @@ namespace
         add(PlaybackPcmArgs(in, { 0, 5'000'000 }, {}, false, 48000, out));
         add(PlaybackPcmArgs(in, { 0, 5'000'000 }, audiotools::PanFilter({ true, false, 1, 1 }, 2), false, 48000, out));
         add(PlaybackPcmArgs(in, { 0, 5'000'000 }, videotools::AtempoChain(3), false, 48000, out));
-        add(PlaybackPcmArgs(in, { 0, 5'000'000 }, audiotools::BleepGraph({ { 1'000'000, 2'000'000 } }, true, 48000), true, 48000, out));
+        add(PlaybackPcmArgs(in, { 0, 5'000'000 }, videotools::SpeedAudioFilter(3, false, 48000), false, 48000, out));
+        for (const auto sound : { audiotools::BleepSound::Tone, audiotools::BleepSound::Silence, audiotools::BleepSound::Duck })
+            add(PlaybackPcmArgs(in, { 0, 5'000'000 }, audiotools::BleepGraph({ { 1'000'000, 2'000'000 } }, sound, audiotools::kDuckDb, 48000), true, 48000,
+                                out));
 
         // Remove metadata / Share-safe: a stream copy into the source's own container.
         for (const wchar_t* ext : { L".mp4", L".m4v", L".mov", L".m4a", L".3gp", L".mkv", L".mka", L".webm", L".avi", L".mp3", L".flac",

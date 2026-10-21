@@ -58,9 +58,24 @@ namespace sd::audiotools
     enum class Shape { Landscape, Portrait, Square };
     Shape ShapeByName(std::string_view name);   // "landscape", "portrait", "square"
     void ShapeSize(Shape shape, int& w, int& h);  // 1920x1080, 1080x1920, 1080x1080
-    // An animated waveform on a dark background, as an H.264 + AAC MP4 as long as the audio.
-    std::vector<std::wstring> WaveformVideoArgs(const std::wstring& audio, const ProbeInfo& info, Shape shape, H264Encoder encoder,
-                                                const std::wstring& output);
+    // What moves in the video, each from ffmpeg's own audio-to-video filters:
+    //   Bars      showfreqs: the spectrum as bars rising from a line
+    //   Wave      showwaves: the waveform as a centred line
+    //   Circle    avectorscope: the sound against its Hilbert transform (hilbert + afir), so each
+    //             tone draws a circle as wide as it is loud
+    //   Square    showfreqs at a few dozen bins, enlarged into a grid of square blocks
+    //   Vertical  showfreqs bars mirrored up and down from the middle line
+    //   Picture   no animation: the picture alone
+    enum class VisualStyle { Bars, Wave, Circle, Square, Vertical, Picture };
+    VisualStyle VisualStyleByName(std::string_view name);   // "bars", "waveform", "circle", "square", "vertical", "image"
+    const char* VisualStyleName(VisualStyle style);
+    // The moving picture of `audioIn` (a stream label such as "0:a:0") for a w x h video, on a
+    // transparent background: a filtergraph ending in [vis]. Empty for Picture.
+    std::wstring VisualGraph(VisualStyle style, int w, int h, const std::wstring& audioIn);
+    // An H.264 + AAC MP4 as long as the audio: the style's animation on a dark background, or over
+    // `image` (fitted to fill, darkened a little) when one is given. Picture is StillVideoArgs.
+    std::vector<std::wstring> VisualizerArgs(const std::wstring& audio, const std::wstring& image, const ProbeInfo& info, VisualStyle style,
+                                             Shape shape, H264Encoder encoder, const std::wstring& output);
     // A still picture (fitted, on black) with the audio.
     std::vector<std::wstring> StillVideoArgs(const std::wstring& audio, const std::wstring& image, const ProbeInfo& info, Shape shape,
                                              H264Encoder encoder, const std::wstring& output);
@@ -98,11 +113,15 @@ namespace sd::audiotools
 
     // ---- 20. Bleep Audio -------------------------------------------------------------------------
 
-    // [0:a] in, [out] out: the ranges muted, with a 1 kHz tone in them when `tone`. `offsetUs` shifts
-    // the ranges for a preview that starts later in the file.
-    std::wstring BleepGraph(const std::vector<TimeRange>& ranges, bool tone, int sampleRate, int64_t offsetUs = 0);
+    // What is heard over the marked parts: a 1 kHz tone, nothing, or the sound turned down.
+    enum class BleepSound { Tone, Silence, Duck };
+    BleepSound BleepSoundByName(std::string_view name);   // "tone", "silence", "duck"
+    inline constexpr double kDuckDb = 20, kMinDuckDb = 3, kMaxDuckDb = 60;   // how far Duck turns it down
+    // [0:a] in, [out] out: the ranges muted, with a 1 kHz tone in them for Tone, or lowered by
+    // `duckDb` for Duck. `offsetUs` shifts the ranges for a preview that starts later in the file.
+    std::wstring BleepGraph(const std::vector<TimeRange>& ranges, BleepSound sound, double duckDb, int sampleRate, int64_t offsetUs = 0);
     std::vector<std::wstring> BleepArgs(const std::wstring& input, const std::wstring& lowerExtension, const ProbeInfo& info,
-                                        const std::vector<TimeRange>& ranges, bool tone, const std::wstring& output);
+                                        const std::vector<TimeRange>& ranges, BleepSound sound, double duckDb, const std::wstring& output);
 
     // "between(t,a,b)+between(t,c,d)" for the ranges, shifted by -offset; "0" when there are none.
     std::wstring AnyBetween(const std::vector<TimeRange>& ranges, int64_t offsetUs = 0);

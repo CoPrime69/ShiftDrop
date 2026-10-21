@@ -1,5 +1,6 @@
 #pragma once
 #include "EditorFrame.h"
+#include "audiotools/AudioTools.h"
 #include "mediaeditor/EditorApi.h"
 #include "mediaeditor/EditorLayout.h"
 #include "mediaeditor/EditorUi.h"
@@ -8,6 +9,7 @@
 #include "mediaeditor/MediaTools.h"
 #include "mediaeditor/Playback.h"
 #include "mediaeditor/Timeline.h"
+#include "videotools/VideoTools.h"
 
 #include <windows.h>
 #include <d2d1.h>
@@ -211,6 +213,10 @@ namespace sd::mediatools
         nlohmann::json SharedParams() const;                      // EditorTools.cpp
         nlohmann::json FileParams(const FileState& file) const;   // EditorTools.cpp
         void ChoosePicture();                                     // EditorTools.cpp
+        void AddClips();                                          // Join: more videos, from a file dialog (EditorTools.cpp)
+        std::vector<int64_t> SplitPoints(const FileState& file) const;   // where Split cuts this file (EditorTools.cpp)
+        int64_t FrameCount(const FileState& file) const;                 // how many pictures Frames saves (EditorTools.cpp)
+        bool MarksOnTrack() const;   // Frames or Split with marks the user places on the timeline (EditorTools.cpp)
 
         EditorRequest m_req;                // m_req.tool and title follow the tool bar
         EditorTool m_startTool{};          // the one the recipe asked for: its params apply to it only
@@ -269,18 +275,26 @@ namespace sd::mediatools
         float m_listScroll = 0;      // join list / side list, DIPs
 
         // Shared choices (all files).
+        enum class SplitKind { Marks, Equal, Every };
         bool m_fast = false;         // trim / split by stream copy
+        bool m_remove = false;       // video trim: cut the selection out (else keep it)
+        bool m_fade = false;         // video trim: fade in and out at the cuts
         std::string m_aspect = "free";
         double m_factor = 2.0;       // speed
-        bool m_equalParts = false;
+        bool m_keepPitch = true;     // speed: the sound keeps its pitch (else it follows, like a tape)
+        videotools::FrameSequence m_frames{ videotools::FramePick::Marks };   // frames: which ones
+        std::string m_frameFormat = "png";
+        SplitKind m_split = SplitKind::Marks;
+        int64_t m_splitEvery = 30'000'000;
         bool m_joinFill = false;     // join: crop other shapes to fill the frame (else black bars)
         int m_parts = 2;
         bool m_blurStyle = true;     // redact default
-        bool m_tone = true;          // bleep with a tone (else silence)
+        audiotools::BleepSound m_bleep = audiotools::BleepSound::Tone;
+        double m_duckDb = audiotools::kDuckDb;
         bool m_silence = false;      // audio trim: also cut silence at the ends
         bool m_mono = false, m_swap = false;
         double m_left = 1.0, m_right = 1.0;
-        bool m_imageStyle = false;
+        audiotools::VisualStyle m_style = audiotools::VisualStyle::Wave;
         std::string m_shape = "landscape";
         std::wstring m_image;
         Picture m_imagePicture;

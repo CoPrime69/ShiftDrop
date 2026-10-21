@@ -177,7 +177,7 @@ TEST(AudioTools, VisualizerShapesAndInputs)
     EXPECT_EQ(w, h);
     ShapeSize(ShapeByName("anything"), w, h);
     EXPECT_EQ(w, 1920);
-    const auto waves = WaveformVideoArgs(L"song.mp3", Song("mp3", 2, 44100, 30'000'000), Shape::Landscape, H264Encoder::Nvenc, L"out");
+    const auto waves = VisualizerArgs(L"song.mp3", {}, Song("mp3", 2, 44100, 30'000'000), VisualStyle::Wave, Shape::Landscape, H264Encoder::Nvenc, L"out");
     const auto graph = After(waves, L"-filter_complex");
     EXPECT_NE(graph.find(L"showwaves=s=1920x540:mode=cline:rate=30"), std::wstring::npos) << Narrow(graph);
     EXPECT_NE(graph.find(L"color=c=0x0E0F13:s=1920x1080:r=30"), std::wstring::npos);
@@ -192,6 +192,58 @@ TEST(AudioTools, VisualizerShapesAndInputs)
     EXPECT_NE(After(still, L"-filter_complex").find(L"pad=1080:1080"), std::wstring::npos);
     EXPECT_EQ(std::count(still.begin(), still.end(), L"file"), 2);   // both inputs whitelisted to local files
     EXPECT_TRUE(Has(CoverArtArgs(L"song.mp3", L"cover.png"), L"-map", L"0:v:0"));
+}
+
+TEST(AudioTools, VisualizerStylesAndBackgrounds)
+{
+    for (const auto* name : { "bars", "waveform", "circle", "square", "vertical", "image" })
+        EXPECT_STREQ(VisualStyleName(VisualStyleByName(name)), name);
+    EXPECT_EQ(VisualStyleByName("anything"), VisualStyle::Wave);
+    // Bars: 80 bins of showfreqs, enlarged without smoothing to 20 px each, a 4 px gap between them.
+    EXPECT_EQ(VisualGraph(VisualStyle::Bars, 1920, 1080, L"0:a:0"),
+              L"[0:a:0]aformat=channel_layouts=mono,showfreqs=s=80x540:mode=bar:ascale=sqrt:fscale=log:win_size=4096:colors=0x7AB8FF:rate=30,"
+              L"scale=1600:540:flags=neighbor,drawgrid=w=20:h=ih+1:t=4:c=black@0:replace=1[vis]");
+    // Square: 40 x 18 blocks of 40 px with a 6 px gap both ways.
+    EXPECT_EQ(VisualGraph(VisualStyle::Square, 1920, 1080, L"0:a:0"),
+              L"[0:a:0]aformat=channel_layouts=mono,showfreqs=s=40x18:mode=bar:ascale=sqrt:fscale=log:win_size=4096:colors=0x7AB8FF:rate=30,"
+              L"scale=1600:720:flags=neighbor,drawgrid=w=40:h=40:t=6:c=black@0:replace=1[vis]");
+    // Vertical: bars a quarter of the height, and their reflection under them.
+    const auto vertical = VisualGraph(VisualStyle::Vertical, 1080, 1920, L"1:a:0");
+    EXPECT_NE(vertical.find(L"[1:a:0]aformat=channel_layouts=mono,showfreqs=s=45x480:"), std::wstring::npos) << Narrow(vertical);
+    EXPECT_TRUE(vertical.ends_with(L",split=2[vt][vb];[vb]vflip[vf];[vt][vf]vstack[vis]")) << Narrow(vertical);
+    // Circle: the sound against its Hilbert transform (delayed to match), drawn as x/y.
+    const auto circle = VisualGraph(VisualStyle::Circle, 1920, 1080, L"0:a:0");
+    EXPECT_NE(circle.find(L"hilbert=sample_rate=44100:taps=255[ch];[cy][ch]afir=irnorm=-1[cyh];[cx]adelay=127S[cxd]"), std::wstring::npos) << Narrow(circle);
+    EXPECT_NE(circle.find(L"join=inputs=2:channel_layout=stereo,avectorscope=s=1080x1080:mode=lissajous_xy"), std::wstring::npos);
+    EXPECT_TRUE(circle.ends_with(L"[vis]"));
+    EXPECT_EQ(VisualGraph(VisualStyle::Wave, 1080, 1080, L"0:a:0"),
+              L"[0:a:0]aformat=channel_layouts=mono,showwaves=s=1080x540:mode=cline:rate=30:colors=0x7AB8FF:scale=sqrt:draw=full[vis]");
+    EXPECT_TRUE(VisualGraph(VisualStyle::Picture, 1080, 1080, L"0:a:0").empty());
+
+    // Over a dark colour: one input, the animation centred on it.
+    const auto bars = VisualizerArgs(L"song.mp3", {}, Song("mp3", 2, 44100, 30'000'000), VisualStyle::Bars, Shape::Landscape, H264Encoder::Nvenc, L"out");
+    const auto barsGraph = After(bars, L"-filter_complex");
+    EXPECT_TRUE(barsGraph.starts_with(L"color=c=0x0E0F13:s=1920x1080:r=30[bg];[0:a:0]")) << Narrow(barsGraph);
+    EXPECT_TRUE(barsGraph.ends_with(L"[vis];[bg][vis]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1,format=yuv420p[v]")) << Narrow(barsGraph);
+    EXPECT_EQ(std::count(bars.begin(), bars.end(), L"-i"), 1);
+    // Over a picture: the picture first (looped), filled and darkened; the sound is input 1.
+    const auto over = VisualizerArgs(L"song.m4a", L"C:\\bg.jpg", Song("aac", 2, 44100, 30'000'000), VisualStyle::Circle, Shape::Square,
+                                     H264Encoder::OpenH264, L"out");
+    EXPECT_EQ(std::count(over.begin(), over.end(), L"-i"), 2);
+    EXPECT_TRUE(Has(over, L"-loop", L"1"));
+    EXPECT_TRUE(Has(over, L"-framerate", L"1"));
+    const auto overGraph = After(over, L"-filter_complex");
+    EXPECT_TRUE(overGraph.starts_with(L"[0:v]scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080,setsar=1,format=yuv420p,"
+                                      L"drawbox=c=black@0.45:t=fill,fps=30[bg];[1:a:0]"))
+        << Narrow(overGraph);
+    EXPECT_TRUE(Has(over, L"-map", L"1:a:0"));
+    EXPECT_TRUE(Has(over, L"-t", L"30.000000"));
+    EXPECT_EQ(std::count(over.begin(), over.end(), L"file"), 2);   // both inputs whitelisted to local files
+    // Picture: the still picture, or the waveform when there is none.
+    EXPECT_EQ(VisualizerArgs(L"song.m4a", L"C:\\cover.jpg", Song("aac"), VisualStyle::Picture, Shape::Square, H264Encoder::OpenH264, L"out"),
+              StillVideoArgs(L"song.m4a", L"C:\\cover.jpg", Song("aac"), Shape::Square, H264Encoder::OpenH264, L"out"));
+    EXPECT_EQ(VisualizerArgs(L"song.m4a", {}, Song("aac"), VisualStyle::Picture, Shape::Square, H264Encoder::OpenH264, L"out"),
+              VisualizerArgs(L"song.m4a", {}, Song("aac"), VisualStyle::Wave, Shape::Square, H264Encoder::OpenH264, L"out"));
 }
 
 // ---- Trim ----------------------------------------------------------------------------------------
@@ -241,15 +293,27 @@ TEST(AudioTools, BleepGraphs)
     EXPECT_EQ(AnyBetween(ranges), L"between(t,1.000000,2.000000)+between(t,5.000000,5.500000)");
     EXPECT_EQ(AnyBetween(ranges, 1'500'000), L"between(t,0.000000,0.500000)+between(t,3.500000,4.000000)");   // a preview from 1.5 s
     EXPECT_EQ(AnyBetween({}), L"0");
-    EXPECT_EQ(BleepGraph(ranges, false, 44100), L"[0:a]volume=0:enable='between(t,1.000000,2.000000)+between(t,5.000000,5.500000)'[out]");
-    const auto tone = BleepGraph(ranges, true, 44100);
+    EXPECT_EQ(BleepGraph(ranges, BleepSound::Silence, kDuckDb, 44100), L"[0:a]volume=0:enable='between(t,1.000000,2.000000)+between(t,5.000000,5.500000)'[out]");
+    // Duck: turned down by the amount, not muted.
+    EXPECT_EQ(BleepGraph(ranges, BleepSound::Duck, 20, 44100), L"[0:a]volume=-20dB:enable='between(t,1.000000,2.000000)+between(t,5.000000,5.500000)'[out]");
+    EXPECT_EQ(BleepGraph(ranges, BleepSound::Duck, 12.5, 44100, 1'500'000),
+              L"[0:a]volume=-12.5dB:enable='between(t,0.000000,0.500000)+between(t,3.500000,4.000000)'[out]");
+    EXPECT_EQ(BleepGraph(ranges, BleepSound::Duck, 500, 44100).substr(0, 20), L"[0:a]volume=-60dB:en");   // at most 60 dB
+    EXPECT_EQ(BleepGraph(ranges, BleepSound::Duck, 0, 44100).substr(0, 19), L"[0:a]volume=-3dB:en");     // at least 3 dB
+    EXPECT_EQ(BleepSoundByName("duck"), BleepSound::Duck);
+    EXPECT_EQ(BleepSoundByName("silence"), BleepSound::Silence);
+    EXPECT_EQ(BleepSoundByName("tone"), BleepSound::Tone);
+    EXPECT_EQ(BleepSoundByName("other"), BleepSound::Tone);
+    const auto tone = BleepGraph(ranges, BleepSound::Tone, kDuckDb, 44100);
     EXPECT_NE(tone.find(L"sine=frequency=1000:sample_rate=44100"), std::wstring::npos) << Narrow(tone);
     EXPECT_NE(tone.find(L"volume=0:enable='not(between(t,1.000000,2.000000)+between(t,5.000000,5.500000))'[t]"), std::wstring::npos);
     EXPECT_NE(tone.find(L"[m][t]amix=inputs=2:duration=first:normalize=0[out]"), std::wstring::npos);
-    const auto args = BleepArgs(L"in.m4a", L".m4a", Song("aac"), ranges, true, L"out");
+    const auto args = BleepArgs(L"in.m4a", L".m4a", Song("aac"), ranges, BleepSound::Tone, kDuckDb, L"out");
     EXPECT_TRUE(Has(args, L"-map", L"[out]"));
     EXPECT_TRUE(Has(args, L"-f", L"ipod"));
-    const auto play = PlaybackPcmArgs(L"in.m4a", { 1'500'000, 4'000'000 }, BleepGraph(ranges, true, 44100, 1'500'000), true, 44100, L"pcm");
+    EXPECT_NE(After(BleepArgs(L"in.m4a", L".m4a", Song("aac"), ranges, BleepSound::Duck, 30, L"out"), L"-filter_complex").find(L"volume=-30dB"),
+              std::wstring::npos);
+    const auto play = PlaybackPcmArgs(L"in.m4a", { 1'500'000, 4'000'000 }, BleepGraph(ranges, BleepSound::Tone, kDuckDb, 44100, 1'500'000), true, 44100, L"pcm");
     EXPECT_TRUE(Has(play, L"-t", L"2.500000"));
     EXPECT_TRUE(Has(play, L"-map", L"[out]"));
     EXPECT_TRUE(Has(play, L"-f", L"s16le"));
@@ -450,6 +514,22 @@ TEST(AudioToolsEngine, VisualizerMakesAVideo)
     EXPECT_NEAR(static_cast<double>(v.DurationUs()) / 1e6, 3.0, 0.15);
     const auto picture = f.dir / L"cover.png";
     ASSERT_TRUE(SUCCEEDED(WritePng(picture, 64, 48)));
+    // Every moving style, and one over a picture, renders a video as long as the song.
+    for (const auto* style : { "bars", "circle", "square", "vertical" })
+    {
+        const auto moving = f.Run("audio-visualizer", { { "style", style }, { "shape", "landscape" } }, song);
+        ASSERT_TRUE(moving.ok) << style << ": " << Narrow(moving.error);
+        const auto m = Probe(*TestFfmpeg(), moving.output);
+        EXPECT_EQ(m.width, 1920) << style;
+        EXPECT_EQ(m.height, 1080) << style;
+        EXPECT_NEAR(static_cast<double>(m.DurationUs()) / 1e6, 3.0, 0.15) << style;
+    }
+    const auto over = f.Run("audio-visualizer", { { "style", "bars" }, { "image", Narrow(picture) }, { "shape", "square" } }, song);
+    ASSERT_TRUE(over.ok) << Narrow(over.error);
+    const auto o = Probe(*TestFfmpeg(), over.output);
+    EXPECT_EQ(o.width, 1080);
+    EXPECT_TRUE(o.HasAudio());
+    EXPECT_NEAR(static_cast<double>(o.DurationUs()) / 1e6, 3.0, 0.15);
     const auto still = f.Run("audio-visualizer", { { "style", "image" }, { "image", Narrow(picture) }, { "shape", "portrait" } }, song);
     ASSERT_TRUE(still.ok) << Narrow(still.error);
     const auto s = Probe(*TestFfmpeg(), still.output);
@@ -507,5 +587,13 @@ TEST(AudioToolsEngine, ChannelsAndBleep)
     const auto s = Pcm(silenced.output);
     EXPECT_LT(Rms(s, 0, 1.1, 1.9), 10);
     EXPECT_GT(Rms(s, 0, 2.1, 3.9), 1000);
+    // Duck by 20 dB: the same tone, a tenth as loud, inside the range only.
+    const auto ducked = f.Run("audio-bleep", { { "ranges", ranges }, { "tone", "duck" }, { "duck", 20 } }, talk);
+    ASSERT_TRUE(ducked.ok) << Narrow(ducked.error);
+    const auto d = Pcm(ducked.output);
+    const double outside = Rms(d, 0, 2.1, 3.9), inside = Rms(d, 0, 1.1, 1.9);
+    EXPECT_GT(outside, 1000);
+    EXPECT_NEAR(inside / outside, 0.1, 0.02);
+    EXPECT_NEAR(Crossings(d, 0, 1.1, 1.9), 880, 40);   // still the 440 Hz original, only quieter
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
 }

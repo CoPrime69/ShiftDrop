@@ -53,25 +53,112 @@ namespace sd::videotools
         return fast ? mediatools::CopyContainer(ext) : mediatools::EncodeContainer(ext);
     }
 
-    std::vector<std::wstring> TrimArgs(const std::wstring& input, const std::wstring& ext, const ProbeInfo& info, TimeRange range, bool fast,
-                                       H264Encoder encoder, const std::wstring& output)
+    bool TrimCopies(bool fast, const TrimChoice& choice) { return fast && !choice.remove && !choice.fade; }
+
+    std::vector<TimeRange> TrimParts(TimeRange selection, int64_t durationUs, bool remove)
     {
-        const auto container = TrimContainer(ext, fast);
-        std::vector<std::wstring> in;
-        if (!fast)
-            in = mediatools::DecodeArgs(encoder);
+        if (!remove)
+            return { selection };
+        std::vector<TimeRange> parts;
+        if (selection.start >= mediatools::kMinRangeUs)
+            parts.push_back({ 0, selection.start });
+        if (durationUs - selection.end >= mediatools::kMinRangeUs)
+            parts.push_back({ selection.end, durationUs });
+        return parts;
+    }
+
+    int64_t TrimmedLength(TimeRange selection, int64_t durationUs, bool remove)
+    {
+        int64_t total = 0;
+        for (const auto& p : TrimParts(selection, durationUs, remove))
+            total += p.Length();
+        return total;
+    }
+
+    std::wstring FadeFilter(bool audio, int64_t lengthUs, bool fadeIn, bool fadeOut)
+    {
+        // A fade never takes more than a third of its part, so a short part still shows.
+        const int64_t d = std::min(kFadeUs, std::max<int64_t>(0, lengthUs) / 3);
+        if (d <= 0)
+            return {};
+        const wchar_t* name = audio ? L"afade" : L"fade";
+        std::wstring f;
+        if (fadeIn)
+            f = std::format(L"{}=t=in:st=0:d={}", name, Seconds(d));
+        if (fadeOut)
+            f += (f.empty() ? L"" : L",") + std::format(L"{}=t=out:st={}:d={}", name, Seconds(lengthUs - d), Seconds(d));
+        return f;
+    }
+
+    std::vector<std::wstring> TrimArgs(const std::wstring& input, const std::wstring& ext, const ProbeInfo& info, TimeRange range, bool fast,
+                                       H264Encoder encoder, const std::wstring& output, const TrimChoice& choice)
+    {
+        const bool copy = TrimCopies(fast, choice);
+        const auto container = TrimContainer(ext, copy);
+        const int64_t duration = info.DurationUs() > 0 ? info.DurationUs() : range.end;
         // -ss/-to on the input: ffmpeg seeks instead of decoding up to the start. With copied streams
         // it lands on the keyframe at or before the start; when decoding it is frame-exact.
-        in.insert(in.end(), { L"-ss", Seconds(range.start), L"-to", Seconds(range.end) });
-        if (fast)
+        const auto seek = [&](TimeRange part) {
+            std::vector<std::wstring> in;
+            if (!copy)
+                in = mediatools::DecodeArgs(encoder);
+            in.insert(in.end(), { L"-ss", Seconds(part.start), L"-to", Seconds(part.end) });
+            return in;
+        };
+        if (copy)
         {
             std::vector<std::wstring> out{ L"-map", L"0:v:0?", L"-map", L"0:a?", L"-c", L"copy", L"-sn", L"-dn", L"-avoid_negative_ts", L"make_zero" };
             if (info.media.videoCodec == "hevc" && (container.muxer == L"mp4" || container.muxer == L"mov"))
                 out.insert(out.end(), { L"-tag:v", L"hvc1" });
             AddMuxer(out, container);
-            return FfmpegArgs(input, in, out, output);
+            return FfmpegArgs(input, seek(range), out, output);
         }
-        return FfmpegArgs(input, in, EncodeOutput(container, info, encoder, {}, info.width, info.height, info.media.fps), output);
+        auto parts = TrimParts(range, duration, choice.remove);
+        if (parts.empty())
+            parts = { range };
+        // A cut is wherever a part does not begin at the start or end at the end of the video.
+        const auto fades = [&](const TimeRange& part, bool audio) {
+            return choice.fade ? FadeFilter(audio, part.Length(), part.start > 0, part.end < duration) : std::wstring();
+        };
+        if (parts.size() == 1)
+        {
+            const auto& part = parts.front();
+            return FfmpegArgs(input, seek(part),
+                              EncodeOutput(container, info, encoder, fades(part, false), info.width, info.height, info.media.fps,
+                                           info.HasAudio() ? fades(part, true) : std::wstring()),
+                              output);
+        }
+        // The parts before and after a removed one: each read through its own seek (so nothing before
+        // a part is decoded), faded at the cut if asked, and joined by the concat filter.
+        const bool audio = info.HasAudio();
+        std::vector<mediatools::Input> inputs;
+        std::wstring graph, chain;
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            inputs.push_back({ input, seek(parts[i]) });
+            const auto v = fades(parts[i], false);
+            graph += std::format(L"[{0}:v:0]{1}[v{0}];", i, v.empty() ? L"null" : v);
+            chain += std::format(L"[v{}]", i);
+            if (audio)
+            {
+                const auto a = fades(parts[i], true);
+                graph += std::format(L"[{0}:a:0]{1}[a{0}];", i, a.empty() ? L"anull" : a);
+                chain += std::format(L"[a{}]", i);
+            }
+        }
+        graph += chain + std::format(L"concat=n={}:v=1:a={}[joined]", parts.size(), audio ? 1 : 0) + (audio ? L"[a]" : L"") + L";[joined]" + kEven + L"[v]";
+        std::vector<std::wstring> out{ L"-filter_complex", graph, L"-map", L"[v]" };
+        if (audio)
+            out.insert(out.end(), { L"-map", L"[a]" });
+        out.insert(out.end(), { L"-sn", L"-dn" });
+        const auto v = mediatools::EditVideoArgs(encoder, info.width, info.height, info.media.fps);
+        out.insert(out.end(), v.begin(), v.end());
+        if (audio)
+            out.insert(out.end(), { L"-c:a", L"aac", L"-b:a", L"192k" });
+        else
+            out.push_back(L"-an");
+        AddMuxer(out, container);
+        return mediatools::MultiInputArgs(inputs, out, output);
     }
 
     // ---- 10. Crop --------------------------------------------------------------------------------
@@ -117,8 +204,17 @@ namespace sd::videotools
 
     std::wstring SpeedLabel(double factor) { return Num(factor) + L"x"; }
 
+    std::wstring SpeedAudioFilter(double factor, bool keepPitch, int sampleRate)
+    {
+        factor = std::clamp(factor, kMinSpeed, kMaxSpeed);
+        if (keepPitch || sampleRate <= 0)
+            return AtempoChain(factor);
+        // Read the samples as if recorded at a faster (or slower) rate, then resample back.
+        return std::format(L"asetrate={},aresample={}", std::llround(sampleRate * factor), sampleRate);
+    }
+
     std::vector<std::wstring> SpeedArgs(const std::wstring& input, const std::wstring& ext, const ProbeInfo& info, double factor,
-                                        H264Encoder encoder, const std::wstring& output)
+                                        H264Encoder encoder, const std::wstring& output, bool keepPitch)
     {
         factor = std::clamp(factor, kMinSpeed, kMaxSpeed);
         const auto container = mediatools::EncodeContainer(ext);
@@ -130,7 +226,7 @@ namespace sd::videotools
             filter += std::format(L",fps={}", FpsExpr(fps));
         return FfmpegArgs(input, mediatools::DecodeArgs(encoder),
                           EncodeOutput(container, info, encoder, filter, info.width, info.height, info.media.fps,
-                                       info.HasAudio() ? AtempoChain(factor) : std::wstring()),
+                                       info.HasAudio() ? SpeedAudioFilter(factor, keepPitch, info.sampleRate) : std::wstring()),
                           output);
     }
 
@@ -250,10 +346,10 @@ namespace sd::videotools
                           { L"-map", L"0:v:0", L"-an", L"-sn", L"-dn", L"-frames:v", L"1", L"-c:v", L"png", L"-update", L"1", L"-f", L"image2" }, output);
     }
 
-    std::wstring FramePngName(const std::wstring& stem, int64_t us)
+    std::wstring FrameFileName(const std::wstring& stem, int64_t us, const std::wstring& extension)
     {
         const int64_t ms = (std::max<int64_t>(0, us) + 500) / 1000;
-        return std::format(L"{} {:02}-{:02}-{:02}.{:03}.png", stem, ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
+        return std::format(L"{} {:02}-{:02}-{:02}.{:03}{}", stem, ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000, extension);
     }
 
     std::vector<int64_t> NormalizeFrameTimes(std::vector<int64_t> times, double fps, int64_t durationUs)
@@ -267,12 +363,72 @@ namespace sd::videotools
         return times;
     }
 
+    FramePick FramePickByName(std::string_view name)
+    {
+        if (name == "every") return FramePick::Every;
+        if (name == "rate") return FramePick::PerSecond;
+        return FramePick::Marks;
+    }
+
+    std::wstring FrameSequenceFilter(const FrameSequence& seq)
+    {
+        if (seq.pick == FramePick::PerSecond)
+            return std::format(L"fps={}", Num(std::clamp(seq.perSecond, kMinPerSecond, kMaxPerSecond)));
+        return std::format(L"select='not(mod(n,{}))'", std::clamp(seq.every, 1, kMaxEvery));
+    }
+
+    std::vector<std::wstring> FrameSequenceArgs(const std::wstring& input, const FrameSequence& seq, const std::wstring& folder)
+    {
+        // passthrough: a frame select drops is not repeated to fill the gap. The image2 muxer reads
+        // the name as a pattern, so a '%' in the folder's path is doubled.
+        return FfmpegArgs(input, {},
+                          { L"-map", L"0:v:0", L"-an", L"-sn", L"-dn", L"-vf", FrameSequenceFilter(seq), L"-fps_mode", L"passthrough", L"-c:v", L"png",
+                            L"-start_number", L"0", L"-f", L"image2" },
+                          mediatools::EscapePercent(folder) + L"\\%06d.png");
+    }
+
+    int64_t FrameSequenceCount(const FrameSequence& seq, double fps, int64_t durationUs)
+    {
+        const double seconds = static_cast<double>(std::max<int64_t>(0, durationUs)) / 1e6;
+        if (seq.pick == FramePick::PerSecond)
+            // The fps filter rounds to the nearest output frame: 3.7 s at 3 a second is 11.
+            return std::max<int64_t>(1, std::llround(seconds * std::clamp(seq.perSecond, kMinPerSecond, kMaxPerSecond)));
+        if (fps <= 0)
+            return 0;
+        const int64_t frames = std::max<int64_t>(1, std::llround(seconds * fps));
+        const int64_t every = std::clamp(seq.every, 1, kMaxEvery);
+        return (frames + every - 1) / every;   // frames 0, N, 2N...
+    }
+
+    int64_t FrameSequenceTime(const FrameSequence& seq, double fps, int64_t index)
+    {
+        if (seq.pick == FramePick::PerSecond)
+            return std::llround(static_cast<double>(index) * 1e6 / std::clamp(seq.perSecond, kMinPerSecond, kMaxPerSecond));
+        if (fps <= 0)
+            return 0;
+        return std::llround(static_cast<double>(index) * std::clamp(seq.every, 1, kMaxEvery) * 1e6 / fps);
+    }
+
+    uint64_t FrameFileBytes(int width, int height, std::string_view format)
+    {
+        // Bytes per pixel of a typical camera or screen-recording frame: lossless PNG about 1.5, JPG
+        // at quality 92 about 0.22, WebP at 85 about 0.08.
+        const double perPixel = format == "jpg" ? 0.22 : format == "webp" ? 0.08 : 1.5;
+        return static_cast<uint64_t>(static_cast<double>(std::max(width, 0)) * std::max(height, 0) * perPixel);
+    }
+
+    int FrameQuality(std::string_view format) { return format == "webp" ? 85 : 92; }
+
     // ---- 14. Split -------------------------------------------------------------------------------
+
+    namespace
+    {
+        int PartDigits(int count) { return count >= 1000 ? 4 : count >= 100 ? 3 : count >= 10 ? 2 : 1; }
+    }
 
     std::wstring PartName(const std::wstring& stem, int number, int count, const std::wstring& extension)
     {
-        const int digits = count >= 100 ? 3 : count >= 10 ? 2 : 1;
-        return std::format(L"{} part {:0{}}{}", stem, number, digits, extension);
+        return std::format(L"{} part {:0{}}{}", stem, number, PartDigits(count), extension);
     }
 
     std::vector<std::wstring> SplitCopyArgs(const std::wstring& input, const std::wstring& ext, const std::vector<int64_t>& points,
@@ -283,9 +439,9 @@ namespace sd::videotools
         for (const int64_t p : points)
             times += (times.empty() ? L"" : L",") + Seconds(p);
         const int count = static_cast<int>(points.size()) + 1;
-        const int digits = count >= 100 ? 3 : count >= 10 ? 2 : 1;
-        // The segment muxer reads the name as a pattern: '%' in the stem must be doubled.
-        const auto pattern = std::format(L"{}\\{} part %0{}d{}", folder, mediatools::EscapePercent(stem), digits, container.extension);
+        // The segment muxer reads the name as a pattern: '%' in the folder and the stem must be doubled.
+        const auto pattern = std::format(L"{}\\{} part %0{}d{}", mediatools::EscapePercent(folder), mediatools::EscapePercent(stem), PartDigits(count),
+                                         container.extension);
         std::vector<std::wstring> out{ L"-map", L"0:v:0?", L"-map", L"0:a?", L"-c", L"copy", L"-sn", L"-dn", L"-f", L"segment",
                                        L"-segment_times", times, L"-segment_start_number", L"1", L"-reset_timestamps", L"1",
                                        L"-segment_format", container.muxer };

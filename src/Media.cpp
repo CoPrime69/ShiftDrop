@@ -104,6 +104,20 @@ namespace sd
         return MediaKind::None;
     }
 
+    std::wstring MediaFilePatterns(MediaKind kind)
+    {
+        const std::wstring_view list = kind == MediaKind::Video ? kVideoExtensions : kind == MediaKind::Audio ? kAudioExtensions : std::wstring_view{};
+        std::wstring out;
+        for (size_t i = list.find(L'.'); i != std::wstring_view::npos;)
+        {
+            const size_t next = list.find(L'.', i + 1);
+            out += (out.empty() ? L"*" : L";*");
+            out += list.substr(i, next == std::wstring_view::npos ? std::wstring_view::npos : next - i);
+            i = next;
+        }
+        return out;
+    }
+
     const wchar_t* EncoderName(H264Encoder encoder)
     {
         switch (encoder)
