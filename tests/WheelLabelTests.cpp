@@ -78,6 +78,15 @@ namespace
         std::map<std::pair<int, std::wstring>, float> m_widths;
     };
 
+    // For messages: the label's letters (non-ASCII ones as '?').
+    std::string Narrow(const std::wstring& text)
+    {
+        std::string out;
+        for (const wchar_t c : text)
+            out += c < 0x80 ? static_cast<char>(c) : '?';
+        return out;
+    }
+
     bool HasFamily(IDWriteFactory* dwrite, const wchar_t* name)
     {
         ComPtr<IDWriteFontCollection> fonts;
@@ -208,7 +217,7 @@ TEST(WheelLabels, AShorteningNeverReadsLikeAnotherSlice)
     const auto fits = FitLabels(Arrange(3), labels, four);
     std::set<std::wstring> seen;
     for (const auto& f : fits)
-        EXPECT_TRUE(seen.insert(f.Text()).second) << "two slices read " << std::string(f.Text().begin(), f.Text().end());
+        EXPECT_TRUE(seen.insert(f.Text()).second) << "two slices read " << Narrow(f.Text());
     EXPECT_EQ(fits[2].Text(), L"Blur");
     // The same label twice (Compress for a photo and for a video) is not a clash.
     const auto twins = FitLabels(Arrange(2), { { L"Compress", LabelStyle::Name }, { L"Compress", LabelStyle::Name } }, Even());
@@ -243,29 +252,43 @@ TEST(WheelLabels, EveryRecipeLabelFitsEverySliceAtEverySize)
     if (families.empty())
         families.push_back(L"Segoe UI");   // DirectWrite stands another font in
 
+    // One line per label that goes wrong anywhere, with the place it does worst.
+    std::map<std::string, std::pair<float, std::string>> problems;
     for (const auto& family : families)
         for (const float scale : scales)
         {
             DWriteMeasure dw(dwrite.Get(), family, scale);
             const MeasureLabel measure = [&dw](const std::wstring& text, LabelStyle style) { return dw(text, style); };
             for (const auto& [text, style] : labels)
+            {
+                std::string worst;
+                float smallest = 1e9f;
+                const std::string key = Narrow(family) + " " + Narrow(text) + (style == LabelStyle::Icon ? " (icon)" : " (name)");
                 for (size_t n = 1; n <= kTwoRingCapacity; ++n)
                 {
                     const auto fits = Everywhere(n, text, style, measure);
                     for (size_t i = 0; i < fits.size(); ++i)
                     {
                         const auto& f = fits[i];
-                        const auto where = [&] {
-                            return std::format("'{}' on slot {} of {} at scale {:.2f}", std::string(text.begin(), text.end()), i, n, scale);
-                        };
-                        ASSERT_TRUE(f.fits) << where();
-                        EXPECT_FALSE(f.shortened) << where() << " became " << std::string(f.Text().begin(), f.Text().end());
-                        EXPECT_EQ(f.Text(), text) << where();
-                        EXPECT_GE(f.size, MinSize(style)) << where();
-                        EXPECT_TRUE(RowsFit(Arrange(n), static_cast<int>(i), RowsOf(f, style, measure), f.radius)) << where();
+                        const bool inside = RowsFit(Arrange(n), static_cast<int>(i), RowsOf(f, style, measure), f.radius);
+                        const bool whole = !f.shortened && f.Text() == text;
+                        if (!f.fits || !whole || !inside || f.size < smallest)
+                        {
+                            smallest = std::min(smallest, f.size);
+                            if (!f.fits || !whole || !inside || f.size < MinSize(style))
+                                worst = std::format("as '{}' at {:.1f} DIP on slot {} of {} at scale {:.2f}{}{}", Narrow(f.Text()), f.size, i, n, scale,
+                                                    inside ? "" : ", outside its tile", f.fits ? "" : ", does not fit");
+                        }
                     }
                 }
+                if (!worst.empty() && (!problems.contains(key) || smallest < problems[key].first))
+                    problems[key] = { smallest, worst };
+            }
         }
+    std::string report;
+    for (const auto& [key, problem] : problems)
+        report += std::format("  {} {}\n", key, problem.second);
+    EXPECT_TRUE(problems.empty()) << "labels below the readable minimum, shortened or outside their tile:\n" << report;
 }
 
 // ---- The centre and the drag picture ------------------------------------------------------------

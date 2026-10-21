@@ -27,15 +27,15 @@ namespace sd::wheel
     // above a smaller label.
     enum class LabelStyle { Name, Icon };
 
-    inline constexpr float kNameLabelDip = 18.f, kNameLabelMinDip = 12.f;
-    inline constexpr float kIconLabelDip = 13.f, kIconLabelMinDip = 11.f;
+    inline constexpr float kNameLabelDip = 18.f, kNameLabelMinDip = 10.f;
+    inline constexpr float kIconLabelDip = 13.f, kIconLabelMinDip = 9.5f;
     inline constexpr float kLabelFloorDip = 6.f;   // step 4 stops here
     inline constexpr float kLabelStepDip = 0.5f;
     // The icon glyph at a label's full size; it shrinks with its label, its room with it.
     inline constexpr float kIconFontDip = 22.f;
     inline constexpr float kIconGapDip = 3.f;      // between the icon and the label
     inline constexpr float kLineHeight = 1.1f;     // a line's room (and the spacing of two), times the font size
-    inline constexpr float kLabelPadDip = 4.f;     // text to the tile's edges
+    inline constexpr float kLabelPadDip = 3.f;     // text to the tile's edges
     inline constexpr float kTileGapDip = 4.f;      // the straight gap between tiles
 
     float FullSize(LabelStyle style);
