@@ -1,6 +1,7 @@
 #include "PanelLayout.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <optional>
 
@@ -61,5 +62,12 @@ namespace sd::panel
             out.tabs.push_back(2.f * out.pad + kIconDip * s + out.iconGap + name * out.nameScale);
         out.width = std::accumulate(out.tabs.begin(), out.tabs.end(), 0.f) + (out.hint ? out.hintGap + hint + out.hintEnd : 0.f);
         return out;
+    }
+
+    void Approach(float& value, float target, float dtMs, float tauMs, float snap)
+    {
+        value += (target - value) * (1.f - std::exp(-dtMs / tauMs));
+        if (std::abs(target - value) < snap)
+            value = target;
     }
 }

@@ -1,10 +1,10 @@
 #pragma once
+#include "DialogWindow.h"
 #include "Features.h"
 #include "Settings.h"
 
 #include <windows.h>
 #include <commctrl.h>
-#include <wil/resource.h>
 
 #include <functional>
 #include <string>
@@ -39,30 +39,25 @@ namespace sd
     // a command line of your own), the theme, and how outputs are named; each applies at once
     // (onPreferences). Under them a tree of every section, kind of file and slice, each with a tick.
     // Unticking hides it from the wheel at once (onChange); a section, or a kind of file, ticks or
-    // unticks everything under it. A plain top-level window of standard controls (screen readers read
-    // it as it is), laid out in device pixels from the window's DPI like the history window.
-    class SettingsWindow
+    // unticks everything under it. Standard controls in a DialogWindow, like the history window.
+    class SettingsWindow final : public DialogWindow
     {
     public:
         using Change = std::function<void(const Features&)>;
         using PreferencesChange = std::function<void(const Preferences&)>;
 
         SettingsWindow(HINSTANCE instance, Change onChange, PreferencesChange onPreferences);
-        ~SettingsWindow();
-        SettingsWindow(const SettingsWindow&) = delete;
-        SettingsWindow& operator=(const SettingsWindow&) = delete;
 
         // Creates the window or brings it to the front, filled from `tree`, `current` and `preferences`.
         void Show(SettingsTree tree, const Features& current, const Preferences& preferences);
-        bool PreTranslate(MSG& msg);   // Tab / Esc for the message loop; true when consumed
 
     private:
-        static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam);
-        void CreateChildren();
-        void ApplyDpi(UINT dpi);
-        void ApplyTheme();
-        void Layout();
+        LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam) override;
+        void CreateChildren() override;
+        void OnDpiChanged() override;
+        void OnThemeChanged() override;
+        COLORREF StaticTextColor(HWND control) const override;
+        void Layout() override;
         void Fill();
         void FillPreferences();
         void OnPreferenceChanged();
@@ -74,7 +69,6 @@ namespace sd
         Features Collect() const;
         void EverythingOn();
 
-        HINSTANCE m_instance;
         Change m_onChange;
         PreferencesChange m_onPreferences;
         SettingsTree m_tree;
@@ -82,7 +76,6 @@ namespace sd
         Preferences m_preferences;
         std::vector<std::string> m_sliceIds;   // a slice item's lParam - kSliceTag indexes this
 
-        wil::unique_hwnd m_hwnd;
         HWND m_terminalLabel = nullptr, m_terminal = nullptr;   // children are destroyed with m_hwnd
         HWND m_commandLabel = nullptr, m_command = nullptr;
         HWND m_themeLabel = nullptr, m_theme = nullptr;
@@ -91,13 +84,6 @@ namespace sd
         HWND m_list = nullptr;
         HWND m_allOn = nullptr;
         HWND m_close = nullptr;
-        wil::unique_hfont m_font;
-        wil::unique_hbrush m_background;
-        wil::unique_hbrush m_field;   // edit box and drop-down list backgrounds in dark mode
-        COLORREF m_textColour = 0;
-        COLORREF m_fieldColour = 0;
-        bool m_dark = false;
-        UINT m_dpi = 96;
         bool m_updating = false;   // our own SetCheck calls: not the user's
     };
 }

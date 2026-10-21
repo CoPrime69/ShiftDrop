@@ -1,6 +1,7 @@
 #pragma once
 #include "Ffmpeg.h"
 #include "Recipe.h"
+#include "Theme.h"
 #include "preview/Prediction.h"
 
 #include <condition_variable>
@@ -30,11 +31,7 @@
 // Results are cached per (file, size, modified time, recipe). A new request cancels the one running.
 namespace sd::preview
 {
-    struct Thumbnail
-    {
-        std::vector<uint32_t> px;   // premultiplied BGRA, top-down
-        uint32_t w = 0, h = 0;
-    };
+    using Thumbnail = theme::Pixels;   // premultiplied BGRA, top-down
 
     struct Prediction
     {

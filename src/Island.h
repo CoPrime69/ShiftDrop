@@ -1,7 +1,7 @@
 #pragma once
-#include "Canvas.h"
 #include "Overlay.h"
 #include "PanelLayout.h"
+#include "PanelWindow.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -31,7 +31,7 @@ namespace sd
     // (WS_EX_TRANSPARENT) except while it shows a result, so it never gets in the way of the
     // window under it, and it is never a drop target. Screen readers hear its progress and results
     // (Accessibility.h).
-    class Island
+    class Island : private PanelWindow
     {
     public:
         enum class Outcome { Success, Partial, Failure };
@@ -88,12 +88,7 @@ namespace sd
         size_t ActionCount() const;
         std::wstring ResultLine() const;              // the subtitle, or a hint while hovered
 
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight,
-                                                             DWRITE_TEXT_ALIGNMENT align) const;
         bool EnsureTextFormats();
-        float TextWidth(const std::wstring& text, IDWriteTextFormat* format) const;
-        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> Brush(const D2D1_COLOR_F& color, float alpha = 1.f);
-        void Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color, float alpha = 1.f);
         void Render();
         void DrawSwitcher(const D2D1_RECT_F& box, float alpha);
         void DrawProgress(const D2D1_RECT_F& box, float alpha);
@@ -106,17 +101,10 @@ namespace sd
 
         wil::unique_hwnd m_hwnd;
         std::unique_ptr<a11y::TextElement> m_a11y;   // after m_hwnd: goes first
-        Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
-        Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;
-        std::unique_ptr<Canvas> m_canvas;
-        ID2D1RenderTarget* m_rt = nullptr;   // valid between Canvas::Begin and End
-        std::wstring m_textFamily, m_iconFamily;
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont, m_actionFont;
-        float m_fontScale = 0.f;
 
         // Layout, window pixels.
         HMONITOR m_monitor = nullptr;
-        float m_scale = 1.f;
         POINT m_origin{};
         SIZE m_size{};
         float m_pad = 0.f;   // transparent room around the panel for its shadow
@@ -152,10 +140,9 @@ namespace sd
         bool m_carrying = false;                // a drag of the outputs is in progress
 
         // Animation.
-        bool m_animating = false;
+        FrameClock m_frames;
         bool m_motion = true;
         bool m_retracting = false;
-        ULONGLONG m_lastFrame = 0;
         ULONGLONG m_resultSince = 0;
         float m_presence = 0.f;      // 0 = tucked above the top edge, 1 = fully down (spring)
         float m_presenceT = 0.f;     // time along the spring, 0..1

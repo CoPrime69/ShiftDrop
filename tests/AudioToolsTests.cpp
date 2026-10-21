@@ -1,3 +1,4 @@
+#include "Ask.h"
 #include "Ffmpeg.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
@@ -332,6 +333,43 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
     EXPECT_EQ(runner.Lane(recipes.Get("audio-visualizer")), JobLane::Media);
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-trim")));
     EXPECT_FALSE(engine->IsBatch(recipes.Get("audio-trim")));
+}
+
+TEST(AudioTools, NormalizeAsksHowLoud)
+{
+    // The chooser is an ask:: question: answered here, it gives the target of the link picked.
+    ask::Question asked;
+    int pick = 14;
+    ask::SetAnswers([&](const ask::Question& q) {
+        asked = q;
+        return pick;
+    }, {});
+    double target = 0;
+    EXPECT_TRUE(ChooseLoudness(nullptr, 3, target));
+    EXPECT_EQ(target, -14);
+    EXPECT_EQ(asked.title, L"Normalize Volume");
+    EXPECT_EQ(asked.heading, L"How loud should it be?");
+    EXPECT_EQ(asked.text, L"All 3 files get the same loudness. Peaks stay under \u22121 dBTP.");
+    ASSERT_EQ(asked.choices.size(), 3u);
+    EXPECT_EQ(asked.choices[0].id, 16);
+    EXPECT_EQ(asked.choices[0].label, L"Speech");
+    EXPECT_EQ(asked.choices[0].note, L"\u221216 LUFS, for podcasts, voice notes, talks and lectures");
+    EXPECT_EQ(asked.choices[1].id, 14);
+    EXPECT_EQ(asked.choices[1].label, L"Music");
+    EXPECT_EQ(asked.choices[2].id, 23);
+    EXPECT_EQ(asked.choices[2].label, L"Broadcast");
+    EXPECT_TRUE(ChooseLoudness(nullptr, 1, target));
+    EXPECT_EQ(asked.text, L"Peaks stay under \u22121 dBTP.");
+    // Cancel, or anything that is not one of the three, leaves the target alone.
+    target = -16;
+    for (const int other : { ask::kCancel, 99 })
+    {
+        pick = other;
+        EXPECT_FALSE(ChooseLoudness(nullptr, 1, target)) << other;
+        EXPECT_EQ(target, -16);
+    }
+    ask::SetAnswers({}, {});
+    EXPECT_FALSE(ChooseLoudness(nullptr, 1, target)) << "no one to ask: cancelled, as before";
 }
 
 // ---- With the real ffmpeg.exe (SHIFTDROP_FFMPEG) --------------------------------------------------

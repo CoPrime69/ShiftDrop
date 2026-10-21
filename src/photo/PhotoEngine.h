@@ -31,6 +31,10 @@ namespace sd::photo
     HRESULT RenderCollage(const std::vector<Picture>& pictures, const CollageParams& p, canvas::Raster& out, std::wstring& error,
                           RenderInfo* info = nullptr);
 
+    // The pictures an Annotate mark places on top (Mark::Image), loaded for a full-size render; one
+    // that can't be opened is logged and left out.
+    std::map<std::wstring, Picture> LoadInsertedPictures(const Annotations& marks);
+
     // One file's params of a per-file tool: the shared ones with params["perFile"][path] over them.
     nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);
 
