@@ -123,48 +123,24 @@ jobs:
           path: build/ffmpeg-custom
           if-no-files-found: error
 
-  # Compiles everything once (the app, the worker and the tests) and hands the binaries to the test
-  # shards and the installer job below.
+  # Compiles everything once (the app, the worker and the tests). It needs no ffmpeg.exe: the jobs
+  # that run something get it themselves. The test shards and the installer job start beside it and
+  # take its binaries as soon as each artifact is uploaded (scripts/wait-for-artifact.ps1).
   build:
-    needs: [reuse, ffmpeg]
-    # Also when the ffmpeg job was skipped (SHIFTDROP_FFMPEG=btbn): get-ffmpeg.ps1 then falls back.
-    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && needs.ffmpeg.result != 'failure' }}
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-
-      # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
-      # that pins its URL and hash. Only needed without our own build.
-      - uses: actions/cache@v4
-        if: needs.ffmpeg.result != 'success'
-        with:
-          path: build/downloads
-          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
-
-      - uses: actions/download-artifact@v4
-        if: needs.ffmpeg.result == 'success'
-        with:
-          name: ffmpeg-custom-${{ github.sha }}
-          path: build/ffmpeg-custom
-
-      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
-      # Our own build when the ffmpeg job made one, else the pinned BtbN build.
-      - name: Get ffmpeg
-        shell: pwsh
-        run: ./scripts/get-ffmpeg.ps1
-
-      # Everything the app's argument builders use (tests/FfmpegComponentsTests.cpp checks the list
-      # against them) must be in the exe.
-      - name: Check ffmpeg components
-        shell: pwsh
-        run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
 
       - uses: ./.github/actions/configure
         with:
           save-caches: 'true'
 
-      - name: Build
-        run: cmake --build --preset ci
+      # ShiftDrop.exe, and ShiftDropWorker.exe with it, first: the installer job waits for them (and
+      # for vcpkg's copyright files, for the third-party notices).
+      - name: Build the app
+        run: cmake --build --preset ci --target ShiftDrop
 
       - name: Offline check (no networking imports)
         if: ${{ !inputs.cache-only }}
@@ -173,14 +149,22 @@ jobs:
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
 
-      # From the copyright files vcpkg installed, for the installer job.
-      - name: Third-party notices
+      - uses: actions/upload-artifact@v4
         if: ${{ !inputs.cache-only }}
-        shell: pwsh
-        run: ./scripts/make-notices.ps1 -Installed build/vcpkg_installed/x64-windows-static
+        with:
+          name: app-bundle
+          path: |
+            build/ci/ShiftDrop.exe
+            build/ci/ShiftDropWorker.exe
+            build/vcpkg_installed/x64-windows-static/share/*/copyright
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 3
 
-      # What the test shards need: the test exe, CTest's files for it (they run it from build/ci, with
-      # the ffmpeg.exe in build/engines) and the components list the ffmpeg tests read.
+      - name: Build the tests
+        run: cmake --build --preset ci
+
+      # The test exe and CTest's files for it (the shards run it from build/ci).
       - uses: actions/upload-artifact@v4
         if: ${{ !inputs.cache-only }}
         with:
@@ -189,21 +173,6 @@ jobs:
             build/ci/shiftdrop_tests.exe
             build/ci/CTestTestfile.cmake
             build/ci/shiftdrop_tests*_include.cmake
-            build/engines/
-            scripts/ffmpeg-components.txt
-          if-no-files-found: error
-          compression-level: 1
-          retention-days: 3
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ !inputs.cache-only }}
-        with:
-          name: app-bundle
-          path: |
-            build/ci/ShiftDrop.exe
-            build/ci/ShiftDropWorker.exe
-            build/engines/
-            build/installer/THIRD-PARTY-NOTICES.txt
           if-no-files-found: error
           compression-level: 1
           retention-days: 3
@@ -224,22 +193,43 @@ jobs:
           path: build/marker/tested-tree.txt
 
   # The unit tests in three shards on three runners: CTest's -I start,end,stride gives each shard
-  # every third test, so together they run each test exactly once. Every test still runs in its own
-  # process (TempDir names its folder after the process), four at a time on each runner.
+  # every third test, so together they run each test exactly once (each shard checks that first).
+  # Every test still runs in its own process (TempDir names its folder after the process), four at a
+  # time on each runner.
   tests:
-    needs: build
-    # Spelled out: an implicit success() is false when an earlier job (reuse) was skipped.
-    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only }}
+    needs: [reuse, ffmpeg]
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && needs.ffmpeg.result != 'failure' && !inputs.cache-only }}
     name: tests (${{ matrix.shard }} of 3)
     runs-on: windows-2022
+    permissions:
+      actions: read   # scripts/wait-for-artifact.ps1
+      contents: read
     strategy:
       fail-fast: false   # every shard reports its own results
       matrix:
         shard: [1, 2, 3]
+    env:
+      # The same ffmpeg.exe the installer ships, for the media tests.
+      SHIFTDROP_FFMPEG: ${{ github.workspace }}\build\engines\ffmpeg.exe
     steps:
-      - uses: actions/download-artifact@v4
+      # Some tests read the sources (FfmpegComponentsTests scans tests/ and src/).
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success'
         with:
-          name: tests-bundle
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
 
       # Each test's time from the last run, so ctest starts the slowest ones first.
       - uses: actions/cache@v4
@@ -247,6 +237,17 @@ jobs:
           path: build/ci/Testing/Temporary/CTestCostData.txt
           key: ctest-costs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: ctest-costs-${{ matrix.shard }}-
+
+      - name: Wait for the test exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/wait-for-artifact.ps1 -Name tests-bundle -Job build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tests-bundle
+          path: build/ci
 
       - name: Unit tests, shard ${{ matrix.shard }} of 3
         shell: pwsh
@@ -265,17 +266,58 @@ jobs:
           "Shard ${{ matrix.shard }} of 3: $($counts[${{ matrix.shard }} - 1]) of the $total tests, $result" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
           exit $code
 
+  # Builds the installer from the build job's exes (as soon as they are uploaded) with the same
+  # ffmpeg.exe, runs the installer smoke test and uploads the installer and the exe.
   installer:
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only }}
+    needs: [reuse, ffmpeg]
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && needs.ffmpeg.result != 'failure' && !inputs.cache-only }}
     runs-on: windows-2022
+    permissions:
+      actions: read   # scripts/wait-for-artifact.ps1
+      contents: read
     steps:
       - uses: actions/checkout@v4
+
+      # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
+      # that pins its URL and hash. Only needed without our own build.
+      - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success'
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      # Our own build when the ffmpeg job made one, else the pinned BtbN build.
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
+
+      # Everything the app's argument builders use (tests/FfmpegComponentsTests.cpp checks the list
+      # against them) must be in the exe.
+      - name: Check ffmpeg components
+        shell: pwsh
+        run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
+
+      - name: Wait for the app
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/wait-for-artifact.ps1 -Name app-bundle -Job build
 
       - uses: actions/download-artifact@v4
         with:
           name: app-bundle
           path: build
+
+      # From the copyright files vcpkg installed (the build job sent them along) and ffmpeg's.
+      - name: Third-party notices
+        shell: pwsh
+        run: ./scripts/make-notices.ps1 -Installed build/vcpkg_installed/x64-windows-static
 
       # Inno Setup ships on the windows-2022 image; install it only if a future image drops it.
       - name: Build the installer
@@ -328,11 +370,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: tests-bundle
+          path: build/ci
 
       - uses: actions/cache@v4
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
 
       # The speed benchmark (Bench.*, skipped in the unit tests) only runs when asked: "Run workflow"
       # with "bench" ticked, or a pull request labelled "bench". Its table goes into the run's summary.
