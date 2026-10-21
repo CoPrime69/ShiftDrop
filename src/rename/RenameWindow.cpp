@@ -131,7 +131,7 @@ namespace sd
     {
         if (control == m_status && (!m_plan.error.empty() || m_plan.problems > 0 || m_plan.warnings > 0))
             return ProblemColor();
-        return control == m_fields ? GetSysColor(COLOR_GRAYTEXT) : m_colors.text;
+        return control == m_fields ? MutedColor() : m_colors.text;
     }
 
     void RenameWindow::Layout()
