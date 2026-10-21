@@ -174,7 +174,7 @@ Each milestone, at a glance:
 | M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
-| **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
+| **M8 (new, done)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
 | **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
 | **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
 | **M11 (new)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/PPTX/TXT/MD |
@@ -256,13 +256,18 @@ The full list:
   - ZIP, TAR and GZIP: create, extract, and convert between them.
   - RAR and 7z: extract and convert from.
 
-**M8. Photo tools (new)**
+**M8. Photo tools (new, done)**
 
-Everything here runs on the M6 canvas with a live GPU preview, using Direct2D effects plus our own shaders. No models.
-- Tool 3, **Edit Photos**: exposure, light, colour and detail, plus dehaze (dark-channel prior), clarity (local contrast), grain and noise reduction (edge-preserving filter).
-- Tool 4, **Annotate Photos**: arrows, text, shapes, callouts, numbered labels, magnifiers, inserted images, freehand drawing and highlighter.
-- Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
-- Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
+Everything here runs on the M6 canvas with a live GPU preview, using Direct2D effects plus our own shaders. No models. The editor draws the tool's own result (`IPreview` in `src/canvas/CanvasTool.h`) with the same Direct2D code the export uses, at the screen's resolution, so what the preview shows is what gets saved. Exports render on the GPU (WARP, Windows' software rasteriser, when there is none), keep the format, carry the EXIF (M6's `CarryEditedExif`) and write through StagedOutput. Code: `src/photo`.
+- [x] Tool 3, **Edit Photos**: exposure, light, colour and detail, plus dehaze (dark-channel prior), clarity (local contrast), grain and noise reduction (edge-preserving filter).
+  - Seventeen sliders in four tabs (Light, Colour, Detail, Effects), presets (Vivid, Soft, Warm, Cool, Mono, Film) and Auto (from the histogram). Press and hold on the picture to see the original.
+  - Three pixel shaders of our own (noise reduction, develop with dehaze, finish with clarity, sharpen, vignette and grain), compiled at run time from the same text as the CPU path (`Shade.h`), plus Direct2D's Gaussian blur.
+  - Dehaze: the dark channel prior with a fast guided filter, analysed on a 512-pixel copy; the haze map follows the full picture's edges.
+- [x] Tool 4, **Annotate Photos**: arrows, text, shapes, callouts, numbered labels, magnifiers, inserted images, freehand drawing and highlighter.
+  - Every mark stays editable until Save: select, move, reshape by its grips, restyle, delete, bring to front. Each picture of a batch gets its own marks.
+- [x] Tool 5, **Add a Background**: solid, gradient or image background, with aspect ratio, spacing, corner radius, blur and shadow.
+- [x] Tool 8, **Create a Collage**: grid, row, column and featured layouts, with order, output size, spacing, corners and background.
+  - Only on the Tools wheel when two or more pictures are dropped (`IEngine::AppliesToDrop`). Drag a photo onto another to swap them; Shuffle and Reverse.
 
 **M9. Video tools (new, done)**
 
@@ -552,6 +557,14 @@ question 1).
 | 2026-10-20 | Shift is the only key that opens the wheel during a drag; Ctrl and Alt no longer do (they keep Explorer's own meaning), and every section is reached by scrolling. Old settings.ini files with Tools=Ctrl / Files=Alt are switched to None once (KeysVersion=2); a later hand edit stays | Prakhar: one key to remember, and sections will outgrow the keys. Alt also lit up the source window's menu bar |
 | 2026-10-20 | A wheel moved in from a screen edge treats the spot where it opened as the centre until the cursor moves 6 DIP, and keeps the mouse pointer visible | The cursor sits on a slice after the move; dropping without moving must still run nothing, and the user has to see where the pointer is |
 | 2026-10-20 | A fourth section, Reduce size (between Tools and File actions): eight slices, 90% to 20% smaller, as image.compress / media.compress with `percent` (the result is at most that share of the source) and pdf.compress with `percent`, which steps the pictures down (150 dpi q70 to 48 dpi q25) until it fits. The centre shows the files' total size; a hovered slice's `headline` replaces it with the size it comes out at, over "was …" | Prakhar (23:30): websites often need files under a size, and seeing both sizes before dropping saves trial and error. Fit-to-size already guaranteed the target for images and media |
+| 2026-10-21 | Photo tools draw their result in the editor through a new `IPreview` on `ICanvasTool`: the window renders it on a second device context of its own Direct2D device, at the zoom's resolution rounded up to a power of two, and only when the tool's revision changes | Preview and export share one drawing function per tool (`src/photo/Compose.cpp`), so the editor shows exactly what is saved, and panning costs nothing |
+| 2026-10-21 | Edit Photos' per-pixel maths is written once (`src/photo/Shade.h`) and compiled both as C++ (the CPU path) and as HLSL (three custom Direct2D effects, compiled at run time with Windows' `d3dcompiler_47.dll`) | One definition to test; the CPU path is the test oracle and the fallback when a device can't run custom effects |
+| 2026-10-21 | Dehaze is the dark channel prior with a fast guided filter: the analysis (atmospheric light from the haziest 0.1 %, the guided filter's coefficients) runs on a 512-pixel copy, and the haze is a·luma + b at full size | The analysis is statistical and cheap at 512 px; the coefficients follow the full picture's edges, so there are no halos and the preview matches the export |
+| 2026-10-21 | Clarity is luma detail against a blur of 1 % of the longer side, weighted to the midtones; noise reduction is a strided 7×7 bilateral filter whose radius grows with the picture; grain is value noise tied to picture coordinates | Radii in proportion to the picture make a slider read the same at preview and export size; the grain is the same on every render |
+| 2026-10-21 | The background's blur and the drop shadow are made on the CPU at a reduced size (512 px backdrop, a 4-pixels-per-sigma shadow mask) and stretched | Soft by nature, so small copies lose nothing; it works on every device (Wine has no Gaussian blur effect) and is fast at 12 MP |
+| 2026-10-21 | An exported collage takes the first photo's format and none of the photos' metadata; edited, annotated and backgrounded copies keep their EXIF | A collage is a new picture made of several; whose camera or location would it carry? |
+| 2026-10-21 | Create a Collage shows only for two or more pictures, through a new `IEngine::AppliesToDrop(recipe, fileCount)` that the wheel asks | The plan says so; one photo collage is just the photo |
+| 2026-10-21 | Annotate keeps its marks per picture (`{"perFile": {path: {"items": [...]}}}`, the pattern of the video tools); pictures without marks are skipped, not failed | Each screenshot of a batch needs its own arrows |
 
 ## Open questions
 
