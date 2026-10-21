@@ -1,7 +1,5 @@
 #pragma once
 #include "Engine.h"
-#include "FormatText.h"
-#include "PathUtil.h"
 
 #include <memory>
 #include <stop_token>
@@ -24,8 +22,4 @@ namespace sd::pdf
     bool LooksLikePdf(const std::wstring& path, std::wstring* why);
     // An image the app can read (the same decoders the image converters use), and not a PDF.
     bool IsReadableImage(const std::wstring& path);
-
-    // The Merge and Organize windows (src/pdf/MergeWindow.cpp, OrganizeWindow.cpp) still say
-    // FileNameOf; it goes when the page editor lands. SizeText reaches them through FormatText.h.
-    inline std::wstring FileNameOf(const std::wstring& path) { return FileName(path); }
 }

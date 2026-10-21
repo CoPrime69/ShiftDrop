@@ -1,6 +1,7 @@
 #include "mediaeditor/EditorWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "resource.h"
 #include "videotools/VideoTools.h"
@@ -37,12 +38,6 @@ namespace sd::mediatools
         {
             static std::vector<std::unique_ptr<EditorWindow>> windows;
             return windows;
-        }
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            const auto slash = path.find_last_of(L"\\/");
-            return slash == std::wstring::npos ? path : path.substr(slash + 1);
         }
 
         void OpenEditorWindow(HWND owner, EditorRequest request, EditorDone done) { EditorWindow::Open(owner, std::move(request), std::move(done)); }

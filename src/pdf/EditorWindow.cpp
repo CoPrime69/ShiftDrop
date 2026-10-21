@@ -1,6 +1,7 @@
 #include "pdf/EditorWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "Strings.h"
 #include "Theme.h"
 #include "resource.h"
 
@@ -349,7 +350,7 @@ namespace sd::pdf
             return 0;
         }
         case WM_SETTINGCHANGE:
-            if (lParam && wcscmp(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet") == 0)
+            if (lParam && EqualsNoCase(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet"))
             {
                 LoadColors();
                 m_brushes.clear();

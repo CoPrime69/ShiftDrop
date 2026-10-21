@@ -3,6 +3,7 @@
 // overwrites anything and can be undone.
 #include "ErrorText.h"
 #include "FileIo.h"
+#include "FormatText.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "PathUtil.h"
