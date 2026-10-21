@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-// Tools 16-20 (M10) as ffmpeg command lines, plus the parsers for what ffmpeg reports back
+// The audio tools (Normalize, Visualizer, Trim, Channels, Bleep) as ffmpeg command lines, plus the parsers for what ffmpeg reports back
 // (loudnorm's measurement, silencedetect's periods). Pure; AudioEngine.cpp runs them. Every tool
 // writes the format the source already is (an MP3 stays an MP3), at its sample rate.
 namespace sd::audiotools

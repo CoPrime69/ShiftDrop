@@ -6,7 +6,7 @@
 
 namespace sd::sharesafe
 {
-    // Share-safe (S5, sharesafe.clean) and Remove metadata (metadata.remove): a copy to send that
+    // Share-safe (sharesafe.clean) and Remove metadata (metadata.remove): a copy to send that
     // carries nothing about the person or the device. Pictures lose EXIF, GPS, XMP, IPTC, maker notes,
     // thumbnails, comments and trailing data (losslessly where the container allows); video and
     // audio are stream-copied by ffmpeg without global, stream or chapter metadata. Every output is

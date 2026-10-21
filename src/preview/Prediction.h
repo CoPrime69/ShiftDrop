@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-// "Know before you drop" (S1): the arithmetic behind the predicted output shown while a slice is
+// The arithmetic behind the predicted output shown while a slice is
 // highlighted. Pure; Predictor.h runs the samples and probes that feed it.
 namespace sd::preview
 {

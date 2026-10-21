@@ -4,7 +4,7 @@
 #include <stop_token>
 #include <string>
 
-// PDF as a document source (M11 on top of the M5 PDF engine): the PDF module reads each page's text
+// PDF as a document source (on top of the PDF engine in src/pdf): the PDF module reads each page's text
 // (its text layer, or Windows OCR for scans) and rebuilds paragraphs, headings and bullets as
 // Markdown, which becomes the document model. Reflowed text only: page layout and pictures are not
 // kept. Kept in its own file because it needs QPDF.

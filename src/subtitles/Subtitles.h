@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-// Subtitle tracks (M11): SubRip (.srt) and WebVTT (.vtt) in and out, and plain text out.
+// Subtitle tracks: SubRip (.srt) and WebVTT (.vtt) in and out, and plain text out.
 // Pure: no Windows calls, so the parser and writers are tested directly.
 namespace sd::subtitles
 {

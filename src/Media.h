@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-// Audio and video formats (M3). Everything here is pure: which files are media, what each output
+// Audio and video formats. Everything here is pure: which files are media, what each output
 // format is, and the ffmpeg arguments that produce it. Running ffmpeg is in Ffmpeg.h.
 namespace sd
 {

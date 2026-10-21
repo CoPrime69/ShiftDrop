@@ -16,7 +16,7 @@ namespace sd
 {
     std::string RecipeStore::BuiltInJson()
     {
-        // One-step recipes reproduce the M1 slices exactly (plus WebP, now that libwebp is linked).
+        // The plain format slices are one-step recipes: decode, then encode in the target format.
         auto all = nlohmann::json::parse(R"([
   { "id": "to-png",  "label": "PNG",  "description": "PNG, lossless",  "steps": [ { "action": "image.encode", "params": { "format": "png" } } ] },
   { "id": "to-jpg",  "label": "JPG",  "description": "JPEG, quality 92",  "steps": [ { "action": "image.encode", "params": { "format": "jpg", "quality": 92 } } ] },
@@ -59,7 +59,7 @@ namespace sd
   { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] },
   { "id": "rename",    "label": "Rename\u2026", "description": "Rename with a pattern: {name}, {n}, {date}", "ring": "files", "steps": [ { "action": "file.rename" } ] }
 ])");
-        // Video and audio formats (M3), one Convert slice each, in MediaFormats() order. They share the
+        // Video and audio formats, one Convert slice each, in MediaFormats() order. They share the
         // Convert wheel with the image formats; the wheel shows only those that fit the dragged files.
         for (const auto& f : MediaFormats())
         {

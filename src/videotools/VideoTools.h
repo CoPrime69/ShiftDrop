@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-// Tools 9-15 (M9) as ffmpeg command lines. Everything here is pure: given what the input holds, the
+// The video tools (Trim, Crop, Speed, Join, Frames, Split, Redact) as ffmpeg command lines. Everything here is pure: given what the input holds, the
 // user's choices and the H.264 encoder, the arguments after "ffmpeg". VideoEngine.cpp runs them.
 //
 // Stream copy is used wherever it gives exactly what was asked: a Fast trim or split cuts at

@@ -9,10 +9,10 @@
 #define IDM_OPEN_RECIPES 40004
 #define IDM_START_WITH_WINDOWS 40005
 #define IDM_HIDE_CURSOR 40006
-// Keyboard and Explorer (M4)
+// Keyboard and Explorer
 #define IDM_EXPLORER_HOTKEY 40030
 #define IDM_SHELL_MENU  40031
-// Settings window, Float shelf (M3c) and the OCR language submenu (M5): base + the index in
+// Settings window, Float shelf and the OCR language submenu: base + the index in
 // ocr::Languages() + 1, base + 0 = Automatic
 #define IDM_SETTINGS    40033
 #define IDM_SHOW_SHELF  40032

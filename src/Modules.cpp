@@ -18,16 +18,16 @@ namespace sd
     const std::vector<FeatureModule>& FeatureModules()
     {
         static const std::vector<FeatureModule> modules = {
-            inspect::Module(),   // Tools: Inspect (metadata, M4)
+            inspect::Module(),   // Tools: Inspect (metadata)
             ShelfModule(),   // Float shelf (file action), src/shelf
             pdf::Module(),   // PDF tools, text from anything (OCR), Share (src/pdf, src/ocr, src/share)
-            docs::Module(),        // Documents: DOCX, Markdown, HTML, TXT, RTF, EPUB, PDF (M11, src/docs)
-            sheets::Module(),      // Spreadsheets: XLSX, XLS, ODS, CSV, TSV (M11, src/sheets)
-            subtitles::Module(),   // Subtitles: SRT, VTT, TXT (M11, src/subtitles)
-            office::Module(),      // Office bridge: exact PDFs and slide pictures (M11, src/officebridge)
-            MediaToolsModule(),   // video tools (M9) and audio tools (M10)
+            docs::Module(),        // Documents: DOCX, Markdown, HTML, TXT, RTF, EPUB, PDF (src/docs)
+            sheets::Module(),      // Spreadsheets: XLSX, XLS, ODS, CSV, TSV (src/sheets)
+            subtitles::Module(),   // Subtitles: SRT, VTT, TXT (src/subtitles)
+            office::Module(),      // Office bridge: exact PDFs and slide pictures (src/officebridge)
+            MediaToolsModule(),   // video tools and audio tools (src/mediaeditor)
             ImageToolsModule(),   // Crop, Redact, Share-safe, Remove metadata, src/imagetools
-            photo::Module(),   // Edit Photos, Annotate, Background, Collage (M8), src/photo
+            photo::Module(),   // Edit Photos, Annotate, Background, Collage (src/photo)
             archive::Module(),   // Zip, Extract, convert archives; parsed in the sandboxed worker (src/archive, src/sandbox)
         };
         return modules;

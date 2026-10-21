@@ -5,7 +5,7 @@
 #include <stop_token>
 #include <string>
 
-// The PDF module (M5): the PDF engine (src/pdf), text from anything (src/ocr) and the Share file
+// The PDF module: the PDF engine (src/pdf), text from anything (src/ocr) and the Share file
 // action (src/share), registered with the core as one FeatureModule (Modules.cpp).
 namespace sd::pdf
 {

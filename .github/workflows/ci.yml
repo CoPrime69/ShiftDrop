@@ -148,7 +148,7 @@ jobs:
           ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
           ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDropWorker.exe
 
-      - name: Build the M0 placeholder too
+      - name: Build the placeholder gesture build too
         shell: pwsh
         run: |
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT

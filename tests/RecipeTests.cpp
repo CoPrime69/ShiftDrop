@@ -31,10 +31,10 @@ TEST(Recipe, BuiltInsAndExampleLoadWithoutErrors)
     size_t convert = 0, tools = 0, reduce = 0, files = 0;
     for (const auto& r : recipes.store.All())
         ++(r.ring == "convert" ? convert : r.ring == "tools" ? tools : r.ring == "reduce" ? reduce : files);
-    EXPECT_EQ(convert, 52u);  // PNG, JPG, WebP, AVIF, HEIC, TIFF, BMP + Web + 15 video/audio formats + 5 PDF (M5) + 6 documents, 5 spreadsheets, 3 subtitles, 3 office bridge (M11) + 7 archive (M7)
-    EXPECT_EQ(tools, 38u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect (M4) + 6 PDF/OCR (M5) + 7 video and 5 audio tools (M9, M10) + Crop, Redact, Share-safe (M6) + Edit, Annotate, Background, Collage (M8)
+    EXPECT_EQ(convert, 52u);  // PNG, JPG, WebP, AVIF, HEIC, TIFF, BMP + Web + 15 video/audio formats + 5 PDF + 6 documents, 5 spreadsheets, 3 subtitles, 3 office bridge + 7 archive
+    EXPECT_EQ(tools, 38u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect + 6 PDF/OCR + 7 video and 5 audio tools + Crop, Redact, Share-safe + Edit, Annotate, Background, Collage
     EXPECT_EQ(reduce, 24u);   // 90% to 20% smaller, for pictures, video and audio, and PDFs
-    EXPECT_EQ(files, 10u);    // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share (M5), Remove metadata (M6), Zip (M7), Rename… (M12)
+    EXPECT_EQ(files, 10u);    // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share, Remove metadata, Zip, Rename…
     EXPECT_TRUE(recipes.Get("move").IsFileAction());
 }
 

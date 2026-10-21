@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-// Page layout for documents and spreadsheets printed to PDF (M11): line breaking, tables, images and
+// Page layout for documents and spreadsheets printed to PDF: line breaking, tables, images and
 // pagination, in points (1/72 inch), y growing down from the top of the page. Pure: text is measured
 // through ITextMeasure (DirectWrite in the app, fixed metrics in the tests), and the result is a list
 // of positioned items per page that PdfPrint.cpp draws.

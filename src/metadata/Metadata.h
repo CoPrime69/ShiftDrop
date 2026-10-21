@@ -7,8 +7,7 @@
 #include <vector>
 
 // Image metadata: read it grouped, remove some or all of it, set a field, and verify a file is
-// clean. Share-safe and Remove metadata (M6) use the removal and verification; Edit Metadata
-// (tool 2) builds its inspector and editor on the same calls.
+// clean. Share-safe and Remove metadata use the removal and verification.
 //
 // JPEG, PNG, WebP and GIF are edited at the container level (Container.h, Exif.h): the compressed
 // pixels are copied byte for byte, so nothing is re-encoded and nothing is lost. Other formats

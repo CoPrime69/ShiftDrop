@@ -84,7 +84,7 @@ namespace sd
                 return false;
             }
             // Every file action takes folders too, except Duplicate (a folder copy needs progress and
-            // cancel, which arrive with the media worker in M3).
+            // cancel, which this path does not have).
             if ((attributes & FILE_ATTRIBUTE_DIRECTORY) && recipe.steps[0].action == "file.duplicate")
             {
                 if (why)

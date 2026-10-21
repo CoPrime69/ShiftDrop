@@ -23,7 +23,7 @@
     },
     {
       "name": "x64-release-m0",
-      "displayName": "x64 Release (M0 placeholder)",
+      "displayName": "x64 Release (placeholder gesture build)",
       "inherits": "x64-release",
       "cacheVariables": {
         "SHIFTDROP_M0": "ON"

@@ -3,7 +3,7 @@
 
 #include <memory>
 
-// Archives (M7): Zip / TAR.GZ / 7z of any files and folders, Extract, and Convert between formats,
+// Archives: Zip / TAR.GZ / 7z of any files and folders, Extract, and Convert between formats,
 // through libarchive (BSD-2). Every archive that is read (Extract, Convert) is parsed by the sandboxed
 // worker (src/sandbox); writing happens in the app, from the user's own files or from entries the app
 // has already checked.

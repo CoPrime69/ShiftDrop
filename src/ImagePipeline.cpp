@@ -741,9 +741,9 @@ namespace sd
                 if (const HRESULT hr = FlipRotate(factory.Get(), pixels.Get(), t, pixels); FAILED(hr))
                     return fail(hr, L"rotate");
             }
-            // image.strip_metadata: outputs never carry source metadata in this version (pixels are
-            // re-encoded into a fresh container), so the step only documents intent. Share-safe (M6)
-            // will add verified scrubbing and, for other recipes, opt-in metadata carry-over.
+            // image.strip_metadata: recipe outputs never carry the source's metadata (pixels are
+            // re-encoded into a fresh container), so the step only documents intent. Verified
+            // scrubbing is Share-safe's job (src/sharesafe).
         }
 
         // 4. Normalise, flatten if needed, encode. A picture without alpha goes to WIC's encoders and

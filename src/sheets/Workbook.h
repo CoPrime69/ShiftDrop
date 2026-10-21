@@ -3,7 +3,7 @@
 #include <string_view>
 #include <vector>
 
-// Spreadsheets (M11): one model for XLSX, ODS, XLS, CSV and TSV. Values only: formulas arrive as
+// Spreadsheets: one model for XLSX, ODS, XLS, CSV and TSV. Values only: formulas arrive as
 // their last computed result, and styles are not kept (dates excepted, so they stay dates).
 namespace sd::sheets
 {
