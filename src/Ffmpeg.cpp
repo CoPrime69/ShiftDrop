@@ -105,7 +105,7 @@ namespace sd
             result.error = L"the media engine (ffmpeg.exe) is missing; reinstall " SD_NAME;
             return result;
         }
-        // S6: with [Sandbox] Media=1, a run that reads one file into our staging output works on
+        // With [Sandbox] Media=1, a run that reads one file into our staging output works on
         // handles inside the AppContainer (sandbox/MediaSandbox.h). Any other run is unchanged.
         sandbox::MediaJail jail;
         bool jailed = false;

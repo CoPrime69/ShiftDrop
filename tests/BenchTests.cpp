@@ -1,4 +1,4 @@
-// Speed benchmark (docs/modules.md, "Speed"): times every main path on typical files it makes
+// Speed benchmark (docs/ARCHITECTURE.md, "Speed"): times every main path on typical files it makes
 // itself, through the same runner the app uses, plus the app's own overhead (the probe before each
 // ffmpeg run, starting ffmpeg, the H.264 encoder test, the wheel's predictions).
 //

@@ -2,7 +2,7 @@
 #include <string>
 #include <string_view>
 
-// Small helpers shared by the document, spreadsheet and subtitle converters (M11): whole-file I/O,
+// Small helpers shared by the document, spreadsheet and subtitle converters: whole-file I/O,
 // text decoding (BOMs, UTF-16, the ANSI code page) and XML escaping.
 namespace sd::docs
 {

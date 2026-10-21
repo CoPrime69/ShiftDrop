@@ -5,7 +5,7 @@
 #include <stop_token>
 #include <string>
 
-// Documents (M11): DOCX, Markdown, HTML, TXT, RTF, RTFD, PDF and Pages in; DOCX, Markdown, HTML,
+// Documents: DOCX, Markdown, HTML, TXT, RTF, RTFD, PDF and Pages in; DOCX, Markdown, HTML,
 // TXT, EPUB and PDF out, all through one document model (DocModel.h). One FeatureModule, one
 // action, "docs.convert".
 namespace sd::docs

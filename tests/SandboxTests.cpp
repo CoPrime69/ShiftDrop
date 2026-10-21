@@ -1,4 +1,4 @@
-// S6, sealed engines: the AppContainer worker can do its job but cannot open the user's files or
+// Sealed engines: the AppContainer worker can do its job but cannot open the user's files or
 // connect anywhere, and ffmpeg works on handles inside the same sandbox.
 //
 // This exe doubles as the worker (TestMain.cpp): "--sd-worker probe ..." runs the probe below,

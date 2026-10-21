@@ -457,7 +457,7 @@ TEST(Formats, HeicRoundTripWhereWindowsHasTheCodec)
     EXPECT_EQ(h, 480u);
 }
 
-// ---- The image editors (M6: Crop, Redact, Share-safe) take the new formats too ---------------------
+// ---- The image editors (Crop, Redact, Share-safe) take these formats too -------------------------
 
 TEST(Formats, EditorsReadAvifAndSvgAndWriteAvif)
 {

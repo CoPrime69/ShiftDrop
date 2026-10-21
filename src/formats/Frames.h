@@ -12,7 +12,7 @@
 #include <string_view>
 
 // Files with more than one picture: animated GIFs and multi-page TIFFs. Converting one keeps every
-// frame (decided for M5): a GIF to WebP or AVIF stays animated, a GIF to TIFF becomes a multi-page
+// frame: a GIF to WebP or AVIF stays animated, a GIF to TIFF becomes a multi-page
 // TIFF, and anything else becomes a folder "name (frames)" with one file per frame. Images to PDF
 // gives every TIFF page its own PDF page (src/pdf/PdfEngine.cpp).
 namespace sd::formats

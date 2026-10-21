@@ -7,11 +7,11 @@
 #include <memory>
 #include <string>
 
-// The photo tools' engine (M8): Edit Photos (photo.adjust), Annotate Photos (photo.annotate), Add a
+// The photo tools' engine: Edit Photos (photo.adjust), Annotate Photos (photo.annotate), Add a
 // Background (photo.background) and Create a Collage (photo.collage). Each opens its editor on the
 // image canvas (src/canvas) unless its recipe says `"ask": false`, then renders the full-size result
-// with Direct2D on the GPU (WARP without one), keeps the format, carries the EXIF (M6's metadata
-// API) and writes through StagedOutput.
+// with Direct2D on the GPU (WARP without one), keeps the format, carries the EXIF (src/metadata) and
+// writes through StagedOutput.
 namespace sd::photo
 {
     // How a render went, for logs and the timing tests.

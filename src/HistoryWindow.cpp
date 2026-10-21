@@ -210,7 +210,7 @@ namespace sd
             return;
         // Copy: Refresh() below replaces m_runs.
         const RunRecord target = *run;
-        // Hashing happens here on the UI thread; fine for images (M2). Large media moves it to a worker (M3).
+        // Undo re-hashes every output here, on the UI thread.
         const auto report = UndoRun(*m_history, target, m_hwnd.get());
         SetWindowTextW(m_status, report.message.c_str());
         Refresh();

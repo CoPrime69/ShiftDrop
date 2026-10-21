@@ -1309,7 +1309,7 @@ namespace sd
         }
 
 #if SHIFTDROP_M0
-        // M0 placeholder: one plain ring and the product name; any drop on it is logged.
+        // Placeholder build: one plain ring and the product name; any drop on it is logged.
         if (auto ring = TileGeometry(1, 0, m_tileIn, m_tileOut))
             m_rt->FillGeometry(ring.Get(), Brush(m_palette.tile).Get());
         DrawCentre();

@@ -1,5 +1,5 @@
 # Puts ffmpeg.exe (plus its licence and source pointer) in build/engines. CI runs it before the build;
-# run it once by hand for a local build (docs/TESTING.md, section 5).
+# run it once by hand for a local build (docs/BUILDING.md).
 #
 # 1. ShiftDrop's own small LGPL build (scripts/build-ffmpeg.sh), when its output folder is there:
 #    CI builds it in the "ffmpeg" job and hands it over; for a local build, download the

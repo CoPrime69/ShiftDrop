@@ -5,7 +5,7 @@
 
 #include <string>
 
-// Spreadsheets (M11): XLSX, XLS, ODS, CSV and TSV in; XLSX, ODS, CSV, TSV and a plain-table PDF out.
+// Spreadsheets: XLSX, XLS, ODS, CSV and TSV in; XLSX, ODS, CSV, TSV and a plain-table PDF out.
 // One FeatureModule, one action, "sheets.convert".
 namespace sd::sheets
 {
