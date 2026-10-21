@@ -57,7 +57,7 @@ namespace sd::videotools
     std::string EscapeConcatPath(const std::string& utf8Path);
     std::vector<std::wstring> JoinCopyArgs(const std::wstring& listFile, const ProbeInfo& first, const std::wstring& output);
     std::vector<std::wstring> JoinEncodeArgs(const std::vector<std::wstring>& inputs, const std::vector<ProbeInfo>& clips,
-                                             H264Encoder encoder, const std::wstring& output);
+                                             H264Encoder encoder, const std::wstring& output, bool fill = false);
     // The first clip's shown size (even) and frame rate (30 when unknown, at most 60).
     void JoinCanvas(const ProbeInfo& first, int& w, int& h, double& fps);
 

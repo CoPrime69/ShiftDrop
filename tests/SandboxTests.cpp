@@ -449,10 +449,13 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
     const int before = sandbox::MediaJail::OpenCount();
     const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
     int runs = 0, toolRuns = 0;
-    for (const auto& recipe : recipes.store.All())
+    for (auto recipe : recipes.store.All())
     {
         // Convert and Compress recipes, plus the video and audio tools that run without an editor
         // (those keep working with the setting on, inside the jail or, if they name other files, outside).
+        // Normalize's chooser only picks a level: run it as the preset the pick makes.
+        if (recipe.steps.size() == 1 && recipe.steps[0].action == "audio.normalize")
+            recipe.steps[0].params["ask"] = false;
         const bool tool = !recipe.IsMedia() && recipe.steps.size() == 1 &&
                           (recipe.steps[0].action.starts_with("video.") || recipe.steps[0].action.starts_with("audio."));
         if (!recipe.IsMedia() && !tool)

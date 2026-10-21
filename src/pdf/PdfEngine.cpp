@@ -118,11 +118,13 @@ namespace sd::pdf
                     done(recipe, files);
                     return;
                 }
-                Editors().organize(owner, files, [recipe, files, done](PagePlan plan) {
-                    Recipe adjusted = recipe;
-                    adjusted.steps.front().params["plan"] = PlanToJson(plan);
-                    done(std::move(adjusted), files);
-                });
+                // One window per PDF, each saved on its own as "name (organized).pdf".
+                for (const auto& file : files)
+                    Editors().organize(owner, { file }, [recipe, file, done](PagePlan plan) {
+                        Recipe adjusted = recipe;
+                        adjusted.steps.front().params["plan"] = PlanToJson(plan);
+                        done(std::move(adjusted), { file });
+                    });
             }
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,

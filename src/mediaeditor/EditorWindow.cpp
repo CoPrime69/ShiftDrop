@@ -86,6 +86,7 @@ namespace sd::mediatools
         m_factor = std::clamp(p.value("factor", 2.0), 0.25, 4.0);
         m_parts = std::clamp(p.value("parts", 0), 0, 100);
         m_equalParts = m_parts >= 2;
+        m_joinFill = p.value("fit", std::string("fit")) == "fill";
         if (m_parts < 2)
             m_parts = 2;
         m_blurStyle = p.value("style", std::string("blur")) != "solid";

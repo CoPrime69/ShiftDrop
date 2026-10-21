@@ -198,7 +198,7 @@ namespace sd::videotools
     }
 
     std::vector<std::wstring> JoinEncodeArgs(const std::vector<std::wstring>& inputs, const std::vector<ProbeInfo>& clips, H264Encoder encoder,
-                                             const std::wstring& output)
+                                             const std::wstring& output, bool fill)
     {
         int w = 0, h = 0;
         double fps = 30;
@@ -207,10 +207,14 @@ namespace sd::videotools
         std::wstring graph, chain;
         for (size_t i = 0; i < inputs.size(); ++i)
         {
-            // Fit inside the canvas, centred on black; the same rate and pixel format for every clip.
-            graph += std::format(L"[{0}:v:0]scale={1}:{2}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
-                                 L"pad={1}:{2}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={3},format=yuv420p[v{0}];",
-                                 i, w, h, FpsExpr(fps));
+            // Fit inside the canvas, centred on black, or fill it and crop the overflow from the middle;
+            // the same rate and pixel format for every clip.
+            graph += fill ? std::format(L"[{0}:v:0]scale={1}:{2}:force_original_aspect_ratio=increase,"
+                                        L"crop={1}:{2},setsar=1,fps={3},format=yuv420p[v{0}];",
+                                        i, w, h, FpsExpr(fps))
+                          : std::format(L"[{0}:v:0]scale={1}:{2}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+                                        L"pad={1}:{2}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={3},format=yuv420p[v{0}];",
+                                        i, w, h, FpsExpr(fps));
             chain += std::format(L"[v{}]", i);
             if (anyAudio)
             {
