@@ -36,12 +36,6 @@ namespace sd::wheel
             return out;
         }
 
-        bool Same(const std::wstring& a, const std::wstring& b)
-        {
-            return a.size() == b.size() &&
-                   std::equal(a.begin(), a.end(), b.begin(), [](wchar_t x, wchar_t y) { return std::towlower(x) == std::towlower(y); });
-        }
-
         // "10 MB", "1920 px": a number and its unit stay on one line.
         bool BreakAllowed(const std::vector<std::wstring>& words, size_t before)
         {
@@ -52,104 +46,73 @@ namespace sd::wheel
             return std::none_of(std::begin(kUnits), std::end(kUnits), [&](const wchar_t* u) { return words[before] == u; });
         }
 
-        // Step 3's first try: "Under 10 MB" reads as "≤10 MB".
-        std::wstring Abbreviate(const std::wstring& text)
-        {
-            std::wstring out = text;
-            constexpr std::wstring_view kUnder = L"Under ";
-            for (size_t at = out.find(kUnder); at != std::wstring::npos; at = out.find(kUnder, at + 1))
-                if ((at == 0 || out[at - 1] == L' ') && at + kUnder.size() < out.size() && std::iswdigit(out[at + kUnder.size()]))
-                    out.replace(at, kUnder.size(), L"\u2264");
-            return out;
-        }
-
-        float IconSize(float labelSize)
-        {
-            return kIconFontDip * labelSize / kIconLabelDip;
-        }
-
         class Fitter
         {
         public:
             Fitter(const Layout& layout, const MeasureLabel& measure) : m_layout(layout), m_measure(measure) {}
 
-            // `text` on one line or two, from `from` down to `to` DIPs, as steps 1 and 2 say.
-            std::optional<FittedLabel> Fit(int slot, const std::wstring& text, LabelStyle style, float from, float to)
+            // `text` on one line, else on two: the first way that fits, or the most even two lines
+            // (one line for a single word) with fits = false.
+            FittedLabel Fit(int slot, const std::wstring& text, bool icon)
             {
                 const auto words = Words(text);
+                std::vector<std::vector<std::wstring>> ways{ { text } };
                 std::vector<std::pair<std::wstring, std::wstring>> splits;
                 for (size_t i = 1; i < words.size(); ++i)
                     if (BreakAllowed(words, i))
                         splits.emplace_back(Join(words, 0, i), Join(words, i, words.size()));
                 // The most even split first: it needs the least width.
                 std::stable_sort(splits.begin(), splits.end(), [&](const auto& a, const auto& b) {
-                    return std::max(Width(a.first, style), Width(a.second, style)) < std::max(Width(b.first, style), Width(b.second, style));
+                    return std::max(Width(a.first), Width(a.second)) < std::max(Width(b.first), Width(b.second));
                 });
-                const int steps = static_cast<int>(std::floor((from - to) / kLabelStepDip + 1e-3f));
-                for (int k = 0; k <= steps; ++k)
-                {
-                    const float size = from - kLabelStepDip * static_cast<float>(k);
-                    if (auto one = Try(slot, style, { text }, size))
-                        return one;
-                    for (const auto& [a, b] : splits)
-                        if (auto two = Try(slot, style, { a, b }, size))
-                            return two;
-                }
-                return std::nullopt;
+                for (const auto& [x, y] : splits)
+                    ways.push_back({ x, y });
+                for (const auto& lines : ways)
+                    if (auto fitted = Try(slot, lines, icon))
+                        return *fitted;
+                const auto band = m_layout.BandOf(slot);
+                auto best = Place(ways.size() > 1 ? ways[1] : ways[0], icon, (band.inner + band.outer) / 2.f);
+                best.fits = false;
+                return best;
             }
 
-            // Where the block would sit when nothing fits: the middle of the tile.
-            FittedLabel Place(LabelStyle style, std::vector<std::wstring> lines, float size, float radius)
+        private:
+            float Width(const std::wstring& text)
+            {
+                if (auto it = m_widths.find(text); it != m_widths.end())
+                    return it->second;
+                return m_widths[text] = (m_measure ? m_measure(text) : 0.f) + kMeasureSlackDip;
+            }
+
+            FittedLabel Place(const std::vector<std::wstring>& lines, bool icon, float radius)
             {
                 FittedLabel f;
-                f.lines = std::move(lines);
-                f.size = size;
+                f.lines = lines;
+                f.icon = icon;
                 f.radius = radius;
-                f.lineHeight = size * kLineHeight;
-                const auto rows = Rows(style, f.lines, size);
+                for (const auto& line : lines)
+                    f.widths.push_back(Width(line));
                 float height = 0.f;
-                for (const auto& r : rows)
+                for (const auto& r : RowsOf(f))
                     height += r.h;
                 float y = -height / 2.f;
-                if (style == LabelStyle::Icon)
+                if (icon)
                 {
-                    f.iconSize = IconSize(size);
-                    f.iconDy = y + f.iconSize / 2.f;
-                    y += f.iconSize + kIconGapDip;
+                    f.iconDy = y + kIconDip / 2.f;
+                    y += kIconDip + kIconGapDip;
                 }
-                for (size_t i = 0; i < f.lines.size(); ++i)
+                for (size_t i = 0; i < lines.size(); ++i)
                 {
-                    f.lineDy.push_back(y + f.lineHeight / 2.f);
-                    y += f.lineHeight;
+                    f.lineDy.push_back(y + kLabelDip * kLineHeight / 2.f);
+                    y += kLabelDip * kLineHeight;
                 }
                 return f;
             }
 
-        private:
-            float Width(const std::wstring& text, LabelStyle style)
+            std::optional<FittedLabel> Try(int slot, const std::vector<std::wstring>& lines, bool icon)
             {
-                const auto key = std::make_pair(static_cast<int>(style), text);
-                if (auto it = m_widths.find(key); it != m_widths.end())
-                    return it->second;
-                return m_widths[key] = (m_measure ? m_measure(text, style) : 0.f) + kMeasureSlackDip;
-            }
-
-            std::vector<Row> Rows(LabelStyle style, const std::vector<std::wstring>& lines, float size)
-            {
-                std::vector<Row> rows;
-                if (style == LabelStyle::Icon)
-                {
-                    rows.push_back(Row{ IconSize(size), IconSize(size) });
-                    rows.push_back(Row{ 0.f, kIconGapDip });
-                }
-                for (const auto& line : lines)
-                    rows.push_back(Row{ Width(line, style) * size / FullSize(style), size * kLineHeight });
-                return rows;
-            }
-
-            std::optional<FittedLabel> Try(int slot, LabelStyle style, const std::vector<std::wstring>& lines, float size)
-            {
-                const auto rows = Rows(style, lines, size);
+                auto f = Place(lines, icon, 0.f);
+                const auto rows = RowsOf(f);
                 const auto band = m_layout.BandOf(slot);
                 const float mid = (band.inner + band.outer) / 2.f, reach = (band.outer - band.inner) / 2.f;
                 // The middle of the tile first, then a DIP at a time out and in: toward the rim a tile is
@@ -158,7 +121,10 @@ namespace sd::wheel
                     for (const float r : { mid + off, mid - off })
                     {
                         if (RowsFit(m_layout, slot, rows, r))
-                            return Place(style, lines, size, r);
+                        {
+                            f.radius = r;
+                            return f;
+                        }
                         if (off == 0.f)
                             break;
                     }
@@ -167,16 +133,40 @@ namespace sd::wheel
 
             const Layout& m_layout;
             const MeasureLabel& m_measure;
-            std::map<std::pair<int, std::wstring>, float> m_widths;
+            std::map<std::wstring, float> m_widths;
         };
-    }
 
-    float FullSize(LabelStyle style) { return style == LabelStyle::Name ? kNameLabelDip : kIconLabelDip; }
-    float MinSize(LabelStyle style) { return style == LabelStyle::Name ? kNameLabelMinDip : kIconLabelMinDip; }
+        // The label's box, DIPs from the wheel's centre, at `radius` on `slot`.
+        Rect BoxOf(const Layout& layout, int slot, const FittedLabel& label, float radius)
+        {
+            const float mid = layout.MidDeg(slot) * kDeg;
+            const float px = radius * std::sin(mid), py = -radius * std::cos(mid);
+            float w = label.icon ? kIconDip : 0.f, h = 0.f;
+            for (const auto& r : RowsOf(label))
+            {
+                w = std::max(w, r.w);
+                h += r.h;
+            }
+            return Rect{ px - w / 2.f, py - h / 2.f, px + w / 2.f, py + h / 2.f };
+        }
+    }
 
     std::wstring FittedLabel::Text() const
     {
         return Join(lines, 0, lines.size());
+    }
+
+    std::vector<Row> RowsOf(const FittedLabel& f)
+    {
+        std::vector<Row> rows;
+        if (f.icon)
+        {
+            rows.push_back(Row{ kIconDip, kIconDip });
+            rows.push_back(Row{ 0.f, kIconGapDip });
+        }
+        for (const float w : f.widths)
+            rows.push_back(Row{ w, kLabelDip * kLineHeight });
+        return rows;
     }
 
     bool RowsFit(const Layout& layout, int slot, const std::vector<Row>& rows, float radius, float pad)
@@ -225,101 +215,44 @@ namespace sd::wheel
     std::vector<FittedLabel> FitLabels(const Layout& layout, const std::vector<LabelSpec>& labels, const MeasureLabel& measure)
     {
         const size_t n = std::min(labels.size(), layout.slots.size());
-        std::vector<FittedLabel> out(n);
-        std::vector<bool> done(n, false);
+        std::vector<FittedLabel> out;
+        out.reserve(n);
         Fitter fitter(layout, measure);
         for (size_t i = 0; i < n; ++i)
-        {
-            const auto& l = labels[i];
-            if (auto f = fitter.Fit(static_cast<int>(i), l.text, l.style, FullSize(l.style), MinSize(l.style)))
-            {
-                out[i] = std::move(*f);
-                done[i] = true;
-            }
-        }
-
-        // A shortening may not read like another slice: not another label, nor what another slice shows.
-        const auto distinct = [&](const std::wstring& candidate, size_t i) {
-            for (size_t j = 0; j < n; ++j)
-            {
-                if (j == i || labels[j].text == labels[i].text)
-                    continue;   // the same label twice (Compress for a photo and a video) may look the same
-                if (Same(candidate, labels[j].text) || (done[j] && Same(candidate, out[j].Text())))
-                    return false;
-            }
-            return true;
-        };
-        for (size_t i = 0; i < n; ++i)
-        {
-            if (done[i])
-                continue;
-            const auto& l = labels[i];
-            const int slot = static_cast<int>(i);
-            std::vector<std::wstring> candidates;
-            const auto add = [&](const std::wstring& c) {
-                if (!c.empty() && c != l.text && std::find(candidates.begin(), candidates.end(), c) == candidates.end())
-                    candidates.push_back(c);
-            };
-            const std::wstring abbreviated = Abbreviate(l.text);
-            add(abbreviated);
-            const auto words = Words(abbreviated);
-            // Words another label has too say the least about this one ("Under", "MB").
-            std::vector<std::wstring> kept = words;
-            for (const auto& w : words)
-            {
-                const bool shared = std::any_of(labels.begin(), labels.begin() + static_cast<ptrdiff_t>(n), [&](const LabelSpec& o) {
-                    if (o.text == l.text)
-                        return false;
-                    const auto ow = Words(o.text);
-                    return std::any_of(ow.begin(), ow.end(), [&](const std::wstring& x) { return Same(x, w); });
-                });
-                const auto at = std::find(kept.begin(), kept.end(), w);
-                const size_t index = static_cast<size_t>(at - kept.begin());
-                // A unit stays with its number ("10 MB" never becomes "10").
-                if (shared && kept.size() > 1 && (index == 0 || BreakAllowed(kept, index)))
-                {
-                    kept.erase(at);
-                    add(Join(kept, 0, kept.size()));
-                }
-            }
-            for (size_t k = words.size(); k-- > 1;)
-                if (BreakAllowed(words, k))
-                    add(Join(words, 0, k));
-
-            for (const auto& c : candidates)
-            {
-                if (!distinct(c, i))
-                    continue;
-                if (auto f = fitter.Fit(slot, c, l.style, FullSize(l.style), MinSize(l.style)))
-                {
-                    out[i] = std::move(*f);
-                    out[i].shortened = true;
-                    done[i] = true;
-                    break;
-                }
-            }
-            if (done[i])
-                continue;
-            // Step 4: the whole label, smaller than the minimum.
-            if (auto f = fitter.Fit(slot, l.text, l.style, MinSize(l.style) - kLabelStepDip, kLabelFloorDip))
-            {
-                out[i] = std::move(*f);
-                done[i] = true;
-                continue;
-            }
-            const auto band = layout.BandOf(slot);
-            out[i] = fitter.Place(l.style, { l.text }, kLabelFloorDip, (band.inner + band.outer) / 2.f);
-            out[i].fits = false;
-            done[i] = true;
-        }
+            out.push_back(fitter.Fit(static_cast<int>(i), labels[i].text, labels[i].style == LabelStyle::Icon));
         return out;
     }
 
-    float ShrinkToFit(float fullWidth, float full, float min, float room)
+    float CoveredArea(const Layout& layout, int slot, const FittedLabel& label, float radius, const Rect& p)
     {
-        if (fullWidth <= room || fullWidth <= 0.f)
-            return full;
-        return std::max(min, full * room / fullWidth);
+        const auto b = BoxOf(layout, slot, label, radius);
+        const float w = std::min(b.r, p.r) - std::max(b.l, p.l), h = std::min(b.b, p.b) - std::max(b.t, p.t);
+        return w > 0.f && h > 0.f ? w * h : 0.f;
+    }
+
+    float ClearOfPicture(const Layout& layout, int slot, const FittedLabel& label, const Rect& picture)
+    {
+        float best = label.radius, least = CoveredArea(layout, slot, label, label.radius, picture);
+        if (least <= 0.f || slot < 0 || slot >= static_cast<int>(layout.slots.size()))
+            return best;
+        const auto band = layout.BandOf(slot);
+        const auto rows = RowsOf(label);
+        // Every spot the label fits at, nearest its own first, so a tie keeps it where it was.
+        for (float off = 1.f; off <= band.outer - band.inner; off += 1.f)
+            for (const float r : { label.radius - off, label.radius + off })
+            {
+                if (!RowsFit(layout, slot, rows, r))
+                    continue;
+                const float covered = CoveredArea(layout, slot, label, r, picture);
+                if (covered < least)
+                {
+                    least = covered;
+                    best = r;
+                    if (covered <= 0.f)
+                        return best;
+                }
+            }
+        return best;
     }
 
     CentrePlan PlanCentre(const Rect& text, const std::optional<Rect>& picture, float badgeW, float badgeH, bool wasBadge)

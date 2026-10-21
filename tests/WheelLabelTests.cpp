@@ -1,3 +1,5 @@
+#include "ImagePipeline.h"
+#include "PipelineRunner.h"
 #include "Recipe.h"
 #include "Settings.h"
 #include "TestUtil.h"
@@ -8,6 +10,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <cstring>
 #include <format>
 #include <map>
 #include <set>
@@ -19,24 +22,10 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    // A stand-in font: every character `em` of the font size wide.
+    // A stand-in font: every character `em` of the label size wide.
     MeasureLabel Even(float em = 0.6f)
     {
-        return [em](const std::wstring& text, LabelStyle style) { return static_cast<float>(text.size()) * em * FullSize(style); };
-    }
-
-    // The rows FitLabels checked for a fitted label, rebuilt from what it reports.
-    std::vector<Row> RowsOf(const FittedLabel& f, LabelStyle style, const MeasureLabel& measure)
-    {
-        std::vector<Row> rows;
-        if (style == LabelStyle::Icon)
-        {
-            rows.push_back(Row{ f.iconSize, f.iconSize });
-            rows.push_back(Row{ 0.f, kIconGapDip });
-        }
-        for (const auto& line : f.lines)
-            rows.push_back(Row{ (measure(line, style) + 1.f) * f.size / FullSize(style), f.size * kLineHeight });
-        return rows;
+        return [em](const std::wstring& text) { return static_cast<float>(text.size()) * em * kLabelDip; };
     }
 
     // The same label on every slot of a wheel of `n` slices: each position on the wheel at once.
@@ -45,37 +34,35 @@ namespace
         return FitLabels(Arrange(n), std::vector<LabelSpec>(n, LabelSpec{ text, style }), measure);
     }
 
-    // DirectWrite, as the wheel measures (Overlay::FitShown): the family at the label's full size at
+    // DirectWrite, as the wheel measures (Overlay::FitShown): the family at kLabelDip Semibold at
     // `scale` px per DIP, in DIPs.
     class DWriteMeasure
     {
     public:
-        DWriteMeasure(IDWriteFactory* dwrite, std::wstring family, float scale) : m_dwrite(dwrite), m_family(std::move(family)), m_scale(scale) {}
-
-        float operator()(const std::wstring& text, LabelStyle style)
+        DWriteMeasure(IDWriteFactory* dwrite, const std::wstring& family, float scale) : m_dwrite(dwrite), m_scale(scale)
         {
-            const auto key = std::make_pair(static_cast<int>(style), text);
-            if (auto it = m_widths.find(key); it != m_widths.end())
+            m_dwrite->CreateTextFormat(family.c_str(), nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                       kLabelDip * m_scale, L"", &m_format);
+        }
+
+        float operator()(const std::wstring& text)
+        {
+            if (auto it = m_widths.find(text); it != m_widths.end())
                 return it->second;
-            auto& format = m_formats[static_cast<int>(style)];
-            if (!format)
-                m_dwrite->CreateTextFormat(m_family.c_str(), nullptr, style == LabelStyle::Name ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, FullSize(style) * m_scale, L"", &format);
             ComPtr<IDWriteTextLayout> layout;
             DWRITE_TEXT_METRICS m{};
             float width = 0.f;
-            if (format && SUCCEEDED(m_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format.Get(), 10000.f, 100.f, &layout)) &&
+            if (m_format && SUCCEEDED(m_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), m_format.Get(), 10000.f, 100.f, &layout)) &&
                 SUCCEEDED(layout->GetMetrics(&m)))
                 width = m.widthIncludingTrailingWhitespace / m_scale;
-            return m_widths[key] = width;
+            return m_widths[text] = width;
         }
 
     private:
         IDWriteFactory* m_dwrite;
-        std::wstring m_family;
         float m_scale;
-        std::map<int, ComPtr<IDWriteTextFormat>> m_formats;
-        std::map<std::pair<int, std::wstring>, float> m_widths;
+        ComPtr<IDWriteTextFormat> m_format;
+        std::map<std::wstring, float> m_widths;
     };
 
     // For messages: the label's letters (non-ASCII ones as '?').
@@ -120,24 +107,45 @@ TEST(WheelLabels, RowsStayInsideTheTile)
 
 // ---- Fitting a label ----------------------------------------------------------------------------
 
-TEST(WheelLabels, ShortLabelsKeepOneLineAtFullSize)
+TEST(WheelLabels, ShortLabelsKeepOneLine)
 {
-    for (const auto& f : Everywhere(8, L"PNG", LabelStyle::Name, Even()))
+    for (const auto style : { LabelStyle::Name, LabelStyle::Icon })
+        for (const auto& f : Everywhere(8, L"PNG", style, Even()))
+        {
+            EXPECT_EQ(f.lines, (std::vector<std::wstring>{ L"PNG" }));
+            EXPECT_EQ(f.icon, style == LabelStyle::Icon);
+            EXPECT_TRUE(f.fits);
+        }
+}
+
+TEST(WheelLabels, OneSizeForEveryLabel)
+{
+    // A text-only tile and an icon tile, short and long, on one ring or two: the same type, and the
+    // same icon size, wherever they are (the drawing takes kLabelDip and kIconDip for every tile).
+    const std::vector<LabelSpec> labels{ { L"90%", LabelStyle::Name }, { L"Under 10 MB", LabelStyle::Name }, { L"Copy", LabelStyle::Icon },
+                                         { L"Remove metadata", LabelStyle::Icon }, { L"Zip", LabelStyle::Icon } };
+    for (const size_t n : { size_t(5), size_t(10), size_t(16) })
     {
-        EXPECT_EQ(f.lines, (std::vector<std::wstring>{ L"PNG" }));
-        EXPECT_FLOAT_EQ(f.size, kNameLabelDip);
-        EXPECT_FALSE(f.shortened);
-        EXPECT_TRUE(f.fits);
+        std::vector<LabelSpec> many;
+        for (size_t i = 0; i < n; ++i)
+            many.push_back(labels[i % labels.size()]);
+        for (const auto& f : FitLabels(Arrange(n), many, Even(0.55f)))
+        {
+            ASSERT_FALSE(f.lines.empty());
+            for (size_t k = 0; k < f.lines.size(); ++k)
+                EXPECT_NEAR(f.widths[k], Even(0.55f)(f.lines[k]) + 1.f, 1e-3f);   // measured at kLabelDip, never scaled down
+            if (f.icon && f.fits)
+                EXPECT_LT(f.iconDy, f.lineDy.front());   // the icon above the label
+        }
     }
 }
 
-TEST(WheelLabels, WrapsBeforeItShrinks)
+TEST(WheelLabels, WrapsToTwoLinesInsteadOfShrinking)
 {
-    // Too wide for one line at the top of a six-slice ring, but two lines fit at full size.
-    const auto fits = Everywhere(6, L"Under 10 MB", LabelStyle::Name, Even());
+    // Too wide for one line at the top of a six-slice ring, so it goes on two.
+    const auto fits = Everywhere(6, L"Under 10 MB", LabelStyle::Name, Even(0.85f));
     EXPECT_EQ(fits[0].lines, (std::vector<std::wstring>{ L"Under", L"10 MB" }));
-    EXPECT_FLOAT_EQ(fits[0].size, kNameLabelDip);
-    EXPECT_FALSE(fits[0].shortened);
+    EXPECT_TRUE(fits[0].fits);
     // Each line's centre is below the one before, the block centred on its radius.
     ASSERT_EQ(fits[0].lineDy.size(), 2u);
     EXPECT_LT(fits[0].lineDy[0], 0.f);
@@ -153,28 +161,30 @@ TEST(WheelLabels, NeverBreaksANumberFromItsUnit)
                 {
                     EXPECT_NE(line, L"MB") << text;
                     EXPECT_NE(line, L"px") << text;
-                    EXPECT_FALSE(line.ends_with(L"10") || line.ends_with(L"1920") || line.ends_with(L" 1")) << line;
+                    EXPECT_FALSE(line.ends_with(L"10") || line.ends_with(L"1920") || line.ends_with(L" 1")) << Narrow(line);
                 }
 }
 
-TEST(WheelLabels, ALongWordShrinksAndIsNeverCut)
+TEST(WheelLabels, ALabelThatDoesNotFitIsReportedNeverShrunkOrCut)
 {
-    const auto fits = Everywhere(16, L"Visualizer", LabelStyle::Icon, Even(0.62f));
-    for (const auto& f : fits)
+    // A word far too wide for any tile: the whole label is kept, on one line, and flagged.
+    for (const auto& f : Everywhere(16, L"Supercalifragilistic", LabelStyle::Icon, Even(0.62f)))
     {
-        EXPECT_EQ(f.Text(), L"Visualizer");
+        EXPECT_EQ(f.Text(), L"Supercalifragilistic");
         EXPECT_EQ(f.lines.size(), 1u);
-        EXPECT_LE(f.size, kIconLabelDip);
-        EXPECT_TRUE(f.fits);
+        EXPECT_FALSE(f.fits);
     }
-    // Somewhere on that crowded wheel it had to be drawn smaller than its full size.
-    EXPECT_TRUE(std::any_of(fits.begin(), fits.end(), [](const FittedLabel& f) { return f.size < kIconLabelDip; }));
+    // Two long words: flagged, on the most even two lines.
+    const auto two = Everywhere(16, L"Extraordinarily longwinded", LabelStyle::Icon, Even(0.62f));
+    EXPECT_FALSE(two[0].fits);
+    EXPECT_EQ(two[0].lines.size(), 2u);
+    EXPECT_EQ(two[0].Text(), L"Extraordinarily longwinded");
 }
 
 TEST(WheelLabels, EveryFittedLabelIsInsideItsTile)
 {
     const auto measure = Even(0.6f);
-    const std::vector<std::wstring> texts{ L"Rotate right", L"Remove metadata", L"Share-safe", L"Under 25 MB", L"Make a black and white poster" };
+    const std::vector<std::wstring> texts{ L"Rotate right", L"Remove metadata", L"Share-safe", L"Under 25 MB", L"Copy path" };
     for (size_t n = 1; n <= kTwoRingCapacity; ++n)
         for (const auto style : { LabelStyle::Name, LabelStyle::Icon })
             for (const auto& text : texts)
@@ -182,69 +192,114 @@ TEST(WheelLabels, EveryFittedLabelIsInsideItsTile)
                 const auto fits = Everywhere(n, text, style, measure);
                 for (size_t i = 0; i < fits.size(); ++i)
                 {
-                    if (!fits[i].fits)
-                        continue;
-                    EXPECT_TRUE(RowsFit(Arrange(n), static_cast<int>(i), RowsOf(fits[i], style, measure), fits[i].radius)) << text << " on slot " << i << " of " << n;
+                    EXPECT_EQ(fits[i].Text(), text);
                     for (const auto& line : fits[i].lines)
                         EXPECT_EQ(line.find(L'\u2026'), std::wstring::npos);
+                    if (fits[i].fits)
+                        EXPECT_TRUE(RowsFit(Arrange(n), static_cast<int>(i), RowsOf(fits[i]), fits[i].radius)) << Narrow(text) << " on slot " << i << " of " << n;
                 }
             }
 }
 
-TEST(WheelLabels, ShortensOnlyAsALastResortAndKeepsLabelsApart)
+// ---- The drag picture over a tile ---------------------------------------------------------------
+
+TEST(WheelLabels, TheHoveredLabelMovesOutFromUnderThePicture)
 {
-    // A font in which "Under" can never fit: the sizes are shortened to what tells them apart.
-    const MeasureLabel wideUnder = [](const std::wstring& text, LabelStyle style) {
-        return text.find(L"Under") != std::wstring::npos ? 500.f : static_cast<float>(text.size()) * 0.6f * FullSize(style);
-    };
-    const std::vector<LabelSpec> labels{ { L"Compress", LabelStyle::Name }, { L"Under 10 MB", LabelStyle::Name }, { L"Under 25 MB", LabelStyle::Name } };
-    const auto fits = FitLabels(Arrange(3), labels, wideUnder);
-    EXPECT_FALSE(fits[0].shortened);
-    EXPECT_EQ(fits[0].Text(), L"Compress");
-    EXPECT_TRUE(fits[1].shortened);
-    EXPECT_EQ(fits[1].Text(), L"\u226410 MB");
-    EXPECT_EQ(fits[2].Text(), L"\u226425 MB");
-    EXPECT_GE(fits[1].size, kNameLabelMinDip);
+    const auto layout = Arrange(8);
+    const auto fits = FitLabels(layout, { { L"WebP", LabelStyle::Icon } }, Even());
+    ASSERT_FALSE(fits.empty());
+    const auto& f = fits[0];   // the top tile, 58 to 128 DIPs up
+    // A picture well away from the label leaves it where it is.
+    EXPECT_FLOAT_EQ(ClearOfPicture(layout, 0, f, Rect{ 150.f, 150.f, 200.f, 200.f }), f.radius);
+    // A picture over the label's outer edge pushes it inward, clear of the picture, still in the tile.
+    const Rect outer{ -30.f, -130.f, 30.f, -(f.radius + 11.f) };
+    ASSERT_GT(CoveredArea(layout, 0, f, f.radius, outer), 0.f);
+    const float in = ClearOfPicture(layout, 0, f, outer);
+    EXPECT_LT(in, f.radius);
+    EXPECT_FLOAT_EQ(CoveredArea(layout, 0, f, in, outer), 0.f);
+    EXPECT_TRUE(RowsFit(layout, 0, RowsOf(f), in));
+    // ...and one over its inner edge pushes it outward.
+    const Rect inner{ -30.f, -(f.radius - 11.f), 30.f, -50.f };
+    const float out = ClearOfPicture(layout, 0, f, inner);
+    EXPECT_GT(out, f.radius);
+    EXPECT_FLOAT_EQ(CoveredArea(layout, 0, f, out, inner), 0.f);
+    // A picture over the whole tile: as little of the label under it as the tile allows (here, all).
+    const Rect all{ -100.f, -140.f, 100.f, 0.f };
+    EXPECT_TRUE(RowsFit(layout, 0, RowsOf(f), ClearOfPicture(layout, 0, f, all)));
 }
 
-TEST(WheelLabels, AShorteningNeverReadsLikeAnotherSlice)
-{
-    // Only four letters ever fit, and "Blur" is another slice: neither longer label may be cut to it.
-    const MeasureLabel four = [](const std::wstring& text, LabelStyle style) {
-        return text.size() > 4 ? 900.f : static_cast<float>(text.size()) * 0.6f * FullSize(style);
-    };
-    const std::vector<LabelSpec> labels{ { L"Blur faces", LabelStyle::Icon }, { L"Blur plates", LabelStyle::Icon }, { L"Blur", LabelStyle::Icon } };
-    const auto fits = FitLabels(Arrange(3), labels, four);
-    std::set<std::wstring> seen;
-    for (const auto& f : fits)
-        EXPECT_TRUE(seen.insert(f.Text()).second) << "two slices read " << Narrow(f.Text());
-    EXPECT_EQ(fits[2].Text(), L"Blur");
-    // The same label twice (Compress for a photo and for a video) is not a clash.
-    const auto twins = FitLabels(Arrange(2), { { L"Compress", LabelStyle::Name }, { L"Compress", LabelStyle::Name } }, Even());
-    EXPECT_EQ(twins[0].Text(), twins[1].Text());
-}
+// ---- Every wheel the app shows ------------------------------------------------------------------
 
-// ---- Every recipe, every Size, every DPI --------------------------------------------------------
-
-TEST(WheelLabels, EveryRecipeLabelFitsEverySliceAtEverySize)
+TEST(WheelLabels, EveryWheelTheAppShowsFitsItsLabels)
 {
     TempDir dir;
     Recipes recipes(dir);
-    std::set<std::pair<std::wstring, LabelStyle>> labels{ { L"More", LabelStyle::Icon } };   // the paging slice
-    for (const auto& r : recipes.store.All())
-        labels.insert({ r.label, r.NameOnlySlice() ? LabelStyle::Name : LabelStyle::Icon });
-    ASSERT_GT(labels.size(), 60u);
+    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, nullptr);
 
-    // The scales the wheel is drawn at: each Size setting at 100% to 200%, on 1080p and 1440p screens.
-    std::set<float> scales;
-    for (const auto size : { WheelSize::Auto, WheelSize::Small, WheelSize::Medium, WheelSize::Large })
-        for (const float dpi : { 1.f, 1.25f, 1.5f, 2.f })
-            for (const float height : { 1080.f, 1440.f })
-                scales.insert(SizeScale(size, dpi, height * dpi));
+    // The wheels main.cpp builds (ContentFor): for each kind of file, alone or two at once, and a photo
+    // with a video, each section shows the recipes meant for all the files, else for any, else all of
+    // them dimmed; past 16 the wheel pages with a "More" slice.
+    const std::vector<std::vector<std::wstring>> drops = [] {
+        std::vector<std::vector<std::wstring>> out;
+        for (const auto* name : { L"photo.jpg", L"a.png", L"a.heic", L"a.gif", L"a.webp", L"a.tif", L"a.bmp", L"a.avif", L"a.svg", L"a.ico",
+                                  L"clip.mp4", L"clip.mov", L"clip.mkv", L"song.mp3", L"song.flac", L"song.wav", L"doc.pdf", L"a.docx",
+                                  L"a.xlsx", L"a.pptx", L"a.odt", L"a.txt", L"a.md", L"a.html", L"a.csv", L"a.json", L"a.srt", L"a.vtt",
+                                  L"a.zip", L"a.7z", L"a.tar.gz", L"a.rar", L"a.epub", L"a.xyz" })
+        {
+            const std::wstring path = L"C:\\files\\" + std::wstring(name);
+            out.push_back({ path });
+            out.push_back({ path, L"C:\\files\\b" + std::wstring(name).substr(std::wstring(name).find(L'.')) });
+        }
+        out.push_back({ L"C:\\files\\photo.jpg", L"C:\\files\\clip.mp4" });
+        return out;
+    }();
+    struct Wheel
+    {
+        std::vector<LabelSpec> labels;
+        std::string what;
+    };
+    std::vector<Wheel> wheels;
+    std::set<std::vector<std::wstring>> seen;
+    for (const char* ring : { "convert", "tools", "reduce", "files" })
+        for (const auto& files : drops)
+        {
+            std::vector<const Recipe*> forAll, forAny, onRing;
+            for (const auto& recipe : recipes.store.All())
+            {
+                if (recipe.ring != ring || !runner.AppliesToDrop(recipe, files.size()))
+                    continue;
+                onRing.push_back(&recipe);
+                const auto applies = [&](const std::wstring& f) { return runner.Applies(recipe, f); };
+                if (std::all_of(files.begin(), files.end(), applies))
+                    forAll.push_back(&recipe);
+                else if (std::any_of(files.begin(), files.end(), applies))
+                    forAny.push_back(&recipe);
+            }
+            if (forAll.empty())
+                forAll = forAny;
+            const auto& shown = forAll.empty() ? onRing : forAll;
+            std::vector<LabelSpec> content;
+            for (const auto* r : shown)
+                content.push_back({ r->label, r->NameOnlySlice() ? LabelStyle::Name : LabelStyle::Icon });
+            const auto first = Arrange(content.size());
+            for (int page = 0; page < first.pages; ++page)
+            {
+                const auto layout = Arrange(content.size(), page);
+                std::vector<LabelSpec> labels;
+                for (int i = 0; i < static_cast<int>(layout.slots.size()); ++i)
+                    labels.push_back(layout.IsMore(i) ? LabelSpec{ L"More", LabelStyle::Icon } : content[static_cast<size_t>(layout.ContentIndex(i))]);
+                std::vector<std::wstring> key{ std::wstring(ring, ring + std::strlen(ring)) };
+                for (const auto& l : labels)
+                    key.push_back(l.text);
+                if (seen.insert(key).second)
+                    wheels.push_back({ labels, std::format("{} wheel for {}{} page {}", ring, Narrow(files.front()), files.size() > 1 ? " and more" : "", page + 1) });
+            }
+        }
+    ASSERT_GT(wheels.size(), 20u);
 
     ComPtr<IDWriteFactory> dwrite;
     ASSERT_HRESULT_SUCCEEDED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwrite.GetAddressOf())));
-    // The wheel's text font (theme::TextFamily): Segoe UI Variable on Windows 11, else Segoe UI.
+    // The wheel's text font (theme::TextFamily): Segoe UI Variable Text on Windows 11, else Segoe UI.
     std::vector<std::wstring> families;
     for (const auto* family : { L"Segoe UI Variable Text", L"Segoe UI" })
         if (HasFamily(dwrite.Get(), family))
@@ -252,43 +307,27 @@ TEST(WheelLabels, EveryRecipeLabelFitsEverySliceAtEverySize)
     if (families.empty())
         families.push_back(L"Segoe UI");   // DirectWrite stands another font in
 
-    // One line per label that goes wrong anywhere, with the place it does worst.
-    std::map<std::string, std::pair<float, std::string>> problems;
+    // Labels are laid out in DIPs; the scale (DPI times the Size setting) only changes rounding.
+    std::map<std::string, std::string> problems;
     for (const auto& family : families)
-        for (const float scale : scales)
+        for (const float scale : { 1.f, 1.25f, 1.5f, 2.f })
         {
             DWriteMeasure dw(dwrite.Get(), family, scale);
-            const MeasureLabel measure = [&dw](const std::wstring& text, LabelStyle style) { return dw(text, style); };
-            for (const auto& [text, style] : labels)
+            const MeasureLabel measure = [&dw](const std::wstring& text) { return dw(text); };
+            for (const auto& wheel : wheels)
             {
-                std::string worst;
-                float smallest = 1e9f;
-                const std::string key = Narrow(family) + " " + Narrow(text) + (style == LabelStyle::Icon ? " (icon)" : " (name)");
-                for (size_t n = 1; n <= kTwoRingCapacity; ++n)
-                {
-                    const auto fits = Everywhere(n, text, style, measure);
-                    for (size_t i = 0; i < fits.size(); ++i)
-                    {
-                        const auto& f = fits[i];
-                        const bool inside = RowsFit(Arrange(n), static_cast<int>(i), RowsOf(f, style, measure), f.radius);
-                        const bool whole = !f.shortened && f.Text() == text;
-                        if (!f.fits || !whole || !inside || f.size < smallest)
-                        {
-                            smallest = std::min(smallest, f.size);
-                            if (!f.fits || !whole || !inside || f.size < MinSize(style))
-                                worst = std::format("as '{}' at {:.1f} DIP on slot {} of {} at scale {:.2f}{}{}", Narrow(f.Text()), f.size, i, n, scale,
-                                                    inside ? "" : ", outside its tile", f.fits ? "" : ", does not fit");
-                        }
-                    }
-                }
-                if (!worst.empty() && (!problems.contains(key) || smallest < problems[key].first))
-                    problems[key] = { smallest, worst };
+                const auto layout = Arrange(wheel.labels.size());
+                const auto fits = FitLabels(layout, wheel.labels, measure);
+                for (size_t i = 0; i < fits.size(); ++i)
+                    if (!fits[i].fits || fits[i].Text() != wheel.labels[i].text)
+                        problems.try_emplace(Narrow(wheel.labels[i].text), std::format("{} slot {} of {} ({}, {:.2f})", wheel.what, i, fits.size(),
+                                                                                       Narrow(family), scale));
             }
         }
     std::string report;
-    for (const auto& [key, problem] : problems)
-        report += std::format("  {} {}\n", key, problem.second);
-    EXPECT_TRUE(problems.empty()) << "labels below the readable minimum, shortened or outside their tile:\n" << report;
+    for (const auto& [label, where] : problems)
+        report += std::format("  '{}': {}\n", label, where);
+    EXPECT_TRUE(problems.empty()) << "labels that do not fit their tile on two lines at the one label size (give the recipe a shorter label):\n" << report;
 }
 
 // ---- The centre and the drag picture ------------------------------------------------------------
@@ -317,11 +356,4 @@ TEST(WheelLabels, TheCountMovesBesideAPictureOverIt)
     const Rect edge{ 46.f, -20.f, 120.f, 60.f };
     EXPECT_FALSE(PlanCentre(text, edge, 60.f, 24.f, false).badge);
     EXPECT_TRUE(PlanCentre(text, edge, 60.f, 24.f, true).badge);
-}
-
-TEST(WheelLabels, ShrinkToFitKeepsToItsLimits)
-{
-    EXPECT_FLOAT_EQ(ShrinkToFit(50.f, 19.f, 13.f, 90.f), 19.f);
-    EXPECT_FLOAT_EQ(ShrinkToFit(100.f, 19.f, 13.f, 90.f), 17.1f);
-    EXPECT_FLOAT_EQ(ShrinkToFit(400.f, 19.f, 13.f, 90.f), 13.f);
 }

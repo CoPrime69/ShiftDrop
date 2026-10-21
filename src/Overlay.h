@@ -186,10 +186,11 @@ namespace sd
         int ViewSliceAt(POINT screen) const override;
 
         bool EnsureTextFormats();
-        // A centred, never-trimmed format of `dip` DIPs (labels at the size FitLabels chose), in the
-        // text font or the icon font.
+        // A centred, never-trimmed format of `dip` DIPs (the labels, the centre's lines), in the text
+        // font or the icon font.
         IDWriteTextFormat* SizedFormat(DWRITE_FONT_WEIGHT weight, float dip, bool wrap = false, bool icon = false);
         std::vector<wheel::FittedLabel> FitShown(const std::vector<WheelSlice>& slices, const wheel::Layout& layout);
+        std::optional<wheel::Rect> DragPicture() const;   // the drag picture, DIPs from the centre; none in click mode
         std::optional<wheel::Rect> PictureRect() const;   // the drag picture over the centre, DIPs from it
         std::wstring BadgeDetail() const;                 // the highlighted slice's detail, or its reason
         D2D1_SIZE_F BadgeSize();                          // DIPs
@@ -216,7 +217,7 @@ namespace sd
         bool m_registered = false;
         std::unique_ptr<a11y::WheelElement> m_a11y;   // the wheel as UI Automation sees it
 
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_labelFont, m_formatFont, m_iconFont, m_countFont, m_ringFont, m_detailFont;
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_labelFont, m_iconFont, m_countFont, m_detailFont;
         std::map<int, Microsoft::WRL::ComPtr<IDWriteTextFormat>> m_sizedFonts;   // SizedFormat's, for m_fontScale
 
         // Layout, in window pixels.
