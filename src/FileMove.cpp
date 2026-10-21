@@ -120,6 +120,36 @@ namespace sd
         return !folder.empty();
     }
 
+    bool PickFiles(HWND owner, std::wstring_view title, std::wstring_view typeName, std::wstring_view patterns,
+                   std::vector<std::wstring>& files)
+    {
+        ComPtr<IFileOpenDialog> dialog;
+        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
+            return false;
+        const std::wstring name(typeName), spec(patterns), caption(title);
+        const COMDLG_FILTERSPEC types[] = { { name.c_str(), spec.c_str() } };
+        dialog->SetFileTypes(1, types);
+        dialog->SetTitle(caption.c_str());
+        FILEOPENDIALOGOPTIONS options = 0;
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
+        if (FAILED(dialog->Show(owner)))   // HRESULT_FROM_WIN32(ERROR_CANCELLED) when the user closes it
+            return false;
+        ComPtr<IShellItemArray> results;
+        DWORD count = 0;
+        if (FAILED(dialog->GetResults(&results)) || FAILED(results->GetCount(&count)))
+            return false;
+        files.clear();
+        for (DWORD i = 0; i < count; ++i)
+        {
+            ComPtr<IShellItem> item;
+            if (SUCCEEDED(results->GetItemAt(i, &item)))
+                if (auto path = PathOf(item.Get()); !path.empty())
+                    files.push_back(std::move(path));
+        }
+        return !files.empty();
+    }
+
     std::vector<MoveOutcome> MoveToFolder(const Recipe& recipe, const std::vector<std::wstring>& sources,
                                           const std::wstring& folderIn, HistoryStore* history, int64_t& runId)
     {

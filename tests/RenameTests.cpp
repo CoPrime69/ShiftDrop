@@ -173,6 +173,98 @@ TEST(RenamePattern, NothingToDoWhenNoNameChanges)
     EXPECT_FALSE(plan.CanRun());
 }
 
+TEST(RenamePattern, NameAndExtensionEditsTheWholeName)
+{
+    const Item photo{ L"C:\\a\\IMG_4411.jpeg", L"2026-10-21", false };
+    Pattern p = With(L"{name}.{ext}");
+    p.change = Change::NameAndExtension;
+    EXPECT_EQ(Name(p, photo), L"IMG_4411.jpeg");   // the name as it is
+    p.text = L"{name}.jpg";
+    EXPECT_EQ(Name(p, photo), L"IMG_4411.jpg");     // a new extension
+    p.text = L"Rome {n:00}.{ext}";
+    EXPECT_EQ(Name(p, photo, 2), L"Rome 03.jpeg");
+    p.text = L"{name}";
+    EXPECT_EQ(Name(p, photo), L"IMG_4411");         // no extension at all
+
+    // Find and replace works on the whole name, extension included.
+    p.text = L"{name}.{ext}";
+    p.find = L".jpeg";
+    p.replace = L".jpg";
+    EXPECT_EQ(Name(p, photo), L"IMG_4411.jpg");
+    p.find = L".jpeg";
+    p.replace = L"";
+    EXPECT_EQ(Name(p, photo), L"IMG_4411");         // no lone dot left where {ext} was
+
+    // Name only (the default) keeps the extension whatever the pattern says.
+    Pattern nameOnly = With(L"{name}.jpg");
+    EXPECT_EQ(Name(nameOnly, photo), L"IMG_4411.jpg.jpeg");
+
+    // A folder, and a file without an extension, take "{name}.{ext}" as their name.
+    Pattern whole = With(L"{name}.{ext}");
+    whole.change = Change::NameAndExtension;
+    EXPECT_EQ(Name(whole, Item{ L"C:\\Trips\\Rome.2026", L"", true }), L"Rome.2026");
+    EXPECT_EQ(Name(whole, Item{ L"C:\\a\\README", L"", false }), L"README");
+}
+
+TEST(RenamePattern, SwitchingTheChangeKeepsTheNames)
+{
+    EXPECT_EQ(PatternFor(Change::NameAndExtension, L"{name}"), L"{name}.{ext}");
+    EXPECT_EQ(PatternFor(Change::NameAndExtension, L"{name}.{ext}"), L"{name}.{ext}");   // already there
+    EXPECT_EQ(PatternFor(Change::Name, L"Trip {n}.{ext}"), L"Trip {n}");
+    EXPECT_EQ(PatternFor(Change::Name, L"Trip {n}.png"), L"Trip {n}.png");   // the user's own: kept
+
+    // Either way round, the plan gives every file the name it would have had.
+    const std::vector<Item> items{ { L"C:\\a\\x.jpg" }, { L"C:\\a\\y.png" } };
+    Pattern name = With(L"Trip {n}");
+    Pattern whole = With(PatternFor(Change::NameAndExtension, name.text));
+    whole.change = Change::NameAndExtension;
+    const auto a = MakePlan(name, items, Folder({}));
+    const auto b = MakePlan(whole, items, Folder({}));
+    ASSERT_EQ(a.items.size(), 2u);
+    ASSERT_EQ(b.items.size(), 2u);
+    EXPECT_EQ(a.items[0].to, b.items[0].to);
+    EXPECT_EQ(b.items[1].to, L"C:\\a\\Trip 2.png");
+    EXPECT_EQ(b.warnings, 0u);
+}
+
+TEST(RenamePattern, ANewExtensionIsAllowedWithAWarning)
+{
+    const std::vector<Item> items{ { L"C:\\a\\x.jpg" }, { L"C:\\a\\y.JPG" }, { L"C:\\a\\notes" }, { L"C:\\a\\Album", L"", true } };
+    Pattern p = With(L"{name}.png");
+    p.change = Change::NameAndExtension;
+    auto plan = MakePlan(p, { items[0] }, Folder({}));
+    ASSERT_EQ(plan.items.size(), 1u);
+    EXPECT_EQ(plan.items[0].to, L"C:\\a\\x.png");
+    EXPECT_EQ(plan.items[0].warning, L"the extension changes from .jpg to .png");
+    EXPECT_TRUE(plan.items[0].problem.empty());
+    EXPECT_EQ(plan.warnings, 1u);
+    EXPECT_TRUE(plan.CanRun());   // a warning never stops the rename
+
+    p.text = L"{name}";
+    plan = MakePlan(p, { items[0] }, Folder({}));
+    EXPECT_EQ(plan.items[0].warning, L"the extension .jpg is removed");
+    p.text = L"{name}.txt";
+    plan = MakePlan(p, { items[2] }, Folder({}));
+    EXPECT_EQ(plan.items[0].warning, L"it gets the extension .txt");
+
+    // Only the case of the extension, the same extension, or a folder: nothing to say.
+    p.text = L"{name}.jpg";
+    plan = MakePlan(p, { items[1] }, Folder({}));
+    EXPECT_TRUE(plan.items[0].warning.empty());
+    EXPECT_EQ(plan.items[0].to, L"C:\\a\\y.jpg");
+    p.text = L"{name} 2.{ext}";
+    plan = MakePlan(p, items, Folder({}));
+    EXPECT_EQ(plan.warnings, 0u);
+    EXPECT_EQ(plan.items[3].to, L"C:\\a\\Album 2");
+
+    // A name that can't be used is a problem, not a warning.
+    p.text = L"{name}?.png";
+    plan = MakePlan(p, { items[0] }, Folder({}));
+    EXPECT_FALSE(plan.items[0].problem.empty());
+    EXPECT_TRUE(plan.items[0].warning.empty());
+    EXPECT_EQ(plan.warnings, 0u);
+}
+
 // The real thing, on disk: renamed through IFileOperation, then undone from history.
 TEST(RenameFiles, RenamesAndUndoes)
 {

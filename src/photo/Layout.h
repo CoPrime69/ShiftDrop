@@ -28,6 +28,11 @@ namespace sd::photo
     // ---- Add a Background ---------------------------------------------------------------------------
     enum class Fill { Solid, Gradient, Blur, Image };   // Blur = the photo itself, blurred, behind it
 
+    // The Background tool's shape beside AspectChoices(): Fit to picture, the canvas exactly the
+    // picture's size, with no margin (so no Spacing and no Shadow); the background shows only
+    // where the corners are rounded.
+    inline constexpr char kFitToPicture[] = "fit";
+
     struct BackgroundParams
     {
         Fill fill = Fill::Gradient;
@@ -36,7 +41,7 @@ namespace sd::photo
         double angle = 135;           // gradient direction, degrees clockwise from "left to right"
         std::wstring image;           // Fill::Image
         double blur = 40;             // 0..100, for Blur and Image
-        std::string aspect = "auto";
+        std::string aspect = "auto";  // an AspectChoices() id, or kFitToPicture
         double padding = 8;           // 0..40, % of the picture's longer side on every side
         double radius = 12;           // 0..100: corner radius as a share of a quarter of the shorter side
         double shadow = 50;           // 0..100

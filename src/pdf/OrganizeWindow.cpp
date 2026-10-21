@@ -1,11 +1,13 @@
 // The page view (OrganizeWindow.h): Organize PDF Pages, and the pages of Merge PDFs and Edit PDF.
 // Every page of the files as a thumbnail grid rendered by Windows.Data.Pdf on a worker; drag to
 // reorder, R / Shift+R rotate, Ctrl+D duplicates, Delete leaves out, Ctrl+Z undoes. Merge and Edit
-// add a large preview of the selected page and per-page Edit through the existing picture editors
-// (PageEdits.h). Organize installs itself into pdf::Editors().
+// add a large preview of the selected page, per-page Edit through the existing picture editors
+// (PageEdits.h) and Add files... for more PDFs. Organize installs itself into pdf::Editors().
 #include "Ask.h"
+#include "FileMove.h"
 #include "Log.h"
 #include "PathUtil.h"
+#include "Strings.h"
 #include "Theme.h"
 #include "UiThread.h"
 #include "Utf.h"
@@ -40,11 +42,12 @@ namespace sd::pdf
         constexpr UINT kEditApplied = WM_APP + 4;  // wParam: serial; lParam: nlohmann::json*, ours to delete
         constexpr UINT kEditClosed = WM_APP + 5;   // wParam: serial
         constexpr UINT kEditDone = WM_APP + 6;     // lParam: EditBatch*, ours to delete
+        constexpr UINT kAdded = WM_APP + 7;        // lParam: Added*, ours to delete
 
         // DIPs
         constexpr float kMargin = 16.f, kToolbar = 56.f, kHint = 22.f, kFooter = 64.f;
         constexpr float kCellW = 164.f, kCellH = 204.f, kThumbBox = 136.f;
-        constexpr float kButtonW = 104.f, kButtonH = 32.f, kNavH = 44.f, kCaptionH = 30.f;
+        constexpr float kButtonW = 104.f, kButtonH = 32.f, kNavH = 44.f, kCaptionH = 30.f, kAddFilesW = 112.f;
         constexpr size_t kMaxBitmaps = 240;   // device bitmaps kept beyond the ones on screen
 
         // Tag colours for the files, told apart in light and dark themes.
@@ -66,6 +69,14 @@ namespace sd::pdf
             bool ok = false;
             std::vector<uint32_t> counts;   // per file of the request; 0 for files not shown
             std::wstring error;
+        };
+
+        // PDFs picked with Add files..., counted on a worker.
+        struct Added
+        {
+            std::vector<std::wstring> files;   // the ones that can be read, in the order picked
+            std::vector<uint32_t> counts;      // their pages
+            std::vector<std::wstring> failed;  // "name.pdf: why", for the ones that can't
         };
 
         // Rendered pixels and their device bitmap, rebuilt when the window's device changes.
@@ -204,24 +215,28 @@ namespace sd::pdf
                 button(L"Back", 0, false, [this] { Back(); });
                 button(L"Cancel", 0, false, [this] { Cancel(); });
                 button(organize || !Several() ? L"Save" : L"Merge and export", 0, true, [this] { Save(); });
+                button(L"Add files…", 0xE710, false, [this] { AddFiles(); });   // E710: Add
+                m_shownBefore = m_request.order.size();
             }
 
-            bool Open()
+            std::wstring Title() const
             {
-                std::wstring title;
                 const auto& files = m_request.files;
                 switch (m_request.kind)
                 {
                 case PageViewKind::Organize:
-                    title = files.size() == 1 ? std::format(L"Organize pages · {}", FileName(files.front())) : std::format(L"Organize pages · {} PDFs", files.size());
-                    break;
+                    return files.size() == 1 ? std::format(L"Organize pages · {}", FileName(files.front())) : std::format(L"Organize pages · {} PDFs", files.size());
                 case PageViewKind::Merge:
-                    title = std::format(L"Merge {} PDFs · every page", m_request.order.size());
-                    break;
+                    return std::format(L"Merge {} PDFs · every page", m_request.order.size());
                 case PageViewKind::Edit:
-                    title = Several() ? std::format(L"Edit {} PDFs", m_request.order.size()) : std::format(L"Edit PDF · {}", FileName(files[m_request.order.front()]));
-                    break;
+                    return Several() ? std::format(L"Edit {} PDFs", m_request.order.size()) : std::format(L"Edit PDF · {}", FileName(files[m_request.order.front()]));
                 }
+                return {};
+            }
+
+            bool Open()
+            {
+                const auto title = Title();
                 if (!(Organizing() ? Create(title, 900, 640, 560, 400) : Create(title, 1240, 820, 760, 500)))
                     return false;
                 m_queue.SetTarget([hwnd = Hwnd()](std::unique_ptr<RenderedPage> page) {
@@ -232,11 +247,12 @@ namespace sd::pdf
             }
 
         private:
-            enum ButtonId { kRotateLeft, kRotateRight, kDuplicate, kDelete, kUndo, kEdit, kRevert, kPrev, kNext, kBack, kCancel, kSave };
+            enum ButtonId { kRotateLeft, kRotateRight, kDuplicate, kDelete, kUndo, kEdit, kRevert, kPrev, kNext, kBack, kCancel, kSave, kAddFiles };
 
             bool Organizing() const { return m_request.kind == PageViewKind::Organize; }
             bool Several() const { return m_request.order.size() > 1; }
             bool Editing() const { return m_editSerial != 0; }
+            bool Busy() const { return Editing() || m_adding; }
 
             // ---- Loading ------------------------------------------------------------------------
 
@@ -313,7 +329,7 @@ namespace sd::pdf
 
             void Save()
             {
-                if (m_plan.empty() || !m_loaded || Editing())
+                if (m_plan.empty() || !m_loaded || Busy())
                 {
                     MessageBeep(MB_OK);
                     return;
@@ -328,28 +344,135 @@ namespace sd::pdf
 
             void Back()
             {
-                if (!m_request.back || Editing() || !m_loaded)
+                if (!m_request.back || Busy() || !m_loaded)
                     return;
                 Leave(std::move(m_request.back));
             }
 
-            void Leave(std::function<void(PagePlan, std::wstring)> then)
+            void Leave(std::function<void(PageViewResult)> then)
             {
                 m_leaving = true;
-                auto plan = std::move(m_plan);
-                auto folder = m_editFolder;
+                PageViewResult result;
+                result.plan = std::move(m_plan);
+                result.editFolder = m_editFolder;
+                result.files = std::move(m_request.files);
+                // An added file whose pages were all taken out again (or undone) is not part of it.
+                for (size_t i = 0; i < m_request.order.size(); ++i)
+                    if (i < m_shownBefore || PagesKept(result.plan, m_request.order[i]) > 0)
+                        result.order.push_back(m_request.order[i]);
                 Close();   // deletes this
                 if (then)
-                    then(std::move(plan), std::move(folder));
+                    then(std::move(result));
             }
 
             void Cancel()
             {
-                if (Editing())
+                if (Busy())
                     return;
                 if (HasChanges() && !ConfirmDiscard(Hwnd(), Organizing() ? L"Organize pages" : m_request.kind == PageViewKind::Merge ? L"Merge PDFs" : L"Edit PDF"))
                     return;
                 Close();   // deletes this
+            }
+
+            // ---- Add files... (Merge and Edit) --------------------------------------------------
+
+            void AddFiles()
+            {
+                if (Organizing() || !m_loaded || Busy())
+                {
+                    MessageBeep(MB_OK);
+                    return;
+                }
+                std::vector<std::wstring> picked;
+                if (!PickFiles(Hwnd(), L"Add PDFs", L"PDF files", L"*.pdf", picked))
+                    return;
+                // A file already here is not added twice: Duplicate copies its pages instead.
+                std::vector<std::wstring> fresh;
+                for (auto& f : picked)
+                {
+                    const auto same = [&](const std::wstring& g) { return EqualsNoCase(f, g); };
+                    if (std::none_of(m_request.files.begin(), m_request.files.end(), same) && std::none_of(fresh.begin(), fresh.end(), same))
+                        fresh.push_back(std::move(f));
+                }
+                if (fresh.empty())
+                {
+                    m_notice = picked.size() == 1 ? L"That PDF is already here. Duplicate (Ctrl+D) copies pages."
+                                                  : L"Those PDFs are already here. Duplicate (Ctrl+D) copies pages.";
+                    Invalidate();
+                    return;
+                }
+                m_adding = true;
+                m_status = fresh.size() == 1 ? std::format(L"Adding {}…", FileName(fresh.front())) : std::format(L"Adding {} PDFs…", fresh.size());
+                Invalidate();
+                // QPDF counts the pages on a worker, one file at a time so one bad file leaves the rest.
+                RunMtaDetached([hwnd = Hwnd(), fresh = std::move(fresh)] {
+                    auto added = std::make_unique<Added>();
+                    for (const auto& f : fresh)
+                    {
+                        std::vector<uint32_t> counts;
+                        std::wstring error;
+                        bool ok = false;
+                        try
+                        {
+                            ok = CountPages({ f }, counts, error) && !counts.empty() && counts.front() > 0;
+                        }
+                        catch (...)
+                        {
+                            error = L"the PDF could not be read";
+                        }
+                        if (ok)
+                        {
+                            added->files.push_back(f);
+                            added->counts.push_back(counts.front());
+                        }
+                        else
+                            added->failed.push_back(std::format(L"{}: {}", FileName(f), error.empty() ? std::wstring(L"it has no pages") : error));
+                    }
+                    PostOwned(hwnd, kAdded, std::move(added));
+                });
+            }
+
+            void OnAdded(std::unique_ptr<Added> added)
+            {
+                m_adding = false;
+                m_status.clear();
+                if (!added->files.empty())
+                {
+                    // The new files' pages go after every page there is, file by file, as Merge lists
+                    // them; one undo takes them all out again.
+                    Remember();
+                    const size_t first = m_plan.size();
+                    std::vector<uint32_t> counts(m_request.files.size() + added->files.size(), 0), order;
+                    for (size_t i = 0; i < added->files.size(); ++i)
+                    {
+                        const auto file = static_cast<uint32_t>(m_request.files.size());
+                        m_request.files.push_back(added->files[i]);
+                        m_request.order.push_back(file);
+                        counts[file] = added->counts[i];
+                        order.push_back(file);
+                    }
+                    const auto pages = AllPages(counts, order);
+                    m_plan.insert(m_plan.end(), pages.begin(), pages.end());
+                    Select({ first });
+                    SetWindowTextW(Hwnd(), Title().c_str());
+                    Layout(ClientDip());   // Several() may have changed the buttons
+                    Changed();
+                }
+                const size_t pages = [&] {
+                    size_t n = 0;
+                    for (const auto c : added->counts)
+                        n += c;
+                    return n;
+                }();
+                std::wstring notice;
+                if (!added->files.empty())
+                    notice = added->files.size() == 1 ? std::format(L"Added {} ({}). ", FileName(added->files.front()), pages == 1 ? std::wstring(L"1 page") : std::format(L"{} pages", pages))
+                                                      : std::format(L"Added {} PDFs ({} pages). ", added->files.size(), pages);
+                if (!added->failed.empty())
+                    notice += added->failed.size() == 1 ? std::format(L"Not added: {}", added->failed.front())
+                                                        : std::format(L"{} not added, such as {}", added->failed.size(), added->failed.front());
+                m_notice = std::wstring(Trim(notice));
+                Invalidate();
             }
 
             // ---- Edits of the plan --------------------------------------------------------------
@@ -525,11 +648,15 @@ namespace sd::pdf
                 }
                 // The footer: Back, Cancel and Save / Merge and export at the bottom right.
                 const float by = size.height - kFooter + (kFooter - kButtonH) / 2.f;
-                const float saveW = organize || !Several() ? kButtonW : 152.f;
+                const float saveW = organize || !Several() ? kButtonW : 152.f;   // Several() can change: Add files...
                 m_buttons[kSave].rect = D2D1::RectF(size.width - kMargin - saveW, by, size.width - kMargin, by + kButtonH);
                 m_buttons[kCancel].rect = D2D1::RectF(m_buttons[kSave].rect.left - 8.f - kButtonW, by, m_buttons[kSave].rect.left - 8.f, by + kButtonH);
                 m_buttons[kBack].rect = D2D1::RectF(m_buttons[kCancel].rect.left - 8.f - kButtonW, by, m_buttons[kCancel].rect.left - 8.f, by + kButtonH);
                 m_buttons[kBack].visible = static_cast<bool>(m_request.back);
+                // Add files... at the left of the footer, in Merge and Edit.
+                m_buttons[kAddFiles].rect = D2D1::RectF(kMargin, by, kMargin + kAddFilesW, by + kButtonH);
+                m_buttons[kAddFiles].visible = !organize;
+                m_buttons[kSave].text = organize || !Several() ? L"Save" : L"Merge and export";
 
                 const float top = organize ? kToolbar : kToolbar + kHint, bottom = size.height - kFooter;
                 if (organize)
@@ -899,12 +1026,14 @@ namespace sd::pdf
                 if (!m_status.empty())
                     status = m_status;
                 const float left = m_buttons[kBack].visible ? m_buttons[kBack].rect.left : m_buttons[kCancel].rect.left;
-                DrawText(status, TextFormat(12.f), D2D1::RectF(kMargin, size.height - kFooter, left - 8.f, size.height), c.textDim);
+                const float statusLeft = m_buttons[kAddFiles].visible ? m_buttons[kAddFiles].rect.right + 12.f : kMargin;
+                DrawText(status, TextFormat(12.f), D2D1::RectF(statusLeft, size.height - kFooter, left - 8.f, size.height), c.textDim);
 
-                const bool any = m_loaded && !m_plan.empty() && !Editing();
+                const bool any = m_loaded && !m_plan.empty() && !Busy();
                 for (int i = kRotateLeft; i <= kDelete; ++i)
                     m_buttons[i].enabled = any;
-                m_buttons[kUndo].enabled = !m_undo.empty() && !Editing();
+                m_buttons[kUndo].enabled = !m_undo.empty() && !Busy();
+                m_buttons[kAddFiles].enabled = m_loaded && !Busy();
                 m_buttons[kEdit].enabled = any && RenderingAvailable() && canvas::HasEditorWindow();
                 m_buttons[kRevert].enabled = any && SelectionEdited();
                 m_buttons[kPrev].enabled = any && m_focus > 0;
@@ -928,7 +1057,7 @@ namespace sd::pdf
             // The right-click menu (and, `editOnly`, the Edit page button's): for the selected pages.
             void ShowMenu(POINT pt, bool editOnly)
             {
-                if (m_plan.empty() || Editing() || !m_loaded)
+                if (m_plan.empty() || Busy() || !m_loaded)
                     return;
                 const auto selection = Selection();
                 const bool canEdit = !Organizing() && RenderingAvailable() && canvas::HasEditorWindow();
@@ -995,7 +1124,7 @@ namespace sd::pdf
 
             void StartEdit(PageTool tool)
             {
-                if (Editing() || Organizing())
+                if (Busy() || Organizing())
                     return;
                 if (m_editFolder.empty())
                     m_editFolder = NewEditFolder();
@@ -1352,6 +1481,9 @@ namespace sd::pdf
                 case kEditDone:
                     OnEditDone(std::unique_ptr<EditBatch>(reinterpret_cast<EditBatch*>(lParam)));
                     return true;
+                case kAdded:
+                    OnAdded(std::unique_ptr<Added>(reinterpret_cast<Added*>(lParam)));
+                    return true;
                 case WM_KEYDOWN:
                 case WM_SYSKEYDOWN:
                     if (Editing())
@@ -1486,8 +1618,9 @@ namespace sd::pdf
             // ---- State --------------------------------------------------------------------------
 
             PageViewRequest m_request;
+            size_t m_shownBefore = 0;   // files the request showed; the rest of m_request.order came by Add files...
             RenderQueue m_queue;
-            bool m_loaded = false, m_leaving = false;
+            bool m_loaded = false, m_leaving = false, m_adding = false;
             std::wstring m_error, m_status, m_notice;
 
             PagePlan m_plan;
@@ -1523,7 +1656,7 @@ namespace sd::pdf
             PageViewRequest request;
             request.kind = PageViewKind::Organize;
             request.files = files;
-            request.save = [done = std::move(done)](PagePlan plan, std::wstring) { done(std::move(plan)); };
+            request.save = [done = std::move(done)](PageViewResult result) { done(std::move(result.plan)); };
             if (!OpenPageView(std::move(request)))
                 log::Warn(L"organize: the window could not open");
         }

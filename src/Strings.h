@@ -3,6 +3,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Small text helpers every area shares: case, whitespace, case-insensitive comparison and the
 // ".ext.ext" token lists. One copy each, so "the same name" means the same thing everywhere.
@@ -19,6 +20,11 @@ namespace sd
 
     // Equal ignoring case the way NTFS compares names (ordinal, no locale).
     bool EqualsNoCase(std::wstring_view a, std::wstring_view b);
+
+    // A search box's query as its words, lower-case (Lower), split at whitespace.
+    std::vector<std::wstring> SearchWords(std::wstring_view query);
+    // Does `text` (any case) hold every one of `words` (from SearchWords)? True for no words.
+    bool HasEveryWord(std::wstring_view text, const std::vector<std::wstring>& words);
 
     // Is `ext` (".mp4") a whole token of a run like ".mp4.m4v"? ".mp" is not.
     bool HasExtToken(std::wstring_view tokens, std::wstring_view ext);

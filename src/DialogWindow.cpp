@@ -113,6 +113,13 @@ namespace sd
         ListView_SetTextColor(list, m_colors.text);
     }
 
+    std::wstring DialogWindow::Text(HWND control)
+    {
+        std::wstring text(static_cast<size_t>(GetWindowTextLengthW(control)) + 1, L'\0');
+        text.resize(static_cast<size_t>(GetWindowTextW(control, text.data(), static_cast<int>(text.size()))));
+        return text;
+    }
+
     LRESULT DialogWindow::CustomDraw(const NMCUSTOMDRAW& draw, const KitPaint& paint)
     {
         if (draw.dwDrawStage != CDDS_PREPAINT)

@@ -4,6 +4,7 @@
 #include "PathUtil.h"
 
 #include <commctrl.h>
+#include <windowsx.h>
 #include <shlwapi.h>
 
 #include <algorithm>
@@ -15,10 +16,11 @@ namespace sd
     {
         constexpr wchar_t kClass[] = L"" SD_NAME L".Rename";
         constexpr int kIdPattern = 100, kIdFind = 101, kIdReplace = 102, kIdStart = 103, kIdMatchCase = 104, kIdList = 105;
+        constexpr int kIdChangeName = 106, kIdChangeWhole = 107;
 
         // Sizes in DIPs, scaled by the window's DPI in Layout().
         constexpr int kMargin = 14, kGap = 8, kLabelW = 104, kRowH = 26, kRowGap = 6, kHintH = 20;
-        constexpr int kButtonW = 110, kButtonH = 30, kStartW = 80;
+        constexpr int kButtonW = 110, kButtonH = 30, kStartW = 80, kNameChoiceW = 80;
 
         constexpr wchar_t kFieldsHint[] = L"{name}  name    {n} or {n:000}  number    {date}  modified    {ext}  extension    {folder}  folder";
 
@@ -38,7 +40,7 @@ namespace sd
     }
 
     RenameWindow::RenameWindow(HINSTANCE instance)
-        : DialogWindow(instance, { .className = kClass, .width = 640, .height = 540, .minWidth = 420, .minHeight = 380 })
+        : DialogWindow(instance, { .className = kClass, .width = 640, .height = 572, .minWidth = 420, .minHeight = 412 })
     {
     }
 
@@ -60,6 +62,7 @@ namespace sd
             if (!Create(L"" SD_NAME))
                 return;
             m_filling = true;
+            Button_SetCheck(m_changeName, BST_CHECKED);
             SetWindowTextW(m_pattern, L"{name}");
             SetWindowTextW(m_start, L"1");
             m_filling = false;
@@ -83,7 +86,11 @@ namespace sd
         const auto edit = [&](int controlId, DWORD style = 0) {
             return Control(WC_EDITW, L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | style, controlId);
         };
-        m_patternLabel = label(L"&New name");
+        m_changeLabel = label(L"Change");
+        // WS_GROUP on the first: the arrow keys move between the two, Tab moves on.
+        m_changeName = Control(WC_BUTTONW, L"N&ame", WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON, kIdChangeName);
+        m_changeWhole = Control(WC_BUTTONW, L"Name and e&xtension", BS_AUTORADIOBUTTON, kIdChangeWhole);
+        m_patternLabel = Control(WC_STATICW, L"&New name", WS_GROUP | SS_LEFT | SS_CENTERIMAGE);   // ends the radio group
         m_pattern = edit(kIdPattern);
         SendMessageW(m_pattern, EM_LIMITTEXT, 255, 0);
         m_fields = Control(WC_STATICW, kFieldsHint, SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS);
@@ -115,16 +122,15 @@ namespace sd
 
     void RenameWindow::OnThemeChanged()
     {
-        m_problemColour = m_colors.dark ? RGB(255, 153, 164) : RGB(196, 43, 28);
         ThemeList(m_list, L"Explorer");
-        SetTheme({ m_matchCase, m_rename, m_cancel }, L"DarkMode_Explorer", L"Explorer");
+        SetTheme({ m_changeName, m_changeWhole, m_matchCase, m_rename, m_cancel }, L"DarkMode_Explorer", L"Explorer");
         SetTheme({ m_pattern, m_find, m_replace, m_start }, L"DarkMode_CFD");
     }
 
     COLORREF RenameWindow::StaticTextColor(HWND control) const
     {
-        if (control == m_status && (!m_plan.error.empty() || m_plan.problems > 0))
-            return m_problemColour;
+        if (control == m_status && (!m_plan.error.empty() || m_plan.problems > 0 || m_plan.warnings > 0))
+            return ProblemColor();
         return control == m_fields ? GetSysColor(COLOR_GRAYTEXT) : m_colors.text;
     }
 
@@ -135,6 +141,10 @@ namespace sd
         const int margin = Px(kMargin), gap = Px(kGap), lw = Px(kLabelW), rh = Px(kRowH), rowGap = Px(kRowGap);
         const int fieldX = margin + lw, fieldW = std::max(0, static_cast<int>(rc.right) - margin - fieldX);
         int y = margin;
+        MoveWindow(m_changeLabel, margin, y, lw - gap, rh, TRUE);
+        MoveWindow(m_changeName, fieldX, y, Px(kNameChoiceW), rh, TRUE);
+        MoveWindow(m_changeWhole, fieldX + Px(kNameChoiceW) + gap, y, std::max(0, fieldW - Px(kNameChoiceW) - gap), rh, TRUE);
+        y += rh + rowGap;
         const auto row = [&](HWND labelHwnd, HWND control) {
             MoveWindow(labelHwnd, margin, y, lw - gap, rh, TRUE);
             MoveWindow(control, fieldX, y, fieldW, rh, TRUE);
@@ -162,11 +172,21 @@ namespace sd
         MoveWindow(m_status, margin, buttonsY, std::max(0, static_cast<int>(rc.right) - 3 * margin - 2 * bw - gap), bh, TRUE);
     }
 
-    std::wstring RenameWindow::Text(HWND edit) const
+    rename::Change RenameWindow::ChangeChosen() const
     {
-        std::wstring text(static_cast<size_t>(GetWindowTextLengthW(edit)) + 1, L'\0');
-        text.resize(static_cast<size_t>(GetWindowTextW(edit, text.data(), static_cast<int>(text.size()))));
-        return text;
+        return Button_GetCheck(m_changeWhole) == BST_CHECKED ? rename::Change::NameAndExtension : rename::Change::Name;
+    }
+
+    void RenameWindow::SetChange(rename::Change change)
+    {
+        // The pattern follows, so the names stay as they were until the user edits them.
+        const auto text = rename::PatternFor(change, Text(m_pattern));
+        m_filling = true;
+        SetWindowTextW(m_pattern, text.c_str());
+        m_filling = false;
+        SetWindowTextW(m_patternLabel, change == rename::Change::NameAndExtension ? L"&New file name" : L"&New name");
+        Update();
+        InvalidateRect(m_status, nullptr, TRUE);
     }
 
     void RenameWindow::Update()
@@ -176,6 +196,7 @@ namespace sd
         pattern.find = Text(m_find);
         pattern.replace = Text(m_replace);
         pattern.matchCase = SendMessageW(m_matchCase, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        pattern.change = ChangeChosen();
         const auto start = Text(m_start);
         pattern.start = start.empty() ? 1 : std::clamp(_wtoi(start.c_str()), 0, 999999);
         m_plan = rename::MakePlan(pattern, m_items);
@@ -191,6 +212,12 @@ namespace sd
         }
         else if (m_plan.changes == 0)
             status = L"No name changes yet";
+        else if (m_plan.warnings > 0)
+        {
+            const auto first = std::find_if(m_plan.items.begin(), m_plan.items.end(), [](const rename::Planned& p) { return !p.warning.empty(); });
+            status = m_plan.warnings == 1 ? std::format(L"Careful: {}, so it may not open the same way", first->warning)
+                                          : std::format(L"Careful: {} extensions change, so those files may not open the same way", m_plan.warnings);
+        }
         else if (m_items.size() == 1)
             status = L"Ready to rename";
         else if (m_plan.changes == m_items.size())
@@ -245,7 +272,7 @@ namespace sd
             {
             case 0: text = FileName(m_items[row].path); break;
             case 1: text = p ? FileName(p->to) : L""; break;
-            default: text = !p ? L"" : !p->problem.empty() ? p->problem : p->to == p->from ? L"unchanged" : L""; break;
+            default: text = !p ? L"" : !p->problem.empty() ? p->problem : !p->warning.empty() ? p->warning : p->to == p->from ? L"unchanged" : L""; break;
             }
             wcsncpy_s(info->item.pszText, static_cast<size_t>(info->item.cchTextMax), text.c_str(), _TRUNCATE);
             return 0;
@@ -259,7 +286,7 @@ namespace sd
             if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
             {
                 const auto row = static_cast<size_t>(draw->nmcd.dwItemSpec);
-                draw->clrText = row < m_plan.items.size() && !m_plan.items[row].problem.empty() ? m_problemColour : m_colors.text;
+                draw->clrText = row < m_plan.items.size() && !m_plan.items[row].problem.empty() ? ProblemColor() : m_colors.text;
                 return CDRF_NEWFONT;
             }
         }
@@ -288,6 +315,11 @@ namespace sd
             case kIdMatchCase:
                 if (HIWORD(wParam) == BN_CLICKED)
                     Update();
+                break;
+            case kIdChangeName:
+            case kIdChangeWhole:
+                if (HIWORD(wParam) == BN_CLICKED && !m_filling)
+                    SetChange(ChangeChosen());
                 break;
             default: break;
             }
