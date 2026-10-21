@@ -632,14 +632,14 @@ namespace sd
         const auto& b = tabs[static_cast<size_t>(hi)];
         const auto sel = D2D1::RectF(a.left + (b.left - a.left) * f, a.top, a.right + (b.right - a.right) * f, a.bottom);
         const float r = (sel.bottom - sel.top) / 2.f;
-        m_rt->FillRoundedRectangle(D2D1::RoundedRect(sel, r, r), Brush(m_palette.accent, alpha).Get());
+        m_rt->FillRoundedRectangle(D2D1::RoundedRect(sel, r, r), Brush(m_palette.panelAccent, alpha).Get());
 
         for (size_t i = 0; i < tabs.size(); ++i)
         {
             const auto& t = tabs[i];
             const auto& ring = m_rings[i];
             const float on = std::max(0.f, 1.f - std::abs(m_tabPos - static_cast<float>(i)));
-            const auto colour = Mix(m_palette.panelTextDim, m_palette.textOnAccent, on);
+            const auto colour = Mix(m_palette.panelTextDim, m_palette.panelTextOnAccent, on);
             const float cy = (t.top + t.bottom) / 2.f;
             float tx = t.left + fit.pad;
             const wchar_t glyph[2]{ ring.icon, 0 };
@@ -675,7 +675,7 @@ namespace sd
             sink->Close();
             ComPtr<ID2D1StrokeStyle> round;
             m_d2d->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND), nullptr, 0, &round);
-            m_rt->DrawGeometry(arc.Get(), Brush(m_palette.accent, alpha).Get(), 2.5f * s, round.Get());
+            m_rt->DrawGeometry(arc.Get(), Brush(m_palette.panelAccent, alpha).Get(), 2.5f * s, round.Get());
         }
 
         // The × sits at the right end; the text and the bar end before it.
@@ -689,7 +689,7 @@ namespace sd
             m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
                               Brush(m_cancelHover ? m_palette.error : m_palette.keycap, (m_cancelHover ? 0.9f : 1.f) * alpha).Get());
             const wchar_t x[2]{ kGlyphClose, 0 };
-            Text(x, m_cancelFont.Get(), m_cancelRect, Mix(m_palette.panelTextDim, m_palette.textOnAccent, on), (m_cancelled ? 0.4f : 1.f) * alpha);
+            Text(x, m_cancelFont.Get(), m_cancelRect, Mix(m_palette.panelTextDim, m_palette.panelTextOnAccent, on), (m_cancelled ? 0.4f : 1.f) * alpha);
             right = m_cancelRect.left - 4.f * s;
         }
 
@@ -709,7 +709,7 @@ namespace sd
         if (m_bar > 0.f)
         {
             const auto fill = D2D1::RectF(track.left, track.top, track.left + (track.right - track.left) * m_bar, track.bottom);
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(fill, 2.f * s, 2.f * s), Brush(m_palette.accent, alpha).Get());
+            m_rt->FillRoundedRectangle(D2D1::RoundedRect(fill, 2.f * s, 2.f * s), Brush(m_palette.panelAccent, alpha).Get());
         }
     }
 
@@ -746,9 +746,9 @@ namespace sd
                 const bool hover = m_actionHover == static_cast<int>(i), done = m_actionDone[i];
                 const auto c2 = D2D1::Point2F(x + d / 2.f, cy);
                 m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
-                                  Brush(done ? WithAlpha(m_palette.ok, 0.22f) : hover ? m_palette.accent : m_palette.keycap, alpha).Get());
+                                  Brush(done ? WithAlpha(m_palette.ok, 0.22f) : hover ? m_palette.panelAccent : m_palette.keycap, alpha).Get());
                 const wchar_t g2[2]{ done ? kGlyphCheck : glyphs[i], 0 };
-                Text(g2, m_actionFont.Get(), m_actionRects[i], done ? m_palette.ok : hover ? m_palette.textOnAccent : m_palette.panelText, alpha);
+                Text(g2, m_actionFont.Get(), m_actionRects[i], done ? m_palette.ok : hover ? m_palette.panelTextOnAccent : m_palette.panelText, alpha);
             }
         }
         const auto line = ResultLine();

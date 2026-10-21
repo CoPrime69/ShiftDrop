@@ -955,12 +955,13 @@ namespace sd
                 m_keyboard->SetRingKeys(SectionKeys());
         }
 
-        // The Settings window's other choices: the theme takes effect the next time a window opens,
-        // output names with the next output, the terminal with the next Terminal slice, the top
-        // panel's size the next time it shows.
+        // The Settings window's other choices: the theme and the accent colour take effect the next
+        // time a window opens, output names with the next output, the terminal with the next Terminal
+        // slice, the top panel's size the next time it shows.
         void ApplyPreferences()
         {
             theme::SetChoice(m_preferences.theme);
+            accent::Set(m_preferences.accent);
             SetOutputNaming(m_preferences.naming);
             SetTerminalChoice(m_preferences.terminal, m_preferences.terminalCommand);
             if (m_island)   // not yet at startup: Init passes the size on when it creates the panel

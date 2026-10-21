@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "Accent.h"
 
 #include <dwmapi.h>
 #include <shellscalingapi.h>
@@ -28,19 +29,7 @@ namespace sd::theme
             return value != 0;
         }
 
-        // The user's accent colour as 0xRRGGBB. Explorer's AccentColorMenu (stored as 0xAABBGGRR) is the
-        // colour Windows uses for selection; DWM's colorization colour is the fallback.
-        UINT AccentRgb()
-        {
-            DWORD abgr = 0, size = sizeof(abgr);
-            if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent",
-                             L"AccentColorMenu", RRF_RT_REG_DWORD, nullptr, &abgr, &size) == ERROR_SUCCESS)
-                return ((abgr & 0xFF) << 16) | (abgr & 0xFF00) | ((abgr >> 16) & 0xFF);
-            DWORD argb = 0xFF0067C0;
-            BOOL opaque = FALSE;
-            DwmGetColorizationColor(&argb, &opaque);
-            return argb & 0x00FFFFFF;
-        }
+        D2D1_COLOR_F Rgb(uint32_t rgb) { return D2D1::ColorF(rgb, 1.f); }
 
         bool HasFamily(IDWriteFactory* dwrite, const wchar_t* family)
         {
@@ -94,15 +83,19 @@ namespace sd::theme
     {
         Palette p{};
         p.dark = g_choice == ThemeChoice::System ? !AppsUseLightTheme() : g_choice == ThemeChoice::Dark;
-        p.accent = Rgba(AccentRgb(), 1.f);
-        p.textOnAccent = D2D1::ColorF(1, 1, 1, 1);
+        // The accent's dark tone with dark text in dark mode; in light mode the colour itself, with
+        // whichever text reads on it. The highlight toward the slice's rim stays readable too.
+        const auto tones = accent::Current();
+        const uint32_t fill = p.dark ? tones.dark : tones.fill, onFill = p.dark ? accent::kTextOnDark : accent::TextOn(tones.fill);
+        p.accent = Rgb(fill);
+        p.accentHi = Rgb(accent::Lighter(fill, onFill, p.dark ? 0.28 : 0.20));
+        p.textOnAccent = Rgb(onFill);
         p.ok = Rgba(0x6CCB5F, 1.f);
         p.warn = Rgba(0xFCE100, 1.f);
         p.error = Rgba(0xFF99A4, 1.f);
         const bool glass = style == Style::Glass;
         if (p.dark)
         {
-            p.accentHi = Mix(p.accent, D2D1::ColorF(1, 1, 1, 1), 0.28f);
             p.text = Rgba(0xF7F7F8, 1.f);
             p.textDim = Rgba(0xF7F7F8, 0.32f);
             p.shadow = Rgba(0x000000, 0.42f);
@@ -114,7 +107,6 @@ namespace sd::theme
         }
         else
         {
-            p.accentHi = Mix(p.accent, D2D1::ColorF(1, 1, 1, 1), 0.20f);
             p.text = Rgba(0x1A1A1E, 1.f);
             p.textDim = Rgba(0x1A1A1E, 0.32f);
             p.shadow = Rgba(0x000000, 0.20f);
@@ -127,6 +119,8 @@ namespace sd::theme
         // The top panel is a dark island in both themes (Solid), like a notch; Glass follows the theme.
         if (glass)
         {
+            p.panelAccent = p.accent;
+            p.panelTextOnAccent = p.textOnAccent;
             p.panel = p.glassTint;
             p.panelLine = p.dark ? Rgba(0xFFFFFF, 0.16f) : Rgba(0x000000, 0.10f);
             p.panelText = p.text;
@@ -135,6 +129,8 @@ namespace sd::theme
         }
         else
         {
+            p.panelAccent = Rgb(tones.dark);
+            p.panelTextOnAccent = Rgb(accent::kTextOnDark);
             p.panel = Rgba(0x050506, 0.97f);
             p.panelLine = Rgba(0xFFFFFF, 0.08f);
             p.panelText = Rgba(0xF7F7F8, 1.f);
@@ -152,10 +148,15 @@ namespace sd::theme
     EditorPalette EditorColors()
     {
         const auto t = Current(Style::Solid);
-        const auto luminance = [](const D2D1_COLOR_F& c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; };
-        const auto lighter = [](const D2D1_COLOR_F& c, float by) { return Mix(c, D2D1::ColorF(1, 1, 1, 1), by); };
+        const auto tones = accent::Current();
         EditorPalette c{};
         c.dark = t.dark;
+        // Buttons, switches and accent text: the dark tone with dark text on it in dark mode, the light
+        // tone with white text in light mode; hover a little lighter while its text still reads.
+        const uint32_t accentRgb = c.dark ? tones.dark : tones.light, onAccent = c.dark ? accent::kTextOnDark : accent::kTextOnLight;
+        c.accent = Rgb(accentRgb);
+        c.accentHover = Rgb(accent::Lighter(accentRgb, onAccent, c.dark ? 0.34 : 0.12));
+        c.onAccent = Rgb(onAccent);
         if (c.dark)
         {
             c.window = Rgba(0x202023, 1.f);
@@ -170,9 +171,6 @@ namespace sd::theme
             c.controlHover = Rgba(0x404047, 1.f);
             c.controlDown = Rgba(0x2E2E33, 1.f);
             c.controlLine = Rgba(0xFFFFFF, 0.07f);
-            // Windows draws accent fills lighter in dark mode, with dark text when they get bright.
-            c.accent = lighter(t.accent, 0.22f);
-            c.accentHover = lighter(t.accent, 0.34f);
             c.danger = Rgba(0xFF7A7A, 1.f);
             c.shadow = Rgba(0x000000, 0.5f);
         }
@@ -190,12 +188,9 @@ namespace sd::theme
             c.controlHover = Rgba(0xF5F5F7, 1.f);
             c.controlDown = Rgba(0xEBEBEF, 1.f);
             c.controlLine = Rgba(0x000000, 0.12f);
-            c.accent = luminance(t.accent) > 0.55f ? Mix(t.accent, D2D1::ColorF(0, 0, 0, 1), 0.3f) : t.accent;
-            c.accentHover = lighter(c.accent, 0.12f);
             c.danger = Rgba(0xC42B1C, 1.f);
             c.shadow = Rgba(0x000000, 0.18f);
         }
-        c.onAccent = luminance(c.accent) > 0.6f ? Rgba(0x111114, 1.f) : Rgba(0xFFFFFF, 1.f);
         c.accentSoft = WithAlpha(c.accent, c.dark ? 0.22f : 0.16f);
         c.dangerSoft = WithAlpha(c.danger, 0.24f);
         c.focus = c.text;

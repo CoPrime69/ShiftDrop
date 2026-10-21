@@ -78,6 +78,7 @@ add_library(shiftdrop_core STATIC
   src/Recipe.cpp
   src/RecipeStore.cpp
   src/Settings.cpp
+  src/Accent.cpp    # the accent colour: its presets, their tones and the one every window draws with
   src/Features.cpp
   src/StagedOutput.cpp
   src/Startup.cpp
@@ -355,6 +356,7 @@ if(SHIFTDROP_TESTS)
     tests/SandboxTests.cpp
     tests/VirtualDropTests.cpp
     tests/PanelTests.cpp
+    tests/AccentTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
