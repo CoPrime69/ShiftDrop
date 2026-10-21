@@ -135,7 +135,6 @@ namespace sd::formats
                     if (!m_encoder || !WebPConfigInit(&m_config))
                         return false;
                     m_config.quality = static_cast<float>(m_quality);
-                    m_config.method = 3;   // one step faster than libwebp's default, as for still WebP
                     m_config.thread_level = 1;
                     if (!WebPValidateConfig(&m_config))
                         return false;
