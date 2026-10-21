@@ -21,6 +21,9 @@ $ports = [ordered]@{
     'libyuv'        = 'libyuv (colour conversion, used by libavif)'
     'lunasvg'       = 'LunaSVG (SVG rendering)'
     'plutovg'       = 'PlutoVG (2D vector graphics, used by LunaSVG)'
+    'miniz'         = 'miniz (ZIP containers: DOCX, XLSX, ODS, EPUB)'
+    'pugixml'       = 'pugixml (XML of documents and spreadsheets)'
+    'md4c'          = 'MD4C (Markdown parsing)'
 }
 
 $text = [System.Text.StringBuilder]::new()

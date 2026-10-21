@@ -1,0 +1,333 @@
+#include "sheets/SheetsModule.h"
+#include "docs/Bytes.h"
+#include "docs/PdfPrint.h"
+#include "OutputPath.h"
+#include "Utf.h"
+
+#include <windows.h>
+#include <wil/resource.h>
+
+#include <filesystem>
+#include <format>
+#include <set>
+
+namespace sd::sheets
+{
+    namespace
+    {
+        struct Target
+        {
+            const char* id;
+            const wchar_t* extension;
+        };
+        const Target kTargets[] = { { "xlsx", L".xlsx" }, { "ods", L".ods" }, { "csv", L".csv" }, { "tsv", L".tsv" }, { "pdf", L".pdf" } };
+
+        const Target* FindTarget(std::string_view id)
+        {
+            for (const auto& t : kTargets)
+                if (id == t.id)
+                    return &t;
+            return nullptr;
+        }
+
+        std::string TargetOf(const Recipe& r)
+        {
+            return r.steps.empty() ? std::string() : r.steps[0].params.value("format", std::string());
+        }
+
+        bool WriteNew(const std::wstring& path, std::string_view bytes, std::wstring& error)
+        {
+            {
+                wil::unique_hfile f(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+                if (!f)
+                {
+                    error = std::format(L"cannot write {} (error {})", std::filesystem::path(path).filename().wstring(), GetLastError());
+                    return false;
+                }
+            }
+            return docs::WriteFileBytes(path, bytes, &error);
+        }
+
+        class SheetsEngine final : public IEngine
+        {
+        public:
+            explicit SheetsEngine(const EngineServices& services) : m_history(services.history) {}
+
+            bool Handles(const Recipe& recipe) const override
+            {
+                return recipe.steps.size() == 1 && recipe.steps[0].action == "sheets.convert";
+            }
+
+            bool Applies(const Recipe& recipe, const std::wstring& path) const override
+            {
+                return TargetFits(InputOf(path), TargetOf(recipe));
+            }
+
+            bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
+            {
+                const auto target = TargetOf(recipe);
+                if (!TargetFits(InputOf(path), target))
+                {
+                    if (why)
+                        *why = L"not a spreadsheet";
+                    return false;
+                }
+                if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                {
+                    if (why)
+                        *why = L"file not found";
+                    return false;
+                }
+                if (target == "pdf" && !docs::FindPdfPrinter(nullptr, why))
+                    return false;
+                return true;
+            }
+
+            ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
+            {
+                const auto target = TargetOf(recipe);
+                const auto* t = FindTarget(target);
+                Workbook book;
+                std::wstring error;
+                if (progress)
+                    progress(0.02);
+                if (!ReadWorkbook(source, InputOf(source), book, error))
+                {
+                    StagedOutput out(m_history, runId, source);
+                    return out.Fail(error);
+                }
+                if (stop.stop_requested())
+                {
+                    StagedOutput out(m_history, runId, source);
+                    return out.Fail(L"cancelled", true);
+                }
+                if (progress)
+                    progress(0.3);
+
+                // Several sheets to CSV/TSV: one file per sheet in a folder.
+                const bool text = target == "csv" || target == "tsv";
+                std::vector<const Sheet*> sheets;
+                for (const auto& s : book.sheets)
+                    if (!s.rows.empty())
+                        sheets.push_back(&s);
+                if (sheets.empty() && !book.sheets.empty())
+                    sheets.push_back(&book.sheets.front());
+                const bool folder = text && sheets.size() > 1;
+                StagedOutput out(m_history, runId, source, folder);
+                if (!out.Ready())
+                    return out.Fail(out.Error());
+
+                const char delimiter = target == "tsv" ? '\t' : ',';
+                if (folder)
+                {
+                    std::set<std::wstring> used;
+                    for (const auto* s : sheets)
+                    {
+                        auto name = SafeFileName(s->name);
+                        auto unique = name;
+                        for (int n = 2; !used.insert(Widen(docs::AsciiLower(Narrow(unique)))).second; ++n)
+                            unique = std::format(L"{} ({})", name, n);
+                        if (!WriteNew((std::filesystem::path(out.Path()) / (unique + t->extension)).wstring(), WriteCsv(*s, delimiter), error))
+                            return out.Fail(error);
+                    }
+                    if (progress)
+                        progress(1.0);
+                    return out.Commit(recipe.suffix, L"");
+                }
+
+                std::string bytes;
+                if (text)
+                    bytes = sheets.empty() ? std::string("\xEF\xBB\xBF") : WriteCsv(*sheets.front(), delimiter);
+                else if (target == "xlsx")
+                {
+                    if (!WriteXlsx(book, bytes))
+                        return out.Fail(L"cannot build the XLSX package");
+                }
+                else if (target == "ods")
+                {
+                    if (!WriteOds(book, bytes))
+                        return out.Fail(L"cannot build the ODS package");
+                }
+                else if (target == "pdf")
+                {
+                    const auto doc = WorkbookToDocument(book);
+                    size_t cols = 0;
+                    for (const auto* s : sheets)
+                        cols = std::max(cols, s->Columns());
+                    const ProgressFn inner = [&](double p) {
+                        if (progress)
+                            progress(0.3 + 0.7 * p);
+                    };
+                    if (!docs::DocumentToPdf(doc, std::filesystem::path(source).stem().wstring(), cols > 6, cols > 10 ? 8.f : 9.5f, stop, inner, bytes, error))
+                        return out.Fail(error, stop.stop_requested());
+                }
+                else
+                    return out.Fail(L"unknown output format");
+                if (!docs::WriteFileBytes(out.Path(), bytes, &error))
+                    return out.Fail(error);
+                if (progress)
+                    progress(1.0);
+                return out.Commit(recipe.suffix, t->extension);
+            }
+
+        private:
+            HistoryStore* m_history;
+        };
+
+        void RegisterActions(ActionRegistry& registry)
+        {
+            registry.Add(ActionDescriptor{ "sheets.convert", L"Convert spreadsheet", StepKind::Engine,
+                                           { ParamSpec{ "format", ParamType::Enum, 0, 0, { "xlsx", "ods", "csv", "tsv", "pdf" }, "xlsx" } } });
+        }
+
+        const char* Recipes()
+        {
+            // Icons (Segoe Fluent Icons): Calculator E8EF, BulletedList E8FD, PDF EA90.
+            return R"([
+  { "id": "sheets-to-xlsx", "label": "XLSX", "description": "Excel workbook", "icon": "E8EF",
+    "steps": [ { "action": "sheets.convert", "params": { "format": "xlsx" } } ] },
+  { "id": "sheets-to-ods", "label": "ODS", "description": "OpenDocument spreadsheet", "icon": "E8EF",
+    "steps": [ { "action": "sheets.convert", "params": { "format": "ods" } } ] },
+  { "id": "sheets-to-csv", "label": "CSV", "description": "Comma-separated values, one file per sheet", "icon": "E8FD",
+    "steps": [ { "action": "sheets.convert", "params": { "format": "csv" } } ] },
+  { "id": "sheets-to-tsv", "label": "TSV", "description": "Tab-separated values, one file per sheet", "icon": "E8FD",
+    "steps": [ { "action": "sheets.convert", "params": { "format": "tsv" } } ] },
+  { "id": "sheets-to-pdf", "label": "PDF", "description": "The sheets as printed tables", "icon": "EA90",
+    "steps": [ { "action": "sheets.convert", "params": { "format": "pdf" } } ] }
+])";
+        }
+
+        std::unique_ptr<IEngine> MakeEngine(const EngineServices& services)
+        {
+            return std::make_unique<SheetsEngine>(services);
+        }
+    }
+
+    SheetInput InputOf(const std::wstring& path)
+    {
+        const DWORD a = GetFileAttributesW(path.c_str());
+        if (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY))
+            return SheetInput::None;
+        const auto ext = LowerExtension(path);
+        if (ext == L".xlsx" || ext == L".xlsm")
+            return SheetInput::Xlsx;
+        if (ext == L".xls")
+            return SheetInput::Xls;
+        if (ext == L".ods")
+            return SheetInput::Ods;
+        if (ext == L".csv")
+            return SheetInput::Csv;
+        if (ext == L".tsv" || ext == L".tab")
+            return SheetInput::Tsv;
+        return SheetInput::None;
+    }
+
+    bool TargetFits(SheetInput input, std::string_view target)
+    {
+        if (input == SheetInput::None || !FindTarget(target))
+            return false;
+        switch (input)
+        {
+        case SheetInput::Ods: return target != "ods";
+        case SheetInput::Csv: return target != "csv";
+        case SheetInput::Tsv: return target != "tsv";
+        default: return true;   // .xlsm -> .xlsx drops the macros; .xls -> .xlsx modernises
+        }
+    }
+
+    bool ReadWorkbook(const std::wstring& path, SheetInput input, Workbook& book, std::wstring& error)
+    {
+        std::string bytes;
+        if (!docs::ReadFileBytes(path, bytes, &error))
+            return false;
+        std::string e;
+        bool ok = true;
+        switch (input)
+        {
+        case SheetInput::Xlsx: ok = ReadXlsx(std::move(bytes), book, e); break;
+        case SheetInput::Xls: ok = ReadXls(bytes, book, e); break;
+        case SheetInput::Ods: ok = ReadOds(std::move(bytes), book, e); break;
+        case SheetInput::Csv:
+        case SheetInput::Tsv:
+        {
+            auto sheet = ReadCsv(docs::DecodeText(bytes), input == SheetInput::Tsv ? '\t' : 0);
+            sheet.name = Narrow(std::filesystem::path(path).stem().wstring());
+            book.sheets.push_back(std::move(sheet));
+            break;
+        }
+        default:
+            e = "not a spreadsheet";
+            ok = false;
+        }
+        if (!ok)
+            error = Widen(e);
+        return ok;
+    }
+
+    docs::Document WorkbookToDocument(const Workbook& book, size_t maxRows)
+    {
+        docs::Document doc;
+        size_t withData = 0;
+        for (const auto& s : book.sheets)
+            withData += !s.rows.empty();
+        for (const auto& s : book.sheets)
+        {
+            if (s.rows.empty())
+                continue;
+            if (withData > 1)
+            {
+                docs::Block h;
+                h.kind = docs::BlockKind::Heading;
+                h.level = 2;
+                h.spans.push_back(docs::Span{ s.name });
+                doc.blocks.push_back(std::move(h));
+            }
+            docs::Block t;
+            t.kind = docs::BlockKind::Table;
+            t.headerRow = s.rows.size() > 1;
+            const size_t cols = s.Columns();
+            for (size_t r = 0; r < s.rows.size() && r < maxRows; ++r)
+            {
+                std::vector<docs::TableCell> row(cols);
+                for (size_t c = 0; c < s.rows[r].size(); ++c)
+                    if (auto text = CellText(s.rows[r][c]); !text.empty())
+                        row[c].spans.push_back(docs::Span{ std::move(text) });
+                t.rows.push_back(std::move(row));
+            }
+            doc.blocks.push_back(std::move(t));
+            if (s.rows.size() > maxRows)
+            {
+                docs::Block note;
+                note.spans.push_back(docs::Span{ std::format("First {} of {} rows.", maxRows, s.rows.size()) });
+                note.spans.back().italic = true;
+                doc.blocks.push_back(std::move(note));
+            }
+        }
+        return doc;
+    }
+
+    std::wstring SafeFileName(const std::string& name)
+    {
+        auto w = Widen(name);
+        for (auto& c : w)
+            if (c < 0x20 || wcschr(L"<>:\"/\\|?*", c))
+                c = L'_';
+        while (!w.empty() && (w.back() == L'.' || w.back() == L' '))
+            w.pop_back();
+        if (w.empty())
+            w = L"Sheet";
+        // Device names can't be file names, even with an extension.
+        static const wchar_t* kReserved[] = { L"CON", L"PRN", L"AUX", L"NUL", L"COM1", L"COM2", L"COM3", L"COM4", L"LPT1", L"LPT2", L"LPT3" };
+        for (const auto* r : kReserved)
+            if (_wcsicmp(w.c_str(), r) == 0)
+                return L"_" + w;
+        if (w.size() > 120)
+            w.resize(120);
+        return w;
+    }
+
+    FeatureModule Module()
+    {
+        return FeatureModule{ "sheets", &RegisterActions, &Recipes, &MakeEngine };
+    }
+}
