@@ -124,6 +124,122 @@ namespace sd
             return S_OK;
         }
 
+        // A rotation by 90 or 270 degrees (mirrored or not): width and height swap.
+        bool Turns(WICBitmapTransformOptions t)
+        {
+            const int turn = t & (WICBitmapTransformRotate90 | WICBitmapTransformRotate180 | WICBitmapTransformRotate270);
+            return turn == WICBitmapTransformRotate90 || turn == WICBitmapTransformRotate270;
+        }
+
+        // The size an image.resize or image.scale step makes of a w x h picture; false when it leaves
+        // the size alone (neither ever enlarges).
+        bool ShrunkSize(const RecipeStep& step, UINT w, UINT h, UINT& nw, UINT& nh)
+        {
+            double k = 1.0;
+            if (step.action == "image.resize")
+            {
+                const UINT maxEdge = step.params["maxEdge"].get<UINT>();
+                if (std::max(w, h) <= maxEdge)
+                    return false;
+                k = static_cast<double>(maxEdge) / std::max(w, h);
+            }
+            else if (step.action == "image.scale")
+            {
+                k = step.params["percent"].get<int>() / 100.0;
+                if (k >= 1.0)
+                    return false;
+            }
+            else
+                return false;
+            nw = std::max(1u, static_cast<UINT>(w * k + 0.5));
+            nh = std::max(1u, static_cast<UINT>(h * k + 0.5));
+            return true;
+        }
+
+        // The size of the recipe's first shrink of an upright w x h picture, turned to the way the
+        // file stores it (`storedSideways`: EXIF orientation 5 to 8). False when nothing shrinks it.
+        bool FirstShrink(const Recipe& recipe, UINT w, UINT h, bool storedSideways, UINT& tw, UINT& th)
+        {
+            bool sideways = storedSideways;
+            for (const auto& step : recipe.steps)
+            {
+                if (ShrunkSize(step, w, h, tw, th))
+                {
+                    if (sideways)
+                        std::swap(tw, th);
+                    return true;
+                }
+                if (step.action == "image.rotate" && step.params["degrees"].get<std::string>() != "180")
+                {
+                    std::swap(w, h);
+                    sideways = !sideways;
+                }
+            }
+            return false;
+        }
+
+        // True when the source's pixel format has no alpha (a camera JPEG, a 24-bit PNG): such a
+        // picture goes to the encoder as 24-bit BGR, with no 32-bit copy to flatten on white. A
+        // palette format (GIF, 8-bit PNG) never counts: its transparency is in the palette, which
+        // SupportsTransparency does not look at.
+        bool IsOpaque(IWICImagingFactory* factory, IWICBitmapSource* src)
+        {
+            WICPixelFormatGUID format{};
+            ComPtr<IWICComponentInfo> info;
+            ComPtr<IWICPixelFormatInfo2> pixel;
+            BOOL transparency = TRUE;
+            if (FAILED(src->GetPixelFormat(&format)) || format == GUID_WICPixelFormat1bppIndexed || format == GUID_WICPixelFormat2bppIndexed ||
+                format == GUID_WICPixelFormat4bppIndexed || format == GUID_WICPixelFormat8bppIndexed)
+                return false;
+            return SUCCEEDED(factory->CreateComponentInfo(format, &info)) &&
+                   SUCCEEDED(info.As(&pixel)) && SUCCEEDED(pixel->SupportsTransparency(&transparency)) && !transparency;
+        }
+
+        HRESULT ToBgr(IWICImagingFactory* factory, IWICBitmapSource* src, ComPtr<IWICBitmapSource>& out)
+        {
+            ComPtr<IWICFormatConverter> conv;
+            RETURN_IF_FAILED(factory->CreateFormatConverter(&conv));
+            RETURN_IF_FAILED(conv->Initialize(src, GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone, nullptr, 0.0,
+                                              WICBitmapPaletteTypeMedianCut));
+            out = conv;
+            return S_OK;
+        }
+
+        // A decoder that can scale while it decodes (WIC's JPEG decoder does it in the DCT, by 1/2, 1/4
+        // or 1/8) makes a smaller picture far faster than decoding every pixel and scaling down. Picks
+        // the smallest such size that is still at least minW x minH, so the scaler after it makes the
+        // final size exactly as before. S_FALSE (and `out` untouched) when there is none.
+        HRESULT DecodeScaled(IWICImagingFactory* factory, IWICBitmapFrameDecode* frame, UINT minW, UINT minH, ComPtr<IWICBitmapSource>& out)
+        {
+            ComPtr<IWICBitmapSourceTransform> transform;
+            UINT w = 0, h = 0;
+            if (FAILED(frame->QueryInterface(IID_PPV_ARGS(&transform))) || FAILED(frame->GetSize(&w, &h)) || minW == 0 || minH == 0)
+                return S_FALSE;
+            for (const UINT d : { 8u, 4u, 2u })
+            {
+                UINT sw = (w + d - 1) / d, sh = (h + d - 1) / d;
+                if (sw < minW || sh < minH || FAILED(transform->GetClosestSize(&sw, &sh)) || sw < minW || sh < minH || sw >= w || sh >= h)
+                    continue;
+                WICPixelFormatGUID format{};
+                RETURN_IF_FAILED(frame->GetPixelFormat(&format));
+                RETURN_IF_FAILED(transform->GetClosestPixelFormat(&format));
+                ComPtr<IWICBitmap> bitmap;
+                RETURN_IF_FAILED(factory->CreateBitmap(sw, sh, format, WICBitmapCacheOnLoad, &bitmap));
+                ComPtr<IWICBitmapLock> lock;
+                const WICRect all{ 0, 0, static_cast<INT>(sw), static_cast<INT>(sh) };
+                RETURN_IF_FAILED(bitmap->Lock(&all, WICBitmapLockWrite, &lock));
+                UINT stride = 0, size = 0;
+                BYTE* data = nullptr;
+                RETURN_IF_FAILED(lock->GetStride(&stride));
+                RETURN_IF_FAILED(lock->GetDataPointer(&size, &data));
+                RETURN_IF_FAILED(transform->CopyPixels(nullptr, sw, sh, &format, WICBitmapTransformRotate0, stride, size, data));
+                lock.Reset();
+                out = bitmap;
+                return S_OK;
+            }
+            return S_FALSE;
+        }
+
         // Pulls BGRA pixels out of the chain. This is where the lazy IWICBitmapSource chain actually runs.
         HRESULT CopyBgra(IWICBitmapSource* bgra, UINT& w, UINT& h, std::vector<BYTE>& pixels)
         {
@@ -161,20 +277,44 @@ namespace sd
             return S_OK;
         }
 
-        HRESULT EncodeWebP(IWICBitmapSource* bgra, float quality, IStream* out)
+        // libwebp's default preset at `quality` (what WebPEncodeBGRA uses), allowed a second thread
+        // for its analysis pass and the alpha plane, which leaves the result the same. Takes 32-bit
+        // BGRA, or 24-bit BGR for an opaque picture (a quarter less to copy, no alpha to look for).
+        HRESULT EncodeWebP(IWICBitmapSource* src, float quality, IStream* out)
         {
+            WICPixelFormatGUID format{};
+            RETURN_IF_FAILED(src->GetPixelFormat(&format));
+            const bool bgr = format == GUID_WICPixelFormat24bppBGR;
             UINT w = 0, h = 0;
-            std::vector<BYTE> pixels;
-            RETURN_IF_FAILED(CopyBgra(bgra, w, h, pixels));
-            uint8_t* encoded = nullptr;
-            const size_t size = WebPEncodeBGRA(pixels.data(), static_cast<int>(w), static_cast<int>(h), static_cast<int>(w) * 4,
-                                               quality, &encoded);
-            if (size == 0 || !encoded)
+            RETURN_IF_FAILED(src->GetSize(&w, &h));
+            const UINT64 stride = UINT64{ w } * (bgr ? 3 : 4);
+            if (stride * h > 0xFFFFFFFFull || w > WEBP_MAX_DIMENSION || h > WEBP_MAX_DIMENSION)
+                return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);
+            std::vector<BYTE> pixels(static_cast<size_t>(stride * h));
+            RETURN_IF_FAILED(src->CopyPixels(nullptr, static_cast<UINT>(stride), static_cast<UINT>(pixels.size()), pixels.data()));
+
+            WebPConfig config;
+            WebPPicture picture;
+            if (!WebPConfigPreset(&config, WEBP_PRESET_DEFAULT, quality) || !WebPPictureInit(&picture))
                 return E_FAIL;
-            auto release = wil::scope_exit([&] { WebPFree(encoded); });
+            config.thread_level = 1;
+            picture.width = static_cast<int>(w);
+            picture.height = static_cast<int>(h);
+            WebPMemoryWriter memory;
+            WebPMemoryWriterInit(&memory);
+            picture.writer = WebPMemoryWrite;
+            picture.custom_ptr = &memory;
+            auto release = wil::scope_exit([&] {
+                WebPPictureFree(&picture);
+                WebPMemoryWriterClear(&memory);
+            });
+            const int imported = bgr ? WebPPictureImportBGR(&picture, pixels.data(), static_cast<int>(stride))
+                                     : WebPPictureImportBGRA(&picture, pixels.data(), static_cast<int>(stride));
+            if (!imported || !WebPEncode(&config, &picture) || memory.size == 0)
+                return E_FAIL;
             ULONG written = 0;
-            RETURN_IF_FAILED(out->Write(encoded, static_cast<ULONG>(size), &written));
-            return written == size ? S_OK : HRESULT_FROM_WIN32(ERROR_WRITE_FAULT);
+            RETURN_IF_FAILED(out->Write(memory.mem, static_cast<ULONG>(memory.size), &written));
+            return written == memory.size ? S_OK : HRESULT_FROM_WIN32(ERROR_WRITE_FAULT);
         }
 
         HRESULT EncodeWic(IWICImagingFactory* factory, IWICBitmapSource* pixels, const ImageFormatInfo& format, float quality,
@@ -204,7 +344,11 @@ namespace sd
                 frame->SetResolution(dpiX, dpiY);
 
             // The encoder may pick a different pixel format than we ask for; convert to whatever it chose.
-            const WICPixelFormatGUID wanted = format.keepsAlpha ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat24bppBGR;
+            // An opaque picture comes as 24-bit BGR and is written without an alpha channel.
+            WICPixelFormatGUID given{};
+            RETURN_IF_FAILED(pixels->GetPixelFormat(&given));
+            const WICPixelFormatGUID wanted =
+                format.keepsAlpha && given != GUID_WICPixelFormat24bppBGR ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat24bppBGR;
             WICPixelFormatGUID chosen = wanted;
             RETURN_IF_FAILED(frame->SetPixelFormat(&chosen));
             ComPtr<IWICBitmapSource> source = pixels;
@@ -522,27 +666,32 @@ namespace sd
         if (stop.stop_requested())
             return HRESULT_FROM_WIN32(ERROR_CANCELLED);
 
-        // 2. Orientation.
-        if (const auto t = OrientationTransform(frame.Get()); t != WICBitmapTransformRotate0)
+        // 2. Orientation. When the recipe shrinks the picture anyway, a JPEG is decoded straight at a
+        // smaller size that still covers the first shrink (DecodeScaled); every step below still
+        // works from the full upright size (`w` x `h`), so the result has exactly the same size.
+        const auto orientation = OrientationTransform(frame.Get());
+        UINT w = 0, h = 0;
+        pixels->GetSize(&w, &h);
+        if (Turns(orientation))
+            std::swap(w, h);
+        if (UINT tw = 0, th = 0; frame && FirstShrink(recipe, w, h, Turns(orientation), tw, th))
+            if (ComPtr<IWICBitmapSource> smaller; DecodeScaled(factory.Get(), frame.Get(), tw, th, smaller) == S_OK)
+                pixels = smaller;
+        if (orientation != WICBitmapTransformRotate0)
         {
             ComPtr<IWICBitmapFlipRotator> rotator;
-            if (SUCCEEDED(factory->CreateBitmapFlipRotator(&rotator)) && SUCCEEDED(rotator->Initialize(pixels.Get(), t)))
+            if (SUCCEEDED(factory->CreateBitmapFlipRotator(&rotator)) && SUCCEEDED(rotator->Initialize(pixels.Get(), orientation)))
                 pixels = rotator;
         }
 
         // 3. Transforms. Each wraps the previous source; nothing is decoded until the encoder pulls pixels.
         for (const auto& step : recipe.steps)
         {
-            if (step.action == "image.resize")
+            if (step.action == "image.resize" || step.action == "image.scale")
             {
-                const UINT maxEdge = step.params["maxEdge"].get<UINT>();
-                UINT w = 0, h = 0;
-                pixels->GetSize(&w, &h);
-                if (std::max(w, h) > maxEdge)   // never upscale
+                UINT nw = 0, nh = 0;
+                if (ShrunkSize(step, w, h, nw, nh))   // never upscale
                 {
-                    const double k = static_cast<double>(maxEdge) / std::max(w, h);
-                    const UINT nw = std::max(1u, static_cast<UINT>(w * k + 0.5));
-                    const UINT nh = std::max(1u, static_cast<UINT>(h * k + 0.5));
                     ComPtr<IWICBitmapScaler> scaler;
                     if (const HRESULT hr = factory->CreateBitmapScaler(&scaler); FAILED(hr))
                         return fail(hr, L"resize");
@@ -550,24 +699,8 @@ namespace sd
                         FAILED(hr))
                         return fail(hr, L"resize");
                     pixels = scaler;
-                }
-            }
-            else if (step.action == "image.scale")
-            {
-                const double k = step.params["percent"].get<int>() / 100.0;
-                UINT w = 0, h = 0;
-                pixels->GetSize(&w, &h);
-                if (k < 1.0)
-                {
-                    ComPtr<IWICBitmapScaler> scaler;
-                    if (const HRESULT hr = factory->CreateBitmapScaler(&scaler); FAILED(hr))
-                        return fail(hr, L"scale");
-                    if (const HRESULT hr = scaler->Initialize(pixels.Get(), std::max(1u, static_cast<UINT>(w * k + 0.5)),
-                                                              std::max(1u, static_cast<UINT>(h * k + 0.5)),
-                                                              WICBitmapInterpolationModeHighQualityCubic);
-                        FAILED(hr))
-                        return fail(hr, L"scale");
-                    pixels = scaler;
+                    w = nw;
+                    h = nh;
                 }
             }
             else if (step.action == "image.rotate" || step.action == "image.flip")
@@ -583,6 +716,8 @@ namespace sd
                     t = step.params["axis"].get<std::string>() == "vertical" ? WICBitmapTransformFlipVertical
                                                                             : WICBitmapTransformFlipHorizontal;
                 }
+                if (Turns(t))
+                    std::swap(w, h);
                 ComPtr<IWICBitmapFlipRotator> rotator;
                 if (const HRESULT hr = factory->CreateBitmapFlipRotator(&rotator); FAILED(hr))
                     return fail(hr, L"rotate");
@@ -595,20 +730,31 @@ namespace sd
             // will add verified scrubbing and, for other recipes, opt-in metadata carry-over.
         }
 
-        // 4. Normalise, flatten if needed, encode.
-        if (const HRESULT hr = ToBgra(factory.Get(), pixels.Get(), pixels); FAILED(hr))
-            return fail(hr, L"convert");
-        if (!format->keepsAlpha)
+        // 4. Normalise, flatten if needed, encode. A picture without alpha goes to WIC's encoders and
+        // libwebp as 24-bit BGR: nothing to flatten, and no alpha channel in a PNG or TIFF of it. The
+        // format hooks (AVIF, HEIC) still get BGRA, as they always have.
+        const auto* encodeHook = EncodeHookFor(format->id);
+        if (!encodeHook && (ContainerFor(format->id) != GUID_NULL || std::string_view(format->id) == "webp") &&
+            IsOpaque(factory.Get(), pixels.Get()))
         {
-            if (const HRESULT hr = FlattenOnWhite(factory.Get(), pixels.Get(), pixels); FAILED(hr))
-                return fail(hr, L"flatten");
+            if (const HRESULT hr = ToBgr(factory.Get(), pixels.Get(), pixels); FAILED(hr))
+                return fail(hr, L"convert");
+        }
+        else
+        {
+            if (const HRESULT hr = ToBgra(factory.Get(), pixels.Get(), pixels); FAILED(hr))
+                return fail(hr, L"convert");
+            if (!format->keepsAlpha)
+            {
+                if (const HRESULT hr = FlattenOnWhite(factory.Get(), pixels.Get(), pixels); FAILED(hr))
+                    return fail(hr, L"flatten");
+            }
         }
         if (stop.stop_requested())
             return HRESULT_FROM_WIN32(ERROR_CANCELLED);
 
         const auto& last = recipe.steps.back();
         const float quality = static_cast<float>(last.params.value("quality", 90));
-        const auto* encodeHook = EncodeHookFor(format->id);
         if (std::wstring why; encodeHook && !encodeHook->CanEncode(&why))
         {
             error = why;

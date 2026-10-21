@@ -82,6 +82,64 @@ TEST(Pipeline, RotateKeepsFormatAndSwapsSize)
     EXPECT_EQ(h, 40u);
 }
 
+namespace
+{
+    WICPixelFormatGUID PixelFormatOf(const std::wstring& path)
+    {
+        Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+        Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+        WICPixelFormatGUID format = GUID_WICPixelFormatUndefined;
+        if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+            SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+            SUCCEEDED(decoder->GetFrame(0, &frame)))
+            frame->GetPixelFormat(&format);
+        return format;
+    }
+}
+
+TEST(Pipeline, OpaquePicturesSkipTheAlphaChannel)
+{
+    Fixture f;
+    const auto png = f.dir / L"photo.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(png, 4000, 3000, true));
+    std::vector<ItemResult> jpg;
+    f.Run("to-jpg", { png }, &jpg);
+    ASSERT_TRUE(jpg[0].ok) << Narrow(jpg[0].error);
+
+    // A JPEG has no alpha: its PNG is 24-bit, the same pixels without an empty alpha channel.
+    std::vector<ItemResult> results;
+    f.Run("to-png", { jpg[0].output }, &results);
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
+    EXPECT_EQ(PixelFormatOf(results[0].output), GUID_WICPixelFormat24bppBGR);
+    UINT w = 0, h = 0;
+    ASSERT_TRUE(ImageSize(results[0].output, w, h));
+    EXPECT_EQ(w, 4000u);
+    EXPECT_EQ(h, 3000u);
+
+    // Shrunk from the JPEG (decoded at half size first, then scaled): exactly the size it always was.
+    results.clear();
+    f.Run("max-1920", { jpg[0].output }, &results);
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
+    ASSERT_TRUE(ImageSize(results[0].output, w, h));
+    EXPECT_EQ(w, 1920u);
+    EXPECT_EQ(h, 1440u);
+    results.clear();
+    f.Run("half-size", { jpg[0].output }, &results);
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
+    ASSERT_TRUE(ImageSize(results[0].output, w, h));
+    EXPECT_EQ(w, 2000u);
+    EXPECT_EQ(h, 1500u);
+
+    // A picture with transparency keeps its alpha channel.
+    const auto clear = f.dir / L"clear.png";
+    ASSERT_HRESULT_SUCCEEDED(WritePng(clear, 40, 30));
+    results.clear();
+    f.Run("to-tiff", { clear }, &results);
+    ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
+    EXPECT_NE(PixelFormatOf(results[0].output), GUID_WICPixelFormat24bppBGR);
+}
+
 TEST(Pipeline, SameFormatIsSkippedAndNonImagesFail)
 {
     Fixture f;
