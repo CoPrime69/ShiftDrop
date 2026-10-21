@@ -452,7 +452,7 @@ namespace sd::canvas
                     m_viewImage = image;
                 }
                 const auto canvas = CanvasRect(size);
-                if (auto* b = Brush(Theme().dark ? D2D1::ColorF(0x161616) : D2D1::ColorF(0xE6E6E6)))
+                if (auto* b = Brush(Theme().stage))
                     rt->FillRectangle(canvas, b);
                 rt->PushAxisAlignedClip(canvas, D2D1_ANTIALIAS_MODE_ALIASED);
                 if (m_full)
@@ -996,7 +996,7 @@ namespace sd::canvas
                         // On a light card whatever the theme: signatures are dark ink.
                         const auto& r = item.parts[i];
                         const bool tileHot = hot && m_hotPart == static_cast<int>(i);
-                        FillRound(r, D2D1::ColorF(0xFCFCFC), 6.f);
+                        FillRound(r, t.paper, 6.f);
                         StrokeRound(r, tileHot ? t.accent : t.controlLine, tileHot ? 1.5f : 1.f, 6.f);
                         if (const auto* thumb = ThumbFor(c.pictures[i]))
                         {
@@ -1013,7 +1013,7 @@ namespace sd::canvas
                             const bool on = In(x, m_mouse);
                             if (on)
                                 FillRound(x, t.danger, 9.f);
-                            DrawText(std::wstring(1, wchar_t(0xE711)), IconFormat(10.f), x, on ? D2D1::ColorF(1, 1, 1, 1) : D2D1::ColorF(0x333333));   // Cancel
+                            DrawText(std::wstring(1, wchar_t(0xE711)), IconFormat(10.f), x, on ? t.onDanger : t.paperText);   // Cancel
                         }
                     }
                     break;

@@ -75,9 +75,8 @@ namespace sd
         // The header buttons Tab moves through, left to right (Clear all only while there are files).
         constexpr Part kHeaderButtons[] = { Part::Pin, Part::Clear, Part::Close };
 
-        // The shelf's colours, from the same palette as the wheel and the top panel. Unlike the top
-        // panel (a dark island in both themes) the shelf is a window you work in, so it follows the
-        // light or dark app theme.
+        // The shelf's colours, from the same palette as the wheel and the top panel (theme::Palette):
+        // a floating surface that follows the light or dark app theme.
         struct Colors
         {
             D2D1_COLOR_F surface, line, text, dim, hover, button, accent, danger, onDanger, shadow;
@@ -85,20 +84,16 @@ namespace sd
         Colors ColorsFor(const Palette& p, Style style)
         {
             Colors c{};
-            const auto white = [](float a) { return D2D1::ColorF(1, 1, 1, a); };
-            const auto black = [](float a) { return D2D1::ColorF(0, 0, 0, a); };
-            if (style == Style::Glass)
-                c.surface = WithAlpha(p.glassTint, std::min(1.f, 0.88f / std::max(0.01f, p.glassTint.a)));   // no blur: keep it legible
-            else
-                c.surface = p.dark ? D2D1::ColorF(0x1F1F23, 0.97f) : D2D1::ColorF(0xF8F8FA, 0.98f);
-            c.line = p.dark ? white(0.10f) : black(0.10f);
-            c.text = p.text;
-            c.dim = WithAlpha(p.text, 0.6f / std::max(0.01f, p.text.a));
-            c.hover = p.dark ? white(0.07f) : black(0.05f);
-            c.button = p.dark ? white(0.10f) : black(0.06f);
-            c.accent = p.accent;
-            c.danger = p.dark ? p.error : D2D1::ColorF(0xC42B1C, 1.f);
-            c.onDanger = p.dark ? D2D1::ColorF(accent::kTextOnDark, 1.f) : white(1.f);   // the light red takes dark text
+            // Glass has no blur behind the shelf: the panel's tint, a little stronger, keeps it legible.
+            c.surface = style == Style::Glass ? WithAlpha(p.panel, std::min(1.f, 0.94f / std::max(0.01f, p.panel.a))) : p.panel;
+            c.line = p.panelLine;
+            c.text = p.panelText;
+            c.dim = p.panelTextDim;
+            c.hover = p.hover;
+            c.button = p.keycap;
+            c.accent = p.accentMark;
+            c.danger = p.error;
+            c.onDanger = Rgb(accent::TextOn(RgbOf(p.error)));
             c.shadow = p.shadow;
             return c;
         }

@@ -46,9 +46,9 @@ namespace sd::accent
         bool operator==(const Variants&) const = default;
     };
     inline constexpr uint32_t kTextOnDark = 0x15171E, kTextOnLight = 0xFFFFFF;
-    // The lightest dark surface and the darkest light one that accent text sits on: the wheel's tiles in
-    // dark mode and the editors' window in light mode.
-    inline constexpr uint32_t kDarkSurface = 0x3B3B3F, kLightSurface = 0xF3F3F5;
+    // The lightest dark surface and the darkest light one that accent text sits on (theme::TokensFor):
+    // the controls in dark mode and the windows' grey in light mode.
+    inline constexpr uint32_t kDarkSurface = 0x2E3138, kLightSurface = 0xF3F4F6;
     inline constexpr double kMinContrast = 4.5;
 
     Variants Preset(Choice choice);    // Tide for Custom and Windows

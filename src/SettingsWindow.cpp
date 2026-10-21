@@ -169,7 +169,7 @@ namespace sd
     COLORREF SettingsWindow::StaticTextColor(HWND control) const
     {
         // The command box when it is turned off is drawn as a static: dimmed text.
-        return control == m_command ? GetSysColor(COLOR_GRAYTEXT) : m_colors.text;
+        return control == m_command ? MutedColor() : m_colors.text;
     }
 
     void SettingsWindow::Layout()

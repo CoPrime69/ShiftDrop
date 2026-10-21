@@ -19,16 +19,17 @@ namespace sd::accent
                                               L"Custom colour", L"Windows accent colour" };
         static_assert(ARRAYSIZE(kIds) == static_cast<size_t>(Choice::Windows) + 1 && ARRAYSIZE(kNames) == ARRAYSIZE(kIds));
 
-        // Fill, on dark, on light; each checked by Readable() in the unit tests.
+        // Fill, on dark, on light; each checked by Readable() in the unit tests. The light tones are the
+        // brand kit's swatches (App Windows › Accent colour), the dark ones its tones on dark.
         constexpr Variants kPresets[kPresetCount] = {
-            { 0x12A58E, 0x2DD4B4, 0x0B7A69 },   // Tide, ShiftDrop's teal
-            { 0x3B82F6, 0x7CB3FF, 0x1F62D6 },   // Blue
-            { 0x7C4DFF, 0xB9A0FF, 0x6B40D6 },   // Purple
-            { 0xE64B9A, 0xF79AC8, 0xB5246C },   // Pink
-            { 0xE8504F, 0xFF8F8F, 0xC22D33 },   // Red
-            { 0xF2802B, 0xFFAA5C, 0xA85300 },   // Orange
-            { 0x2FA84F, 0x5CD67E, 0x1B7A37 },   // Green
-            { 0x6B7280, 0xB4B9C3, 0x4E5563 },   // Graphite
+            { 0x12A58E, 0x2DD4B4, 0x0B7A69 },   // Tide, ShiftDrop's teal: Tide 500, 300 and 700
+            { 0x3B82F6, 0x60A5FA, 0x0067C0 },   // Blue
+            { 0x7C4DFF, 0xB794F4, 0x7B3FC4 },   // Purple
+            { 0xE64B9A, 0xF79AC8, 0xB4246F },   // Pink
+            { 0xE8504F, 0xFF8F8F, 0xC42B2B },   // Red
+            { 0xF2802B, 0xFB923C, 0xB85000 },   // Orange
+            { 0x2FA84F, 0x5CD67E, 0x1F7A3A },   // Green
+            { 0x6B7280, 0xB4B9C3, 0x4A4F5A },   // Graphite
         };
 
         Setting g_setting;

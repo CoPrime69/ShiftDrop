@@ -333,7 +333,7 @@ namespace sd
         FillRound(D2D1::RectF(std::min(start, x), track.top, std::max(start, x), track.bottom), theme::WithAlpha(c.accent, alpha), 2.f);
         const float radius = s.pressed ? 8.f : hot ? 7.5f : 7.f;
         const auto thumb = D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius);
-        if (auto* brush = Brush(theme::WithAlpha(c.dark ? D2D1::ColorF(0x45454C) : D2D1::ColorF(1, 1, 1, 1), alpha)))
+        if (auto* brush = Brush(theme::WithAlpha(c.thumb, alpha)))
             m_target->FillEllipse(thumb, brush);
         if (auto* brush = Brush(theme::WithAlpha(c.controlLine, alpha)))
             m_target->DrawEllipse(thumb, brush, 1.f);
@@ -346,7 +346,7 @@ namespace sd
     void ControlKit::DrawField(const D2D1_RECT_F& r, bool editing, bool invalid, ControlState s)
     {
         const auto& c = m_colors;
-        const D2D1_COLOR_F fill = editing ? (c.dark ? c.stage : D2D1::ColorF(1, 1, 1, 1)) : s.enabled && s.hot ? c.controlHover : c.control;
+        const D2D1_COLOR_F fill = editing ? c.field : s.enabled && s.hot ? c.controlHover : c.control;
         FillRound(r, theme::WithAlpha(fill, s.enabled ? 1.f : kDisabledAlpha), kControlRadius);
         StrokeRound(r, invalid ? c.danger : c.controlLine, invalid ? 1.5f : 1.f, kControlRadius);
         if (editing)

@@ -1245,7 +1245,7 @@ namespace sd
                 const bool on = static_cast<int>(i) == m_ring;
                 const float r = (on ? 2.6f : 2.1f) * s;
                 m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x0 + gap * static_cast<float>(i), dotY), r, r),
-                                  Brush(on ? m_palette.accent : m_palette.textDim, on ? 1.f : 0.9f).Get());
+                                  Brush(on ? m_palette.accentMark : m_palette.dot).Get());
             }
         }
         DrawBadge();
@@ -1428,8 +1428,7 @@ namespace sd
                 }
             }
             m_rt->FillEllipse(disc, Brush(m_palette.glassTint, m_backdrop ? 1.f : 1.3f).Get());
-            m_rt->DrawEllipse(D2D1::Ellipse(m_c, r + 0.5f, r + 0.5f), Brush(D2D1::ColorF(0, 0, 0, 1), m_palette.dark ? 0.5f : 0.15f).Get(), 1.f);
-            m_rt->DrawEllipse(D2D1::Ellipse(m_c, r - 0.5f, r - 0.5f), Brush(D2D1::ColorF(1, 1, 1, 1), m_palette.dark ? 0.14f : 0.8f).Get(), 1.f);
+            m_rt->DrawEllipse(D2D1::Ellipse(m_c, r - 0.5f, r - 0.5f), Brush(m_palette.discLine).Get(), 1.f);
         }
 
 #if SHIFTDROP_M0
