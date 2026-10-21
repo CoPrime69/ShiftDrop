@@ -26,6 +26,9 @@ runs:
       shell: pwsh
       run: |
         "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
+        # Change this to start the compiler cache over (sccache trusts it otherwise, since its keys
+        # hash the compiler, the flags and the preprocessed source).
+        "SCCACHE_GHA_VERSION=1" >> $env:GITHUB_ENV
         $mode = if ('${{ inputs.save-caches }}' -eq 'true') { 'readwrite' } else { 'read' }
         "VCPKG_BINARY_SOURCES=clear;files,${{ github.workspace }}\vcpkg-cache,$mode" >> $env:GITHUB_ENV
 
