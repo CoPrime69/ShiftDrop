@@ -1,6 +1,7 @@
 #include "DropTarget.h"
 #include "DropDescription.h"
 #include "Log.h"
+#include "VirtualDrop.h"
 
 #include <shellapi.h>
 #include <wil/resource.h>
@@ -57,9 +58,24 @@ namespace sd
     STDMETHODIMP DropTarget::DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect)
     {
         // Reading CF_HDROP here (not only at Drop) lets the wheel show only the actions these files support.
-        const auto files = ReadDroppedFiles(data);
+        auto files = ReadDroppedFiles(data);
+        EndVirtual();
+        if (PreferVirtualFiles(files))
+        {
+            // No paths (or only to temporary copies): perhaps files dragged out of a browser or a mail
+            // app. Only their names are read now; their contents are saved when dropped on a slice.
+            if (auto items = ReadVirtualItems(data); !items.empty() && (m_virtual = VirtualDrop::ForDrag(std::move(items))))
+            {
+                m_virtual->Attach(data);
+                m_virtual->SetFallback(std::move(files));
+                files = m_virtual->Paths();
+                log::Info(L"drag: {} virtual file(s), first '{}'", files.size(), files.front());
+            }
+        }
         POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
         m_accepting = m_sink->OnDragEnter(files, p);
+        if (!m_accepting)
+            EndVirtual();
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
         if (m_accepting)
         {
@@ -90,6 +106,7 @@ namespace sd
         m_data.Reset();
         m_accepting = false;
         m_sink->OnDragLeave();
+        EndVirtual();
         return S_OK;
     }
 
@@ -104,11 +121,26 @@ namespace sd
         m_data.Reset();
 
         // The drag source (e.g. Explorer) is blocked inside DoDragDrop until we return, so Drop only
-        // reads the paths and hands them on; conversion runs on the job queue.
+        // reads the paths and hands them on; conversion runs on the job queue. Virtual files are
+        // saved by whoever takes the drop (VirtualDrop::Save), still inside this call: the source
+        // may let go of their contents once it returns.
         if (accepting && *effect != DROPEFFECT_NONE)
-            m_sink->OnDrop(ReadDroppedFiles(data), p);
+        {
+            if (m_virtual)
+                m_virtual->Attach(data);
+            m_sink->OnDrop(m_virtual ? m_virtual->Paths() : ReadDroppedFiles(data), p);
+        }
         else
             m_sink->OnDragLeave();
+        EndVirtual();
         return S_OK;
+    }
+
+    void DropTarget::EndVirtual()
+    {
+        // The data object goes on this thread; a job that took the drop keeps the saved files.
+        if (m_virtual)
+            m_virtual->Detach();
+        m_virtual.reset();
     }
 }

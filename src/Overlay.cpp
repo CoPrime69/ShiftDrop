@@ -773,7 +773,7 @@ namespace sd
     {
         if (files.empty())
         {
-            log::Info(L"overlay: drag has no CF_HDROP (text, URL or virtual file); hiding");
+            log::Info(L"overlay: drag has no files (text or a URL); hiding");
             Hide();
             return false;
         }
