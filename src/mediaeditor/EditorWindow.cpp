@@ -881,7 +881,81 @@ namespace sd::mediatools
                 s.caret = m_editCaret;
                 s.selectAll = m_editAll;
             }
-            ui::DrawControl(p, c, s);
+            DrawControl(p, c, s);
+        }
+    }
+
+    // The frame's control kit draws the controls; the labels, the field's text and caret, and the
+    // list rows are this editor's own.
+    void EditorWindow::DrawControl(ui::Painter& p, const ui::Control& c, const ui::DrawState& s)
+    {
+        using Kind = ui::Control::Kind;
+        const auto& k = Theme();
+        const float a = c.enabled ? 1.f : kDisabledAlpha;
+        const ControlState state{ c.enabled, s.hover, s.pressed, s.focused };
+        const wchar_t glyph = c.glyph ? c.glyph[0] : 0;
+        switch (c.kind)
+        {
+        case Kind::Button:
+        case Kind::Primary:
+            DrawButton(ui::ToD2D(c.rect), c.text, glyph, c.kind == Kind::Primary, state);
+            break;
+        case Kind::Icon:
+            DrawIconButton(ui::ToD2D(c.rect), glyph, c.on, state);
+            break;
+        case Kind::Segment:
+            DrawChoice(ui::ToD2D(c.rect), c.text, c.on, state);
+            break;
+        case Kind::Toggle:
+        {
+            const float labelHeight = p.ParagraphHeight(c.text, c.rect.w - 52, ui::Font::Body);
+            p.Paragraph(c.text, { c.rect.x, c.rect.y + std::max(0.f, (c.rect.h - labelHeight) / 2), c.rect.w - 52, c.rect.h }, ui::Font::Body,
+                        theme::WithAlpha(k.text, a));
+            DrawSwitch(ui::ToD2D({ c.rect.Right() - 40, c.rect.y + (c.rect.h - 20) / 2, 40, 20 }), c.on, state);
+            break;
+        }
+        case Kind::Field:
+        {
+            RectF box = c.rect;
+            if (!c.detail.empty())
+            {
+                p.Text(c.detail, { c.rect.x, c.rect.y, 64, c.rect.h }, ui::Font::Body, theme::WithAlpha(k.textDim, a));
+                box = { c.rect.x + 64, c.rect.y, c.rect.w - 64, c.rect.h };
+            }
+            const bool editing = s.editText != nullptr;
+            DrawField(ui::ToD2D(box), editing, s.invalid, state);
+            const std::wstring& text = editing ? *s.editText : c.text;
+            const RectF inner{ box.x + 10, box.y, box.w - 20, box.h };
+            if (editing && s.selectAll && !text.empty())
+                p.Fill({ inner.x - 1, box.y + 6, p.TextWidth(text, ui::Font::Number) + 2, box.h - 12 }, k.accentSoft, 2);
+            p.Text(text, inner, ui::Font::Number, theme::WithAlpha(k.text, a));
+            if (editing && !s.selectAll)
+            {
+                const float x = inner.x + p.CaretX(text, s.caret, ui::Font::Number);
+                p.Line(x, box.y + 7, x, box.Bottom() - 7, k.text, 1.f);
+            }
+            break;
+        }
+        case Kind::Slider:
+            p.Text(c.text, { c.rect.x, c.rect.y, c.rect.w - 70, 20 }, ui::Font::Body, theme::WithAlpha(k.text, a));
+            p.Text(c.detail, { c.rect.Right() - 70, c.rect.y, 70, 20 }, ui::Font::Number, theme::WithAlpha(k.textDim, a), 2);
+            DrawSlider(D2D1::RectF(c.rect.x + 7, c.rect.y + 30, c.rect.Right() - 7, c.rect.y + 34), static_cast<float>(c.value), 0.f, state);
+            break;
+        case Kind::Row:
+        {
+            if (c.on)
+                p.Fill(c.rect, k.accentSoft, kControlRadius);
+            else if (s.hover)
+                p.Fill(c.rect, k.controlHover, kControlRadius);
+            if (c.on)
+                p.Fill({ c.rect.x, c.rect.y + 8, 3, c.rect.h - 16 }, k.accent, 1.5f);
+            const float detailW = c.detail.empty() ? 0.f : std::min(c.rect.w * 0.6f, p.TextWidth(c.detail, ui::Font::Number) + 4);
+            p.Text(c.text, { c.rect.x + 12, c.rect.y, c.rect.w - 24 - detailW - 8, c.rect.h }, ui::Font::Body, k.text);
+            p.Text(c.detail, { c.rect.Right() - 12 - detailW, c.rect.y, detailW, c.rect.h }, ui::Font::Number, k.textDim, 2);
+            if (s.focused)
+                DrawFocusRing(ui::ToD2D(c.rect), kControlRadius);
+            break;
+        }
         }
     }
 

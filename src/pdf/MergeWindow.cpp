@@ -74,10 +74,7 @@ namespace sd::pdf
                     return false;
                 StartCounting();
                 if (pages && !More())
-                {
-                    ShowWindow(Hwnd(), SW_SHOWNORMAL);
-                    SetForegroundWindow(Hwnd());
-                }
+                    Present();
                 return true;
             }
 
@@ -180,8 +177,7 @@ namespace sd::pdf
                     m_planOrder = Order();
                     m_editFolder = std::move(folder);
                     m_notice.clear();
-                    ShowWindow(hwnd, SW_SHOWNORMAL);
-                    SetForegroundWindow(hwnd);
+                    Present();
                     Invalidate();
                 };
                 request.cancelled = [this, hwnd] {
@@ -364,7 +360,7 @@ namespace sd::pdf
                 DrawText(summary, TextFormat(12.f), D2D1::RectF(kMargin, y, m_buttons[kMore].rect.left - 8.f, size.height), c.textDim);
                 m_buttons[kMerge].text = m_edit && m_items.size() == 1 ? L"Save" : L"Merge";
                 m_buttons[kMerge].enabled = m_items.size() >= MinFiles() && (!m_hasPlan || total > 0);
-                DrawButtons(rt);
+                DrawButtons();
             }
 
             bool OnMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result) override
