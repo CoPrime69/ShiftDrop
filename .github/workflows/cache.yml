@@ -1,0 +1,20 @@
+# After every push to main, builds main once more so that the compiler cache pull requests read
+# (GitHub Actions caches are per branch: a pull request reads its own and main's) holds main's object
+# files. CI itself does not build a push to main that a passed pull-request run already built (its
+# "reuse" job), so without this every new pull request would start from a cold cache. This run
+# builds only: no tests, no installer. Nothing waits for it.
+name: Main cache
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write   # what ci.yml's release job asks for; that job never runs here
+  actions: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      cache-only: true
