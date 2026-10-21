@@ -5,7 +5,7 @@
 
 // The accent colour: the hovered wheel slice, the top panel's active section, the Float shelf's
 // highlights, and the editors' buttons, switches and selection. Settings › Accent colour picks one of
-// the presets (Tide, ShiftDrop's teal, by default), a colour of the user's own, or the Windows accent
+// the user's Windows accent colour (the default), the presets (Tide, ShiftDrop's teal, first), a colour of the user's own, or the Windows accent
 // colour; it is saved in settings.ini with the other Settings choices and read each time a window
 // asks theme::Current(), so a change shows on the next wheel without a restart.
 //
@@ -23,10 +23,11 @@ namespace sd::accent
 
     // [Appearance] Accent=tide|blue|purple|pink|red|orange|green|graphite|custom|windows and, once a
     // colour of your own was picked, AccentCustom=#RRGGBB (kept while a preset is chosen, so Custom
-    // brings it back). A value it doesn't know, or custom without a colour, reads as Tide.
+    // brings it back). No key, a value it doesn't know, or custom without a colour, reads as Windows: the
+    // default is the accent the user already chose in Windows (Prakhar 2026-10-21).
     struct Setting
     {
-        Choice choice = Choice::Tide;
+        Choice choice = Choice::Windows;
         uint32_t custom = kNoColour;
         bool operator==(const Setting&) const = default;
     };
