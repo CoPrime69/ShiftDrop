@@ -15,6 +15,9 @@ $ports = [ordered]@{
     'qpdf'          = 'QPDF (PDF merge, organize, compress and text)'
     'zlib'          = 'zlib (PDF compression)'
     'libjpeg-turbo' = 'libjpeg-turbo (used by QPDF for JPEG images)'
+    'miniz'         = 'miniz (ZIP containers: DOCX, XLSX, ODS, EPUB)'
+    'pugixml'       = 'pugixml (XML of documents and spreadsheets)'
+    'md4c'          = 'MD4C (Markdown parsing)'
 }
 
 $text = [System.Text.StringBuilder]::new()
