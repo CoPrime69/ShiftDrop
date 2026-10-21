@@ -176,7 +176,6 @@ namespace sd::canvas
                     m_buttons.push_back(Button{ L"Cancel", 0, false, true, {}, [this] { Close(); } });
                     if (!Create(m_tool->Title(), 440, 150, 360, 140))
                         return false;
-                    BringToFront(Hwnd());
                     RunPrepass(std::move(prepass));
                     return true;
                 }
@@ -477,7 +476,7 @@ namespace sd::canvas
                 done.right = track.left + (track.right - track.left) * float(m_prepassProgress);
                 if (auto* b = Brush(c.accent))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(done, 2, 2), b);
-                DrawButtons(rt);
+                DrawButtons();
             }
 
             // A tool's own result (IPreview): rendered into a bitmap on a second device context of
@@ -742,7 +741,7 @@ namespace sd::canvas
                         float x = left, rowTop = y;
                         for (const auto& option : c.options)
                         {
-                            const float w = std::min(width, TextWidth(option, 12.f) + 24.f);
+                            const float w = std::min(width, TextWidth(option, kControlText) + 24.f);
                             if (x + w > right + 0.5f && x > left)
                             {
                                 x = left;
@@ -840,26 +839,17 @@ namespace sd::canvas
                     m_buttons[5].enabled = canApply && !Busy();
                     m_buttons[5].text = m_tool->ApplyLabel();
                 }
-                DrawButtons(rt);
+                DrawButtons();
             }
 
             void PaintControl(ID2D1RenderTarget* rt, const Control& c, const Item& item)
             {
                 const auto& t = Theme();
-                const float alpha = c.enabled ? 1.f : 0.45f;
+                const float alpha = c.enabled ? 1.f : kDisabledAlpha;
                 const auto ink = theme::WithAlpha(t.text, alpha);
                 const auto dim = theme::WithAlpha(t.textDim, alpha);
-                const bool hot = c.enabled && m_hotControl == c.id && !c.id.empty();
-                const auto box = [&](const D2D1_RECT_F& r, bool selected, bool hover) {
-                    D2D1_COLOR_F fill = selected ? t.accent : (t.dark ? D2D1::ColorF(1, 1, 1, 0.06f) : D2D1::ColorF(0, 0, 0, 0.04f));
-                    if (hover && !selected)
-                        fill = t.dark ? D2D1::ColorF(1, 1, 1, 0.11f) : D2D1::ColorF(0, 0, 0, 0.08f);
-                    if (auto* b = Brush(theme::WithAlpha(fill, alpha)))
-                        rt->FillRoundedRectangle(D2D1::RoundedRect(r, 4, 4), b);
-                    if (!selected)
-                        if (auto* b = Brush(t.line))
-                            rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f), 4, 4), b);
-                };
+                const bool hot = m_hotControl == c.id && !c.id.empty();
+                const ControlState state{ c.enabled, hot, false, false };
                 switch (c.kind)
                 {
                 case ControlKind::Section:
@@ -871,59 +861,23 @@ namespace sd::canvas
                             rt->DrawText(c.text.c_str(), UINT32(c.text.size()), m_wrapped.Get(), item.rect, b, D2D1_DRAW_TEXT_OPTIONS_CLIP);
                     break;
                 case ControlKind::Button:
-                {
-                    if (c.primary)
-                    {
-                        if (auto* b = Brush(theme::WithAlpha(hot ? theme::Mix(t.accent, D2D1::ColorF(1, 1, 1, 1), 0.1f) : t.accent, alpha)))
-                            rt->FillRoundedRectangle(D2D1::RoundedRect(item.rect, 4, 4), b);
-                    }
-                    else
-                        box(item.rect, false, hot);
-                    const auto fore = c.primary ? theme::WithAlpha(t.onAccent, alpha) : ink;
-                    const float tw = TextWidth(c.label, 13.f) + (c.icon ? 22.f : 0.f);
-                    const float x = (item.rect.left + item.rect.right - tw) / 2;
-                    if (c.icon)
-                    {
-                        const wchar_t glyph[2] = { c.icon, 0 };
-                        DrawText(glyph, IconFormat(14.f), D2D1::RectF(x, item.rect.top, x + 16, item.rect.bottom), fore);
-                    }
-                    DrawText(c.label, TextFormat(13.f), D2D1::RectF(x + (c.icon ? 22.f : 0.f), item.rect.top, item.rect.right, item.rect.bottom), fore);
+                    DrawButton(item.rect, c.label, c.icon, c.primary, state);
                     break;
-                }
                 case ControlKind::Toggle:
                 {
-                    DrawText(c.label, TextFormat(13.f), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 52, item.rect.bottom), ink);
+                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 52, item.rect.bottom), ink);
                     const float cy = (item.rect.top + item.rect.bottom) / 2;
-                    const auto track = D2D1::RectF(item.rect.right - 40, cy - 10, item.rect.right, cy + 10);
-                    if (c.on)
-                    {
-                        if (auto* b = Brush(theme::WithAlpha(t.accent, alpha)))
-                            rt->FillRoundedRectangle(D2D1::RoundedRect(track, 10, 10), b);
-                    }
-                    else if (auto* b = Brush(dim))
-                        rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(track.left + 0.5f, track.top + 0.5f, track.right - 0.5f, track.bottom - 0.5f), 10, 10), b);
-                    const float knob = c.on ? track.right - 10 : track.left + 10;
-                    if (auto* b = Brush(c.on ? t.onAccent : dim))
-                        rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(knob, cy), hot ? 7.f : 6.f, hot ? 7.f : 6.f), b);
+                    DrawSwitch(D2D1::RectF(item.rect.right - 40, cy - 10, item.rect.right, cy + 10), c.on, state);
                     break;
                 }
                 case ControlKind::Choice:
                     for (size_t i = 0; i < item.parts.size() && i < c.options.size(); ++i)
-                    {
-                        const bool selected = static_cast<int>(i) == c.selected;
-                        const bool over = c.enabled && m_hotControl == c.id && m_hotPart == static_cast<int>(i);
-                        box(item.parts[i], selected, over);
-                        DrawText(c.options[i], TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), item.parts[i],
-                                 selected ? t.onAccent : ink);
-                    }
+                        DrawChoice(item.parts[i], c.options[i], static_cast<int>(i) == c.selected, { c.enabled, hot && m_hotPart == static_cast<int>(i), false, false });
                     break;
                 case ControlKind::Number:
                 {
                     const bool editing = m_editId == c.id;
-                    box(item.rect, false, hot && !editing);
-                    if (editing)
-                        if (auto* b = Brush(t.accent))
-                            rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(item.rect.left + 1, item.rect.top + 1, item.rect.right - 1, item.rect.bottom - 1), 4, 4), b, 2.f);
+                    DrawField(item.rect, editing, false, state);
                     const auto inner = D2D1::RectF(item.rect.left + 10, item.rect.top, item.rect.right - 10, item.rect.bottom);
                     DrawText(c.label, TextFormat(12.f), inner, dim);
                     std::wstring value = editing ? m_editText : Number(c.value, c.decimals);
@@ -931,26 +885,17 @@ namespace sd::canvas
                         value += L" " + c.text;
                     if (editing && (GetTickCount64() / 530) % 2 == 0)
                         value.insert(m_editText.size(), L"|");
-                    DrawText(value, TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING), inner, ink);
+                    DrawText(value, TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING), inner, ink);
                     break;
                 }
                 case ControlKind::Slider:
                 {
-                    DrawText(c.label, TextFormat(13.f), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 70, item.rect.top + 20), ink);
-                    DrawText(Number(c.value, c.decimals) + c.text, TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
+                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 70, item.rect.top + 20), ink);
+                    DrawText(Number(c.value, c.decimals) + c.text, TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
                              D2D1::RectF(item.rect.right - 70, item.rect.top, item.rect.right, item.rect.top + 20), dim);
-                    const auto& track = item.parts[0];
-                    if (auto* b = Brush(t.line))
-                        rt->FillRoundedRectangle(D2D1::RoundedRect(track, 2, 2), b);
-                    const float f = c.max > c.min ? float((c.value - c.min) / (c.max - c.min)) : 0.f;
-                    const float x = track.left + (track.right - track.left) * std::clamp(f, 0.f, 1.f);
+                    const auto fraction = [&](double v) { return c.max > c.min ? float((v - c.min) / (c.max - c.min)) : 0.f; };
                     // Filled from the middle when the range is centred on zero (straighten), else from the left.
-                    const float from = c.min < 0 && c.max > 0 ? track.left + (track.right - track.left) * float(-c.min / (c.max - c.min)) : track.left;
-                    if (auto* b = Brush(theme::WithAlpha(t.accent, alpha)))
-                    {
-                        rt->FillRectangle(D2D1::RectF(std::min(from, x), track.top, std::max(from, x), track.bottom), b);
-                        rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, (track.top + track.bottom) / 2), hot ? 8.f : 7.f, hot ? 8.f : 7.f), b);
-                    }
+                    DrawSlider(item.parts[0], fraction(c.value), c.min < 0 && c.max > 0 ? fraction(0) : 0.f, { c.enabled, hot, m_sliderId == c.id, false });
                     break;
                 }
                 case ControlKind::Swatches:
