@@ -93,6 +93,23 @@ TEST(Media, OutputArgsPerFormat)
     const auto mkvPlan = PlanConversion(mkv, MediaInfo{}, H264Encoder::OpenH264);
     EXPECT_TRUE(Has(OutputArgs(mkv, mkvPlan), L"-c", L"copy"));
     EXPECT_TRUE(Has(OutputArgs(mkv, TranscodePlan(mkvPlan)), L"-c:v", L"libopenh264"));
+    // OpenH264 gets a slice per core (one slice is one core), at a quality or a bitrate; the GPU
+    // encoders thread themselves.
+    const auto cores = std::to_wstring(std::clamp(std::thread::hardware_concurrency(), 1u, 8u));
+    const auto openh264 = H264QualityArgs(H264Encoder::OpenH264, 23, 8'000'000);
+    EXPECT_TRUE(Has(openh264, L"-slices", cores));
+    EXPECT_TRUE(Has(openh264, L"-threads", cores));
+    MediaPlan slicedAtABitrate;
+    slicedAtABitrate.h264 = H264Encoder::OpenH264;
+    slicedAtABitrate.videoBps = 2'000'000;
+    EXPECT_TRUE(Has(OutputArgs(*FindMediaFormat("mp4"), slicedAtABitrate), L"-slices", cores));
+    EXPECT_EQ(std::find(mp4.begin(), mp4.end(), L"-slices"), mp4.end());
+    // VP9 in realtime mode at speed 6 (six times faster than "good" at 5, same quality).
+    const auto webm = OutputArgs(*FindMediaFormat("webm"), MediaPlan{});
+    EXPECT_TRUE(Has(webm, L"-c:v", L"libvpx-vp9"));
+    EXPECT_TRUE(Has(webm, L"-deadline", L"realtime"));
+    EXPECT_TRUE(Has(webm, L"-cpu-used", L"6"));
+    EXPECT_TRUE(Has(webm, L"-crf", L"32"));
     // Audio formats drop the video (cover art included) and take the first audio stream.
     const auto m4a = OutputArgs(*FindMediaFormat("m4a"), MediaPlan{});
     EXPECT_TRUE(Has(m4a, L"-map", L"0:a:0"));
