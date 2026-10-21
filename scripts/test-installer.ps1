@@ -37,6 +37,10 @@ Check (Test-Path $exe) 'exe installed under %LOCALAPPDATA%\Programs\ShiftDrop'
 Check (Test-Path (Join-Path $app 'THIRD-PARTY-NOTICES.txt')) 'notices installed'
 Check (Test-Path (Join-Path $app 'engines\ffmpeg.exe')) 'ffmpeg installed in engines'
 Check (Test-Path (Join-Path $app 'engines\FFMPEG-SOURCE.txt')) 'ffmpeg source pointer installed'
+Check (Test-Path (Join-Path $app 'engines\FFMPEG-LICENSE.txt')) 'ffmpeg licences installed'
+# The installed exe runs on its own (statically linked: no DLLs beside it).
+$ffVersion = & (Join-Path $app 'engines\ffmpeg.exe') -hide_banner -version 2>&1 | Select-Object -First 1
+Check ($LASTEXITCODE -eq 0 -and "$ffVersion" -like 'ffmpeg version*') "installed ffmpeg runs ($ffVersion)"
 Check (Test-Path (Join-Path $app 'engines\ShiftDropWorker.exe')) 'sandboxed worker installed in engines'
 Check (Test-Path $shortcut) 'Start menu shortcut'
 Check ((RunValue) -eq "`"$exe`" --autostart") 'Run value points at the installed exe'

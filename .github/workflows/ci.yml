@@ -10,7 +10,46 @@ permissions:
   contents: write   # only the tag-triggered "Publish release" step writes (it creates the release)
 
 jobs:
+  # ShiftDrop's own small LGPL ffmpeg.exe (scripts/build-ffmpeg.sh): only the codecs, formats and
+  # filters the app uses (scripts/ffmpeg-components.txt), cross-compiled with MinGW-w64. Cached on the
+  # script and the list, so it is only rebuilt when one of them changes. Setting the repository
+  # variable SHIFTDROP_FFMPEG to "btbn" skips it, and the build job ships the pinned BtbN build.
+  ffmpeg:
+    if: vars.SHIFTDROP_FFMPEG != 'btbn'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: build/ffmpeg-custom
+          key: ffmpeg-custom-${{ hashFiles('scripts/build-ffmpeg.sh', 'scripts/ffmpeg-components.txt') }}
+
+      - name: Install MinGW-w64
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends mingw-w64 nasm meson ninja-build cmake pkg-config autoconf automake libtool xz-utils
+
+      - name: Build ffmpeg.exe
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh build/ffmpeg-work build/ffmpeg-custom
+
+      - name: Configure options
+        run: cat build/ffmpeg-custom/FFMPEG-SOURCE.txt && ls -l build/ffmpeg-custom
+
+      # The build job takes ffmpeg.exe from here; the source tarball goes into a release.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+          if-no-files-found: error
+
   build:
+    needs: ffmpeg
+    # Also when the ffmpeg job was skipped (SHIFTDROP_FFMPEG=btbn): get-ffmpeg.ps1 then falls back.
+    if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
     runs-on: windows-2022
     env:
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
@@ -31,10 +70,23 @@ jobs:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
 
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
       # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
+      # Our own build when the ffmpeg job made one, else the pinned BtbN build.
       - name: Get ffmpeg
         shell: pwsh
         run: ./scripts/get-ffmpeg.ps1
+
+      # Everything the app's argument builders use (tests/FfmpegComponentsTests.cpp checks the list
+      # against them) must be in the exe.
+      - name: Check ffmpeg components
+        shell: pwsh
+        run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -61,6 +113,14 @@ jobs:
       - name: Photo timings
         run: build\x64-release\Release\shiftdrop_tests.exe --gtest_filter=PhotoTiming.*
 
+      # Our ffmpeg.exe against the full BtbN build it replaces, with the app's own arguments.
+      - name: ffmpeg timing (ours vs BtbN)
+        if: needs.ffmpeg.result == 'success'
+        shell: pwsh
+        run: |
+          ./scripts/get-ffmpeg.ps1 -Btbn -Out build/engines-btbn
+          ./scripts/time-ffmpeg.ps1 -New build/engines/ffmpeg.exe -NewName ours -Old build/engines-btbn/ffmpeg.exe -OldName BtbN
+
       - name: Offline check (no networking imports)
         shell: pwsh
         run: |
@@ -84,6 +144,13 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
           & $iscc /Qp "/DAppVersion=$version" installer/ShiftDrop.iss
           if ($LASTEXITCODE) { exit 1 }
+          $setup = Get-Item "build/installer/ShiftDrop-Setup-$version.exe"
+          $lines = @("### Installer: $([math]::Round($setup.Length / 1MB, 1)) MB", '', '| Packaged file | MB |', '|---|---:|')
+          foreach ($f in @(Get-Item build/x64-release/Release/ShiftDrop.exe, build/x64-release/Release/ShiftDropWorker.exe) + @(Get-ChildItem build/engines -File)) {
+            $lines += "| $($f.Name) | $([math]::Round($f.Length / 1MB, 2)) |"
+          }
+          $lines | ForEach-Object { Write-Host $_ }
+          $lines | Add-Content $env:GITHUB_STEP_SUMMARY
           "SD_VERSION=$version" >> $env:GITHUB_ENV
           "SD_SETUP=build/installer/ShiftDrop-Setup-$version.exe" >> $env:GITHUB_ENV
 
@@ -116,4 +183,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
-          gh release create "${{ github.ref_name }}" $env:SD_SETUP --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."
+          # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
+          $files = @($env:SD_SETUP)
+          if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
+            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
+            $files += "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
+          }
+          gh release create "${{ github.ref_name }}" @files --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."

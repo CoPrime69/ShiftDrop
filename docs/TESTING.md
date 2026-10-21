@@ -25,7 +25,7 @@ Open **Developer PowerShell for VS 2022** (so `cmake` and MSVC are on PATH):
 cd C:\dev\shiftdrop
 git pull
 
-./scripts/get-ffmpeg.ps1            # once: the pinned LGPL ffmpeg.exe into build\engines (170 MB download, SHA-256 checked)
+./scripts/get-ffmpeg.ps1            # once: LGPL ffmpeg.exe into build\engines (see below)
 cmake --preset x64-release          # first run builds wil, sqlite3, nlohmann-json, libwebp, gtest (a few minutes)
 cmake --build --preset x64-release
 ctest --preset x64-release          # unit tests (the MediaEngine ones run the real ffmpeg.exe)
@@ -624,6 +624,14 @@ GPU and speed
 - [ ] Left-handed mouse (swap buttons in Settings): does the gesture still work?
 
 ## 5. Installer
+
+`scripts/get-ffmpeg.ps1` takes ShiftDrop's own small ffmpeg.exe when `build\ffmpeg-custom` holds one
+(download the `ffmpeg-custom-<commit>` artifact of any CI run there, or build it on Linux or WSL with
+`scripts/build-ffmpeg.sh`, about 15 minutes on 4 cores); otherwise it downloads the pinned full BtbN
+LGPL build (170 MB zip, SHA-256 checked), which has everything the small one has. The installer CI
+publishes always has the small one. `scripts/check-ffmpeg.ps1 -Exe build\engines\ffmpeg.exe` checks
+an exe against `scripts/ffmpeg-components.txt`; a new codec, format or filter in the code goes into
+that list (the FfmpegComponents unit tests fail until it does).
 
 CI builds `ShiftDrop-Setup-<version>.exe` on every push and runs `scripts/test-installer.ps1` against
 it. To build it yourself after section 2, with [Inno Setup 6.3+](https://jrsoftware.org/isinfo.php)
