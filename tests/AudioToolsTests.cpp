@@ -317,7 +317,10 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
     }
     const auto* engine = runner.EngineFor(recipes.Get("audio-normalize"));
     ASSERT_NE(engine, nullptr);
-    EXPECT_FALSE(engine->NeedsEditor(recipes.Get("audio-normalize")));
+    EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-normalize")));   // Speech, Music or Broadcast
+    Recipe loud = recipes.Get("audio-normalize");
+    loud.steps[0].params = { { "target", -14 }, { "ask", false } };
+    EXPECT_FALSE(engine->NeedsEditor(loud));   // a one-click preset with its own level
     Recipe mono = recipes.Get("audio-channels");
     mono.steps[0].params["mode"] = "mono";
     mono.steps[0].params["ask"] = false;

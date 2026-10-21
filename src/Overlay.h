@@ -156,6 +156,7 @@ namespace sd
         bool Open(const std::vector<std::wstring>& files, POINT pt);   // the probe becomes the wheel
         void SetHot(int hot, bool byKey = false);
         bool Selectable(int slot) const;   // an enabled slice or "More"
+        bool Explains(int slot) const;     // a dimmed slice with a reason to show
         void Run(int slot);                // drop / click / Enter on a slot
         bool EndSink();                    // the drag ended after a slice ran by key
         void NotifyHighlight();
@@ -224,6 +225,8 @@ namespace sd
         int m_ring = 0;
         int m_hot = kCenter;
         int m_detail = -1;            // slot whose detail the centre shows (kept while it fades out)
+        int m_why = -1;               // dimmed slot whose reason the centre shows, the same way
+        float m_whyT = 0.f;
         int m_scrollAccum = 0;
         WheelContent m_content;       // every slice for m_files on this wheel
         wheel::Layout m_layout, m_prevLayout;
