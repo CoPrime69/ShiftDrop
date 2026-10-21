@@ -479,7 +479,7 @@ namespace
     {
         if (lane == JobLane::Media || lane == JobLane::Shell)
             return 1;
-        return std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u);
+        return JobQueue::PoolThreads();   // the pool and the audio lane
     }
 }
 

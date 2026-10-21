@@ -5,6 +5,7 @@
 #include <objbase.h>
 #include <wil/resource.h>
 
+#include <algorithm>
 #include <cstring>
 #include <exception>
 
@@ -17,6 +18,12 @@ namespace sd
         m_threads.reserve(threads);
         for (unsigned i = 0; i < threads; ++i)
             m_threads.emplace_back([this](std::stop_token st) { Run(st); });
+    }
+
+    unsigned JobQueue::PoolThreads()
+    {
+        const unsigned cores = std::thread::hardware_concurrency();
+        return std::clamp(cores > 1 ? cores - 1 : 1u, 1u, 8u);
     }
 
     JobQueue::~JobQueue()
