@@ -1,5 +1,6 @@
 #include "mediaeditor/MediaTools.h"
 #include "Brand.h"
+#include "FileIo.h"
 #include "OutputPath.h"
 #include "StagedOutput.h"
 
@@ -11,8 +12,6 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <random>
 
 namespace sd::mediatools
 {
@@ -59,6 +58,16 @@ namespace sd::mediatools
 
     double ToSeconds(int64_t us) { return static_cast<double>(us) / 1e6; }
     int64_t FromSeconds(double seconds) { return std::isfinite(seconds) ? static_cast<int64_t>(std::llround(seconds * 1e6)) : 0; }
+
+    std::vector<int64_t> TimesFrom(const nlohmann::json& params, const char* key)
+    {
+        std::vector<int64_t> out;
+        if (const auto it = params.find(key); it != params.end() && it->is_array())
+            for (const auto& v : *it)
+                if (v.is_number())
+                    out.push_back(FromSeconds(v.get<double>()));
+        return out;
+    }
 
     // ---- Where an edited file goes -----------------------------------------------------------------
 
@@ -153,33 +162,6 @@ namespace sd::mediatools
 
     // ---- Extraction for the editor -------------------------------------------------------------------
 
-    TempFolder::TempFolder()
-    {
-        wchar_t temp[MAX_PATH + 1]{};
-        const DWORD n = GetTempPathW(MAX_PATH + 1, temp);
-        if (n == 0 || n > MAX_PATH)
-            return;
-        static std::atomic<unsigned> counter{ 0 };
-        thread_local std::mt19937 rng{ std::random_device{}() };
-        for (int attempt = 0; attempt < 8; ++attempt)
-        {
-            const auto candidate = std::format(L"{}" SD_NAME L"-{}-{}-{:06x}", temp, GetCurrentProcessId(), counter++, rng() & 0xFFFFFF);
-            if (CreateDirectoryW(candidate.c_str(), nullptr))
-            {
-                m_path = candidate;
-                return;
-            }
-        }
-    }
-
-    TempFolder::~TempFolder()
-    {
-        if (m_path.empty())
-            return;
-        std::error_code ec;
-        std::filesystem::remove_all(m_path, ec);
-    }
-
     void FitFrame(const ProbeInfo& info, int maxW, int maxH, int& w, int& h)
     {
         const double sw = std::max(1, info.width) * (info.sar > 0 ? info.sar : 1.0);
@@ -246,18 +228,9 @@ namespace sd::mediatools
 
     namespace
     {
-        bool ReadFileBytes(const std::wstring& path, std::vector<char>& bytes)
-        {
-            std::ifstream in(std::filesystem::path(path), std::ios::binary);
-            if (!in)
-                return false;
-            bytes.assign(std::istreambuf_iterator<char>(in), {});
-            return true;
-        }
-
         bool ReadPcm(const std::wstring& path, std::vector<int16_t>& out)
         {
-            std::vector<char> bytes;
+            std::string bytes;
             if (!ReadFileBytes(path, bytes))
                 return false;
             out.resize(bytes.size() / 2);
@@ -279,7 +252,7 @@ namespace sd::mediatools
         us = std::min(us, LastFrameTime(info.media.fps, info.DurationUs()));
         if (!engine.Run(FrameArgs(input, us, info.media.fps, w, h, fast, file), nullptr, stop).ok)
             return false;
-        std::vector<char> bytes;
+        std::string bytes;
         const bool read = ReadFileBytes(file, bytes);
         DeleteFileW(file.c_str());
         if (!read || bytes.size() < static_cast<size_t>(w) * h * 4)
@@ -357,19 +330,6 @@ namespace sd::mediatools
                 progress(static_cast<double>(i + 1) / steps);
         }
         return out.Commit(suffix, L"");
-    }
-
-    ItemResult FailItem(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool cancelled)
-    {
-        ItemResult r;
-        r.error = std::move(error);
-        r.skipped = cancelled;
-        if (history)
-        {
-            const int64_t item = history->BeginItem(runId, source, L"");
-            history->FinishItem(item, cancelled ? status::Skipped : status::Failed, L"", 0, "", r.error, 0);
-        }
-        return r;
     }
 
     std::wstring EscapePercent(const std::wstring& text)

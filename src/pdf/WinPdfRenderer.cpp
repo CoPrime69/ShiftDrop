@@ -2,6 +2,7 @@
 // into pdf::Renderer() before main().
 #include "pdf/PageRenderer.h"
 #include "Log.h"
+#include "WinRtError.h"
 
 #include <unknwn.h>
 #include <winrt/base.h>
@@ -10,8 +11,6 @@
 #include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.Streams.h>
-
-#include <format>
 
 namespace sd::pdf
 {
@@ -26,10 +25,7 @@ namespace sd::pdf
             const HRESULT code = e.code();
             if (code == HRESULT_FROM_WIN32(ERROR_WRONG_PASSWORD) || code == HRESULT_FROM_WIN32(ERROR_INVALID_PASSWORD))
                 return L"the PDF is locked with a password";
-            std::wstring text(e.message());
-            while (!text.empty() && (text.back() == L'\n' || text.back() == L'\r' || text.back() == L' '))
-                text.pop_back();
-            return text.empty() ? std::format(L"Windows' PDF renderer failed (0x{:08X})", static_cast<uint32_t>(code)) : text;
+            return WinRtMessage(e, L"Windows' PDF renderer failed");
         }
 
         class RenderedPdf final : public IRenderedPdf

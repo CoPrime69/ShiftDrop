@@ -54,6 +54,13 @@ add_link_options($<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 add_library(shiftdrop_core STATIC
   src/Action.cpp
   src/Ask.cpp       # questions a running job asks (a password, print every row?) on the UI thread
+  # Small helpers every area shares: text, paths, whole files, error codes, %TEMP%, sizes and times
+  src/ErrorText.cpp
+  src/FileIo.cpp
+  src/FormatText.cpp
+  src/PathUtil.cpp
+  src/Strings.cpp
+  src/TempPath.cpp
   src/Ffmpeg.cpp
   src/FileActions.cpp
   src/FileMove.cpp
@@ -343,6 +350,7 @@ if(SHIFTDROP_TESTS)
     tests/RenameTests.cpp
     tests/ToastTests.cpp
     tests/FfmpegComponentsTests.cpp
+    tests/HelperTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.

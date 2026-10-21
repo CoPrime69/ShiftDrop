@@ -1,7 +1,9 @@
 #include "Startup.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Settings.h"
+#include "Strings.h"
 
 #include <windows.h>
 #include <wil/resource.h>
@@ -14,23 +16,6 @@ namespace sd::startup
     {
         constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         constexpr wchar_t kValue[] = SD_NAME;
-
-        std::wstring ThisExe()
-        {
-            std::wstring path(MAX_PATH, L'\0');
-            for (;;)
-            {
-                const DWORD n = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-                if (n == 0)
-                    return {};
-                if (n < path.size())
-                {
-                    path.resize(n);
-                    return path;
-                }
-                path.resize(path.size() * 2);   // long path (the manifest is longPathAware)
-            }
-        }
 
         std::wstring Command()
         {
@@ -59,7 +44,7 @@ namespace sd::startup
     bool PointsHere()
     {
         std::wstring value;
-        return ReadValue(value) && CompareStringOrdinal(value.c_str(), -1, Command().c_str(), -1, TRUE) == CSTR_EQUAL;
+        return ReadValue(value) && EqualsNoCase(value, Command());
     }
 
     bool Enable()

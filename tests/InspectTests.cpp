@@ -15,12 +15,6 @@ using namespace sd::test;
 
 namespace
 {
-    std::shared_ptr<const FfmpegEngine> Engine()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
     const Field* Find(const std::vector<Field>& fields, std::wstring_view group, std::wstring_view name)
     {
         for (const auto& f : fields)
@@ -141,8 +135,6 @@ TEST(InspectModel, NumbersAndTimes)
     EXPECT_EQ(FormatRational(72, 1), L"72");
     EXPECT_EQ(FormatRational(5, 0), L"5");
     EXPECT_EQ(FormatRational(-1, 3), L"-0.3333");
-    EXPECT_EQ(FileSizeText(512), L"512 bytes");
-    EXPECT_EQ(FileSizeText(3456789), L"3.3 MB (3,456,789 bytes)");
     EXPECT_EQ(DurationText(90'500'000), L"0:01:30.500");
     EXPECT_EQ(DurationText(-1), L"unknown");
 }
@@ -238,7 +230,7 @@ TEST(InspectReader, ReadsAnImage)
 
 TEST(InspectReader, ReadsTracksAndChaptersThroughFfmpeg)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;

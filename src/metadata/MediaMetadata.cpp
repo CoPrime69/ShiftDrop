@@ -1,28 +1,13 @@
 #include "metadata/MediaMetadata.h"
+#include "Strings.h"
 
 #include <algorithm>
-#include <cctype>
 #include <string_view>
 
 namespace sd::metadata
 {
     namespace
     {
-        std::string Lower(std::string s)
-        {
-            for (auto& c : s)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            return s;
-        }
-
-        size_t Indent(std::string_view line)
-        {
-            size_t n = 0;
-            while (n < line.size() && line[n] == ' ')
-                ++n;
-            return n;
-        }
-
         bool Has(const std::string& key, std::initializer_list<std::string_view> words)
         {
             return std::any_of(words.begin(), words.end(), [&](std::string_view w) { return key.find(w) != std::string::npos; });
@@ -33,7 +18,7 @@ namespace sd::metadata
     {
         static const std::string_view kPlumbing[] = { "major_brand", "minor_version", "compatible_brands", "encoder", "handler_name",
                                                       "vendor_id", "language", "duration", "bps", "number_of_frames", "number_of_bytes" };
-        const std::string k = Lower(key);
+        const std::string k = AsciiLower(key);
         for (const auto p : kPlumbing)
             if (k == p)
                 return true;
@@ -59,7 +44,7 @@ namespace sd::metadata
         bool gps = false, camera = false, author = false, dates = false, captions = false;
         for (const auto& t : Personal())
         {
-            const std::string k = Lower(t.key);
+            const std::string k = AsciiLower(t.key);
             gps |= Has(k, { "location", "gps", "iso6709" });
             camera |= Has(k, { "make", "model", "software", "camera", "lens" });
             author |= Has(k, { "artist", "author", "composer", "copyright", "performer", "publisher" });

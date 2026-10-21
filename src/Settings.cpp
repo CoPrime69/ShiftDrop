@@ -1,8 +1,8 @@
 #include "Settings.h"
 #include "Log.h"
+#include "Strings.h"
 
 #include <algorithm>
-#include <cwctype>
 
 namespace sd
 {
@@ -43,10 +43,9 @@ namespace sd
 
     namespace
     {
-        bool ParseKey(std::wstring text, UINT& vk, std::wstring& name)
+        bool ParseKey(std::wstring_view key, UINT& vk, std::wstring& name)
         {
-            for (auto& c : text)
-                c = static_cast<wchar_t>(std::towlower(c));
+            const auto text = Lower(key);
             if (text == L"shift") { vk = VK_SHIFT; name = L"Shift"; return true; }
             if (text == L"ctrl" || text == L"control") { vk = VK_CONTROL; name = L"Ctrl"; return true; }
             if (text == L"alt") { vk = VK_MENU; name = L"Alt"; return true; }
@@ -123,14 +122,13 @@ namespace sd
         GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
         GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
         Appearance a;
-        const auto is = [](const wchar_t* value, const wchar_t* name) { return CompareStringOrdinal(value, -1, name, -1, TRUE) == CSTR_EQUAL; };
-        if (is(size, L"small"))
+        if (EqualsNoCase(size, L"small"))
             a.size = WheelSize::Small;
-        else if (is(size, L"medium"))
+        else if (EqualsNoCase(size, L"medium"))
             a.size = WheelSize::Medium;
-        else if (is(size, L"large"))
+        else if (EqualsNoCase(size, L"large"))
             a.size = WheelSize::Large;
-        a.style = is(style, L"glass") ? Style::Glass : Style::Solid;
+        a.style = EqualsNoCase(style, L"glass") ? Style::Glass : Style::Solid;
         return a;
     }
 
@@ -169,7 +167,7 @@ namespace sd
         wchar_t value[16]{};
         GetPrivateProfileStringW(L"Output", L"VirtualFiles", L"desktop", value, ARRAYSIZE(value), SettingsPath().c_str());
         for (int i = 0; i < 3; ++i)
-            if (CompareStringOrdinal(value, -1, kVirtualOutputs[i], -1, TRUE) == CSTR_EQUAL)
+            if (EqualsNoCase(value, kVirtualOutputs[i]))
                 return static_cast<VirtualOutput>(i);
         log::Warn(L"settings: [Output] VirtualFiles='{}' is not desktop, downloads or ask; using desktop", value);
         return VirtualOutput::Desktop;
@@ -193,7 +191,7 @@ namespace sd
             wchar_t value[32]{};
             GetPrivateProfileStringW(section, key, names[fallback], value, ARRAYSIZE(value), SettingsPath().c_str());
             for (size_t i = 0; i < N; ++i)
-                if (CompareStringOrdinal(value, -1, names[i], -1, TRUE) == CSTR_EQUAL)
+                if (EqualsNoCase(value, names[i]))
                     return static_cast<int>(i);
             log::Warn(L"settings: [{}] {}='{}' is not known; using {}", section, key, value, names[fallback]);
             return fallback;

@@ -54,8 +54,6 @@ namespace sd::mediatools
     // params["perFile"][path as UTF-8], so the whole drop is still one batch. params["tool"] is the
     // ToolAction of the tool chosen last, which can differ from the one the window opened with.
     using EditorDone = std::function<void(nlohmann::json params, std::vector<std::wstring> files)>;
-    // One file's params: the shared ones with that file's "perFile" entry merged over them.
-    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);
     using EditorOpener = void (*)(HWND owner, EditorRequest request, EditorDone done);
 
     void SetEditorOpener(EditorOpener opener);

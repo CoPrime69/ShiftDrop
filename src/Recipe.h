@@ -42,9 +42,23 @@ namespace sd
         // Compress / Fit to… recipes: their results are for sending somewhere, so they can be carried.
         bool IsCompress() const { return IsMediaCompress() || (!steps.empty() && steps.back().action == "image.compress"); }
         bool IsFileAction() const { return steps.size() == 1 && steps[0].action.starts_with("file."); }
+        // The first step's text param `key` ("format": what a document or office recipe makes), or empty.
+        std::string FirstParam(const char* key) const;
     };
 
     // Parses and validates a recipe against the registry. On failure returns false and sets `error`
     // to a message that names the offending field, e.g. "steps[1].params.quality: 140 is above 100".
     bool ParseRecipe(std::string_view json, const ActionRegistry& registry, Recipe& out, std::string& error);
+
+    // Readers for a step's params that never throw: a missing or non-number value gives `fallback`.
+    // The clamped form also gives `fallback` for NaN and infinity.
+    double JsonNumber(const nlohmann::json& j, const char* key, double fallback);
+    double JsonNumber(const nlohmann::json& j, const char* key, double fallback, double lo, double hi);
+
+    // A step's params for one of its files: the shared params with that file's own entry of
+    // "perFile" ({"perFile": {path: {...}}}) merged over them, so one run carries per-file edits.
+    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);
+
+    // The recipe in a JSON list whose first step runs `action` (an editor's tool recipes), or null.
+    nlohmann::json FindToolRecipe(const nlohmann::json& list, std::string_view action);
 }

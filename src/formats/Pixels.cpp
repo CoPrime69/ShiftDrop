@@ -16,22 +16,6 @@ namespace sd::formats
         return true;
     }
 
-    HRESULT ReadFileBytes(const std::wstring& path, std::vector<uint8_t>& bytes)
-    {
-        wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-        if (!file)
-            return HRESULT_FROM_WIN32(GetLastError());
-        LARGE_INTEGER size{};
-        RETURN_IF_WIN32_BOOL_FALSE(GetFileSizeEx(file.get(), &size));
-        if (size.QuadPart > (1ll << 30))
-            return HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);
-        bytes.resize(static_cast<size_t>(size.QuadPart));
-        DWORD read = 0;
-        RETURN_IF_WIN32_BOOL_FALSE(ReadFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr));
-        bytes.resize(read);
-        return S_OK;
-    }
-
     HRESULT ToWicBitmap(IWICImagingFactory* factory, const Image& image, Microsoft::WRL::ComPtr<IWICBitmapSource>& out)
     {
         if (image.Empty())

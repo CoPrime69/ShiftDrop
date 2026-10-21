@@ -1,4 +1,6 @@
 #include "Log.h"
+#include "PathUtil.h"
+#include "StagedOutput.h"
 #include "Utf.h"
 #include "pdf/PdfModule.h"
 #include "share/Share.h"
@@ -28,7 +30,7 @@ namespace sd::share
             bool Applies(const Recipe&, const std::wstring&) const override { return true; }
             bool Accepts(const Recipe&, const std::wstring& path, std::wstring* why) const override
             {
-                if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!PathExists(path))
                 {
                     if (why)
                         *why = L"file not found";
@@ -56,7 +58,7 @@ namespace sd::share
                 const std::wstring error = params.contains("error") && params["error"].is_string()
                                                ? Widen(params["error"].get<std::string>())
                                                : std::wstring(L"the share sheet could not open");
-                return pdf::FailItem(m_history, runId, sources.empty() ? std::wstring() : sources.front(), error);
+                return RecordFailure(m_history, runId, sources.empty() ? std::wstring() : sources.front(), error);
             }
 
             bool NeedsEditor(const Recipe&) const override { return true; }

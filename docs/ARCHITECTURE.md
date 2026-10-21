@@ -86,6 +86,7 @@ folder:
 | `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
 | `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
+| `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText`, `UiThread.h` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times, bringing a window to the front |
 | `keyboard/` | Arrow keys and Enter on the wheel, the Explorer-selection hotkey, the right-click entry, wheel layout |
 | `preview/` | The predicted-output card |
 | `inspect/` | The metadata inspector |

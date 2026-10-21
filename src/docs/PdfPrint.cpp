@@ -1,4 +1,8 @@
 #include "docs/PdfPrint.h"
+#include "ErrorText.h"
+#include "FileIo.h"
+#include "Strings.h"
+#include "TempPath.h"
 #include "docs/Bytes.h"
 #include "docs/Paper.h"
 #include "Log.h"
@@ -12,7 +16,6 @@
 #include <wrl/client.h>
 
 #include <chrono>
-#include <filesystem>
 #include <format>
 #include <map>
 #include <mutex>
@@ -43,7 +46,7 @@ namespace sd::docs
                     hr = m_factory->GetSystemFontCollection(&m_fonts);
                 if (FAILED(hr))
                 {
-                    error = std::format(L"DirectWrite is unavailable (0x{:08X})", static_cast<unsigned>(hr));
+                    error = std::format(L"DirectWrite is unavailable ({})", HexCode(hr));
                     return false;
                 }
                 return true;
@@ -210,7 +213,7 @@ namespace sd::docs
                 {
                     const std::wstring driver = printers[i].pDriverName ? printers[i].pDriverName : L"";
                     const std::wstring pname = printers[i].pPrinterName ? printers[i].pPrinterName : L"";
-                    if (_wcsicmp(driver.c_str(), L"Microsoft Print To PDF") == 0 || _wcsicmp(pname.c_str(), L"Microsoft Print to PDF") == 0)
+                    if (EqualsNoCase(driver, L"Microsoft Print To PDF") || EqualsNoCase(pname, L"Microsoft Print to PDF"))
                     {
                         found = pname;
                         break;
@@ -272,11 +275,7 @@ namespace sd::docs
         }
 
         // The printer writes a new file in %TEMP%; its bytes then go into our staging file.
-        wchar_t tempDir[MAX_PATH]{};
-        GetTempPathW(MAX_PATH, tempDir);
-        GUID g{};
-        CoCreateGuid(&g);
-        const auto temp = (std::filesystem::path(tempDir) / std::format(L"ShiftDrop-print-{:08x}{:04x}.pdf", g.Data1, g.Data2)).wstring();
+        const auto temp = TempFilePath(L"print", L".pdf");
         auto removeTemp = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
 
         DOCINFOW info{};

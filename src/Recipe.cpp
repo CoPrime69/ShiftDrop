@@ -1,6 +1,7 @@
 #include "Recipe.h"
 #include "Utf.h"
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cmath>
@@ -305,5 +306,43 @@ namespace sd
         if (const auto* image = OutputFormatFor(ext))
             return image->extension;
         return {};
+    }
+
+    std::string Recipe::FirstParam(const char* key) const
+    {
+        return steps.empty() ? std::string() : steps[0].params.value(key, std::string());
+    }
+
+    double JsonNumber(const nlohmann::json& j, const char* key, double fallback)
+    {
+        const auto it = j.find(key);
+        return it != j.end() && it->is_number() ? it->get<double>() : fallback;
+    }
+
+    double JsonNumber(const nlohmann::json& j, const char* key, double fallback, double lo, double hi)
+    {
+        const double v = JsonNumber(j, key, fallback);
+        return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
+    }
+
+    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path)
+    {
+        if (!params.is_object() || !params.contains("perFile"))
+            return params;
+        nlohmann::json out = params;
+        out.erase("perFile");
+        const auto& perFile = params["perFile"];
+        if (const auto it = perFile.is_object() ? perFile.find(Narrow(path)) : perFile.end(); it != perFile.end() && it->is_object())
+            out.update(*it);
+        return out;
+    }
+
+    nlohmann::json FindToolRecipe(const nlohmann::json& list, std::string_view action)
+    {
+        for (const auto& r : list)
+            if (const auto steps = r.find("steps"); steps != r.end() && steps->is_array() && !steps->empty() && (*steps)[0].is_object() &&
+                                                    (*steps)[0].value("action", std::string()) == action)
+                return r;
+        return nlohmann::json();
     }
 }

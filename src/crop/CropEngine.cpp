@@ -1,4 +1,5 @@
 #include "crop/CropEngine.h"
+#include "FileIo.h"
 #include "Media.h"
 #include "OutputPath.h"
 #include "canvas/Editor.h"
@@ -71,9 +72,9 @@ namespace sd::crop
             return out.Fail(error);
         // The picture's dates and camera stay with it; its old thumbnail (the uncropped picture) does not.
         std::vector<uint8_t> original;
-        if (metadata::ReadFileBytes(source, original))
+        if (ReadFileBytes(source, original))
             metadata::CarryEditedExif(original, bytes, static_cast<int>(cropped.width), static_cast<int>(cropped.height));
-        if (!metadata::WriteFileBytes(out.Path(), bytes))
+        if (!WriteFileBytes(out.Path(), bytes, WriteMode::Any))
             return out.Fail(L"cannot write next to the source");
         if (progress)
             progress(1.0);

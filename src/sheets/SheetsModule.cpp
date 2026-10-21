@@ -1,5 +1,9 @@
 #include "sheets/SheetsModule.h"
 #include "Ask.h"
+#include "FileIo.h"
+#include "FormatText.h"
+#include "PathUtil.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "docs/PdfPrint.h"
 #include "OutputPath.h"
@@ -31,24 +35,6 @@ namespace sd::sheets
             return nullptr;
         }
 
-        std::string TargetOf(const Recipe& r)
-        {
-            return r.steps.empty() ? std::string() : r.steps[0].params.value("format", std::string());
-        }
-
-        bool WriteNew(const std::wstring& path, std::string_view bytes, std::wstring& error)
-        {
-            {
-                wil::unique_hfile f(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
-                if (!f)
-                {
-                    error = std::format(L"cannot write {} (error {})", std::filesystem::path(path).filename().wstring(), GetLastError());
-                    return false;
-                }
-            }
-            return docs::WriteFileBytes(path, bytes, &error);
-        }
-
         enum RowsAnswer
         {
             kAllRows = 1,
@@ -67,11 +53,11 @@ namespace sd::sheets
             const auto left = RowsLeftOut(book);
             ask::Question q;
             q.title = L"Spreadsheet to PDF";
-            q.heading = std::format(L"{} has {} rows", std::filesystem::path(source).filename().wstring(), ask::Thousands(total));
+            q.heading = std::format(L"{} has {} rows", FileName(source), Thousands(total));
             q.text = L"Printing every row can take a while and makes a long PDF.";
-            q.choices = { { kAllRows, L"Print all rows", std::format(L"All {} rows", ask::Thousands(total)) },
-                          { kFirstRows, std::format(L"Print the first {} rows{}", ask::Thousands(kPdfRowLimit), cut > 1 ? L" of each sheet" : L""),
-                            std::format(L"A note on the last page says {} {} left out", ask::Thousands(left), left == 1 ? L"row was" : L"rows were") } };
+            q.choices = { { kAllRows, L"Print all rows", std::format(L"All {} rows", Thousands(total)) },
+                          { kFirstRows, std::format(L"Print the first {} rows{}", Thousands(kPdfRowLimit), cut > 1 ? L" of each sheet" : L""),
+                            std::format(L"A note on the last page says {} {} left out", Thousands(left), left == 1 ? L"row was" : L"rows were") } };
             q.unattended = kFirstRows;   // what it did before it asked
             return ask::Choose(q, stop);
         }
@@ -88,19 +74,19 @@ namespace sd::sheets
 
             bool Applies(const Recipe& recipe, const std::wstring& path) const override
             {
-                return TargetFits(InputOf(path), TargetOf(recipe));
+                return TargetFits(InputOf(path), recipe.FirstParam("format"));
             }
 
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
             {
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 if (!TargetFits(InputOf(path), target))
                 {
                     if (why)
                         *why = L"not a spreadsheet";
                     return false;
                 }
-                if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!PathExists(path))
                 {
                     if (why)
                         *why = L"file not found";
@@ -113,7 +99,7 @@ namespace sd::sheets
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 const auto* t = FindTarget(target);
                 Workbook book;
                 std::wstring error;
@@ -166,9 +152,9 @@ namespace sd::sheets
                     {
                         auto name = SafeFileName(s->name);
                         auto unique = name;
-                        for (int n = 2; !used.insert(Widen(docs::AsciiLower(Narrow(unique)))).second; ++n)
+                        for (int n = 2; !used.insert(Widen(AsciiLower(Narrow(unique)))).second; ++n)
                             unique = std::format(L"{} ({})", name, n);
-                        if (!WriteNew((std::filesystem::path(out.Path()) / (unique + t->extension)).wstring(), WriteCsv(*s, delimiter), error))
+                        if (!WriteFileBytes((std::filesystem::path(out.Path()) / (unique + t->extension)).wstring(), WriteCsv(*s, delimiter), WriteMode::New, &error))
                             return out.Fail(error);
                     }
                     if (progress)
@@ -204,7 +190,7 @@ namespace sd::sheets
                 }
                 else
                     return out.Fail(L"unknown output format");
-                if (!docs::WriteFileBytes(out.Path(), bytes, &error))
+                if (!WriteFileBytes(out.Path(), bytes, WriteMode::Existing, &error))
                     return out.Fail(error);
                 if (progress)
                     progress(1.0);
@@ -246,8 +232,7 @@ namespace sd::sheets
 
     SheetInput InputOf(const std::wstring& path)
     {
-        const DWORD a = GetFileAttributesW(path.c_str());
-        if (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY))
+        if (IsFolder(path))
             return SheetInput::None;
         const auto ext = LowerExtension(path);
         if (ext == L".xlsx" || ext == L".xlsm")
@@ -279,7 +264,7 @@ namespace sd::sheets
     bool ReadWorkbook(const std::wstring& path, SheetInput input, Workbook& book, std::wstring& error)
     {
         std::string bytes;
-        if (!docs::ReadFileBytes(path, bytes, &error))
+        if (!ReadFileBytes(path, bytes, &error))
             return false;
         std::string e;
         bool ok = true;
@@ -355,8 +340,8 @@ namespace sd::sheets
             const std::wstring which = cut.size() > 1 ? std::wstring(L"each sheet") : withData > 1 ? std::format(L"\u201c{}\u201d", Widen(cut.front()->name))
                                                                                                 : std::wstring(L"the sheet");
             docs::Block note;
-            note.spans.push_back(docs::Span{ Narrow(std::format(L"{} {} left out: only the first {} rows of {} are printed.", ask::Thousands(left),
-                                                                left == 1 ? L"row was" : L"rows were", ask::Thousands(maxRows), which)) });
+            note.spans.push_back(docs::Span{ Narrow(std::format(L"{} {} left out: only the first {} rows of {} are printed.", Thousands(left),
+                                                                left == 1 ? L"row was" : L"rows were", Thousands(maxRows), which)) });
             note.spans.back().italic = true;
             doc.blocks.push_back(std::move(note));
         }
@@ -376,7 +361,7 @@ namespace sd::sheets
         // Device names can't be file names, even with an extension.
         static const wchar_t* kReserved[] = { L"CON", L"PRN", L"AUX", L"NUL", L"COM1", L"COM2", L"COM3", L"COM4", L"LPT1", L"LPT2", L"LPT3" };
         for (const auto* r : kReserved)
-            if (_wcsicmp(w.c_str(), r) == 0)
+            if (EqualsNoCase(w, r))
                 return L"_" + w;
         if (w.size() > 120)
             w.resize(120);

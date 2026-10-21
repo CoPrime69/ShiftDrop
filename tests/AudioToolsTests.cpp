@@ -1,4 +1,6 @@
 #include "Ffmpeg.h"
+#include "MediaTestUtil.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -10,7 +12,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 
 using namespace sd;
 using namespace sd::mediatools;
@@ -19,39 +20,6 @@ using namespace sd::test;
 
 namespace
 {
-    // An audio tool's recipe by id, whether it has a slice or is reached from the editor's tool bar.
-    Recipe ToolById(const Recipes& recipes, std::string_view id)
-    {
-        if (const auto* r = recipes.store.Find(id))
-            return *r;
-        for (const auto tool : SiblingTools(EditorTool::TrimAudio))
-            if (const auto j = ToolRecipe(tool); j.value("id", std::string()) == id)
-            {
-                Recipe r;
-                std::string error;
-                EXPECT_TRUE(ParseRecipe(j.dump(), recipes.registry, r, error)) << error;
-                return r;
-            }
-        ADD_FAILURE() << "no recipe " << std::string(id);
-        return {};
-    }
-
-    bool Has(const std::vector<std::wstring>& args, std::wstring_view a, std::wstring_view b)
-    {
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == a && args[i + 1] == b)
-                return true;
-        return false;
-    }
-
-    std::wstring After(const std::vector<std::wstring>& args, std::wstring_view key)
-    {
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == key)
-                return args[i + 1];
-        return {};
-    }
-
     ProbeInfo Song(const char* codec = "mp3", int channels = 2, int rate = 44100, int64_t us = 180'000'000)
     {
         ProbeInfo p;
@@ -338,50 +306,12 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
 
 namespace
 {
-    std::shared_ptr<const FfmpegEngine> Ffmpeg()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
-    bool Make(const std::vector<std::wstring>& args)
-    {
-        std::stop_source never;
-        std::vector<std::wstring> a{ L"-hide_banner", L"-nostdin", L"-y" };
-        a.insert(a.end(), args.begin(), args.end());
-        return Ffmpeg()->Run(a, nullptr, never.get_token()).ok;
-    }
-
-    struct Fixture
-    {
-        TempDir dir;
-        Recipes recipes{ dir };
-        std::unique_ptr<HistoryStore> history;
-        std::unique_ptr<IEngine> engine;
-        Fixture()
-        {
-            std::wstring error;
-            history = HistoryStore::Open(dir / L"history.db", error);
-            engine = MediaToolsModule().makeEngine(EngineServices{ history.get(), Ffmpeg() });
-        }
-        ItemResult Run(std::string_view id, nlohmann::json params, const std::wstring& source)
-        {
-            Recipe r = ToolById(recipes, id);
-            for (auto& [k, v] : params.items())
-                r.steps[0].params[k] = v;
-            const auto run = history->BeginRun(r, 1);
-            auto out = engine->Run(r, run, source, std::stop_token{}, nullptr);
-            history->FinishRun(run);
-            return out;
-        }
-    };
-
     // Stereo 16-bit PCM of a whole file.
     std::vector<int16_t> Pcm(const std::wstring& path, int rate = 8000)
     {
         TempFolder temp;
         std::vector<int16_t> out;
-        DecodePlaybackPcm(*Ffmpeg(), path, { 0, 0 }, L"", false, rate, temp, {}, out);
+        DecodePlaybackPcm(*TestFfmpeg(), path, { 0, 0 }, L"", false, rate, temp, {}, out);
         return out;
     }
 
@@ -407,26 +337,26 @@ namespace
 
 TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto quiet = f.dir / L"quiet talk.wav";
     // A quiet, varying tone (two levels), 8 s: well below -16 LUFS.
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=300:d=8:sample_rate=44100,volume='if(lt(t,4),0.03,0.06)':eval=frame", L"-ac", L"2",
                        L"-c:a", L"pcm_s16le", L"-f", L"wav", quiet }));
     const auto r = f.Run("audio-normalize", {}, quiet);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"quiet talk (normalized).wav");
+    EXPECT_EQ(FileName(r.output), L"quiet talk (normalized).wav");
     EXPECT_NE(r.message.find(L"\u2192 \u221216."), std::wstring::npos) << Narrow(r.message);   // "Loudness -3x.x -> -16.0 LUFS"
     // Measured again from the file itself: within half a LU of the target, at the source's rate.
     std::vector<std::string> log;
     std::stop_source never;
-    Ffmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
+    TestFfmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
     const auto after = ParseEbur128(log);
     ASSERT_TRUE(after.has_value());
     EXPECT_NEAR(after->inputI, -16, 0.6);
     EXPECT_LE(after->inputTP, -0.9);
-    EXPECT_EQ(Probe(*Ffmpeg(), r.output).sampleRate, 44100);
+    EXPECT_EQ(Probe(*TestFfmpeg(), r.output).sampleRate, 44100);
     // Normalizing the result again: already there, nothing written.
     const auto again = f.Run("audio-normalize", {}, r.output);
     EXPECT_FALSE(again.ok);
@@ -439,9 +369,9 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
 
 TEST(AudioToolsEngine, NormalizeLimitsPeaksOneGainWouldClip)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto talk = f.dir / L"talk with claps.wav";
     // A quiet tone with a loud click every second: the gain to -16 LUFS would push the clicks far over
     // -1 dBTP, so loudnorm limits them instead of one plain gain.
@@ -449,14 +379,14 @@ TEST(AudioToolsEngine, NormalizeLimitsPeaksOneGainWouldClip)
                        L"-c:a", L"pcm_s16le", L"-f", L"wav", talk }));
     std::vector<std::string> log;
     std::stop_source never;
-    ASSERT_TRUE(Ffmpeg()->Run(MeasureArgs(talk, TargetFor(-16)), nullptr, never.get_token(), &log).ok);
+    ASSERT_TRUE(TestFfmpeg()->Run(MeasureArgs(talk, TargetFor(-16)), nullptr, never.get_token(), &log).ok);
     const auto before = ParseEbur128(log);
     ASSERT_TRUE(before.has_value());
     EXPECT_FALSE(IsLinear(TargetFor(-16), *before));
     const auto r = f.Run("audio-normalize", { { "ask", false }, { "target", -16 } }, talk);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     log.clear();
-    Ffmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
+    TestFfmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
     const auto after = ParseEbur128(log);
     ASSERT_TRUE(after.has_value());
     // Louder, with the clicks kept under the ceiling (one plain gain would have clipped them). On a
@@ -467,15 +397,15 @@ TEST(AudioToolsEngine, NormalizeLimitsPeaksOneGainWouldClip)
 
 TEST(AudioToolsEngine, VisualizerMakesAVideo)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto song = f.dir / L"song.mp3";
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=220:d=3", L"-c:a", L"libmp3lame", L"-f", L"mp3", song }));
     const auto waves = f.Run("audio-visualizer", { { "shape", "square" } }, song);
     ASSERT_TRUE(waves.ok) << Narrow(waves.error);
-    EXPECT_EQ(std::filesystem::path(waves.output).filename(), L"song (video).mp4");
-    const auto v = Probe(*Ffmpeg(), waves.output);
+    EXPECT_EQ(FileName(waves.output), L"song (video).mp4");
+    const auto v = Probe(*TestFfmpeg(), waves.output);
     EXPECT_EQ(v.width, 1080);
     EXPECT_EQ(v.height, 1080);
     EXPECT_TRUE(v.HasAudio());
@@ -484,7 +414,7 @@ TEST(AudioToolsEngine, VisualizerMakesAVideo)
     ASSERT_TRUE(SUCCEEDED(WritePng(picture, 64, 48)));
     const auto still = f.Run("audio-visualizer", { { "style", "image" }, { "image", Narrow(picture) }, { "shape", "portrait" } }, song);
     ASSERT_TRUE(still.ok) << Narrow(still.error);
-    const auto s = Probe(*Ffmpeg(), still.output);
+    const auto s = Probe(*TestFfmpeg(), still.output);
     EXPECT_EQ(s.width, 1080);
     EXPECT_EQ(s.height, 1920);
     EXPECT_NEAR(static_cast<double>(s.DurationUs()) / 1e6, 3.0, 0.15);
@@ -492,37 +422,37 @@ TEST(AudioToolsEngine, VisualizerMakesAVideo)
 
 TEST(AudioToolsEngine, TrimsExactlyAndDropsSilence)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     // 1 s silence, 2 s tone, 1 s silence.
     const auto padded = f.dir / L"padded.flac";
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=440:d=4:sample_rate=44100,volume=0:enable='lt(t,1)+gte(t,3)'", L"-c:a", L"flac", L"-f", L"flac", padded }));
     const auto exact = f.Run("audio-trim", { { "start", 0.5 }, { "end", 1.75 } }, padded);
     ASSERT_TRUE(exact.ok) << Narrow(exact.error);
-    EXPECT_NEAR(static_cast<double>(Probe(*Ffmpeg(), exact.output).DurationUs()) / 1e6, 1.25, 0.02);
+    EXPECT_NEAR(static_cast<double>(Probe(*TestFfmpeg(), exact.output).DurationUs()) / 1e6, 1.25, 0.02);
     const auto trimmed = f.Run("audio-trim", { { "silence", true } }, padded);
     ASSERT_TRUE(trimmed.ok) << Narrow(trimmed.error);
-    EXPECT_NEAR(static_cast<double>(Probe(*Ffmpeg(), trimmed.output).DurationUs()) / 1e6, 2.0 + 2 * kSilencePadUs / 1e6, 0.06);
+    EXPECT_NEAR(static_cast<double>(Probe(*TestFfmpeg(), trimmed.output).DurationUs()) / 1e6, 2.0 + 2 * kSilencePadUs / 1e6, 0.06);
 }
 
 TEST(AudioToolsEngine, ChannelsAndBleep)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     // A tone on the left only.
     const auto left = f.dir / L"left.wav";
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"sine=f=440:d=3:sample_rate=8000", L"-af", L"pan=stereo|c0=c0|c1=0*c0", L"-c:a", L"pcm_s16le", L"-f", L"wav", left }));
     const auto swapped = f.Run("audio-channels", { { "swap", true } }, left);
     ASSERT_TRUE(swapped.ok) << Narrow(swapped.error);
-    EXPECT_EQ(std::filesystem::path(swapped.output).filename(), L"left (swapped).wav");
+    EXPECT_EQ(FileName(swapped.output), L"left (swapped).wav");
     const auto pcm = Pcm(swapped.output);
     EXPECT_LT(Rms(pcm, 0, 0.5, 2.5), 50);     // left is silent now
     EXPECT_GT(Rms(pcm, 1, 0.5, 2.5), 1000);   // and the tone is on the right
     const auto mono = f.Run("audio-channels", { { "mode", "mono" }, { "ask", false } }, left);
     ASSERT_TRUE(mono.ok) << Narrow(mono.error);
-    EXPECT_EQ(Probe(*Ffmpeg(), mono.output).channels, 1);
+    EXPECT_EQ(Probe(*TestFfmpeg(), mono.output).channels, 1);
     EXPECT_FALSE(f.Run("audio-channels", { { "mode", "mono" }, { "ask", false } }, mono.output).ok);   // already mono
 
     const auto talk = f.dir / L"talk.wav";

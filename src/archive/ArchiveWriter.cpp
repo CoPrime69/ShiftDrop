@@ -1,4 +1,6 @@
 #include "archive/ArchiveWriter.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <windows.h>
 #include <archive.h>
@@ -6,7 +8,6 @@
 #include <wil/resource.h>
 
 #include <algorithm>
-#include <cwctype>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -44,9 +45,7 @@ namespace sd::archive
         const auto dot = name.find_last_of(L"./");
         if (dot == std::wstring::npos || name[dot] != L'.')
             return false;
-        std::wstring ext = name.substr(dot);
-        for (auto& c : ext)
-            c = static_cast<wchar_t>(std::towlower(c));
+        const auto ext = Lower(name.substr(dot));
         return std::find(std::begin(kPacked), std::end(kPacked), ext) != std::end(kPacked);
     }
 
@@ -196,20 +195,13 @@ namespace sd::archive
                 item.path = folder + L"\\" + name;
                 item.name = prefix + L"/" + name;
                 item.directory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-                item.size = item.directory ? 0 : (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                item.size = item.directory ? 0 : FileSizeOf(data);
                 item.mtime = Ticks(data.ftLastWriteTime);
                 item.atime = Ticks(data.ftLastAccessTime);
                 out.push_back(item);
                 if (item.directory)
                     Walk(item.path, item.name, out);
             } while (FindNextFileW(find.get(), &data));
-        }
-
-        std::wstring Lower(std::wstring s)
-        {
-            for (auto& c : s)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return s;
         }
     }
 
@@ -222,7 +214,7 @@ namespace sd::archive
         {
             WIN32_FILE_ATTRIBUTE_DATA info{};
             if (!GetFileAttributesExW(LongPath(source).c_str(), GetFileExInfoStandard, &info))
-                return Fail(Status::Io, std::format(L"cannot read {}", std::filesystem::path(source).filename().wstring()));
+                return Fail(Status::Io, std::format(L"cannot read {}", FileName(source)));
             // Items from different folders can share a name: "a.txt", then "a (2).txt".
             const std::filesystem::path p(source);
             std::wstring name = p.filename().wstring();
@@ -235,7 +227,7 @@ namespace sd::archive
             top.path = source;
             top.name = name;
             top.directory = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-            top.size = top.directory ? 0 : (static_cast<uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+            top.size = top.directory ? 0 : FileSizeOf(info);
             top.mtime = Ticks(info.ftLastWriteTime);
             top.atime = Ticks(info.ftLastAccessTime);
             all.push_back(top);

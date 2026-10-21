@@ -1,4 +1,5 @@
 #include "mediaeditor/Timeline.h"
+#include "FormatText.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,10 +12,7 @@ namespace sd::mediatools
 
     std::wstring FormatTimecode(int64_t us)
     {
-        if (us < 0)
-            us = 0;
-        const int64_t ms = (us + 500) / 1000;
-        return std::format(L"{:02}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
+        return Timecode(us, true);
     }
 
     std::wstring FormatRulerLabel(int64_t us, int64_t stepUs)

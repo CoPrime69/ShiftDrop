@@ -1,4 +1,5 @@
 #include "pdf/PdfDoc.h"
+#include "PathUtil.h"
 #include "Utf.h"
 
 #include <qpdf/QPDFExc.hh>
@@ -7,7 +8,6 @@
 #include <qpdf/QPDFWriter.hh>
 
 #include <cstdio>
-#include <filesystem>
 #include <format>
 #include <map>
 
@@ -21,7 +21,7 @@ namespace sd::pdf
 
         std::string Description(const std::wstring& path)
         {
-            return Narrow(std::filesystem::path(path).filename().wstring());
+            return Narrow(FileName(path));
         }
 
         int RotationOf(QPDFPageObjectHelper& page)
@@ -118,7 +118,7 @@ namespace sd::pdf
             auto pdf = OpenPdf(f, error);
             if (!pdf)
             {
-                error = std::format(L"{}: {}", std::filesystem::path(f).filename().wstring(), error);
+                error = std::format(L"{}: {}", FileName(f), error);
                 return false;
             }
             try
@@ -127,7 +127,7 @@ namespace sd::pdf
             }
             catch (const std::exception& e)
             {
-                error = std::format(L"{}: {}", std::filesystem::path(f).filename().wstring(), QpdfError(e));
+                error = std::format(L"{}: {}", FileName(f), QpdfError(e));
                 return false;
             }
         }
@@ -159,14 +159,14 @@ namespace sd::pdf
                     docs[ref.file] = OpenPdf(sources[ref.file], error);
                     if (!docs[ref.file])
                     {
-                        error = std::format(L"{}: {}", std::filesystem::path(sources[ref.file]).filename().wstring(), error);
+                        error = std::format(L"{}: {}", FileName(sources[ref.file]), error);
                         return false;
                     }
                     pages[ref.file] = QPDFPageDocumentHelper(*docs[ref.file]).getAllPages();
                 }
                 if (ref.page >= pages[ref.file].size())
                 {
-                    error = std::format(L"{} has no page {}", std::filesystem::path(sources[ref.file]).filename().wstring(), ref.page + 1);
+                    error = std::format(L"{} has no page {}", FileName(sources[ref.file]), ref.page + 1);
                     return false;
                 }
             }

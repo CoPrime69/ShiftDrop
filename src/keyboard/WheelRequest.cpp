@@ -1,22 +1,15 @@
 #include "keyboard/WheelRequest.h"
+#include "Strings.h"
 
 #include <shellapi.h>
 #include <wil/resource.h>
 
 namespace sd::wheelrequest
 {
-    namespace
-    {
-        bool SameText(std::wstring_view a, std::wstring_view b)
-        {
-            return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
-        }
-    }
-
     bool HasArg(const std::vector<std::wstring>& args, std::wstring_view arg)
     {
         for (const auto& a : args)
-            if (SameText(a, arg))
+            if (EqualsNoCase(a, arg))
                 return true;
         return false;
     }
@@ -28,7 +21,7 @@ namespace sd::wheelrequest
         for (const auto& a : args)
         {
             if (!after)
-                after = SameText(a, kWheelArg);
+                after = EqualsNoCase(a, kWheelArg);
             else if (!a.empty())
                 paths.push_back(a);
         }
@@ -87,7 +80,7 @@ namespace sd::wheelrequest
                 continue;
             bool seen = false;
             for (const auto& q : out)
-                seen = seen || SameText(p, q);
+                seen = seen || EqualsNoCase(p, q);
             if (!seen)
                 out.push_back(p);
         }

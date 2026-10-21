@@ -1,5 +1,6 @@
 #include "FileMove.h"
 #include "Hash.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -52,7 +53,7 @@ TEST(Pipeline, WebReadyIsOneStepWithNoLeftovers)
     std::vector<ItemResult> results;
     const auto run = f.Run("web-ready", { source }, &results);
     ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
-    EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"photo (converted).webp");
+    EXPECT_EQ(FileName(results[0].output), L"photo (converted).webp");
     EXPECT_EQ(run.status, status::Done);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
     EXPECT_EQ(CountFiles(f.dir, L".webp"), 1u);   // no intermediate resized PNG anywhere
@@ -75,7 +76,7 @@ TEST(Pipeline, RotateKeepsFormatAndSwapsSize)
     std::vector<ItemResult> results;
     f.Run("rotate-right", { source }, &results);
     ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
-    EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"tall (edited).png");
+    EXPECT_EQ(FileName(results[0].output), L"tall (edited).png");
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(results[0].output, w, h));
     EXPECT_EQ(w, 30u);
@@ -166,7 +167,7 @@ TEST(Pipeline, DuplicateCopiesBytes)
     std::vector<ItemResult> results;
     f.Run("duplicate", { source }, &results);
     ASSERT_TRUE(results[0].ok);
-    EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"notes (copy).txt");
+    EXPECT_EQ(FileName(results[0].output), L"notes (copy).txt");
     EXPECT_EQ(ReadAll(results[0].output), "hello");
     EXPECT_FALSE(f.runner->Accepts(f.recipes.Get("duplicate"), f.dir.path().wstring()));   // folders: not yet
 }
@@ -297,7 +298,7 @@ TEST(Pipeline, CompressFitsTheTargetAndShrinksOnlyWhenNeeded)
     std::vector<ItemResult> results;
     f.Run("image-under-1mb", { source }, &results);
     ASSERT_TRUE(results[0].ok) << Narrow(results[0].error);
-    EXPECT_EQ(std::filesystem::path(results[0].output).filename(), L"photo (compressed).jpg");
+    EXPECT_EQ(FileName(results[0].output), L"photo (compressed).jpg");
     EXPECT_LE(std::filesystem::file_size(results[0].output), 1024u * 1024u);
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(results[0].output, w, h));

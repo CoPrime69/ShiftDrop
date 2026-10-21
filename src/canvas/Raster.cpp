@@ -1,4 +1,6 @@
 #include "canvas/Raster.h"
+#include "ErrorText.h"
+#include "FileIo.h"
 #include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "OutputPath.h"
@@ -93,22 +95,6 @@ namespace sd::canvas
             return bytes;
         }
 
-        HRESULT ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& bytes)
-        {
-            wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-            if (!file)
-                return HRESULT_FROM_WIN32(GetLastError());
-            LARGE_INTEGER size{};
-            RETURN_IF_WIN32_BOOL_FALSE(GetFileSizeEx(file.get(), &size));
-            if (size.QuadPart > (1ll << 31))
-                return HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);
-            bytes.resize(static_cast<size_t>(size.QuadPart));
-            DWORD read = 0;
-            RETURN_IF_WIN32_BOOL_FALSE(ReadFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr));
-            bytes.resize(read);
-            return S_OK;
-        }
-
         HRESULT CopyOut(IWICImagingFactory* factory, IWICBitmapSource* source, Raster& out)
         {
             ComPtr<IWICFormatConverter> bgra;
@@ -195,8 +181,8 @@ namespace sd::canvas
         else if (LowerExtension(path) == L".webp")
         {
             std::vector<uint8_t> bytes;
-            if (const HRESULT hr = ReadWholeFile(path, bytes); FAILED(hr))
-                return Fail(error, L"read", hr);
+            if (!ReadFileBytes(path, bytes))
+                return Fail(error, L"read", HRESULT_FROM_WIN32(GetLastError()));
             int w = 0, h = 0;
             uint8_t* decoded = WebPDecodeBGRA(bytes.data(), bytes.size(), &w, &h);
             if (!decoded)

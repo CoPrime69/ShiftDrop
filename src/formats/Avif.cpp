@@ -1,4 +1,5 @@
 #include "formats/Avif.h"
+#include "FileIo.h"
 #include "Utf.h"
 
 #include <avif/avif.h>
@@ -59,8 +60,8 @@ namespace sd::formats
                            Microsoft::WRL::ComPtr<IWICBitmapSource>& out, std::wstring& error) const override
             {
                 std::vector<uint8_t> bytes;
-                if (const HRESULT hr = ReadFileBytes(path, bytes); FAILED(hr))
-                    return hr;
+                if (!ReadFileBytes(path, bytes, nullptr, kMaxImageFileBytes))
+                    return HRESULT_FROM_WIN32(GetLastError());
                 if (stop.stop_requested())
                     return HRESULT_FROM_WIN32(ERROR_CANCELLED);
                 Image image;
@@ -72,7 +73,7 @@ namespace sd::formats
             bool ReadSize(const std::wstring& path, uint32_t& width, uint32_t& height) const override
             {
                 std::vector<uint8_t> bytes;
-                return SUCCEEDED(ReadFileBytes(path, bytes)) && ReadAvifSize(bytes.data(), bytes.size(), width, height);
+                return ReadFileBytes(path, bytes, nullptr, kMaxImageFileBytes) && ReadAvifSize(bytes.data(), bytes.size(), width, height);
             }
 
             const char* EncodedFormat() const override { return "avif"; }

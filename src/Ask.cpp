@@ -450,18 +450,6 @@ namespace sd::ask
         g_password = std::move(password);
     }
 
-    std::wstring Thousands(uint64_t n)
-    {
-        std::wstring digits = std::to_wstring(n), out;
-        for (size_t i = 0; i < digits.size(); ++i)
-        {
-            if (i > 0 && (digits.size() - i) % 3 == 0)
-                out += L',';
-            out += digits[i];
-        }
-        return out;
-    }
-
     std::wstring Ordinal(uint64_t n)
     {
         const uint64_t tens = n % 100, ones = n % 10;

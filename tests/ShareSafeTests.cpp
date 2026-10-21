@@ -1,4 +1,6 @@
 #include "Ffmpeg.h"
+#include "FileIo.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -10,6 +12,7 @@
 #include "redact/RedactTool.h"
 
 #include <webp/decode.h>
+#include <zlib.h>
 
 #include <cstring>
 
@@ -200,25 +203,13 @@ namespace
         return std::search(b.begin(), b.end(), needle.begin(), needle.end()) != b.end();
     }
 
-    uint32_t Crc32(const uint8_t* p, size_t n)
-    {
-        uint32_t c = 0xFFFFFFFFu;
-        for (size_t i = 0; i < n; ++i)
-        {
-            c ^= p[i];
-            for (int k = 0; k < 8; ++k)
-                c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1)));
-        }
-        return ~c;
-    }
-
     Bytes PngChunk(const char type[4], const Bytes& data)
     {
         Bytes c;
         PutBE32(c, static_cast<uint32_t>(data.size()));
         c.insert(c.end(), type, type + 4);
         c.insert(c.end(), data.begin(), data.end());
-        PutBE32(c, Crc32(c.data() + 4, data.size() + 4));
+        PutBE32(c, static_cast<uint32_t>(crc32(0, c.data() + 4, static_cast<uInt>(data.size() + 4))));
         return c;
     }
 
@@ -254,7 +245,7 @@ namespace
         std::wstring Write(const std::wstring& name, const Bytes& bytes)
         {
             const auto path = dir / name;
-            EXPECT_TRUE(WriteFileBytes(path, bytes));
+            EXPECT_TRUE(WriteFileBytes(path, bytes, WriteMode::Any));
             return path;
         }
     };
@@ -343,7 +334,7 @@ TEST(ShareSafe, RemoveMetadataIsVerifiedAndReported)
     EXPECT_FALSE(f.runner->EngineFor(recipe)->NeedsEditor(recipe));
     const auto r = f.Run(recipe, source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"IMG_0001 (no metadata).jpg");
+    EXPECT_EQ(FileName(r.output), L"IMG_0001 (no metadata).jpg");
     EXPECT_TRUE(r.message.starts_with(L"Removed GPS, camera, ")) << Narrow(r.message);
     EXPECT_TRUE(r.message.ends_with(L" fields")) << Narrow(r.message);
 
@@ -374,7 +365,7 @@ TEST(ShareSafe, SidewaysPhotosStayTheRightWayUp)
     const auto source = f.Write(L"portrait.jpg", PhoneJpeg(6));
     const auto r = f.Run(f.recipes.Get("share-safe"), source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"portrait (share-safe).jpg");
+    EXPECT_EQ(FileName(r.output), L"portrait (share-safe).jpg");
     const auto inv = ReadMetadata(r.output);
     EXPECT_EQ(inv.PersonalCount(), 0u);
     ASSERT_TRUE(HasField(inv, "exif.0th.274"));   // only the orientation is left
@@ -577,7 +568,7 @@ TEST(ShareSafe, MediaArgsCopyStreamsAndDropMetadata)
 
 TEST(ShareSafe, VideoIsStreamCopiedWithoutMetadata)
 {
-    const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     Fixture f(engine);
@@ -599,7 +590,7 @@ TEST(ShareSafe, VideoIsStreamCopiedWithoutMetadata)
     EXPECT_TRUE(f.runner->Accepts(recipe, source, nullptr));
     const auto r = f.Run(recipe, source);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"holiday (share-safe).mp4");
+    EXPECT_EQ(FileName(r.output), L"holiday (share-safe).mp4");
     EXPECT_TRUE(r.message.starts_with(L"Removed ")) << Narrow(r.message);
 
     log.clear();

@@ -1,4 +1,7 @@
 #include "officebridge/OfficeBridge.h"
+#include "ErrorText.h"
+#include "Strings.h"
+#include "TempPath.h"
 
 #include <ole2.h>
 #include <oleauto.h>
@@ -70,7 +73,7 @@ namespace sd::office
             HRESULT hr = object->GetIDsOfNames(IID_NULL, names.data(), static_cast<UINT>(names.size()), LOCALE_USER_DEFAULT, ids.data());
             if (FAILED(hr))
             {
-                error = std::format(L"{}: not available in this version ({:08X})", member, static_cast<unsigned>(hr));
+                error = std::format(L"{}: not available in this version ({})", member, HexCode(hr));
                 return hr;
             }
 
@@ -104,7 +107,7 @@ namespace sd::office
                 std::wstring text = info.bstrDescription ? info.bstrDescription : L"";
                 while (!text.empty() && (text.back() == L'\r' || text.back() == L'\n' || text.back() == L' '))
                     text.pop_back();
-                error = text.empty() ? std::format(L"{} failed ({:08X})", member, static_cast<unsigned>(hr == DISP_E_EXCEPTION && info.scode ? info.scode : hr))
+                error = text.empty() ? std::format(L"{} failed ({})", member, HexCode(hr == DISP_E_EXCEPTION && info.scode ? info.scode : hr))
                                      : text;
                 if (hr == RPC_E_CALL_CANCELED || hr == RPC_E_DISCONNECTED || hr == RPC_S_SERVER_UNAVAILABLE || hr == RPC_E_SERVERFAULT)
                     error = L"the office app stopped responding";
@@ -172,7 +175,7 @@ namespace sd::office
                 return ids;
             PROCESSENTRY32W e{ sizeof(e) };
             for (BOOL ok = Process32FirstW(snap.get(), &e); ok; ok = Process32NextW(snap.get(), &e))
-                if (_wcsicmp(e.szExeFile, exe) == 0)
+                if (EqualsNoCase(e.szExeFile, exe))
                     ids.insert(e.th32ProcessID);
             return ids;
         }
@@ -266,15 +269,6 @@ namespace sd::office
             }
         }
 
-        std::wstring TempPdf()
-        {
-            wchar_t dir[MAX_PATH]{};
-            GetTempPathW(MAX_PATH, dir);
-            GUID g{};
-            CoCreateGuid(&g);
-            return (std::filesystem::path(dir) / std::format(L"ShiftDrop-office-{:08x}{:04x}.pdf", g.Data1, g.Data2)).wstring();
-        }
-
         // Passed as the password: a protected file then fails to open instead of asking for one
         // (an invisible app would wait for an answer forever). Unprotected files ignore it.
         const std::wstring kNoPassword = L"ShiftDrop: no password";
@@ -303,7 +297,7 @@ namespace sd::office
         ComPtr<IDispatch> app;
         if (const HRESULT hr = CoCreateInstance(clsid, nullptr, CLSCTX_LOCAL_SERVER, IID_PPV_ARGS(&app)); FAILED(hr))
         {
-            result.error = std::format(L"cannot start {} ({:08X})", BackendName(backend), static_cast<unsigned>(hr));
+            result.error = std::format(L"cannot start {} ({})", BackendName(backend), HexCode(hr));
             return result;
         }
         std::set<DWORD> ours;
@@ -349,7 +343,7 @@ namespace sd::office
             TryPut(app.Get(), L"AutomationSecurity", Var(3));   // msoAutomationSecurityForceDisable
             TryPut(app.Get(), L"ScreenUpdating", Var(false));
             bool ok = false;
-            const auto temp = TempPdf();
+            const auto temp = TempFilePath(L"office", L".pdf");
             auto removeTemp = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
             if (auto docs = Get(app.Get(), L"Documents", error))
             {
@@ -392,7 +386,7 @@ namespace sd::office
             TryPut(app.Get(), L"AskToUpdateLinks", Var(false));
             TryPut(app.Get(), L"EnableEvents", Var(false));
             bool ok = false;
-            const auto temp = TempPdf();
+            const auto temp = TempFilePath(L"office", L".pdf");
             auto removeTemp = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
             if (auto books = Get(app.Get(), L"Workbooks", error))
             {
@@ -441,7 +435,7 @@ namespace sd::office
                     job.progress(0.3);
                 if (job.target == "pdf")
                 {
-                    const auto temp = TempPdf();
+                    const auto temp = TempFilePath(L"office", L".pdf");
                     auto removeTemp = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
                     bool failed = false;
                     Call(pres.Get(), L"SaveAs", NamedArgs(N(L"FileName", temp), N(L"FileFormat", 32)), error, &failed);   // ppSaveAsPDF

@@ -1,7 +1,10 @@
 #include "PipelineRunner.h"
+#include "ErrorText.h"
 #include "Hash.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
+#include "StagedOutput.h"
 #include "Utf.h"
 #include "formats/Frames.h"
 
@@ -184,14 +187,7 @@ namespace sd
             result.error = why;
         }
         if (result.skipped || !result.error.empty())
-        {
-            if (m_history)
-            {
-                const auto item = m_history->BeginItem(runId, source, L"");
-                m_history->FinishItem(item, result.skipped ? status::Skipped : status::Failed, L"", 0, "", result.error, elapsedMs());
-            }
-            return result;
-        }
+            return RecordFailure(m_history, runId, source, std::move(result.error), result.skipped);
 
         if (const auto* e = EngineFor(recipe))
             return e->Run(recipe, runId, source, stop, progress);
@@ -207,13 +203,7 @@ namespace sd
         Microsoft::WRL::ComPtr<IStream> stream;
         if (const HRESULT hr = CreateStaging(source, staging, stream); FAILED(hr))
         {
-            result.error = std::format(L"cannot write next to the source: {}", HResultText(hr));
-            if (m_history)
-            {
-                const auto item = m_history->BeginItem(runId, source, L"");
-                m_history->FinishItem(item, status::Failed, L"", 0, "", result.error, elapsedMs());
-            }
-            return result;
+            return RecordFailure(m_history, runId, source, std::format(L"cannot write next to the source: {}", HResultText(hr)));
         }
         // Recorded before any bytes are written, so a kill from here on is cleaned up at next start.
         const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
@@ -259,7 +249,7 @@ namespace sd
             result.error = L"this file action runs on the UI thread";   // copy, move, copy path, terminal
             return result;
         }
-        if (GetFileAttributesW(source.c_str()) & FILE_ATTRIBUTE_DIRECTORY)
+        if (IsFolder(source))
         {
             result.error = L"folders can't be duplicated yet";
             return result;

@@ -1,5 +1,10 @@
 #pragma once
+#include "Ffmpeg.h"
+#include "PathUtil.h"
 #include "RecipeStore.h"
+#include "Utf.h"
+#include "formats/Pixels.h"
+#include "sandbox/Sandbox.h"
 
 #include <windows.h>
 #include <wincodec.h>
@@ -11,6 +16,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
 #include <string>
 
 namespace sd::test
@@ -39,7 +45,6 @@ namespace sd::test
         const std::filesystem::path& path() const { return m_path; }
 
     private:
-        static std::wstring Widen(const char* s) { return std::wstring(s, s + strlen(s)); }
         std::filesystem::path m_path;
     };
 
@@ -138,6 +143,43 @@ namespace sd::test
         ActionRegistry registry;
         RecipeStore store;
     };
+
+    // The real ffmpeg when CI (or a developer) points SHIFTDROP_FFMPEG at ffmpeg.exe; the tests that
+    // need it check Available() and are skipped otherwise. One engine for the whole run.
+    inline std::shared_ptr<const FfmpegEngine> TestFfmpeg()
+    {
+        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
+        return engine;
+    }
+
+    // Archives are read by the sandboxed worker; in the tests the worker is this exe (TestMain.cpp
+    // hands "--sd-worker" runs to sandbox::WorkerMain).
+    inline void UseTestWorker()
+    {
+        sandbox::SetWorkerPath(ThisExe());
+    }
+
+    // Any file WIC reads, as straight BGRA.
+    inline bool ReadPixels(const std::wstring& path, formats::Image& out)
+    {
+        using Microsoft::WRL::ComPtr;
+        ComPtr<IWICImagingFactory> factory;
+        ComPtr<IWICBitmapDecoder> decoder;
+        ComPtr<IWICBitmapFrameDecode> frame;
+        return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+               SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(formats::FromWicSource(factory.Get(), frame.Get(), out));
+    }
+
+    // A w x h PNG (WritePng's gradient) as bytes; the file it was written to is deleted.
+    inline std::string PngBytes(const TempDir& dir, UINT w = 64, UINT h = 48)
+    {
+        const auto path = dir / L"made.png";
+        EXPECT_HRESULT_SUCCEEDED(WritePng(path, w, h));
+        auto bytes = ReadAll(path);
+        DeleteFileW(path.c_str());
+        return bytes;
+    }
 
     inline size_t CountFiles(const TempDir& dir, const std::wstring& extension)
     {

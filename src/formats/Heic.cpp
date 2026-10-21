@@ -1,4 +1,5 @@
 #include "formats/Heic.h"
+#include "ErrorText.h"
 #include "ImagePipeline.h"
 
 #include <shlwapi.h>

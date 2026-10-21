@@ -1,6 +1,7 @@
 #include "HistoryWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Undo.h"
 #include "Utf.h"
 #include "resource.h"
@@ -225,9 +226,9 @@ namespace sd
         std::vector<std::wstring> outputs, sources;
         for (const auto& item : m_history->Items(run->id))
         {
-            if (item.status == status::Done && !item.output.empty() && GetFileAttributesW(item.output.c_str()) != INVALID_FILE_ATTRIBUTES)
+            if (item.status == status::Done && !item.output.empty() && PathExists(item.output))
                 outputs.push_back(item.output);
-            else if (GetFileAttributesW(item.source.c_str()) != INVALID_FILE_ATTRIBUTES)
+            else if (PathExists(item.source))
                 sources.push_back(item.source);
         }
         if (!outputs.empty())

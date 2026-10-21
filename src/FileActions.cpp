@@ -1,11 +1,12 @@
 #include "FileActions.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <shellapi.h>
 #include <shlobj.h>
 #include <wil/resource.h>
 
-#include <cwctype>
 #include <filesystem>
 #include <format>
 #include <map>
@@ -58,7 +59,7 @@ namespace sd
 
         std::wstring FolderOf(const std::wstring& path)
         {
-            if (GetFileAttributesW(path.c_str()) & FILE_ATTRIBUTE_DIRECTORY)
+            if (IsFolder(path))
                 return path;
             return std::filesystem::path(path).parent_path().wstring();
         }
@@ -83,15 +84,6 @@ namespace sd
         {
             static TerminalSetting setting;   // UI thread only
             return setting;
-        }
-
-        std::wstring_view Trim(std::wstring_view s)
-        {
-            while (!s.empty() && std::iswspace(s.front()))
-                s.remove_prefix(1);
-            while (!s.empty() && std::iswspace(s.back()))
-                s.remove_suffix(1);
-            return s;
         }
     }
 
@@ -201,7 +193,7 @@ namespace sd
         FileActionResult r;
         if (files.empty())
             return r;
-        const auto count = files.size() == 1 ? std::filesystem::path(files[0]).filename().wstring()
+        const auto count = files.size() == 1 ? FileName(files[0])
                                               : std::format(L"{} files", files.size());
 
         if (const auto it = ModuleActions().find(actionId); it != ModuleActions().end())

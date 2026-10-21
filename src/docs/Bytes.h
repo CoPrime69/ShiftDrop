@@ -2,15 +2,10 @@
 #include <string>
 #include <string_view>
 
-// Small helpers shared by the document, spreadsheet and subtitle converters: whole-file I/O,
-// text decoding (BOMs, UTF-16, the ANSI code page) and XML escaping.
+// Small helpers shared by the document, spreadsheet and subtitle converters: text decoding (BOMs,
+// UTF-16, the ANSI code page) and XML escaping. Whole-file I/O is in FileIo.h.
 namespace sd::docs
 {
-    // Reads a whole file. Opened with full sharing, so a document open in Word can still be read.
-    bool ReadFileBytes(const std::wstring& path, std::string& bytes, std::wstring* error = nullptr);
-    // Writes `bytes` to `path`, replacing its contents. Only used on staging files we created.
-    bool WriteFileBytes(const std::wstring& path, std::string_view bytes, std::wstring* error = nullptr);
-
     enum class TextEncoding
     {
         Utf8,
@@ -36,11 +31,6 @@ namespace sd::docs
     std::string DecodeEntity(std::string_view name);
     // Appends a code point as UTF-8.
     void AppendUtf8(std::string& out, char32_t cp);
-
-    // Lower-case ASCII copy.
-    std::string AsciiLower(std::string_view s);
-    // Trims ASCII whitespace at both ends.
-    std::string_view Trim(std::string_view s);
 
     // Is this a monospace font family name (Consolas, Courier New, Menlo...)? Marks code.
     bool IsMonoFontName(std::string_view face);

@@ -1,4 +1,6 @@
 #include "photo/PhotoEngine.h"
+#include "ErrorText.h"
+#include "FileIo.h"
 #include "Log.h"
 #include "Media.h"
 #include "OutputPath.h"
@@ -71,7 +73,7 @@ namespace sd::photo
                     continue;
                 }
                 if (FAILED(hr))
-                    error = L"drawing failed (" + gpu::HrText(hr) + L")";
+                    error = L"drawing failed (" + HexCode(hr) + L")";
                 if (device)
                     *device = gpu->Name();
                 return hr;
@@ -101,10 +103,10 @@ namespace sd::photo
             {
                 // Dates, camera and location stay with the photo; the old thumbnail and orientation don't.
                 std::vector<uint8_t> original;
-                if (metadata::ReadFileBytes(source, original))
+                if (ReadFileBytes(source, original))
                     metadata::CarryEditedExif(original, bytes, static_cast<int>(image.width), static_cast<int>(image.height));
             }
-            if (!metadata::WriteFileBytes(out.Path(), bytes))
+            if (!WriteFileBytes(out.Path(), bytes, WriteMode::Any))
                 return out.Fail(L"cannot write next to the source");
             return out.Commit(recipe.suffix, format.extension);
         }
@@ -219,18 +221,6 @@ namespace sd::photo
         if (info)
             *info = { device, Since(start) };
         return hr;
-    }
-
-    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path)
-    {
-        if (!params.is_object() || !params.contains("perFile"))
-            return params;
-        nlohmann::json out = params;
-        out.erase("perFile");
-        const auto& perFile = params["perFile"];
-        if (const auto it = perFile.is_object() ? perFile.find(Narrow(path)) : perFile.end(); it != perFile.end() && it->is_object())
-            out.update(*it);
-        return out;
     }
 
     // ---- Actions and recipes ------------------------------------------------------------------------

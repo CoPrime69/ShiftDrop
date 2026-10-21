@@ -1,5 +1,6 @@
 #include "shelf/ShelfStore.h"
 #include "Log.h"
+#include "Strings.h"
 #include "Utf.h"
 
 #include <windows.h>
@@ -92,7 +93,7 @@ namespace sd::shelf
         std::wstring x(a), y(b);
         std::replace(x.begin(), x.end(), L'/', L'\\');
         std::replace(y.begin(), y.end(), L'/', L'\\');
-        return CompareStringOrdinal(x.c_str(), static_cast<int>(x.size()), y.c_str(), static_cast<int>(y.size()), TRUE) == CSTR_EQUAL;
+        return EqualsNoCase(x, y);
     }
 
     size_t AddToTop(std::vector<std::wstring>& items, const std::vector<std::wstring>& added, size_t limit)
@@ -210,19 +211,5 @@ namespace sd::shelf
     std::wstring CountText(size_t count)
     {
         return count == 1 ? std::wstring(L"1 item") : std::format(L"{} items", count);
-    }
-
-    std::wstring SizeText(unsigned long long bytes)
-    {
-        if (bytes < 1024)
-            return bytes == 1 ? std::wstring(L"1 byte") : std::format(L"{} bytes", bytes);
-        const double kb = static_cast<double>(bytes) / 1024.0;
-        if (kb < 1024.0)
-            return std::format(L"{:.0f} KB", kb);
-        const double mb = kb / 1024.0;
-        if (mb < 1024.0)
-            return mb < 10.0 ? std::format(L"{:.1f} MB", mb) : std::format(L"{:.0f} MB", mb);
-        const double gb = mb / 1024.0;
-        return std::format(L"{:.1f} GB", gb);
     }
 }

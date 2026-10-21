@@ -1,4 +1,5 @@
 #include "photo/Layout.h"
+#include "Recipe.h"
 #include "Utf.h"
 
 #include <algorithm>
@@ -14,15 +15,6 @@ namespace sd::photo
         {
             const int x = static_cast<int>(std::lround(l)), y = static_cast<int>(std::lround(t));
             return { x, y, std::max(1, static_cast<int>(std::lround(r)) - x), std::max(1, static_cast<int>(std::lround(b)) - y) };
-        }
-
-        double Clamp(const nlohmann::json& j, const char* key, double fallback, double lo, double hi)
-        {
-            const auto it = j.find(key);
-            if (it == j.end() || !it->is_number())
-                return fallback;
-            const double v = it->get<double>();
-            return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
         }
 
         uint32_t Colour(const nlohmann::json& j, const char* key, uint32_t fallback)
@@ -66,15 +58,15 @@ namespace sd::photo
         p.fill = fill == "solid" ? Fill::Solid : fill == "blur" ? Fill::Blur : fill == "image" ? Fill::Image : Fill::Gradient;
         p.color1 = Colour(j, "color1", p.color1);
         p.color2 = Colour(j, "color2", p.color2);
-        p.angle = Clamp(j, "angle", p.angle, 0, 360);
+        p.angle = JsonNumber(j, "angle", p.angle, 0, 360);
         p.image = Widen(j.value("image", std::string()));
         if (p.fill == Fill::Image && p.image.empty())
             p.fill = Fill::Blur;
-        p.blur = Clamp(j, "blur", p.blur, 0, 100);
+        p.blur = JsonNumber(j, "blur", p.blur, 0, 100);
         p.aspect = Aspect(j);
-        p.padding = Clamp(j, "padding", p.padding, 0, 40);
-        p.radius = Clamp(j, "radius", p.radius, 0, 100);
-        p.shadow = Clamp(j, "shadow", p.shadow, 0, 100);
+        p.padding = JsonNumber(j, "padding", p.padding, 0, 40);
+        p.radius = JsonNumber(j, "radius", p.radius, 0, 100);
+        p.shadow = JsonNumber(j, "shadow", p.shadow, 0, 100);
         return p;
     }
 
@@ -160,10 +152,10 @@ namespace sd::photo
             for (const auto& v : *it)
                 if (v.is_number_integer())
                     p.order.push_back(v.get<int>());
-        p.size = static_cast<int>(Clamp(j, "size", p.size, 256, 16384));
+        p.size = static_cast<int>(JsonNumber(j, "size", p.size, 256, 16384));
         p.aspect = Aspect(j);
-        p.spacing = Clamp(j, "spacing", p.spacing, 0, 100);
-        p.radius = Clamp(j, "radius", p.radius, 0, 100);
+        p.spacing = JsonNumber(j, "spacing", p.spacing, 0, 100);
+        p.radius = JsonNumber(j, "radius", p.radius, 0, 100);
         p.background = Colour(j, "background", p.background);
         p.fit = j.value("fit", false);
         return p;

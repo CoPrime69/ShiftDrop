@@ -32,9 +32,6 @@ namespace sd::photo
     HRESULT RenderCollage(const std::vector<Picture>& pictures, const CollageParams& p, canvas::Raster& out, std::wstring& error,
                           RenderInfo* info = nullptr);
 
-    // One file's params of a per-file tool: the shared ones with params["perFile"][path] over them.
-    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);
-
     // For tests and the module: the actions and the built-in recipes.
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();

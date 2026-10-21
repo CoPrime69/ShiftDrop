@@ -1,5 +1,7 @@
 #include "ocr/OcrEngine.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "StagedOutput.h"
 #include "ocr/Ocr.h"
 #include "pdf/ImagePdf.h"
 #include "pdf/PageRenderer.h"
@@ -45,7 +47,7 @@ namespace sd::ocr
                 const bool isPdf = HasPdfExtension(path);
                 if (isPdf && !LooksLikePdf(path, why))
                     return false;
-                if (!isPdf && GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!isPdf && !PathExists(path))
                 {
                     if (why)
                         *why = L"file not found";
@@ -71,7 +73,7 @@ namespace sd::ocr
                            const ProgressFn& progress) const override
             {
                 if (ActionOf(recipe) != "ocr.searchable_pdf")
-                    return FailItem(m_history, runId, source, L"not a per-file action");
+                    return RecordFailure(m_history, runId, source, L"not a per-file action");
                 try
                 {
                     return HasPdfExtension(source) ? SearchablePdf(recipe, runId, source, stop, progress)
@@ -79,7 +81,7 @@ namespace sd::ocr
                 }
                 catch (const std::exception& e)
                 {
-                    return FailItem(m_history, runId, source, QpdfError(e));
+                    return RecordFailure(m_history, runId, source, QpdfError(e));
                 }
             }
 
@@ -127,7 +129,7 @@ namespace sd::ocr
                     if (!error.empty())
                         log::Warn(L"copy text: {}: {}", source, error);
                     if (firstError.empty() && !error.empty())
-                        firstError = std::format(L"{}: {}", FileNameOf(source), error);
+                        firstError = std::format(L"{}: {}", FileName(source), error);
                     fileProgress(1.0);
                     if (text.empty())
                         continue;
@@ -138,11 +140,11 @@ namespace sd::ocr
                     all += text;
                 }
                 if (all.empty())
-                    return FailItem(m_history, runId, sources.front(), firstError.empty() ? std::wstring(L"no text found") : firstError);
+                    return RecordFailure(m_history, runId, sources.front(), firstError.empty() ? std::wstring(L"no text found") : firstError);
                 std::wstring error;
                 if (!SetClipboardText(all, error))
-                    return FailItem(m_history, runId, sources.front(), error);
-                RecordNoFileItem(m_history, runId, sources.front());
+                    return RecordFailure(m_history, runId, sources.front(), error);
+                RecordDone(m_history, runId, sources.front());
                 ItemResult result;
                 result.ok = true;
                 result.message = CopiedMessage(words, withText);
@@ -155,22 +157,22 @@ namespace sd::ocr
                 ImageSource image;
                 std::wstring error;
                 if (!LoadImageSource(source, image, error))
-                    return FailItem(m_history, runId, source, error);
+                    return RecordFailure(m_history, runId, source, error);
                 // OCR reads the picture upright; the page shows the same thing (a pass-through JPEG is
                 // turned by the page's drawing matrix instead of by re-encoding it).
                 Bitmap upright;
                 if (image.jpeg.empty())
                     upright = image.pixels;
                 else if (!DecodeImageFile(source, upright, error))
-                    return FailItem(m_history, runId, source, error);
+                    return RecordFailure(m_history, runId, source, error);
                 FlattenOnWhite(upright);
                 Result result;
                 if (!Recognize(upright, result, error))
-                    return FailItem(m_history, runId, source, error);
+                    return RecordFailure(m_history, runId, source, error);
                 if (progress)
                     progress(0.7);
                 if (result.lines.empty())
-                    return FailItem(m_history, runId, source, L"no text found in the picture");
+                    return RecordFailure(m_history, runId, source, L"no text found in the picture");
                 StagedOutput out(m_history, runId, source);
                 if (!out.Ready())
                     return out.Fail(out.Error());
@@ -189,7 +191,7 @@ namespace sd::ocr
                 std::wstring error;
                 auto doc = OpenPdf(source, error);
                 if (!doc)
-                    return FailItem(m_history, runId, source, error);
+                    return RecordFailure(m_history, runId, source, error);
                 auto pages = QPDFPageDocumentHelper(*doc).getAllPages();
                 std::unique_ptr<IRenderedPdf> rendered;
                 PdfTextLayer layer(*doc);
@@ -197,25 +199,25 @@ namespace sd::ocr
                 for (size_t i = 0; i < pages.size(); ++i)
                 {
                     if (stop.stop_requested())
-                        return FailItem(m_history, runId, source, kCancelled, true);
+                        return RecordFailure(m_history, runId, source, kCancelled, true);
                     if (progress)
                         progress(0.8 * static_cast<double>(i) / static_cast<double>(pages.size()));
                     if (VisibleChars(ExtractPageLines(pages[i])) >= kMinTextChars)
                         continue;   // already has real text
                     ++needed;
                     if (!rendered && !(rendered = OpenForRendering(source, error)))
-                        return FailItem(m_history, runId, source, error);
+                        return RecordFailure(m_history, runId, source, error);
                     Bitmap bitmap;
                     Result result;
                     if (!RenderForOcr(*rendered, static_cast<uint32_t>(i), bitmap, error) || !Recognize(bitmap, result, error))
-                        return FailItem(m_history, runId, source, std::format(L"page {}: {}", i + 1, error));
+                        return RecordFailure(m_history, runId, source, std::format(L"page {}: {}", i + 1, error));
                     if (layer.AddToPage(pages[i], result))
                         ++added;
                 }
                 if (needed == 0)
-                    return FailItem(m_history, runId, source, L"already searchable: every page has text", true);
+                    return RecordFailure(m_history, runId, source, L"already searchable: every page has text", true);
                 if (added == 0)
-                    return FailItem(m_history, runId, source, L"no text found on the scanned pages");
+                    return RecordFailure(m_history, runId, source, L"no text found on the scanned pages");
                 StagedOutput out(m_history, runId, source);
                 if (!out.Ready())
                     return out.Fail(out.Error());

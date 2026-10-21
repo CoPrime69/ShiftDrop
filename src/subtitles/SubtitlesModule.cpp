@@ -1,4 +1,6 @@
 #include "subtitles/SubtitlesModule.h"
+#include "FileIo.h"
+#include "PathUtil.h"
 #include "subtitles/Subtitles.h"
 #include "docs/Bytes.h"
 #include "OutputPath.h"
@@ -11,11 +13,6 @@ namespace sd::subtitles
     {
         // Subtitle files are small; anything bigger is not one.
         constexpr uint64_t kMaxBytes = 64ull * 1024 * 1024;
-
-        std::string TargetOf(const Recipe& r)
-        {
-            return r.steps.empty() ? std::string() : r.steps[0].params.value("format", std::string());
-        }
 
         const wchar_t* ExtensionOf(std::string_view target)
         {
@@ -40,12 +37,12 @@ namespace sd::subtitles
 
             bool Applies(const Recipe& recipe, const std::wstring& path) const override
             {
-                return TargetFits(path, TargetOf(recipe));
+                return TargetFits(path, recipe.FirstParam("format"));
             }
 
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
             {
-                if (!TargetFits(path, TargetOf(recipe)))
+                if (!TargetFits(path, recipe.FirstParam("format")))
                 {
                     if (why)
                         *why = L"not a subtitle file";
@@ -58,7 +55,7 @@ namespace sd::subtitles
                         *why = L"file not found";
                     return false;
                 }
-                if ((static_cast<uint64_t>(data.nFileSizeHigh) << 32 | data.nFileSizeLow) > kMaxBytes)
+                if (FileSizeOf(data) > kMaxBytes)
                 {
                     if (why)
                         *why = L"too large for a subtitle file";
@@ -69,13 +66,13 @@ namespace sd::subtitles
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 StagedOutput out(m_history, runId, source);
                 if (!out.Ready())
                     return out.Fail(out.Error());
                 std::string bytes;
                 std::wstring error;
-                if (!docs::ReadFileBytes(source, bytes, &error))
+                if (!ReadFileBytes(source, bytes, &error))
                     return out.Fail(error);
                 if (stop.stop_requested())
                     return out.Fail(L"cancelled", true);
@@ -92,7 +89,7 @@ namespace sd::subtitles
                     result = WriteVtt(track);
                 else
                     result = WriteText(track);
-                if (!docs::WriteFileBytes(out.Path(), result, &error))
+                if (!WriteFileBytes(out.Path(), result, WriteMode::Existing, &error))
                     return out.Fail(error);
                 if (progress)
                     progress(1.0);

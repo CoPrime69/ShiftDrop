@@ -1,7 +1,10 @@
 // Toasts through Windows.UI.Notifications and the desktop-app COM activator. See Toasts.h.
 #include "toast/Toasts.h"
 #include "Brand.h"
+#include "ErrorText.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <windows.h>
 #include <NotificationActivationCallback.h>
@@ -97,25 +100,8 @@ namespace sd::toast
             const HRESULT hr = factory ? CoRegisterClassObject(ActivatorClsid(), factory.Get(), CLSCTX_LOCAL_SERVER, flags, &Current().cookie)
                                        : E_OUTOFMEMORY;
             if (FAILED(hr))
-                log::Warn(L"toast: CoRegisterClassObject failed (0x{:08X})", static_cast<unsigned>(hr));
+                log::Warn(L"toast: CoRegisterClassObject failed ({})", HexCode(hr));
             return SUCCEEDED(hr);
-        }
-
-        std::wstring ExePath()
-        {
-            std::wstring path(MAX_PATH, L'\0');
-            for (;;)
-            {
-                const DWORD n = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-                if (n == 0)
-                    return {};
-                if (n < path.size())
-                {
-                    path.resize(n);
-                    return path;
-                }
-                path.resize(path.size() * 2);
-            }
         }
 
         // The Start-menu shortcut the installer made, with our AppUserModelID and activator on it.
@@ -142,7 +128,7 @@ namespace sd::toast
                 PropVariantClear(&activator);
             });
             const bool idOk = SUCCEEDED(store->GetValue(kAppIdKey, &id)) && id.vt == VT_LPWSTR && id.pwszVal &&
-                              CompareStringOrdinal(id.pwszVal, -1, kAppId, -1, TRUE) == CSTR_EQUAL;
+                              EqualsNoCase(id.pwszVal, kAppId);
             const bool activatorOk = SUCCEEDED(store->GetValue(kActivatorKey, &activator)) && activator.vt == VT_CLSID && activator.puuid &&
                                      IsEqualCLSID(*activator.puuid, ActivatorClsid());
             if (!idOk || !activatorOk)
@@ -155,7 +141,7 @@ namespace sd::toast
         // after the app has quit starts this copy.
         void RegisterServer()
         {
-            const auto command = std::format(L"\"{}\" {}", ExePath(), kActivatedArg);
+            const auto command = std::format(L"\"{}\" {}", ThisExe(), kActivatedArg);
             const auto key = ClassKey() + L"\\LocalServer32";
             const LSTATUS status = RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, REG_SZ, command.c_str(),
                                                    static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
@@ -173,7 +159,7 @@ namespace sd::toast
         // The shortcut and the process share the ID, so Windows ties our toasts (and windows) to it.
         if (const HRESULT hr = SetCurrentProcessExplicitAppUserModelID(kAppId); FAILED(hr))
         {
-            log::Warn(L"toast: SetCurrentProcessExplicitAppUserModelID failed (0x{:08X})", static_cast<unsigned>(hr));
+            log::Warn(L"toast: SetCurrentProcessExplicitAppUserModelID failed ({})", HexCode(hr));
             return false;
         }
         RegisterServer();
@@ -185,7 +171,7 @@ namespace sd::toast
         }
         catch (const winrt::hresult_error& e)
         {
-            log::Warn(L"toast: no notifier (0x{:08X}); using balloon notifications", static_cast<uint32_t>(e.code().value));
+            log::Warn(L"toast: no notifier ({}); using balloon notifications", HexCode(e.code().value));
             Stop();
             return false;
         }
@@ -211,7 +197,7 @@ namespace sd::toast
         }
         catch (const winrt::hresult_error& e)
         {
-            log::Warn(L"toast: not shown (0x{:08X})", static_cast<uint32_t>(e.code().value));
+            log::Warn(L"toast: not shown ({})", HexCode(e.code().value));
             return false;
         }
     }

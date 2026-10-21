@@ -1,4 +1,7 @@
 #include "docs/Bytes.h"
+#include "FileIo.h"
+#include "PathUtil.h"
+#include "Strings.h"
 #include "docs/Formats.h"
 #include "Utf.h"
 
@@ -132,9 +135,7 @@ namespace sd::docs
                 path = (std::filesystem::path(baseDir) / p).lexically_normal().wstring();
             }
         }
-        WIN32_FILE_ATTRIBUTE_DATA info{};
-        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info) || (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
-            info.nFileSizeHigh != 0 || info.nFileSizeLow > 64u * 1024 * 1024)
+        if (!IsFile(path) || FileSize(path) > 64u * 1024 * 1024)
             return -1;
         std::string bytes;
         if (!ReadFileBytes(path, bytes) || SniffImage(bytes).empty())

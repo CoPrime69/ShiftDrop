@@ -53,6 +53,4 @@ namespace sd::photo::gpu
 
     // The largest bitmap this context can make (16384 on Direct3D 11 hardware and WARP).
     unsigned MaxEdge(ID2D1DeviceContext* dc);
-
-    std::wstring HrText(HRESULT hr);   // "0x887A0005"
 }

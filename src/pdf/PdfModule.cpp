@@ -1,6 +1,7 @@
 #include "pdf/PdfModule.h"
 #include "ImagePipeline.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "ocr/OcrEngine.h"
 #include "pdf/PdfEditors.h"
 #include "share/Share.h"
@@ -8,7 +9,6 @@
 #include <windows.h>
 
 #include <filesystem>
-#include <format>
 #include <fstream>
 
 namespace sd::pdf
@@ -144,8 +144,7 @@ namespace sd::pdf
 
     bool LooksLikePdf(const std::wstring& path, std::wstring* why)
     {
-        const DWORD attributes = GetFileAttributesW(path.c_str());
-        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY))
+        if (!IsFile(path))
         {
             if (why)
                 *why = L"file not found";
@@ -171,39 +170,5 @@ namespace sd::pdf
         static const ImageCodecs codecs;
         const auto ext = LowerExtension(path);
         return ext != L".pdf" && codecs.CanDecode(ext);
-    }
-
-    ItemResult FailItem(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped)
-    {
-        if (history)
-        {
-            const auto item = history->BeginItem(runId, source, L"");
-            history->FinishItem(item, skipped ? status::Skipped : status::Failed, L"", 0, "", error, 0);
-        }
-        ItemResult r;
-        r.skipped = skipped;
-        r.error = std::move(error);
-        return r;
-    }
-
-    void RecordNoFileItem(HistoryStore* history, int64_t runId, const std::wstring& source)
-    {
-        if (history)
-        {
-            const auto item = history->BeginItem(runId, source, L"");
-            history->FinishItem(item, status::Done, L"", 0, "", L"", 0);
-        }
-    }
-
-    std::wstring FileNameOf(const std::wstring& path) { return std::filesystem::path(path).filename().wstring(); }
-
-    std::wstring SizeText(uint64_t bytes)
-    {
-        if (bytes < 1024)
-            return std::format(L"{} bytes", bytes);
-        if (bytes < 1024 * 1024)
-            return std::format(L"{} KB", (bytes + 512) / 1024);
-        const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
-        return mb < 10 ? std::format(L"{:.1f} MB", mb) : std::format(L"{:.0f} MB", mb);
     }
 }

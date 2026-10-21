@@ -1,8 +1,11 @@
 #include "formats/Frames.h"
 #include "Ask.h"
+#include "ErrorText.h"
+#include "FormatText.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "formats/Avif.h"
 
 #include <shlwapi.h>
@@ -329,11 +332,11 @@ namespace sd::formats
             const uint32_t kept = (count + step - 1) / step;
             ask::Question q;
             q.title = std::format(L"GIF to {}", format.label);
-            q.heading = std::format(L"{} has {} frames", std::filesystem::path(source).filename().wstring(), ask::Thousands(count));
+            q.heading = std::format(L"{} has {} frames", FileName(source), Thousands(count));
             q.text = std::format(L"Each frame becomes its own {} file in a new folder.", format.label);
-            q.choices = { { 1, std::format(L"Save all {} frames", ask::Thousands(count)), std::format(L"{} files", ask::Thousands(count)) },
+            q.choices = { { 1, std::format(L"Save all {} frames", Thousands(count)), std::format(L"{} files", Thousands(count)) },
                           { 2, std::format(L"Save every {} frame", ask::Ordinal(step)),
-                            std::format(L"{} files: frames 1, {}, {} and so on", ask::Thousands(kept), 1 + step, 1 + 2 * step) } };
+                            std::format(L"{} files: frames 1, {}, {} and so on", Thousands(kept), 1 + step, 1 + 2 * step) } };
             q.unattended = 1;   // what it did before it asked
             switch (ask::Choose(q, stop))
             {

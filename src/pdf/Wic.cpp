@@ -1,4 +1,5 @@
 #include "pdf/Wic.h"
+#include "ErrorText.h"
 #include "ImagePipeline.h"
 #include "Recipe.h"
 

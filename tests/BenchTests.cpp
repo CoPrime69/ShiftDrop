@@ -7,8 +7,10 @@
 //   shiftdrop_tests --gtest_filter=Bench.*
 // The table is printed at the end; with SHIFTDROP_BENCH_OUT=<file> it is also written there as
 // Markdown (CI adds it to the job summary). Video and audio rows need SHIFTDROP_FFMPEG.
+#include "FormatText.h"
 #include "HistoryStore.h"
 #include "JobQueue.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "PdfTestUtil.h"
 #include "TestUtil.h"
@@ -73,13 +75,6 @@ namespace
         return ms < 10000 ? std::format("{:.0f} ms", ms) : std::format("{:.1f} s", ms / 1000);
     }
 
-    std::string Bytes(uint64_t n)
-    {
-        if (n >= 1024 * 1024)
-            return std::format("{:.1f} MB", static_cast<double>(n) / (1024.0 * 1024.0));
-        return std::format("{:.0f} KB", static_cast<double>(n) / 1024.0);
-    }
-
     double Ms(std::chrono::steady_clock::time_point from)
     {
         return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - from).count();
@@ -123,19 +118,13 @@ namespace
     };
     const auto* g_table = ::testing::AddGlobalTestEnvironment(new Table);
 
-    std::shared_ptr<const FfmpegEngine> Ffmpeg()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
     // ffmpeg as a tool for making inputs (not timed).
     bool Make(const std::vector<std::wstring>& args)
     {
         std::vector<std::wstring> all{ L"-hide_banner", L"-nostdin", L"-loglevel", L"error", L"-y" };
         all.insert(all.end(), args.begin(), args.end());
         std::stop_source never;
-        return Ffmpeg()->Run(all, nullptr, never.get_token()).ok;
+        return TestFfmpeg()->Run(all, nullptr, never.get_token()).ok;
     }
 
     // A 4000 x 3000 "photo": smooth colour fields with fine grain, saved as a quality-90 JPEG
@@ -249,12 +238,12 @@ namespace
                 }
             });
 
-            if (Ffmpeg()->Available())
+            if (TestFfmpeg()->Available())
             {
                 // 30 s of 1080p30 H.264 + AAC (about 8 Mbit/s, like a phone clip), with grain so the
                 // encoders have real work.
                 i.clip = i / L"clip.mp4";
-                const H264Encoder h264 = Ffmpeg()->H264();
+                const H264Encoder h264 = TestFfmpeg()->H264();
                 auto video = H264QualityArgs(h264, 23, 8'000'000);
                 std::vector<std::wstring> args{ L"-f", L"lavfi", L"-i", L"testsrc2=s=1920x1080:r=30:d=30,noise=alls=6:allf=t",
                                                 L"-f", L"lavfi", L"-i", L"sine=f=330:sample_rate=48000:d=30" };
@@ -346,7 +335,7 @@ namespace
                 WriteText((std::filesystem::path(i.folder) / L"src" / std::format(L"file{:02}.cpp", n)).wstring(), text);
             }
             for (const auto& p : i.photos)
-                std::filesystem::copy_file(p, std::filesystem::path(i.folder) / std::filesystem::path(p).filename());
+                std::filesystem::copy_file(p, std::filesystem::path(i.folder) / FileName(p));
             return i;
         }();
         return in;
@@ -357,11 +346,9 @@ namespace
     {
         Bench()
         {
-            wchar_t self[MAX_PATH]{};
-            GetModuleFileNameW(nullptr, self, MAX_PATH);
-            sandbox::SetWorkerPath(self);   // the archive worker is this exe (TestMain.cpp)
+            UseTestWorker();
             RunMta([&] { codecs = std::make_shared<const ImageCodecs>(); });
-            runner = std::make_unique<PipelineRunner>(codecs, nullptr, Ffmpeg()->Available() ? Ffmpeg() : nullptr);
+            runner = std::make_unique<PipelineRunner>(codecs, nullptr, TestFfmpeg()->Available() ? TestFfmpeg() : nullptr);
         }
         TempDir recipesDir;
         Recipes recipes{ recipesDir };
@@ -411,7 +398,7 @@ namespace
                 break;
         }
         std::sort(times.begin(), times.end());
-        Record(area, task, times[times.size() / 2], Bytes(last.size));
+        Record(area, task, times[times.size() / 2], Narrow(SizeText(last.size)));
     }
 
     void TimeRecipe(const char* area, const std::string& task, std::string_view id, const std::wstring& source)
@@ -431,7 +418,7 @@ namespace
             Record(area, task, -1, "did not run: " + Narrow(r.error));
             return;
         }
-        Record(area, task, ms, Bytes(r.size));
+        Record(area, task, ms, Narrow(SizeText(r.size)));
         RemoveOutput(r);
     }
 
@@ -467,7 +454,7 @@ namespace
             total += r.size;
             RemoveOutput(r);
         }
-        Record(area, task, ms, std::format("{} files, {} worker(s), {}", sources.size(), threads, Bytes(total)));
+        Record(area, task, ms, std::format("{} files, {} worker(s), {}", sources.size(), threads, Narrow(SizeText(total))));
     }
 
     Recipe WithParams(Recipe r, const nlohmann::json& params)
@@ -517,7 +504,7 @@ TEST(Bench, Video)
     if (!in.media)
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     const char* a = "Video";
-    Record(a, "H.264 encoder on this PC", -1, Narrow(EncoderName(Ffmpeg()->H264())));
+    Record(a, "H.264 encoder on this PC", -1, Narrow(EncoderName(TestFfmpeg()->H264())));
     TimeRecipe(a, "1080p 30 s MP4 -> MOV (streams copied)", "to-mov", in.clip);
     TimeRecipe(a, "1080p 30 s MP4 -> MKV (streams copied)", "to-mkv", in.clip);
     TimeRecipe(a, "1080p 30 s AVI -> MP4 (H.264 encode)", "to-mp4", in.avi);
@@ -618,14 +605,14 @@ TEST(Bench, Overhead)
         for (int i = 0; i < 5; ++i)
         {
             auto t = std::chrono::steady_clock::now();
-            Ffmpeg()->Run({ L"-hide_banner", L"-nostdin", L"-version" }, nullptr, never.get_token());
+            TestFfmpeg()->Run({ L"-hide_banner", L"-nostdin", L"-version" }, nullptr, never.get_token());
             starts.push_back(Ms(t));
             t = std::chrono::steady_clock::now();
-            const auto info = Ffmpeg()->Probe(in.clip);
+            const auto info = TestFfmpeg()->Probe(in.clip);
             probes.push_back(Ms(t));
             EXPECT_EQ(info.videoCodec, "h264");
             t = std::chrono::steady_clock::now();
-            inspect::Probe(*Ffmpeg(), in.clip, never.get_token());
+            inspect::Probe(*TestFfmpeg(), in.clip, never.get_token());
             inspects.push_back(Ms(t));
         }
         for (auto* v : { &starts, &probes, &inspects })
@@ -634,7 +621,7 @@ TEST(Bench, Overhead)
         Record(a, "Probe before a conversion", probes[2]);
         Record(a, "Probe for the wheel's prediction", inspects[2]);
         // The H.264 encoder test the app runs once at startup.
-        const FfmpegEngine fresh(Ffmpeg()->Path());
+        const FfmpegEngine fresh(TestFfmpeg()->Path());
         const auto t = std::chrono::steady_clock::now();
         const auto chosen = fresh.H264();
         Record(a, "H.264 encoder test at startup", Ms(t), Narrow(EncoderName(chosen)));
@@ -648,7 +635,7 @@ TEST(Bench, Overhead)
         const auto recipe = Find(id);
         if (!recipe)
             return;
-        Predictor predictor(in.media ? Ffmpeg() : nullptr, {});
+        Predictor predictor(in.media ? TestFfmpeg() : nullptr, {});
         double first = 0, again = 0;
         std::wstring size;
         RunMta([&] {
@@ -691,12 +678,12 @@ TEST(Bench, FfmpegOptions)
         args.push_back(null ? L"-" : out);
         std::stop_source never;
         const auto t = std::chrono::steady_clock::now();
-        const auto r = Ffmpeg()->Run(args, nullptr, never.get_token());
+        const auto r = TestFfmpeg()->Run(args, nullptr, never.get_token());
         const double ms = Ms(t);
         std::error_code ec;
-        const auto size = std::filesystem::exists(out) ? std::filesystem::file_size(out, ec) : 0;
+        const auto size = FileSize(out);
         std::filesystem::remove(out, ec);
-        Record(a, task, r.ok ? ms : -1, r.ok ? (size ? Bytes(size) : std::string()) : "failed: " + Narrow(r.error));
+        Record(a, task, r.ok ? ms : -1, r.ok ? (size ? Narrow(SizeText(size)) : std::string()) : "failed: " + Narrow(r.error));
     };
     const std::vector<std::wstring> ten{ L"-t", L"10", L"-i", in.clip };
     const auto with = [](std::vector<std::wstring> x, const std::vector<std::wstring>& y) {
@@ -786,7 +773,7 @@ TEST(Bench, WebpOptions)
         const auto t = std::chrono::steady_clock::now();
         const bool ok = WebPPictureImportBGRA(&picture, pixels.data(), static_cast<int>(w * 4)) && WebPEncode(&config, &picture);
         const double ms = Ms(t);
-        std::string note = ok ? Bytes(memory.size) : "failed";
+        std::string note = ok ? Narrow(SizeText(memory.size)) : "failed";
         int dw = 0, dh = 0;
         if (uint8_t* decoded = ok ? WebPDecodeBGRA(memory.mem, memory.size, &dw, &dh) : nullptr)
         {

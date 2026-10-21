@@ -1,6 +1,8 @@
 #include "rename/RenameWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "Strings.h"
 #include "Theme.h"
 #include "resource.h"
 
@@ -10,7 +12,6 @@
 #include <uxtheme.h>
 
 #include <algorithm>
-#include <filesystem>
 #include <format>
 
 namespace sd
@@ -26,11 +27,6 @@ namespace sd
         constexpr int kButtonW = 110, kButtonH = 30, kStartW = 80;
 
         constexpr wchar_t kFieldsHint[] = L"{name}  name    {n} or {n:000}  number    {date}  modified    {ext}  extension    {folder}  folder";
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            return std::filesystem::path(path).filename().wstring();
-        }
 
         // {date}: the modified date, local time, as 2026-10-21 (sorts the same as it reads).
         rename::Item MakeItem(const std::wstring& path)
@@ -375,7 +371,7 @@ namespace sd
             return 0;
         }
         case WM_SETTINGCHANGE:
-            if (lParam && CompareStringOrdinal(reinterpret_cast<const wchar_t*>(lParam), -1, L"ImmersiveColorSet", -1, TRUE) == CSTR_EQUAL)
+            if (lParam && EqualsNoCase(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet"))
                 ApplyTheme();
             break;
         case WM_ERASEBKGND:

@@ -1,12 +1,12 @@
 #include "StagedOutput.h"
+#include "ErrorText.h"
 #include "Hash.h"
-#include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "Strings.h"
 
 #include <filesystem>
 #include <format>
-#include <random>
 
 namespace sd
 {
@@ -19,10 +19,9 @@ namespace sd
             const std::filesystem::path dir(OutputFolder(source));
             if (CurrentOutputNaming() == OutputNaming::Subfolder && FAILED(MakeOutputFolder(dir.wstring())))
                 return false;
-            thread_local std::mt19937 rng{ std::random_device{}() };
             for (int attempt = 0; attempt < 16; ++attempt)
             {
-                const auto candidate = (dir / std::format(L"~{}.{:08x}.sdpart", src.stem().wstring(), static_cast<unsigned>(rng()))).wstring();
+                const auto candidate = (dir / StagingName(src.stem().wstring())).wstring();
                 if (CreateDirectoryW(candidate.c_str(), nullptr))
                 {
                     path = candidate;
@@ -121,8 +120,30 @@ namespace sd
         // A "ShiftDrop" output folder made for this output alone goes too (RemoveDirectory only
         // removes an empty folder).
         const auto parent = std::filesystem::path(path).parent_path();
-        if (removed && CurrentOutputNaming() == OutputNaming::Subfolder && CompareStringOrdinal(parent.filename().c_str(), -1, kOutputSubfolder, -1, TRUE) == CSTR_EQUAL)
+        if (removed && CurrentOutputNaming() == OutputNaming::Subfolder && EqualsNoCase(parent.filename().wstring(), kOutputSubfolder))
             RemoveDirectoryW(parent.c_str());
         return removed;
+    }
+
+    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped)
+    {
+        if (history)
+        {
+            const auto item = history->BeginItem(runId, source, L"");
+            history->FinishItem(item, skipped ? status::Skipped : status::Failed, L"", 0, "", error, 0);
+        }
+        ItemResult r;
+        r.skipped = skipped;
+        r.error = std::move(error);
+        return r;
+    }
+
+    void RecordDone(HistoryStore* history, int64_t runId, const std::wstring& source)
+    {
+        if (history)
+        {
+            const auto item = history->BeginItem(runId, source, L"");
+            history->FinishItem(item, status::Done, L"", 0, "", L"", 0);
+        }
     }
 }

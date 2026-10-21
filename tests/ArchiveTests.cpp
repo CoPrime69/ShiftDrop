@@ -1,4 +1,5 @@
 #include "Ask.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -24,15 +25,6 @@ using namespace sd::test;
 
 namespace
 {
-    // Archives are read by the sandboxed worker; in the tests the worker is this exe (TestMain.cpp
-    // hands "--sd-worker" runs to sandbox::WorkerMain).
-    void UseTestWorker()
-    {
-        wchar_t self[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, self, MAX_PATH);
-        sandbox::SetWorkerPath(self);
-    }
-
     struct Crafted
     {
         std::string name;
@@ -350,7 +342,7 @@ TEST_F(ArchiveTest, RoundTripsEveryWritableFormat)
         ASSERT_TRUE(packed.ok) << id << ": " << Narrow(packed.error);
         const auto& recipe = recipes.Get(id);
         const auto* format = FindWriteFormat(recipe.steps[0].params["format"].get<std::string>());
-        EXPECT_EQ(std::filesystem::path(packed.output).filename(), L"Photos.2024 (" + recipe.suffix + L")" + format->extension) << id;
+        EXPECT_EQ(FileName(packed.output), L"Photos.2024 (" + recipe.suffix + L")" + format->extension) << id;
 
         const auto unpacked = Run("archive-extract", packed.output);
         ASSERT_TRUE(unpacked.ok) << id << ": " << Narrow(unpacked.error);
@@ -407,7 +399,7 @@ TEST_F(ArchiveTest, ZipNamesAreUtf8WithTheFlagSet)
     WriteFileW(file, "x");
     const auto packed = Batch("archive-zip", { file });
     ASSERT_TRUE(packed.ok) << Narrow(packed.error);
-    EXPECT_EQ(std::filesystem::path(packed.output).filename(), std::filesystem::path(file).stem().wstring() + L" (zipped).zip");
+    EXPECT_EQ(FileName(packed.output), std::filesystem::path(file).stem().wstring() + L" (zipped).zip");
     const auto bytes = ReadAll(packed.output);
     ASSERT_GT(bytes.size(), 30u);
     const uint16_t flags = static_cast<uint8_t>(bytes[6]) | (static_cast<uint8_t>(bytes[7]) << 8);
@@ -460,7 +452,7 @@ TEST_F(ArchiveTest, ConvertsBetweenFormats)
 
     const auto tgz = Run("archive-to-targz", zip.output);
     ASSERT_TRUE(tgz.ok) << Narrow(tgz.error);
-    EXPECT_EQ(std::filesystem::path(tgz.output).filename(), L"Photos.2024 (zipped) (converted).tar.gz");
+    EXPECT_EQ(FileName(tgz.output), L"Photos.2024 (zipped) (converted).tar.gz");
     const auto sevenZip = Run("archive-to-7z", tgz.output);
     ASSERT_TRUE(sevenZip.ok) << Narrow(sevenZip.error);
     const auto back = Run("archive-to-zip", sevenZip.output);

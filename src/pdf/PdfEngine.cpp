@@ -1,8 +1,12 @@
 // The PDF engine: PDF -> JPG/PNG/TXT/Markdown, Images -> PDF, Merge PDFs, Organize PDF Pages and
 // Compress PDF. Every output goes through StagedOutput, so it is named "name (suffix).ext", never
 // overwrites anything and can be undone.
+#include "ErrorText.h"
+#include "FileIo.h"
 #include "ImagePipeline.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "StagedOutput.h"
 #include "Utf.h"
 #include "formats/Frames.h"
 #include "pdf/ImagePdf.h"
@@ -18,7 +22,6 @@
 #include <atomic>
 #include <filesystem>
 #include <format>
-#include <fstream>
 #include <mutex>
 
 namespace sd::pdf
@@ -26,22 +29,6 @@ namespace sd::pdf
     namespace
     {
         const std::string& ActionOf(const Recipe& r) { return r.steps.front().action; }
-
-        uint64_t FileSize(const std::wstring& path)
-        {
-            WIN32_FILE_ATTRIBUTE_DATA data{};
-            if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
-                return 0;
-            return (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
-        }
-
-        bool WriteUtf8(const std::wstring& path, const std::wstring& text)
-        {
-            std::ofstream out(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
-            const std::string bytes = Narrow(text);
-            out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-            return out.good();
-        }
 
         std::wstring Pages(size_t n) { return n == 1 ? L"1 page" : std::format(L"{} pages", n); }
 
@@ -65,7 +52,7 @@ namespace sd::pdf
                 const auto& action = ActionOf(recipe);
                 if (action == "pdf.from_images")
                 {
-                    if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                    if (!PathExists(path))
                     {
                         if (why)
                             *why = L"file not found";
@@ -145,9 +132,9 @@ namespace sd::pdf
                 }
                 catch (const std::exception& e)
                 {
-                    return FailItem(m_history, runId, source, QpdfError(e));
+                    return RecordFailure(m_history, runId, source, QpdfError(e));
                 }
-                return FailItem(m_history, runId, source, L"not a per-file action");
+                return RecordFailure(m_history, runId, source, L"not a per-file action");
             }
 
             ItemResult RunBatch(const Recipe& recipe, int64_t runId, const std::vector<std::wstring>& sources, std::stop_token stop,
@@ -165,9 +152,9 @@ namespace sd::pdf
                 }
                 catch (const std::exception& e)
                 {
-                    return FailItem(m_history, runId, sources.front(), QpdfError(e));
+                    return RecordFailure(m_history, runId, sources.front(), QpdfError(e));
                 }
-                return FailItem(m_history, runId, sources.front(), L"not a batch action");
+                return RecordFailure(m_history, runId, sources.front(), L"not a batch action");
             }
 
         private:
@@ -183,10 +170,10 @@ namespace sd::pdf
                 std::wstring error;
                 auto doc = OpenForRendering(source, error);
                 if (!doc)
-                    return FailItem(m_history, runId, source, error);
+                    return RecordFailure(m_history, runId, source, error);
                 const uint32_t count = doc->PageCount();
                 if (count == 0)
-                    return FailItem(m_history, runId, source, L"the PDF has no pages");
+                    return RecordFailure(m_history, runId, source, L"the PDF has no pages");
 
                 // One page: one file next to the PDF. More: a folder "name (pages)" holding them all.
                 StagedOutput out(m_history, runId, source, count > 1);
@@ -263,7 +250,7 @@ namespace sd::pdf
                         why = L"no text layer, and OCR could not run: " + text.ocrProblem;
                     return out.Fail(why);
                 }
-                if (!WriteUtf8(out.Path(), content))
+                if (!WriteFileBytes(out.Path(), Narrow(content), WriteMode::Existing))
                     return out.Fail(L"could not write the text file");
                 auto result = out.Commit(recipe.suffix, markdown ? L".md" : L".txt");
                 if (result.ok && text.ocrPages > 0)
@@ -350,12 +337,12 @@ namespace sd::pdf
                         if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED))
                             return out.Fail(kCancelled, true);
                         if (FAILED(hr) || !error.empty())
-                            return out.Fail(std::format(L"{}: {}", FileNameOf(sources[i]), error));
+                            return out.Fail(std::format(L"{}: {}", FileName(sources[i]), error));
                     }
                     else if (!IsReadableImage(sources[i]) || !LoadImageSource(sources[i], image, error))
                     {
                         log::Warn(L"images to pdf: {} skipped: {}", sources[i], error);
-                        skipped.push_back(FileNameOf(sources[i]));
+                        skipped.push_back(FileName(sources[i]));
                     }
                     else if (!pdf.AddPage(image, nullptr, error))
                         return out.Fail(error);
@@ -379,28 +366,28 @@ namespace sd::pdf
             {
                 const bool merge = ActionOf(recipe) == "pdf.merge";
                 if (merge && sources.size() < 2)
-                    return FailItem(m_history, runId, sources.front(), L"drop two or more PDFs to merge them");
+                    return RecordFailure(m_history, runId, sources.front(), L"drop two or more PDFs to merge them");
                 for (const auto& s : sources)
                 {
                     std::wstring why;
                     if (!LooksLikePdf(s, &why))
-                        return FailItem(m_history, runId, sources.front(), std::format(L"{}: {}", FileNameOf(s), why));
+                        return RecordFailure(m_history, runId, sources.front(), std::format(L"{}: {}", FileName(s), why));
                 }
                 std::vector<uint32_t> counts;
                 std::wstring error;
                 if (!CountPages(sources, counts, error))
-                    return FailItem(m_history, runId, sources.front(), error);
+                    return RecordFailure(m_history, runId, sources.front(), error);
                 PagePlan plan = AllPages(counts);
                 const auto& params = recipe.steps.front().params;
                 if (!merge && params.contains("plan"))
                 {
                     std::string problem;
                     if (!PlanFromJson(params["plan"], plan, problem))
-                        return FailItem(m_history, runId, sources.front(), Widen(problem));
+                        return RecordFailure(m_history, runId, sources.front(), Widen(problem));
                 }
                 std::string problem;
                 if (!CheckPlan(plan, counts, problem))
-                    return FailItem(m_history, runId, sources.front(), Widen(problem));
+                    return RecordFailure(m_history, runId, sources.front(), Widen(problem));
 
                 StagedOutput out(m_history, runId, sources.front());
                 if (!out.Ready())

@@ -1,7 +1,8 @@
 #include "archive/ArchiveFormats.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <array>
-#include <cwctype>
 
 namespace sd::archive
 {
@@ -26,19 +27,6 @@ namespace sd::archive
             WriteFormatInfo{ WriteFormat::TarGz, "tar.gz", L"TAR.GZ", L".tar.gz" },
             WriteFormatInfo{ WriteFormat::SevenZip, "7z", L"7z", L".7z" },
         };
-
-        std::wstring FileName(std::wstring_view path)
-        {
-            const auto slash = path.find_last_of(L"\\/");
-            return std::wstring(slash == std::wstring_view::npos ? path : path.substr(slash + 1));
-        }
-
-        std::wstring Lower(std::wstring s)
-        {
-            for (auto& c : s)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return s;
-        }
 
         // The matching suffix, or nullptr. The name must have something before it (".zip" alone is
         // a hidden file with no name, not an archive called "").

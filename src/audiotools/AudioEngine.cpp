@@ -64,10 +64,7 @@ namespace sd::audiotools
 
     json ToolRecipe(EditorTool tool)
     {
-        for (const auto& r : ToolRecipes())
-            if (r["steps"][0]["action"] == ToolAction(tool))
-                return r;
-        return json();
+        return FindToolRecipe(ToolRecipes(), ToolAction(tool));
     }
 
     bool NeedsEditor(const RecipeStep& step)
@@ -113,16 +110,10 @@ namespace sd::audiotools
 
     namespace
     {
-        double Number(const json& params, const char* key, double fallback)
-        {
-            const auto it = params.find(key);
-            return it != params.end() && it->is_number() ? it->get<double>() : fallback;
-        }
-
         ItemResult RunNormalize(const EngineServices& s, const Recipe& recipe, int64_t runId, const std::wstring& source, const ProbeInfo& info,
                                 std::stop_token stop, const ProgressFn& progress)
         {
-            const auto target = TargetFor(Number(recipe.steps[0].params, "target", -16));
+            const auto target = TargetFor(JsonNumber(recipe.steps[0].params, "target", -16));
             // Pass 1 (first half of the progress): measure.
             std::vector<std::string> log;
             const auto half = [&](double offset) {
@@ -133,17 +124,17 @@ namespace sd::audiotools
             };
             const auto measured = s.ffmpeg->Run(MeasureArgs(source, target), half(0), stop, &log, info.DurationUs());
             if (!measured.ok)
-                return FailItem(s.history, runId, source, measured.error, measured.cancelled);
+                return RecordFailure(s.history, runId, source, measured.error, measured.cancelled);
             const auto loudness = ParseEbur128(log);
             if (!loudness)
-                return FailItem(s.history, runId, source, L"could not measure the loudness");
+                return RecordFailure(s.history, runId, source, L"could not measure the loudness");
             if (loudness->silent)
-                return FailItem(s.history, runId, source, L"the audio is silent: nothing to normalize");
+                return RecordFailure(s.history, runId, source, L"the audio is silent: nothing to normalize");
             if (std::abs(loudness->inputI - target.integrated) < 0.5 && loudness->inputTP <= target.truePeak + 0.1)
             {
                 std::wstring level = LoudnessNote(loudness->inputI, loudness->inputI);
                 level.erase(0, level.find(L'\u2192') + 2);   // just "-16.0 LUFS"
-                return FailItem(s.history, runId, source, L"already at " + level, true);
+                return RecordFailure(s.history, runId, source, L"already at " + level, true);
             }
             log::Info(L"audio: {} measured {:.1f} LUFS, {:.1f} dBTP, LRA {:.1f}; target {} ({})", source, loudness->inputI, loudness->inputTP,
                       loudness->inputLRA, Num(target.integrated), IsLinear(target, *loudness) ? L"one gain" : L"peaks limited");
@@ -192,15 +183,15 @@ namespace sd::audiotools
         {
             const auto& p = recipe.steps[0].params;
             const int64_t duration = info.DurationUs();
-            TimeRange keep{ FromSeconds(Number(p, "start", 0)), 0 };
-            const double end = Number(p, "end", 0);
+            TimeRange keep{ FromSeconds(JsonNumber(p, "start", 0)), 0 };
+            const double end = JsonNumber(p, "end", 0);
             keep.end = end > 0 ? std::min(FromSeconds(end), duration) : duration;
             if (p.value("silence", false))
             {
                 std::vector<std::string> log;
                 const auto detect = s.ffmpeg->Run(SilenceDetectArgs(source, keep), nullptr, stop, &log);
                 if (detect.cancelled)
-                    return FailItem(s.history, runId, source, L"cancelled", true);
+                    return RecordFailure(s.history, runId, source, L"cancelled", true);
                 if (detect.ok)
                 {
                     const auto trimmed = TrimSilence(keep, ParseSilence(log, keep.start, keep.end));
@@ -210,9 +201,9 @@ namespace sd::audiotools
                 }
             }
             if (keep.Length() < kMinRangeUs)
-                return FailItem(s.history, runId, source, L"the part to keep is empty");
+                return RecordFailure(s.history, runId, source, L"the part to keep is empty");
             if (keep.start <= 0 && keep.end >= duration)
-                return FailItem(s.history, runId, source, L"nothing to trim: the whole file is kept");
+                return RecordFailure(s.history, runId, source, L"nothing to trim: the whole file is kept");
             const auto ext = LowerExtension(source);
             return RunToStaged(*s.ffmpeg, s.history, runId, source, [&](const std::wstring& out) { return TrimAudioArgs(source, ext, info, keep, out); },
                                keep.Length(), recipe.suffix, AudioOutputFormat(ext).extension, stop, progress);
@@ -225,12 +216,12 @@ namespace sd::audiotools
             ChannelMix mix;
             mix.mono = p.value("mode", std::string("stereo")) == "mono";
             mix.swap = p.value("swap", false);
-            mix.left = Number(p, "left", 1.0);
-            mix.right = Number(p, "right", 1.0);
+            mix.left = JsonNumber(p, "left", 1.0);
+            mix.right = JsonNumber(p, "right", 1.0);
             if (mix.mono && info.channels == 1 && std::abs(mix.left - 1) < 1e-6 && std::abs(mix.right - 1) < 1e-6)
-                return FailItem(s.history, runId, source, L"already mono", true);
+                return RecordFailure(s.history, runId, source, L"already mono", true);
             if (!mix.mono && !mix.swap && info.channels == 2 && std::abs(mix.left - 1) < 1e-6 && std::abs(mix.right - 1) < 1e-6)
-                return FailItem(s.history, runId, source, L"already stereo", true);
+                return RecordFailure(s.history, runId, source, L"already stereo", true);
             const auto ext = LowerExtension(source);
             // The editor's slice names the result after what it became: "song (mono).mp3", "(stereo)", "(swapped)".
             std::wstring suffix = recipe.suffix;
@@ -251,7 +242,7 @@ namespace sd::audiotools
                         ranges.push_back({ FromSeconds(r[0].get<double>()), FromSeconds(r[1].get<double>()) });
             ranges = NormalizeRanges(ranges, info.DurationUs());
             if (ranges.empty())
-                return FailItem(s.history, runId, source, L"no parts were marked to bleep");
+                return RecordFailure(s.history, runId, source, L"no parts were marked to bleep");
             const bool tone = p.value("tone", std::string("tone")) != "silence";
             const auto ext = LowerExtension(source);
             log::Info(L"audio: bleep {} range(s) in {} with {}", ranges.size(), source, tone ? L"a tone" : L"silence");
@@ -265,17 +256,17 @@ namespace sd::audiotools
     {
         const ProbeInfo info = Probe(*s.ffmpeg, source, stop);
         if (stop.stop_requested())
-            return FailItem(s.history, runId, source, L"cancelled", true);
+            return RecordFailure(s.history, runId, source, L"cancelled", true);
         if (!info.HasAudio())
-            return FailItem(s.history, runId, source, L"no audio stream in this file");
+            return RecordFailure(s.history, runId, source, L"no audio stream in this file");
         if (info.DurationUs() <= 0)
-            return FailItem(s.history, runId, source, L"cannot tell how long this file is");
+            return RecordFailure(s.history, runId, source, L"cannot tell how long this file is");
         const auto& action = recipe.steps[0].action;
         if (action == "audio.normalize") return RunNormalize(s, recipe, runId, source, info, stop, progress);
         if (action == "audio.visualizer") return RunVisualizer(s, recipe, runId, source, info, stop, progress);
         if (action == "audio.trim") return RunTrim(s, recipe, runId, source, info, stop, progress);
         if (action == "audio.channels") return RunChannels(s, recipe, runId, source, info, stop, progress);
         if (action == "audio.bleep") return RunBleep(s, recipe, runId, source, info, stop, progress);
-        return FailItem(s.history, runId, source, L"unknown audio tool");
+        return RecordFailure(s.history, runId, source, L"unknown audio tool");
     }
 }

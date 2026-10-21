@@ -8,6 +8,8 @@
 
 #include "Ffmpeg.h"
 #include "Media.h"
+#include "MediaTestUtil.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -21,7 +23,6 @@
 #include <cstring>
 #include <format>
 #include <sstream>
-#include <thread>
 
 using namespace sd;
 using namespace sd::test;
@@ -157,13 +158,6 @@ namespace
         std::string raw;
     };
 
-    std::wstring Self()
-    {
-        wchar_t self[MAX_PATH]{};
-        GetModuleFileNameW(nullptr, self, MAX_PATH);
-        return self;
-    }
-
     ProbeResult RunProbe(bool appContainer, const std::wstring& path, int port)
     {
         ProbeResult result;
@@ -173,7 +167,7 @@ namespace
             return result;
         SetHandleInformation(readEnd.get(), HANDLE_FLAG_INHERIT, 0);
         sandbox::LaunchSpec spec;
-        spec.exe = Self();
+        spec.exe = ThisExe();
         spec.commandLine = std::format(L"\"{}\" --sd-worker probe --out {} --path {} --port {}", spec.exe,
                                        reinterpret_cast<uintptr_t>(writeEnd.get()), Hex(path), port);
         spec.inherit = { writeEnd.get() };
@@ -319,7 +313,7 @@ TEST(Sandbox, AppContainerDeniesFilesAndNetwork)
 TEST(Sandbox, JobKillsTheWorkerWhenClosed)
 {
     sandbox::LaunchSpec spec;
-    spec.exe = Self();
+    spec.exe = ThisExe();
     spec.commandLine = std::format(L"\"{}\" --sd-worker probe --wait 1", spec.exe);
     spec.limits = sandbox::Limits{ 512ull << 20, 30, true, true };
     auto child = sandbox::Launch(spec);
@@ -341,7 +335,7 @@ TEST(Sandbox, JobKillsTheWorkerWhenClosed)
 TEST(Sandbox, WorkerExtractsInsideTheAppContainer)
 {
     TempDir dir;
-    sandbox::SetWorkerPath(Self());
+    sandbox::SetWorkerPath(ThisExe());
     const auto source = dir / L"in.txt";
     WriteText(source, "hello from the sandbox");
     const auto zip = dir / L"in.zip";
@@ -417,12 +411,6 @@ TEST(MediaSandbox, RunsThatNameOtherFilesStayOutside)
 
 namespace
 {
-    std::shared_ptr<const FfmpegEngine> Ffmpeg()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
     bool MakeClip(const FfmpegEngine& engine, const std::wstring& path, bool video)
     {
         std::stop_source never;
@@ -436,7 +424,7 @@ namespace
 
 TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
 {
-    const auto engine = Ffmpeg();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
@@ -496,26 +484,9 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
 
 TEST(MediaSandbox, CancelKillsAJailedFfmpeg)
 {
-    const auto engine = Ffmpeg();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
-    Recipes recipes(dir);
-    const auto source = dir / L"long.avi";
-    std::stop_source never;
-    ASSERT_TRUE(engine->Run({ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"testsrc=s=640x360:r=30:d=60", L"-c:v", L"mpeg4",
-                              L"-q:v", L"31", L"-y", L"-f", L"avi", source }, nullptr, never.get_token()).ok);
-    MediaSandboxOn on;
-    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
-    std::stop_source stop;
-    std::atomic<bool> started{ false };
-    std::jthread canceller([&](std::stop_token own) {
-        while (!started && !own.stop_requested())
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        stop.request_stop();
-    });
-    const auto r = runner.Run(recipes.Get("to-webm"), 0, source, stop.get_token(), [&](double) { started = true; });
-    EXPECT_TRUE(r.skipped) << Narrow(r.error);
-    EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
-    EXPECT_EQ(CountFiles(dir, L".webm"), 0u);
+    ExpectCancelLeavesNothing(engine, dir, true);
 }
