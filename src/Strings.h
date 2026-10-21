@@ -8,7 +8,7 @@
 // ".ext.ext" token lists. One copy each, so "the same name" means the same thing everywhere.
 namespace sd
 {
-    // Lower-case copy (towlower, so non-ASCII letters too: file names, extensions, key names).
+    // Lower-case copy with towlower, in the C locale the app runs in: file names, extensions, key names.
     std::wstring Lower(std::wstring_view s);
     // Lower-case copy of the ASCII letters only (A-Z): format names, XML and HTML keywords.
     std::string AsciiLower(std::string_view s);

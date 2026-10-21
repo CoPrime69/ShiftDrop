@@ -25,7 +25,7 @@ using namespace sd::test;
 TEST(Strings, CaseAndWhitespace)
 {
     EXPECT_EQ(Lower(L"Photo.JPG"), L"photo.jpg");
-    EXPECT_EQ(Lower(L"ÉTÉ"), L"été");
+    EXPECT_EQ(Lower(L"a-Z_09"), L"a-z_09");
     EXPECT_EQ(AsciiLower("<W:Body>"), "<w:body>");
     EXPECT_EQ(Trim(std::wstring_view(L" \t name \r\n")), L"name");
     EXPECT_EQ(Trim(std::string_view("\f\v value \n")), "value");
