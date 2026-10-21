@@ -76,7 +76,8 @@ shows the size now, and hovering a slice shows the size it will come out at.
 ### File actions
 
 Copy, Move to folder, Copy path, Terminal (opens in the file's folder), Duplicate, Rename (new names from
-a pattern), Float (a shelf at the screen edge that holds files until you drag them into any app),
+a pattern), Float (a shelf at the screen edge that holds files until you drag them into any app; drop
+files on it straight from Explorer or a browser too),
 Share (the Windows share sheet), Remove metadata, and Zip (one ZIP of everything dropped).
 
 ### Also
@@ -115,7 +116,8 @@ settings, recipes and history in `%LOCALAPPDATA%\ShiftDrop` are kept.
 - **Without dragging.** Select files in Explorer and press **Ctrl+Shift+Space**, or right-click them
   and choose **ShiftDrop…** (on Windows 11 it's under Show more options). The wheel opens at the
   cursor; click a slice.
-- **The tray menu** has History (with Undo), Settings, the Float shelf, the wheel's size (Auto,
+- **The tray menu** has History (with Undo), Settings, Show Float shelf (the shelf stays on screen,
+  empty or not, until you untick it or press its ×), the wheel's size (Auto,
   Small, Medium, Large) and style (Solid or Glass), where browser drops are saved, Start with
   Windows, and the recipes and logs folders.
 - **The Settings window** turns sections or single slices off, and sets the theme, the output name

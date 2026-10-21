@@ -153,6 +153,10 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Esc closes the history window; Tab moves between the list and the buttons
 - [ ] Drag the history window to a monitor with another scaling: text and buttons stay crisp and correctly sized
 - [ ] Windows in dark mode: the history window is dark like Settings (title bar, list, its header and buttons); switch Windows to light while it is open and it turns light at once, with its grey face as before
+- [ ] Type part of a file's name in the search box: the list narrows with every letter to the runs with that file; an action's name (`png`) finds its runs; two words (`png holiday`) need both; clearing the box shows everything again
+- [ ] **Action** shows "All actions" and each action used, once; picking one keeps only its runs. **When**: Any time, Today, Last 7 days. All three work together, and the line by the buttons says "N of M runs" (or that nothing matches)
+- [ ] An undone run's row is grey and says "Undone"; a failed run's row (drop a `.txt` renamed to `.png` on PNG) is red and says "Failed"; both in dark mode too
+- [ ] **Clear history** asks first, saying only the list is cleared and cleared runs can no longer be undone. Cancel keeps everything. **Clear history** empties the list ("Cleared N runs. No file was changed."); every output file is still where it was, and the next conversion shows up as before. A run still converting when you clear stays in the list
 
 ### I. Start with Windows, recipes, recovery
 - [ ] First start: tray menu shows **Start with Windows** ticked; `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` lists `ShiftDrop` pointing at this exe with `--autostart`
@@ -163,7 +167,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 
 ### J. Wheel look and top panel
 - [ ] Drag a file and hold **Shift**: the wheel springs open around the cursor with one rounded tile per slice
-- [ ] Move over a tile: it lifts outward in your Windows accent colour and the centre shows what it does (e.g. "JPEG, quality 92")
+- [ ] Move over a tile: it lifts outward in the accent colour (ShiftDrop's teal unless Settings › Accent colour says otherwise) and the centre shows what it does (e.g. "JPEG, quality 92")
 - [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl** or **Alt**: nothing changes (only Shift opens the wheel; Ctrl and Alt keep their usual drag meaning)
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
@@ -253,6 +257,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Edit PDF > right-click a page > **Fill and sign…**: type into the form's blanks, add a tick, the date and a signature, apply. In the saved PDF at 400 % in Edge the page's own text and the typed text are both sharp; Ctrl+F finds the typed words and copying them pastes the same text; the signature has no white box around it. Edit the page again: the marks come back editable
 - [ ] Fill and sign a sideways (rotated) page and a page with a cropped margin: the marks land exactly where they were placed
 - [ ] Merge two PDFs > **More…**, edit a page, **Back**, **More…** again, edit another page, **Merge and export**: both edited pages are in the output, each with its own edit
+- [ ] Merge two PDFs > **More…** > **Add files…** (bottom left): pick a third PDF (and one already in the merge): the new one's pages appear after the others with their own colour tag and sharp thumbnails, the line above the pages says "Added name.pdf (N pages)" and that the other is already there; Ctrl+Z takes the added pages out again. **Back**: the list shows the new PDF last; **Merge and export** writes all three. A `.txt` renamed to `.pdf` is not added, and the line says why
+- [ ] Drop one PDF on **Edit**, **Add files…** another: the title becomes "Edit 2 PDFs", Save becomes **Merge and export**, and the output has both PDFs' pages
 - [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
 - [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
 - [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
@@ -276,14 +282,21 @@ Float shelf:
 - [ ] Add more than five items: the list scrolls with the mouse wheel and shows a thin scroll bar
 - [ ] Drag one item out into an Explorer folder: it is **copied** there (the original stays on the shelf and on disk); into a browser upload box, a mail message and a chat app (Teams, Discord, Slack, WhatsApp): each gets the file
 - [ ] Ctrl+click two items (or click one and Shift+click another), drag one of them out: both go; the handle at the bottom says "Drag 2 selected into an app"; with nothing selected it says "Drag all N into an app" and dragging it carries everything
-- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear the shelf
+- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear all, Close the shelf
 - [ ] Click an item, then use the keyboard: Up/Down move, Shift+Up/Down extend, Ctrl+A, Enter opens, Delete removes, Ctrl+C copies (the footer says "Copied…"), Esc folds a pinned shelf
 - [ ] Drag the shelf by its header to the middle of the screen: it floats there (no folding); drag it near the left, top or bottom edge and let go: it glides flush against that edge with square outer corners, and folds when you leave it
 - [ ] The pin button in the header pins a floating shelf to the nearest edge and unpins a pinned one
 - [ ] With two monitors at different scaling (100 % and 150 %), drag the shelf from one to the other: it changes size to match, pins to the edges of the monitor it is on and never spills onto the other one
 - [ ] Delete or rename one of the shelf's files in Explorer: within a few seconds it disappears from the shelf
-- [ ] The trash button (or "Clear the shelf") empties it and it fades away; Float on a file brings it back
-- [ ] Quit and restart ShiftDrop with files on the shelf: it comes back (folded if pinned) in the same place with the same files; `%LOCALAPPDATA%\ShiftDrop\shelf.json` lists them
+- [ ] The header reads "Float" with the count ("3 files", "1 folder", "4 items" when both); **Clear all** (next to the ×, or right-click › "Clear all") empties it and it **stays**: the count goes, a dashed box under the header says "Drop files here" (no footer, no Clear all); the files are still where they were in Explorer; removing the last item with its × or Delete, or deleting its file in Explorer, leaves the same empty shelf
+- [ ] Empty shelf: drag a file from Explorer, one from the desktop, and a picture out of a web page (Edge, Chrome, Firefox) onto the dashed box: it fills with the accent colour while the drag is over it, the badge says "Add to the Float shelf", and on drop each file is added (the browser's picture is saved where tray › Save browser drops to says, then put on the shelf); the originals are not moved or changed and no wheel opens
+- [ ] Empty and pinned: it folds into a tab with the pin icon; dragging a file onto the tab unfolds it and the drop adds the file
+- [ ] The × at the right of the header (tooltip "Close the shelf (the tray icon brings it back)") hides it; the tray's **Show Float shelf** is now unticked; ticking it brings the shelf back where it was with its files; Alt+F4 on the shelf and right-click › "Close the shelf" do the same
+- [ ] Close the shelf, quit and restart ShiftDrop: it stays hidden (`"shown": false` in shelf.json); tick **Show Float shelf**: back
+- [ ] With the shelf closed, use **Float** on a file (or a result's Float button): the shelf comes back with the file on it and **Show Float shelf** is ticked again, as before
+- [ ] Click the shelf, then Tab: the focus moves from the list to Pin, Clear all and the × (a ring around the button), Shift+Tab goes back; Enter or Space presses the button; hover each header button: a tooltip names it
+- [ ] Empty shelf at every tray Size (Small, Medium, Large, Auto) and at 100 %, 150 % and 200 % scaling, light and dark, Solid and Glass: the dashed box, its icon and "Drop files here" are centred and crisp, nothing is cut off, and the × and pin buttons are the same size as with files, and "Clear all" fits its button
+- [ ] Quit and restart ShiftDrop with files on the shelf: it comes back (folded if pinned) in the same place with the same files; `%LOCALAPPDATA%\ShiftDrop\shelf.json` lists them; with an empty shelf that was on, it comes back empty
 - [ ] Windows dark and light app theme: the shelf follows it (Settings > Personalisation > Colours), also while it is open; tray Style > Glass makes it translucent
 - [ ] Animation effects off: the shelf appears, folds and moves without animation
 
@@ -432,6 +445,7 @@ Add a Background
 - [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
 - [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
 - [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
+- [ ] Shape **Fit to picture** (after 9:16): the canvas is exactly the picture's size, no margin; Spacing and Shadow leave the panel; raise Rounded corners and the background shows only in the corners. Save: the output has the photo's own pixel size
 - [ ] Save: `logo (background).png`; a JPEG source gives a JPEG with its EXIF
 
 Create a Collage
@@ -653,13 +667,13 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Real files from Explorer still convert next to themselves
 
 ### X. Settings and tray entries
-- [ ] Right-click the tray icon: **Settings…**, **History…** and **Show Float shelf** are near the top
+- [ ] Right-click the tray icon: **Settings…**, **History…** and **Show Float shelf** (ticked while the shelf is on) are near the top
 - [ ] **Settings…** opens a window (dark when Windows is dark) with Convert, Tools, Reduce size and File actions, each split by kind of file (Photos, Video, Audio, PDF, Any file…) with a tick on every line
 - [ ] Untick **TIFF** under Convert › Photos: drag a photo, press Shift: TIFF is gone and the other formats share the circle evenly; tick it again: it is back
 - [ ] Untick **Convert › Video**: a video's Convert wheel has no video formats; Photos shows a partly ticked box when only some of its slices are on; clicking a partly ticked line ticks everything under it
 - [ ] Untick the whole **Tools** section: scrolling goes Convert, Reduce size, File actions (no Tools tab in the top panel); unticking the last section left is refused with a note
 - [ ] **Turn everything on** ticks everything again; quitting and starting again keeps your choices (`[Features]` in settings.ini)
-- [ ] **Show Float shelf** with an empty shelf: it opens saying "Drop files here to keep them"; drop a file on it: it stays; Clear hides it
+- [ ] Untick **Show Float shelf**: the shelf hides (with its files kept); tick it with an empty shelf: it opens saying "Drop files here"; drop a file on it: it is added; Clear all empties it and it stays on screen
 - [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
 
 ### Y. Toasts, more settings, Rename and screen readers
@@ -671,6 +685,14 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Portable copy (no Start menu shortcut): the same case shows the old balloon; Focus assist on (Do not disturb): no toast, the result is in the notification centre
 - [ ] Settings › **Terminal**: Windows Terminal, PowerShell and Command Prompt each open at the dropped folder from **File actions › Terminal**; **Custom command** with `code {folder}` opens VS Code there; the command box is greyed out unless Custom is picked
 - [ ] Settings › **Theme** › **Light** while Windows is dark: the wheel, the top panel, the card and Settings itself turn light at once; **Dark** the other way; **Follow Windows** follows it again
+- [ ] Settings › **Accent colour**: a row of round swatches, Tide (teal) first, then Blue, Purple, Pink, Red, Orange, Green, Graphite and a palette swatch for a colour of your own, with a **Use my Windows accent colour** switch under them, which is **on** on a new install (the wheel and editors use your Windows accent colour); turning it off picks Tide; hovering a swatch shows its name. Arrow keys move between the swatches and pick as they go, Tab lands on the ticked one, and the focus ring shows on the focused one
+- [ ] With Tide, in dark mode: the hovered wheel slice is the light teal `#2DD4B4` with dark text on it; in light mode the teal `#12A58E` with dark text; the top panel's active section (Solid) is the light teal in both themes; the Float shelf's selected row and drop highlight, the top panel's progress bar and spinner, and the editors' primary buttons, switches, sliders and selection are teal too (in the editors, light mode uses the darker `#0B7A69` with white text)
+- [ ] Pick each preset in turn, in light and in dark, and drag a file with Shift after each one (no restart): the hovered slice, the top panel, the shelf and a newly opened editor (picture editor, Trim, PDF page view) all take the new colour, and every label on the colour and every accent-coloured label next to it is easy to read
+- [ ] Click the palette swatch: the Windows colour dialog opens; pick a dark navy and **OK**: the swatch shows it ticked, the wheel uses a lighter navy in dark mode so its dark label reads and the navy itself in light mode; pick a pale yellow: dark mode keeps it, light-mode buttons get a darker olive with white text. **Cancel** changes nothing
+- [ ] Pick a preset after a colour of your own: the palette swatch still shows your colour, and clicking it opens the dialog on it
+- [ ] Turn **Use my Windows accent colour** on: no swatch is ticked and everything follows the Windows accent colour (Windows Settings › Personalization › Colors) on the next wheel, as in 0.5.0, in a lighter tone in dark mode when the Windows colour is dark; change the Windows colour: the next wheel follows it. Turn the switch off: the swatch you had comes back; clicking a swatch also turns the switch off
+- [ ] The accent survives a restart (`[Appearance] Accent=` and `AccentCustom=#RRGGBB` in settings.ini); with `Accent=teal`, or `Accent=custom` and no `AccentCustom`, ShiftDrop starts with the Windows accent and the log says why
+- [ ] Narrator on Settings: the swatches read as radio buttons ("Tide, radio button, checked"), the palette swatch as "Custom colour #…, button", the switch as a check box with its state
 - [ ] Settings › **Output names** › each style, converting `photo.jpg` twice: `photo (converted).png` / `photo (converted 2).png`, `photo-converted.png` / `photo-converted-2.png`, `photo_converted.png` / `photo_converted_2.png`, and the folder style: `ShiftDrop\photo.png` then `ShiftDrop\photo (2).png`. The card's predicted name matches each. No existing file is ever replaced
 - [ ] Folder style with a file called `ShiftDrop` (no extension) next to the photo: the convert fails with a message and the file is untouched
 - [ ] Folder style with a file called `ShiftDrop` next to a photo, a text file and a video: **PNG**, **Duplicate** and **MP4** each fail with "cannot write next to the source", and tray › **History** lists each as failed
@@ -678,6 +700,8 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] All four settings survive a restart (`[Appearance] Theme`, `[FileActions] Terminal` / `TerminalCommand`, `[Output] Naming` in settings.ini)
 - [ ] Select 12 photos, **File actions › Rename**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
 - [ ] A pattern without `{n}` (two files would get the same name): those rows turn red, the status says why and **Rename** is greyed out; a name with `?` or ending in a dot is refused the same way; a name already taken in the folder is refused
+- [ ] Rename shows **Change: Name / Name and extension**, Name picked. Pick **Name and extension**: the pattern becomes `{name}.{ext}` and the list still shows today's names; type `{name}.png` for a `.jpg`: the note says "the extension changes from .jpg to .png", the status starts with "Careful:", and **Rename** still works. Back to **Name**: `.{ext}` leaves the pattern and the extensions are kept whatever you type
+- [ ] **Name and extension** with Find `.jpeg` Replace `.jpg`: `photo.jpeg` becomes `photo.jpg`; a folder in the selection keeps its name without a stray dot
 - [ ] **Rename**: the top panel says "Renamed 12 items"; tray › **History** › the run › **Undo**: every file has its old name back. Renaming `a.txt` to `A.txt` works
 - [ ] Narrator on: Shift+drag a photo: Narrator says "Convert wheel, 8 actions"; moving over slices reads each one ("PNG, lossless", "TIFF, not available: …"); scrolling to another section says its name; Shift+1–4 the same
 - [ ] Narrator: dropping says what the top panel shows ("Converting 1 file to PNG…"), then its result line and the line under it; a failure is read too. With Accessibility Insights, the wheel shows as a list of list items with the highlighted one selected
@@ -685,8 +709,12 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 
 ### Z. Install, upgrade, uninstall
 1. Run the setup. SmartScreen may warn (unsigned): **More info**, **Run anyway**. No UAC prompt appears.
+   The first page says "Setup will install ShiftDrop <version> on this PC. It runs offline and needs no
+   account. Works on Windows 10 and 11." with this build's version.
 2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
-   sign in to Windows". Finish with "Launch ShiftDrop" ticked: the tray icon appears.
+   sign in to Windows". The last page says "Drag any file and press Shift to open the wheel. ShiftDrop
+   lives in the tray." with "Start ShiftDrop" ticked; Finish: the tray icon appears. Untick it on another
+   install: Finish starts nothing.
 3. Start menu has ShiftDrop. Settings > Apps lists ShiftDrop with its version.
 4. Run the same setup again while ShiftDrop is running: no "close the app" error; the old copy exits
    and the new one starts. The startup checkbox is not shown (your tray-menu choice is kept).

@@ -616,7 +616,7 @@ namespace sd
                 break;
             case IDM_SHOW_SHELF:
                 if (m_shelf)
-                    m_shelf->Reveal();
+                    m_shelf->SwitchOn(!m_shelf->IsOn());   // ticked: on screen, empty or not
                 break;
             case IDM_VIRTUAL_BASE + 0: case IDM_VIRTUAL_BASE + 1: case IDM_VIRTUAL_BASE + 2:
             {
@@ -955,12 +955,13 @@ namespace sd
                 m_keyboard->SetRingKeys(SectionKeys());
         }
 
-        // The Settings window's other choices: the theme takes effect the next time a window opens,
-        // output names with the next output, the terminal with the next Terminal slice, the top
-        // panel's size the next time it shows.
+        // The Settings window's other choices: the theme and the accent colour take effect the next
+        // time a window opens, output names with the next output, the terminal with the next Terminal
+        // slice, the top panel's size the next time it shows.
         void ApplyPreferences()
         {
             theme::SetChoice(m_preferences.theme);
+            accent::Set(m_preferences.accent);
             SetOutputNaming(m_preferences.naming);
             SetTerminalChoice(m_preferences.terminal, m_preferences.terminalCommand);
             if (m_island)   // not yet at startup: Init passes the size on when it creates the panel
@@ -1134,7 +1135,7 @@ namespace sd
             if (HandsFilesOn(recipe))
             {
                 std::wstring error;
-                drop.files = KeepDragged(drop.files, dragged.OutputFolder(), error);
+                drop.files = KeepVirtualFiles(drop.files, dragged.OutputFolder(), error);
                 if (drop.files.empty())
                 {
                     m_island->ShowResult(Island::Outcome::Failure, L"The dropped file could not be saved", error);
@@ -1143,26 +1144,6 @@ namespace sd
                 drop.virtualDrop.reset();   // the kept copies are ordinary files now
             }
             return true;
-        }
-
-        // Moves saved copies of dragged files into `folder`, never replacing anything there.
-        static std::vector<std::wstring> KeepDragged(const std::vector<std::wstring>& files, const std::wstring& folder, std::wstring& error)
-        {
-            std::vector<std::wstring> kept;
-            for (const auto& f : files)
-            {
-                std::wstring path;
-                if (const HRESULT hr = KeepVirtualFile(f, folder, path); FAILED(hr))
-                {
-                    log::Warn(L"drop: could not save {} in {}: {}", f, folder, HResultText(hr));
-                    if (error.empty())
-                        error = std::format(L"{}: {}", FileName(f), HResultText(hr));
-                    continue;
-                }
-                log::Info(L"drop: saved {}", path);
-                kept.push_back(std::move(path));
-            }
-            return kept;
         }
 
         void RunPendingDrop()
@@ -1339,7 +1320,7 @@ namespace sd
             if (dragged)
             {
                 std::wstring error;
-                const auto kept = KeepDragged(files, folder, error);
+                const auto kept = KeepVirtualFiles(files, folder, error);
                 if (!kept.empty())
                     m_lastOutputs = kept;
                 const auto title = kept.size() == files.size() ? std::format(L"Saved {} to {}", Count(kept.size(), L"file"), FolderName(folder))
@@ -1516,6 +1497,7 @@ namespace sd
             {
                 TrayExtras extras;
                 extras.shelf = m_shelf != nullptr;
+                extras.shelfOn = m_shelf && m_shelf->IsOn();
                 // A text-recognition language choice, only when there is more than one to pick from.
                 m_ocrLanguages = ocr::Languages();
                 if (m_ocrLanguages.size() > 1)

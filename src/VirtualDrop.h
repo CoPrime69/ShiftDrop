@@ -118,4 +118,6 @@ namespace sd
     // never replacing anything. For what hands the file itself on (Copy, Float, Share, Move to…): it
     // has to outlive the drop folder.
     HRESULT KeepVirtualFile(const std::wstring& file, const std::wstring& folder, std::wstring& kept);
+    // KeepVirtualFile for each of `files`: the copies kept. `error` says why the first that failed did.
+    std::vector<std::wstring> KeepVirtualFiles(const std::vector<std::wstring>& files, const std::wstring& folder, std::wstring& error);
 }

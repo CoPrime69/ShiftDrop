@@ -450,4 +450,23 @@ namespace sd
             DeleteFileW(staging.c_str());
         return hr;
     }
+
+    std::vector<std::wstring> KeepVirtualFiles(const std::vector<std::wstring>& files, const std::wstring& folder, std::wstring& error)
+    {
+        std::vector<std::wstring> kept;
+        for (const auto& f : files)
+        {
+            std::wstring path;
+            if (const HRESULT hr = KeepVirtualFile(f, folder, path); FAILED(hr))
+            {
+                log::Warn(L"drop: could not save {} in {}: {}", f, folder, HResultText(hr));
+                if (error.empty())
+                    error = std::format(L"{}: {}", FileName(f), HResultText(hr));
+                continue;
+            }
+            log::Info(L"drop: saved {}", path);
+            kept.push_back(std::move(path));
+        }
+        return kept;
+    }
 }

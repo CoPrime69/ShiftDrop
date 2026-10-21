@@ -12,7 +12,8 @@
 // Windows.Data.Pdf on a worker with the pages on screen first. Drag to reorder (across files too),
 // rotate, duplicate, leave out, undo. Organize PDF Pages opens it for one PDF. Merge PDFs (More...)
 // and Edit PDF open it with every file, a large preview of the selected page and per-page Edit
-// (PageEdits.h). UI code, in the app only.
+// (PageEdits.h); their Add files... brings more PDFs in, their pages after the others. UI code, in
+// the app only.
 namespace sd::pdf
 {
     enum class PageViewKind
@@ -20,6 +21,15 @@ namespace sd::pdf
         Organize,   // one PDF; Save writes "name (organized).pdf"
         Merge,      // Merge PDFs > More...: "Merge and export"
         Edit,       // Edit PDF: "Save" for one PDF, "Merge and export" for several
+    };
+
+    // What Save (Merge and export) and Back hand on.
+    struct PageViewResult
+    {
+        PagePlan plan;                     // file indices into `files`
+        std::wstring editFolder;
+        std::vector<std::wstring> files;   // the request's files, then those added with Add files...
+        std::vector<uint32_t> order;       // the files shown, in list order: the request's, then the added ones
     };
 
     struct PageViewRequest
@@ -31,10 +41,10 @@ namespace sd::pdf
         bool changed = false;              // the plan already holds the user's changes (Cancel asks)
         std::wstring editFolder;           // where edited pages are kept (PageEdits.h); made when needed
         std::wstring notice;               // a line shown over the pages until the next change
-        // Save / Merge and export: the plan, with file indices into `files`.
-        std::function<void(PagePlan plan, std::wstring editFolder)> save;
+        // Save / Merge and export.
+        std::function<void(PageViewResult result)> save;
         // Back to Merge's file list, keeping the page edits; empty: no Back button.
-        std::function<void(PagePlan plan, std::wstring editFolder)> back;
+        std::function<void(PageViewResult result)> back;
         // Closed without saving or going back (the edited pages are already removed).
         std::function<void()> cancelled;
     };

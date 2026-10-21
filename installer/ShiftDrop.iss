@@ -40,6 +40,8 @@ VersionInfoVersion={#AppVersion}
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\{#AppName}
 DisableDirPage=auto
+; Inno Setup 6 skips the welcome page unless asked; ours says what ShiftDrop is ([Messages] below).
+DisableWelcomePage=no
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 ArchitecturesAllowed=x64compatible
@@ -59,6 +61,13 @@ SolidCompression=yes
 ; top-level window for Restart Manager to close, so it is never restarted by Setup.
 CloseApplications=yes
 RestartApplications=no
+
+[Messages]
+; The welcome and finish pages. The name and version come from the defines above, like everywhere
+; else in this script.
+WelcomeLabel2=Setup will install {#AppName} {#AppVersion} on this PC. It runs offline and needs no account. Works on Windows 10 and 11.
+FinishedLabel=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
+FinishedLabelNoIcons=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
 
 [Tasks]
 ; Shown on a fresh install only. On an upgrade the choice already saved by the app (the tray menu's
@@ -102,7 +111,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; The app writes (or removes) the right-click entry itself, pointing at the installed exe.
 Filename: "{app}\{#AppName}.exe"; Parameters: "--register-shell"; Flags: runhidden waituntilterminated; Check: ShellMenuWanted
 Filename: "{app}\{#AppName}.exe"; Parameters: "--unregister-shell"; Flags: runhidden waituntilterminated; Check: not ShellMenuWanted
-Filename: "{app}\{#AppName}.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; The finish page's "Start" box, ticked by default: a postinstall entry is, unless flagged unchecked.
+Filename: "{app}\{#AppName}.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Quits the running copy and removes the Run value before the files are deleted.

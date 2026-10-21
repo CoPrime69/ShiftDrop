@@ -63,7 +63,7 @@ namespace sd::photo
         if (p.fill == Fill::Image && p.image.empty())
             p.fill = Fill::Blur;
         p.blur = JsonNumber(j, "blur", p.blur, 0, 100);
-        p.aspect = Aspect(j);
+        p.aspect = j.value("aspect", std::string()) == kFitToPicture ? std::string(kFitToPicture) : Aspect(j);
         p.padding = JsonNumber(j, "padding", p.padding, 0, 40);
         p.radius = JsonNumber(j, "radius", p.radius, 0, 100);
         p.shadow = JsonNumber(j, "shadow", p.shadow, 0, 100);
@@ -84,7 +84,8 @@ namespace sd::photo
         pw = std::max(1, pw);
         ph = std::max(1, ph);
         const int longSide = std::max(pw, ph);
-        int pad = static_cast<int>(std::lround(longSide * p.padding / 100.0));
+        const bool fit = p.aspect == kFitToPicture;   // no margin: neither spacing nor a shadow to show
+        int pad = fit ? 0 : static_cast<int>(std::lround(longSide * p.padding / 100.0));
         pad = std::clamp(pad, 0, std::max(0, (maxEdge - longSide) / 2));
         int w = pw + 2 * pad, h = ph + 2 * pad;
         if (const double ratio = AspectRatio(p.aspect); ratio > 0)
@@ -105,7 +106,7 @@ namespace sd::photo
         l.height = h;
         l.picture = { (w - pw) / 2, (h - ph) / 2, pw, ph };
         l.radius = std::min(pw, ph) * 0.25 * p.radius / 100.0;
-        if (p.shadow > 0)
+        if (p.shadow > 0 && !fit)
         {
             l.shadowSigma = longSide * 0.03 * p.shadow / 100.0;
             l.shadowOffset = l.shadowSigma * 0.35;

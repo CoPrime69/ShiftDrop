@@ -1,5 +1,6 @@
 #include "rename/RenamePattern.h"
 #include "PathUtil.h"
+#include "Strings.h"
 
 #include <windows.h>
 
@@ -61,9 +62,26 @@ namespace sd::rename
     std::wstring Expand(const Pattern& pattern, const Item& item, size_t n, std::wstring& error)
     {
         const std::filesystem::path path(item.path);
-        const std::wstring stem = item.folder ? path.filename().wstring() : path.stem().wstring();
-        std::wstring ext = item.folder ? L"" : path.extension().wstring();
-        const std::wstring name = ReplaceAll(stem, pattern.find, pattern.replace, pattern.matchCase);
+        std::wstring name, ext;
+        if (item.folder)
+            name = ReplaceAll(path.filename().wstring(), pattern.find, pattern.replace, pattern.matchCase);
+        else if (pattern.change == Change::NameAndExtension)
+        {
+            // Find and replace on the whole name; {name} and {ext} are its parts afterwards.
+            // Split by hand, not as a path: a slash typed into Replace must stay in the name, where
+            // NameProblem refuses it.
+            name = ReplaceAll(path.filename().wstring(), pattern.find, pattern.replace, pattern.matchCase);
+            if (const size_t dot = name.rfind(L'.'); dot != std::wstring::npos && dot > 0)
+            {
+                ext = name.substr(dot);
+                name.resize(dot);
+            }
+        }
+        else
+        {
+            name = ReplaceAll(path.stem().wstring(), pattern.find, pattern.replace, pattern.matchCase);
+            ext = path.extension().wstring();
+        }
         const long long number = static_cast<long long>(pattern.start) + static_cast<long long>(n);
 
         std::wstring out;
@@ -104,7 +122,12 @@ namespace sd::rename
             if (field == L"name")
                 out += name;
             else if (field == L"ext")
-                out += ext.empty() ? L"" : ext.substr(1);
+            {
+                if (!ext.empty())
+                    out += ext.substr(1);
+                else if (i >= field.size() + 2 && text[i - field.size() - 2] == L'.' && !out.empty() && out.back() == L'.')
+                    out.pop_back();   // "{name}.{ext}" of a folder or a file without one: no lone dot
+            }
             else if (field == L"date")
                 out += item.date;
             else if (field == L"folder")
@@ -120,7 +143,15 @@ namespace sd::rename
                 return {};
             }
         }
-        return out + ext;
+        return pattern.change == Change::NameAndExtension && !item.folder ? out : out + ext;
+    }
+
+    std::wstring PatternFor(Change to, std::wstring_view text)
+    {
+        constexpr std::wstring_view kExt = L".{ext}";
+        if (to == Change::NameAndExtension)
+            return text.ends_with(kExt) ? std::wstring(text) : std::wstring(text) + std::wstring(kExt);
+        return std::wstring(text.ends_with(kExt) ? text.substr(0, text.size() - kExt.size()) : text);
     }
 
     std::wstring NameProblem(std::wstring_view name)
@@ -189,6 +220,22 @@ namespace sd::rename
                 ++plan.problems;
             else if (p.to != p.from)
                 ++plan.changes;
+        }
+
+        // A new extension is allowed, but said: Windows picks the app that opens a file by it.
+        for (size_t i = 0; i < plan.items.size(); ++i)
+        {
+            auto& p = plan.items[i];
+            if (items[i].folder || !p.problem.empty())
+                continue;
+            const auto before = std::filesystem::path(p.from).extension().wstring();
+            const auto after = std::filesystem::path(p.to).extension().wstring();
+            if (EqualsNoCase(before, after))
+                continue;
+            p.warning = before.empty()  ? std::format(L"it gets the extension {}", after)
+                        : after.empty() ? std::format(L"the extension {} is removed", before)
+                                        : std::format(L"the extension changes from {} to {}", before, after);
+            ++plan.warnings;
         }
         return plan;
     }

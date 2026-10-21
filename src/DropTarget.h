@@ -11,9 +11,9 @@
 
 namespace sd
 {
-    // What the overlay implements to receive drag events. Everything is called on the UI thread:
-    // OLE marshals the cross-process IDropTarget calls from the drag source to the thread that
-    // called RegisterDragDrop.
+    // What a window that takes drops implements to receive drag events (the overlay, the Float
+    // shelf). Everything is called on the UI thread: OLE marshals the cross-process IDropTarget
+    // calls from the drag source to the thread that called RegisterDragDrop.
     struct IDropSink
     {
         // files is empty when the drag carries no files (text, a URL...). Files dragged out of a
@@ -27,6 +27,9 @@ namespace sd
         // Just before OnDragEnter: where the drag picture is, px from the cursor (DragImageRect), or
         // null when the source shows none.
         virtual void OnDragPicture(const RECT* aroundCursor) { (void)aroundCursor; }
+        // The badge under the drag picture while it is accepted ("Add to the Float shelf"), or null
+        // for none: the wheel says itself what a drop will do.
+        virtual const wchar_t* DropLabel() const { return nullptr; }
 
     protected:
         ~IDropSink() = default;
@@ -54,7 +57,7 @@ namespace sd
         void EndVirtual();
 
         HWND m_hwnd;
-        IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
+        IDropSink* m_sink;   // not owned; the sink outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
         Microsoft::WRL::ComPtr<IDataObject> m_data;   // while accepting, to give the badge back on leave
         std::shared_ptr<VirtualDrop> m_virtual;       // the drag's virtual files, from DragEnter to its end

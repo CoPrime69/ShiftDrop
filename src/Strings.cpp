@@ -47,6 +47,37 @@ namespace sd
         return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
     }
 
+    std::vector<std::wstring> SearchWords(std::wstring_view query)
+    {
+        std::vector<std::wstring> words;
+        std::wstring word;
+        for (const wchar_t c : query)
+        {
+            if (std::iswspace(c))
+            {
+                if (!word.empty())
+                    words.push_back(Lower(word));
+                word.clear();
+            }
+            else
+                word += c;
+        }
+        if (!word.empty())
+            words.push_back(Lower(word));
+        return words;
+    }
+
+    bool HasEveryWord(std::wstring_view text, const std::vector<std::wstring>& words)
+    {
+        if (words.empty())
+            return true;
+        const auto haystack = Lower(text);
+        for (const auto& w : words)
+            if (haystack.find(w) == std::wstring::npos)
+                return false;
+        return true;
+    }
+
     bool HasExtToken(std::wstring_view tokens, std::wstring_view ext)
     {
         if (ext.empty())

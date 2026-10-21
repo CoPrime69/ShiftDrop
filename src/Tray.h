@@ -31,6 +31,7 @@ namespace sd
     struct TrayExtras
     {
         bool shelf = false;                // "Show Float shelf"
+        bool shelfOn = false;              // ...ticked: the shelf is switched on
         std::vector<TrayChoice> choices;
         std::vector<TrayToggle> toggles;
     };

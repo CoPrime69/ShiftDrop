@@ -155,29 +155,11 @@ namespace sd::inspect
 
     std::vector<Field> Filter(const std::vector<Field>& fields, std::wstring_view query)
     {
-        std::vector<std::wstring> words;
-        std::wstring word;
-        for (const wchar_t c : query)
-        {
-            if (std::iswspace(c))
-            {
-                if (!word.empty())
-                    words.push_back(Lower(word));
-                word.clear();
-            }
-            else
-                word += c;
-        }
-        if (!word.empty())
-            words.push_back(Lower(word));
-
+        const auto words = SearchWords(query);
         std::vector<Field> out;
         for (const auto& f : fields)
-        {
-            const auto haystack = Lower(f.group + L"\n" + f.name + L"\n" + f.value);
-            if (std::all_of(words.begin(), words.end(), [&](const std::wstring& w) { return haystack.find(w) != std::wstring::npos; }))
+            if (HasEveryWord(f.group + L"\n" + f.name + L"\n" + f.value, words))
                 out.push_back(f);
-        }
         return out;
     }
 

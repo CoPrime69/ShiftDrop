@@ -185,18 +185,17 @@ namespace sd
         constexpr const wchar_t* kTerminals[] = { L"wt", L"powershell", L"cmd", L"custom" };
         constexpr const wchar_t* kNamings[] = { L"parentheses", L"dash", L"underscore", L"subfolder" };
 
-        // The index of `value` in `names` (ignoring case), or `fallback` with a warning.
-        template <size_t N>
-        int Pick(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* const (&names)[N], int fallback)
-        {
-            wchar_t value[32]{};
-            GetPrivateProfileStringW(section, key, names[fallback], value, ARRAYSIZE(value), path.c_str());
-            for (size_t i = 0; i < N; ++i)
-                if (EqualsNoCase(value, names[i]))
-                    return static_cast<int>(i);
-            log::Warn(L"settings: [{}] {}='{}' is not known; using {}", section, key, value, names[fallback]);
-            return fallback;
-        }
+    }
+
+    int IniChoice(const std::wstring& path, const wchar_t* section, const wchar_t* key, std::span<const wchar_t* const> names, int fallback)
+    {
+        wchar_t value[32]{};
+        GetPrivateProfileStringW(section, key, names[static_cast<size_t>(fallback)], value, ARRAYSIZE(value), path.c_str());
+        for (size_t i = 0; i < names.size(); ++i)
+            if (EqualsNoCase(value, names[i]))
+                return static_cast<int>(i);
+        log::Warn(L"settings: [{}] {}='{}' is not known; using {}", section, key, value, names[static_cast<size_t>(fallback)]);
+        return fallback;
     }
 
     Preferences LoadPreferences() { return LoadPreferences(SettingsPath()); }
@@ -204,13 +203,14 @@ namespace sd
     Preferences LoadPreferences(const std::wstring& path)
     {
         Preferences p;
-        p.theme = static_cast<ThemeChoice>(Pick(path, L"Appearance", L"Theme", kThemes, 0));
-        p.terminal = static_cast<TerminalChoice>(Pick(path, L"FileActions", L"Terminal", kTerminals, 0));
-        p.naming = static_cast<OutputNaming>(Pick(path, L"Output", L"Naming", kNamings, 0));
+        p.theme = static_cast<ThemeChoice>(IniChoice(path, L"Appearance", L"Theme", kThemes, 0));
+        p.terminal = static_cast<TerminalChoice>(IniChoice(path, L"FileActions", L"Terminal", kTerminals, 0));
+        p.naming = static_cast<OutputNaming>(IniChoice(path, L"Output", L"Naming", kNamings, 0));
         std::wstring command(2048, L'\0');
         command.resize(GetPrivateProfileStringW(L"FileActions", L"TerminalCommand", L"", command.data(), static_cast<DWORD>(command.size()),
                                                 path.c_str()));
         p.terminalCommand = std::move(command);
+        p.accent = accent::Load(path);
         // Text that is not a number reads as 0, and 0 or less as the default rather than the smallest size.
         const int size = static_cast<int>(GetPrivateProfileIntW(L"Appearance", L"PanelSize", panel::kSizeDefaultPercent, path.c_str()));
         p.panelSize = size > 0 ? panel::SizePercent(size) : panel::kSizeDefaultPercent;
@@ -234,5 +234,6 @@ namespace sd
         WritePrivateProfileStringW(L"FileActions", L"TerminalCommand", command.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Output", L"Naming", kNamings[static_cast<int>(p.naming)], path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"PanelSize", std::to_wstring(panel::SizePercent(p.panelSize)).c_str(), path.c_str());
+        accent::Save(p.accent, path);
     }
 }
