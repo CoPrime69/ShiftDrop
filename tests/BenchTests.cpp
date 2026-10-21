@@ -32,6 +32,9 @@
 #include <optional>
 #include <thread>
 
+#include <webp/decode.h>
+#include <webp/encode.h>
+
 using namespace sd;
 using namespace sd::test;
 
@@ -702,24 +705,25 @@ TEST(Bench, FfmpegOptions)
         x.insert(x.end(), y.begin(), y.end());
         return x;
     };
-    // H.264 on the CPU: Media Foundation and OpenH264, as they are run now and with threads.
+    // H.264 on the CPU: Media Foundation, and OpenH264 with one slice (as it was) and a slice per core.
     const std::vector<std::wstring> v{ L"-map", L"0:v:0", L"-an", L"-vf", L"crop=trunc(iw/2)*2:trunc(ih/2)*2" };
     time("10 s 1080p H.264 Media Foundation (now)", ten,
          with(v, { L"-c:v", L"h264_mf", L"-rate_control", L"u_vbr", L"-b:v", L"8000000", L"-pix_fmt", L"nv12", L"-f", L"mp4" }));
-    time("10 s 1080p H.264 OpenH264 (now)", ten,
+    time("10 s 1080p H.264 OpenH264, one slice (was)", ten,
          with(v, { L"-c:v", L"libopenh264", L"-rc_mode", L"bitrate", L"-b:v", L"8000000", L"-pix_fmt", L"yuv420p", L"-f", L"mp4" }));
     time("10 s 1080p H.264 OpenH264, threads = cores", ten,
          with(v, { L"-c:v", L"libopenh264", L"-threads", cores, L"-rc_mode", L"bitrate", L"-b:v", L"8000000", L"-pix_fmt", L"yuv420p", L"-f", L"mp4" }));
-    time("10 s 1080p H.264 OpenH264, threads + slices = cores", ten,
+    time("10 s 1080p H.264 OpenH264, a slice per core (now)", ten,
          with(v, { L"-c:v", L"libopenh264", L"-threads", cores, L"-slices", cores, L"-rc_mode", L"bitrate", L"-b:v", L"8000000", L"-pix_fmt",
                    L"yuv420p", L"-f", L"mp4" }));
     // VP9 for WebM, and AV1 for comparison.
     const std::vector<std::wstring> vp9{ L"-map", L"0:v:0", L"-an", L"-c:v", L"libvpx-vp9", L"-crf", L"32", L"-b:v", L"0", L"-row-mt", L"1" };
-    time("10 s 1080p VP9 good, cpu-used 5 (now)", ten, with(vp9, { L"-deadline", L"good", L"-cpu-used", L"5", L"-f", L"webm" }));
+    time("10 s 1080p VP9 good, cpu-used 5 (was)", ten, with(vp9, { L"-deadline", L"good", L"-cpu-used", L"5", L"-f", L"webm" }));
     time("10 s 1080p VP9 good, cpu-used 5, 4 tiles, threads", ten,
          with(vp9, { L"-deadline", L"good", L"-cpu-used", L"5", L"-tile-columns", L"2", L"-threads", cores, L"-f", L"webm" }));
     time("10 s 1080p VP9 good, cpu-used 6, 4 tiles, threads", ten,
          with(vp9, { L"-deadline", L"good", L"-cpu-used", L"6", L"-tile-columns", L"2", L"-threads", cores, L"-f", L"webm" }));
+    time("10 s 1080p VP9 realtime, cpu-used 6 (now)", ten, with(vp9, { L"-deadline", L"realtime", L"-cpu-used", L"6", L"-f", L"webm" }));
     time("10 s 1080p VP9 realtime, cpu-used 8, 4 tiles", ten,
          with(vp9, { L"-deadline", L"realtime", L"-cpu-used", L"8", L"-tile-columns", L"2", L"-threads", cores, L"-f", L"webm" }));
     time("10 s 1080p AV1 SVT preset 10", ten, { L"-map", L"0:v:0", L"-an", L"-c:v", L"libsvtav1", L"-preset", L"10", L"-crf", L"35", L"-f", L"webm" });
@@ -729,14 +733,85 @@ TEST(Bench, FfmpegOptions)
     time("30 s 1080p GIF, filter threads = cores", { L"-filter_threads", cores, L"-i", in.clip },
          { L"-map", L"0:v:0", L"-an", L"-vf", gif, L"-loop", L"0", L"-f", L"gif" });
     time("30 s 1080p H.264 decode only", { L"-i", in.clip }, { L"-map", L"0:v:0", L"-an", L"-f", L"null" });
-    // Loudness: loudnorm's measuring pass (now) against ebur128, and applying the gain.
-    time("4 min loudness, loudnorm measure (now)", { L"-i", in.song },
+    // Loudness: loudnorm's measuring pass (as it was) against ebur128, and applying the gain.
+    time("4 min loudness, loudnorm measure (was)", { L"-i", in.song },
          { L"-map", L"0:a:0", L"-vn", L"-af", L"loudnorm=I=-16:TP=-1:LRA=11:print_format=json", L"-f", L"null" });
-    time("4 min loudness, ebur128 measure", { L"-i", in.song }, { L"-map", L"0:a:0", L"-vn", L"-af", L"ebur128=peak=true:framelog=quiet", L"-f", L"null" });
-    time("4 min loudnorm linear apply to MP3 (now)", { L"-i", in.song },
+    time("4 min loudness, ebur128 measure (now)", { L"-i", in.song }, { L"-map", L"0:a:0", L"-vn", L"-af", L"ebur128=peak=true:framelog=quiet", L"-f", L"null" });
+    time("4 min loudnorm linear apply to MP3 (was)", { L"-i", in.song },
          { L"-map", L"0:a:0", L"-vn", L"-af",
            L"loudnorm=I=-16:TP=-1:LRA=20:measured_I=-20:measured_TP=-6:measured_LRA=5:measured_thresh=-30:offset=0:linear=true:print_format=json",
            L"-ar", L"44100", L"-c:a", L"libmp3lame", L"-q:a", L"2", L"-f", L"mp3" });
-    time("4 min volume gain to MP3", { L"-i", in.song }, { L"-map", L"0:a:0", L"-vn", L"-af", L"volume=4dB", L"-c:a", L"libmp3lame", L"-q:a", L"2", L"-f", L"mp3" });
+    time("4 min volume gain to MP3 (now, when it fits)", { L"-i", in.song }, { L"-map", L"0:a:0", L"-vn", L"-af", L"volume=4dB", L"-c:a", L"libmp3lame", L"-q:a", L"2", L"-f", L"mp3" });
     time("4 min MP3 decode only", { L"-i", in.song }, { L"-map", L"0:a:0", L"-f", L"null" });
+}
+
+// WebP settings on the 12 MP photo at the app's quality (85): time, size and SSIM of the result
+// against the photo (libwebp's own measure, in dB: higher is closer).
+TEST(Bench, WebpOptions)
+{
+    SD_BENCH_ONLY();
+    const auto& in = In();
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmapDecoder> decoder;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICFormatConverter> bgra;
+    ASSERT_HRESULT_SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)));
+    ASSERT_HRESULT_SUCCEEDED(factory->CreateDecoderFromFilename(in.photo.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder));
+    ASSERT_HRESULT_SUCCEEDED(decoder->GetFrame(0, &frame));
+    ASSERT_HRESULT_SUCCEEDED(factory->CreateFormatConverter(&bgra));
+    ASSERT_HRESULT_SUCCEEDED(bgra->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom));
+    UINT w = 0, h = 0;
+    bgra->GetSize(&w, &h);
+    std::vector<BYTE> pixels(static_cast<size_t>(w) * h * 4);
+    ASSERT_HRESULT_SUCCEEDED(bgra->CopyPixels(nullptr, w * 4, static_cast<UINT>(pixels.size()), pixels.data()));
+
+    WebPPicture original;
+    ASSERT_TRUE(WebPPictureInit(&original));
+    original.width = static_cast<int>(w);
+    original.height = static_cast<int>(h);
+    original.use_argb = 1;
+    ASSERT_TRUE(WebPPictureImportBGRA(&original, pixels.data(), static_cast<int>(w * 4)));
+    const auto run = [&](const char* task, int method, int threads) {
+        WebPConfig config;
+        WebPPicture picture;
+        WebPMemoryWriter memory;
+        if (!WebPConfigPreset(&config, WEBP_PRESET_DEFAULT, 85) || !WebPPictureInit(&picture))
+            return;
+        config.method = method;
+        config.thread_level = threads;
+        picture.width = static_cast<int>(w);
+        picture.height = static_cast<int>(h);
+        WebPMemoryWriterInit(&memory);
+        picture.writer = WebPMemoryWrite;
+        picture.custom_ptr = &memory;
+        const auto t = std::chrono::steady_clock::now();
+        const bool ok = WebPPictureImportBGRA(&picture, pixels.data(), static_cast<int>(w * 4)) && WebPEncode(&config, &picture);
+        const double ms = Ms(t);
+        std::string note = ok ? Bytes(memory.size) : "failed";
+        int dw = 0, dh = 0;
+        if (uint8_t* decoded = ok ? WebPDecodeBGRA(memory.mem, memory.size, &dw, &dh) : nullptr)
+        {
+            WebPPicture back;
+            float result[5]{};
+            if (WebPPictureInit(&back))
+            {
+                back.width = dw;
+                back.height = dh;
+                back.use_argb = 1;
+                if (WebPPictureImportBGRA(&back, decoded, dw * 4) && WebPPictureDistortion(&original, &back, 1, result))
+                    note += std::format(", SSIM {:.2f} dB", result[4]);
+                WebPPictureFree(&back);
+            }
+            WebPFree(decoded);
+        }
+        WebPPictureFree(&picture);
+        WebPMemoryWriterClear(&memory);
+        Record("WebP", task, ok ? ms : -1, note);
+    };
+    run("12 MP, method 4, one thread (was)", 4, 0);
+    run("12 MP, method 4, two threads (now)", 4, 1);
+    run("12 MP, method 3, two threads", 3, 1);
+    run("12 MP, method 2, two threads", 2, 1);
+    WebPPictureFree(&original);
 }
