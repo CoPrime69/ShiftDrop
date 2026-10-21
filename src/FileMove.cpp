@@ -128,7 +128,7 @@ namespace sd
         }
     }
 
-    bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder)
+    bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder, std::wstring_view verb)
     {
         ComPtr<IFileOpenDialog> dialog;
         if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
@@ -137,9 +137,9 @@ namespace sd
         dialog->GetOptions(&options);
         dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
         dialog->SetClientGuid(kMoveDialogGuid);
-        const auto title = itemCount == 1 ? std::wstring(L"Move 1 item to") : std::format(L"Move {} items to", itemCount);
+        const auto title = itemCount == 1 ? std::format(L"{} 1 item to", verb) : std::format(L"{} {} items to", verb, itemCount);
         dialog->SetTitle(title.c_str());
-        dialog->SetOkButtonLabel(L"Move here");
+        dialog->SetOkButtonLabel(std::format(L"{} here", verb).c_str());
 
         BringToFront(owner);
         if (FAILED(dialog->Show(owner)))   // HRESULT_FROM_WIN32(ERROR_CANCELLED) when the user closes it

@@ -28,6 +28,7 @@
 #include "Startup.h"
 #include "Tray.h"
 #include "Utf.h"
+#include "VirtualDrop.h"
 #include "resource.h"
 #include "inspect/InspectorWindow.h"
 #include "keyboard/KeyboardController.h"
@@ -79,6 +80,7 @@ namespace sd
         {
             BatchKind kind = BatchKind::Convert;
             std::wstring label;    // recipe label, or the destination folder's name for a move
+            std::wstring savedTo;  // files dragged out of an app: the folder the outputs went to
             int64_t runId = 0;     // history run (0 when history is unavailable)
             uint64_t token = 0;    // which batch, so its progress and result reach the top panel
             bool cancelled = false;
@@ -94,12 +96,15 @@ namespace sd
             std::atomic<size_t> remaining{ 0 };
             std::stop_source cancel;          // the top panel's ×; also requested when the app shuts down
             std::atomic<int> lastPermille{ -1 };   // throttles progress posts to whole tenths of a percent
+            std::shared_ptr<VirtualDrop> virtualDrop;   // dragged out of an app: its saved copies last as long as the batch
         };
 
         struct PendingDrop
         {
             std::vector<std::wstring> files;
             std::string recipeId;
+            std::shared_ptr<VirtualDrop> virtualDrop;   // files dragged out of a browser or a mail app
+            std::wstring error;                         // why none of them could be saved
         };
 
         // "1 file", "3 files".
@@ -111,6 +116,24 @@ namespace sd
         std::wstring FileName(const std::wstring& path)
         {
             return std::filesystem::path(path).filename().wstring();
+        }
+
+        // "Desktop" for a user's Desktop folder; a drive's root has no file name, so it is shown whole.
+        std::wstring FolderName(const std::wstring& folder)
+        {
+            const auto name = FileName(folder);
+            return name.empty() ? folder : name;
+        }
+
+        // File actions that hand the files themselves to something else (the clipboard, the Float
+        // shelf, the share sheet, a terminal): for files dragged out of an app they get a copy kept in
+        // the output folder, since the drop folder is deleted when the job ends.
+        [[maybe_unused]] bool HandsFilesOn(const Recipe& recipe)   // unused in the M0 build
+        {
+            if (recipe.steps.size() != 1)
+                return false;
+            const auto& action = recipe.steps[0].action;
+            return (recipe.IsFileAction() && action != "file.duplicate" && action != "file.move") || action == "share.files";
         }
 
         bool IsElevated()
@@ -245,6 +268,10 @@ namespace sd
                 log::Warn(L"media: engines\\ffmpeg.exe not found next to " SD_NAME L".exe; video and audio slices are disabled");
             m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get(), m_media);
             m_runner->RecoverInterrupted();
+            // Files dragged out of a browser or a mail app: where their outputs go, and the copies a
+            // crash may have left behind.
+            SetVirtualOutputChoice(LoadVirtualOutput());
+            RemoveStaleVirtualDrops(VirtualDropRoot());
 
             const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u);
             m_jobs = std::make_unique<JobQueue>(threads);
@@ -542,6 +569,15 @@ namespace sd
                 if (m_shelf)
                     m_shelf->Reveal();
                 break;
+            case IDM_VIRTUAL_BASE + 0: case IDM_VIRTUAL_BASE + 1: case IDM_VIRTUAL_BASE + 2:
+            {
+                const auto choice = static_cast<VirtualOutput>(id - IDM_VIRTUAL_BASE);
+                SetVirtualOutputChoice(choice);
+                SaveVirtualOutput(choice);
+                const wchar_t* names[] = { L"the Desktop", L"Downloads", L"a folder asked for each time" };
+                log::Info(L"files dragged out of apps: saved to {}", names[static_cast<int>(choice)]);
+                break;
+            }
             default:
                 if (id >= IDM_OCR_BASE && id <= IDM_OCR_LAST)
                 {
@@ -707,6 +743,23 @@ namespace sd
             content.centerText = files.size() == 1 ? std::wstring(L"1 file") : std::format(L"{} files", files.size());
 #if !SHIFTDROP_M0
             const char* ringId = RingId(ring);
+            // Files dragged out of a browser or a mail app are not on disk until they are dropped, so
+            // until then their names alone decide; the job checks the rest once they are saved.
+            const auto dragged = files.empty() ? nullptr : VirtualDrop::Find(files.front());
+            const bool unsaved = dragged && !dragged->Saved();
+            const auto accepts = [&](const Recipe& recipe, const std::wstring& f, std::wstring* why) {
+                if (!unsaved)
+                    return m_runner->Accepts(recipe, f, why);
+                if (recipe.IsMedia() && !m_media->Available())
+                {
+                    *why = L"the media engine is missing; reinstall to convert video and audio";
+                    return false;
+                }
+                if (m_runner->Applies(recipe, f))
+                    return true;
+                *why = L"not for this kind of file";
+                return false;
+            };
             // Each wheel shows the recipes meant for these files: video formats for videos, image formats
             // for photos. With nothing meant for all of them (a photo and a video), the ones meant for
             // some; with nothing meant for any (a PDF), all of them, disabled, so the wheel still says
@@ -756,7 +809,7 @@ namespace sd
                 // it would do nothing for every file (to PNG on PNGs).
                 std::wstring reason;
                 const bool all = std::all_of(files.begin(), files.end(),
-                                             [&](const std::wstring& f) { return m_runner->Accepts(*recipe, f, &reason); });
+                                             [&](const std::wstring& f) { return accepts(*recipe, f, &reason); });
                 const bool anyToDo = std::any_of(files.begin(), files.end(),
                                                  [&](const std::wstring& f) { return !m_runner->IsNoOp(*recipe, f); });
                 if (!all && firstReason.empty())
@@ -942,8 +995,98 @@ namespace sd
             log::Info(L"drop: {} file(s), action '{}'", files.size(), actionId.empty() ? L"(none)" : actionId);
             for (const auto& f : files)
                 log::Info(L"  {}", f);
-            m_pendingDrops.push_back(PendingDrop{ std::move(files), Narrow(actionId) });
+            PendingDrop drop{ std::move(files), Narrow(actionId), nullptr, {} };
+            // Dragged out of a browser or a mail app: saved now, while the source still holds them.
+            if (auto dragged = drop.files.empty() ? nullptr : VirtualDrop::Find(drop.files.front()))
+            {
+                drop.files = SaveDragged(*dragged, drop.error);
+                drop.virtualDrop = std::move(dragged);
+            }
+            m_pendingDrops.push_back(std::move(drop));
             PostMessageW(m_hwnd.get(), msg::RunDrop, 0, 0);
+        }
+
+        // Saves the files of a drag out of an app into its drop folder. This runs inside the drop, so
+        // the UI thread is busy until it is done: a save that takes a while shows its progress in the
+        // top panel by running just the panel's animation.
+        std::vector<std::wstring> SaveDragged(VirtualDrop& dragged, std::wstring& error)
+        {
+            const ULONGLONG started = GetTickCount64();
+            ULONGLONG lastFrame = 0;
+            bool shown = false;
+            const size_t count = dragged.Paths().size();
+            auto saved = dragged.Save([&](uint64_t done, uint64_t total) {
+                const ULONGLONG now = GetTickCount64();
+                if (now - started < 300 || now - lastFrame < 15)
+                    return;
+                lastFrame = now;
+                if (!shown)
+                    m_island->ShowProgress(std::format(L"Saving {}\u2026", Count(count, L"dropped file")), 1);
+                shown = true;
+                if (total > 0)
+                    m_island->SetProgress(std::min(1.0, static_cast<double>(done) / static_cast<double>(total)));
+                m_island->Pump();
+            }, error);
+            log::Info(L"drop: saved {} of {} dragged file(s) in {} ms", saved.size(), count, GetTickCount64() - started);
+            return saved;
+        }
+
+        // Before a slice runs on files dragged out of an app: a folder for the outputs when the
+        // setting asks every time, and a copy kept there for what hands the files themselves on.
+        // False when there is nothing to run.
+        bool PrepareDragged(PendingDrop& drop, const Recipe& recipe)
+        {
+            if (drop.files.empty())
+            {
+                m_island->ShowResult(Island::Outcome::Failure, L"The dropped file could not be saved", drop.error);
+                return false;
+            }
+            if (recipe.IsFileAction() && recipe.steps[0].action == "file.move")
+                return true;   // Move to… asks for its folder itself
+            auto& dragged = *drop.virtualDrop;
+            if (dragged.AsksFolder())
+            {
+                std::wstring folder;
+                m_island->HideSwitcher();   // the folder picker comes first
+                if (!PickDestinationFolder(m_hwnd.get(), drop.files.size(), folder, L"Save"))
+                {
+                    log::Info(L"drop: no folder picked for the dragged file(s); nothing saved");
+                    return false;
+                }
+                dragged.SetOutputFolder(folder);
+            }
+            if (HandsFilesOn(recipe))
+            {
+                std::wstring error;
+                drop.files = KeepDragged(drop.files, dragged.OutputFolder(), error);
+                if (drop.files.empty())
+                {
+                    m_island->ShowResult(Island::Outcome::Failure, L"The dropped file could not be saved", error);
+                    return false;
+                }
+                drop.virtualDrop.reset();   // the kept copies are ordinary files now
+            }
+            return true;
+        }
+
+        // Moves saved copies of dragged files into `folder`, never replacing anything there.
+        static std::vector<std::wstring> KeepDragged(const std::vector<std::wstring>& files, const std::wstring& folder, std::wstring& error)
+        {
+            std::vector<std::wstring> kept;
+            for (const auto& f : files)
+            {
+                std::wstring path;
+                if (const HRESULT hr = KeepVirtualFile(f, folder, path); FAILED(hr))
+                {
+                    log::Warn(L"drop: could not save {} in {}: {}", f, folder, HResultText(hr));
+                    if (error.empty())
+                        error = std::format(L"{}: {}", FileName(f), HResultText(hr));
+                    continue;
+                }
+                log::Info(L"drop: saved {}", path);
+                kept.push_back(std::move(path));
+            }
+            return kept;
         }
 
         void RunPendingDrop()
@@ -967,13 +1110,15 @@ namespace sd
                 m_island->HideSwitcher();
                 return;
             }
+            if (drop.virtualDrop && !PrepareDragged(drop, *recipe))
+                return;
             if (recipe->IsFileAction())
             {
                 const auto& action = recipe->steps[0].action;
                 if (action == "file.move")
                 {
                     m_island->HideSwitcher();   // the folder picker comes first
-                    StartMove(*recipe, std::move(drop.files));
+                    StartMove(*recipe, std::move(drop.files), drop.virtualDrop != nullptr);
                     return;
                 }
                 if (action != "file.duplicate")
@@ -989,20 +1134,26 @@ namespace sd
                 // Trim, crop, annotate...: the engine's window asks first, then the batch runs with the
                 // user's choices in the recipe's params.
                 m_island->HideSwitcher();
-                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files, [this](Recipe adjusted, std::vector<std::wstring> files) {
-                    StartBatch(adjusted, std::move(files));
-                });
+                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files,
+                                   [this, dragged = drop.virtualDrop](Recipe adjusted, std::vector<std::wstring> files) {
+                                       StartBatch(adjusted, std::move(files), dragged);
+                                   });
                 return;
             }
-            StartBatch(*recipe, std::move(drop.files));
+            StartBatch(*recipe, std::move(drop.files), std::move(drop.virtualDrop));
 #endif
         }
 
-        void StartBatch(const Recipe& recipe, std::vector<std::wstring> files)
+        // `dragged`: the files were dragged out of an app and saved in its drop folder, which the
+        // batch keeps until its last file is done.
+        void StartBatch(const Recipe& recipe, std::vector<std::wstring> files, std::shared_ptr<VirtualDrop> dragged = nullptr)
         {
             auto state = std::make_shared<BatchState>();
             state->notify = m_hwnd.get();
             state->recipe = recipe;
+            if (dragged)
+                state->result.savedTo = dragged->OutputFolder();
+            state->virtualDrop = std::move(dragged);
             state->result.kind = recipe.IsFileAction() ? BatchKind::Duplicate : recipe.ring == RingId(Ring::Convert) ? BatchKind::Convert : BatchKind::Tools;
             state->result.label = recipe.label;
             state->result.runId = m_history ? m_history->BeginRun(recipe, static_cast<int>(files.size())) : 0;
@@ -1091,12 +1242,26 @@ namespace sd
             m_tray.SetTip(std::format(L"" SD_NAME L": {} on {} file(s)...", recipe.label, files.size()));
         }
 
-        void StartMove(const Recipe& recipe, std::vector<std::wstring> files)
+        // `dragged`: files dragged out of an app and saved in a drop folder. They are kept in the folder
+        // picked: a new file there, with no history entry (there is no original place to move back to).
+        void StartMove(const Recipe& recipe, std::vector<std::wstring> files, bool dragged = false)
         {
             std::wstring folder;
             if (!PickDestinationFolder(m_hwnd.get(), files.size(), folder))
             {
                 log::Info(L"move: folder picker cancelled");
+                return;
+            }
+            if (dragged)
+            {
+                std::wstring error;
+                const auto kept = KeepDragged(files, folder, error);
+                if (!kept.empty())
+                    m_lastOutputs = kept;
+                const auto title = kept.size() == files.size() ? std::format(L"Saved {} to {}", Count(kept.size(), L"file"), FolderName(folder))
+                                                               : std::format(L"Saved {} of {} to {}", kept.size(), files.size(), FolderName(folder));
+                const auto outcome = kept.empty() ? Island::Outcome::Failure : error.empty() ? Island::Outcome::Success : Island::Outcome::Partial;
+                m_island->ShowResult(outcome, title, error, m_shelf && !kept.empty() ? m_shelf->CarryActions(kept) : Island::ResultActions{});
                 return;
             }
             m_tray.SetTip(std::format(L"" SD_NAME L": moving {} item(s)...", files.size()));
@@ -1189,14 +1354,17 @@ namespace sd
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
                 else if (!outputs.empty())
-                    sub = L"Saved next to the originals \u00b7 Undo from History";
+                    sub = batch->savedTo.empty() ? std::wstring(L"Saved next to the originals \u00b7 Undo from History")
+                                                 : std::format(L"Saved to {} \u00b7 Undo from History", FolderName(batch->savedTo));
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
                 if (batch->cancelled)
                 {
                     // Asked for, so not a failure: say what is left on disk.
                     outcome = Island::Outcome::Partial;
                     title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
-                    sub = ok == 0 ? L"Nothing was saved" : L"Finished files are saved next to the originals";
+                    sub = ok == 0                  ? std::wstring(L"Nothing was saved")
+                          : batch->savedTo.empty() ? std::wstring(L"Finished files are saved next to the originals")
+                                                   : std::format(L"Finished files are saved to {}", FolderName(batch->savedTo));
                 }
                 // Outputs can be carried on from the panel: dragged into an app, floated, copied.
                 const bool carry = m_shelf && !outputs.empty();
@@ -1241,6 +1409,9 @@ namespace sd
                     }
                     extras.choices.push_back(std::move(choice));
                 }
+                // Where files dragged out of a browser or a mail app are saved (VirtualDrop.h).
+                extras.choices.push_back(TrayChoice{ L"Save browser drops to", IDM_VIRTUAL_BASE,
+                                                     { L"Desktop", L"Downloads", L"Ask every time" }, static_cast<int>(VirtualOutputChoice()) });
                 if (m_keyboard)
                 {
                     extras.toggles.push_back({ IDM_EXPLORER_HOTKEY, std::format(L"Wheel on Explorer's selection ({})", m_keyboard->HotkeyLabel()), m_keyboard->HotkeyOn() });
