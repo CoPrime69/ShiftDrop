@@ -63,6 +63,25 @@ namespace sd::clipboard
         return ok;
     }
 
+    bool GetText(HWND owner, std::wstring& text)
+    {
+        if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !Open(owner))
+            return false;
+        auto close = wil::scope_exit([] { CloseClipboard(); });
+        HANDLE data = GetClipboardData(CF_UNICODETEXT);
+        const auto* p = data ? static_cast<const wchar_t*>(GlobalLock(data)) : nullptr;
+        if (!p)
+            return false;
+        // The block may hold more than the text; it ends at the first null.
+        const size_t room = GlobalSize(data) / sizeof(wchar_t);
+        size_t n = 0;
+        while (n < room && p[n])
+            ++n;
+        text.assign(p, n);
+        GlobalUnlock(data);
+        return true;
+    }
+
     bool SetFiles(HWND owner, const std::vector<std::wstring>& files, DWORD effect, std::span<const uint8_t> png, std::span<const uint8_t> dib)
     {
         wil::unique_hglobal drop = MakeDropFiles(files);

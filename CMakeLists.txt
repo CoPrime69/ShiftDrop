@@ -127,8 +127,10 @@ add_library(shiftdrop_core STATIC
   src/redact/Vision.cpp
   src/sharesafe/ShareSafeEngine.cpp
   # PDF module: plain C++ and QPDF; the WinRT and UI parts are in the libraries below
+  src/pdf/FontSubset.cpp
   src/pdf/ImagePdf.cpp
   src/pdf/PageEdits.cpp
+  src/pdf/PageMarks.cpp
   src/pdf/PageRenderer.cpp
   src/pdf/PagePlan.cpp
   src/pdf/PdfCompress.cpp
@@ -215,6 +217,8 @@ add_library(shiftdrop_core STATIC
   src/photo/Layout.cpp
   src/photo/PhotoEngine.cpp
   src/photo/PhotoModule.cpp
+  src/photo/Signatures.cpp
+  src/photo/TextBox.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -286,6 +290,7 @@ add_executable(ShiftDrop WIN32
   src/mediaeditor/MediaLoader.cpp
   src/mediaeditor/Playback.cpp
   src/canvas/EditorWindow.cpp
+  src/canvas/SignaturePad.cpp   # draw or pick a signature, over the picture editor
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -355,6 +360,7 @@ if(SHIFTDROP_TESTS)
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
+    tests/FillSignTests.cpp
     tests/BenchTests.cpp
     tests/FileActionsTests.cpp
     tests/RenameTests.cpp

@@ -1,6 +1,8 @@
 #pragma once
 #include "canvas/Raster.h"
+#include "pdf/PageMarks.h"
 #include "photo/Annotations.h"
+#include "photo/TextBox.h"
 #include "photo/Effects.h"
 #include "photo/Layout.h"
 
@@ -9,6 +11,7 @@
 #include <dwrite.h>
 #include <wrl/client.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -71,10 +74,29 @@ namespace sd::photo
                          fx::AdjustGraph& graph, Bitmaps& bitmaps, CpuCopy& cpu);
 
     // ---- Annotate Photos --------------------------------------------------------------------------
-    // The photo with its marks. `images` holds the inserted pictures by path. `editing` is the text
-    // mark being typed (it gets a caret). Text sizes are reported back into `marks`.
+    // The photo with its marks. `images` holds the inserted pictures by path. Text sizes are reported
+    // back into `marks`.
     HRESULT DrawAnnotated(ID2D1DeviceContext* dc, unsigned device, double scale, const Picture& photo, Annotations& marks,
-                          const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps, uint32_t editing = 0);
+                          const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps);
+    // Only the marks (those `only` accepts, or all), with `transform` from picture pixels to the
+    // target, over whatever the target holds (a PDF page's added layer starts transparent).
+    HRESULT DrawMarks(ID2D1DeviceContext* dc, unsigned device, const D2D1_MATRIX_3X2_F& transform, const Picture& photo, Annotations& marks,
+                      const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps, const std::function<bool(const Annotation&)>& only);
+
+    // Where a text mark's (a callout's, a number's) lines and caret positions are, laid out exactly
+    // as it is drawn; `origin` gets the layout's top-left corner in the picture and `measured` the
+    // size Annotations::SetMeasured takes. False for other marks.
+    bool LayOutMarkText(const Annotation& m, const Annotations& marks, TextLayoutInfo& info, canvas::PointD& origin, canvas::SizeD* measured);
+    TextLayoutInfo DescribeTextLayout(IDWriteTextLayout* layout, const std::wstring& text);
+    // The marks as PDF content over the page they were drawn on (pdf/PageMarks.h): shapes as paths,
+    // text as the glyphs DirectWrite lays out, pictures as images. A mark that can't be written that
+    // way (a magnifier, text in a font that may not be embedded) is drawn as pixels, sharper than the
+    // page picture; `pictures` counts those.
+    HRESULT MarksToPdf(const Picture& page, Annotations& marks, const std::map<std::wstring, Picture>& images, pdf::PageOverlay& out, size_t* pictures,
+                       std::wstring& error);
+    // The font families installed on this PC (DirectWrite's system collection), sorted, by the names
+    // DirectWrite finds them by. Made once.
+    const std::vector<std::wstring>& SystemFontFamilies();
 
     // ---- Add a Background -------------------------------------------------------------------------
     // CPU-made layers of a background result (a blurred backdrop, the shadow), kept between renders.

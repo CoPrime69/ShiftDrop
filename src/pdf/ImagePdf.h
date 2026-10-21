@@ -69,4 +69,19 @@ namespace sd::pdf
     // PNG "Paeth" prediction of 8-bit rows (each row gets its filter-type byte), so Flate compresses
     // photos and screenshots far better. Exposed for tests.
     std::string PaethRows(const uint8_t* samples, uint32_t width, uint32_t height, uint32_t channels);
+
+    // Decoded pixels (straight-alpha BGRA, top-down) as a PDF image: gray or RGB samples, and an
+    // alpha channel for the soft mask when any pixel isn't opaque, each PNG-predicted for Flate.
+    struct EncodedImage
+    {
+        uint32_t width = 0, height = 0;
+        bool gray = false;
+        std::string samples;
+        std::string mask;   // empty when opaque
+
+        // The insides of the image's and its mask's dictionaries, without /SMask, /Filter and /Length.
+        std::string Dict() const;
+        std::string MaskDict() const;
+    };
+    EncodedImage EncodeImage(const uint8_t* bgra, uint32_t width, uint32_t height);
 }
