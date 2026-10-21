@@ -23,7 +23,8 @@ namespace sd
     //  - Conversions and Duplicate: outputs go to the Recycle Bin, refused if any output was modified
     //    since ShiftDrop wrote it (SHA-256 differs).
     //  - Move: each item moves back to where it was, refused if that place is taken again. Nothing is
-    //    deleted, so an item edited after the move is fine.
+    //    deleted, so an item edited after the move is fine. Rename is undone the same way: each item
+    //    gets its old name back, refused if something else has that name now.
     // Call on an STA thread (the UI thread): IFileOperation may show shell UI.
     UndoReport UndoRun(HistoryStore& history, const RunRecord& run, HWND owner);
 }

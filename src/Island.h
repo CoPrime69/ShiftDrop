@@ -28,7 +28,8 @@ namespace sd
     //
     // A layered, topmost, non-activating window like the wheel. It is click-through
     // (WS_EX_TRANSPARENT) except while it shows a result, so it never gets in the way of the
-    // window under it, and it is never a drop target.
+    // window under it, and it is never a drop target. Screen readers hear its progress and results
+    // (Accessibility.h).
     class Island
     {
     public:
@@ -102,6 +103,7 @@ namespace sd
         Appearance m_appearance;
 
         wil::unique_hwnd m_hwnd;
+        std::unique_ptr<a11y::TextElement> m_a11y;   // after m_hwnd: goes first
         Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
         Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;
         std::unique_ptr<Canvas> m_canvas;

@@ -38,7 +38,13 @@ namespace sd
             return hr;
         }
 
-        UndoReport UndoMove(HistoryStore& history, const RunRecord& run, HWND owner)
+        bool SamePathNoCase(const std::wstring& a, const std::wstring& b)
+        {
+            return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL;
+        }
+
+        // Also undoes a rename: the item moves back into the folder it is already in, under its old name.
+        UndoReport UndoMove(HistoryStore& history, const RunRecord& run, HWND owner, bool rename)
         {
             UndoReport report;
             const int64_t runId = run.id;
@@ -50,7 +56,8 @@ namespace sd
                     continue;
                 if (GetFileAttributesW(item.output.c_str()) == INVALID_FILE_ATTRIBUTES)
                     ++report.alreadyGone;
-                else if (GetFileAttributesW(item.source.c_str()) != INVALID_FILE_ATTRIBUTES)
+                // A rename that only changed the case finds itself at the old name: not in the way.
+                else if (!SamePathNoCase(item.source, item.output) && GetFileAttributesW(item.source.c_str()) != INVALID_FILE_ATTRIBUTES)
                     report.occupied.push_back(item.source);
                 else
                     toMove.push_back(&item);
@@ -82,7 +89,8 @@ namespace sd
                     if (SUCCEEDED(hr))
                         hr = SHCreateItemFromParsingName(parent.c_str(), nullptr, IID_PPV_ARGS(&parentItem));
                     if (SUCCEEDED(hr))
-                        hr = op->MoveItem(shellItem.Get(), parentItem.Get(), original.filename().c_str(), nullptr);
+                        hr = rename ? op->RenameItem(shellItem.Get(), original.filename().c_str(), nullptr)
+                                    : op->MoveItem(shellItem.Get(), parentItem.Get(), original.filename().c_str(), nullptr);
                 }
                 if (SUCCEEDED(hr))
                     hr = Perform(op.Get());
@@ -98,18 +106,18 @@ namespace sd
             history.SetRunStatus(runId, status::Undone);
             report.ok = true;
             report.movedBack = static_cast<int>(toMove.size());
-            report.message = report.alreadyGone
-                                 ? std::format(L"Moved {} item(s) back ({} were no longer there).", report.movedBack, report.alreadyGone)
-                                 : std::format(L"Moved {} item(s) back.", report.movedBack);
-            log::Info(L"undo: move run {}: {}", runId, report.message);
+            const auto done = rename ? std::format(L"Gave {} item(s) their old names back", report.movedBack)
+                                     : std::format(L"Moved {} item(s) back", report.movedBack);
+            report.message = done + (report.alreadyGone ? std::format(L" ({} were no longer there).", report.alreadyGone) : std::wstring(L"."));
+            log::Info(L"undo: {} run {}: {}", rename ? L"rename" : L"move", runId, report.message);
             return report;
         }
     }
 
     UndoReport UndoRun(HistoryStore& history, const RunRecord& run, HWND owner)
     {
-        if (IsMoveRun(run))
-            return UndoMove(history, run, owner);
+        if (IsMoveRun(run) || IsRenameRun(run))
+            return UndoMove(history, run, owner, IsRenameRun(run));
         const int64_t runId = run.id;
         UndoReport report;
         const auto items = history.Items(runId);

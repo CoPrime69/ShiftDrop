@@ -73,6 +73,8 @@ add_library(shiftdrop_core STATIC
   src/Startup.cpp
   src/Undo.cpp
   src/VirtualDrop.cpp
+  src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern (M12)
+  src/toast/ToastXml.cpp         # what a finished batch's toast says (M12)
   # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -218,14 +220,15 @@ target_link_libraries(shiftdrop_core PUBLIC
   d2d1 d3d11 dxgi dxguid  # photo tools: Direct2D on the GPU (WARP without one); dxguid has the effect CLSIDs
 )
 
-# Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
-# share sheet, through C++/WinRT (Windows SDK headers). Object libraries, so each file's static
+# Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr, the
+# share sheet and toasts, through C++/WinRT (Windows SDK headers). Object libraries, so each file's static
 # initialiser that installs it into the core's hooks is always linked in.
 add_library(shiftdrop_winrt OBJECT
   src/pdf/WinPdfRenderer.cpp
   src/ocr/WinOcr.cpp
   src/share/WinShare.cpp
   src/redact/WinFaces.cpp
+  src/toast/WinToasts.cpp
 )
 target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
 target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
@@ -244,6 +247,7 @@ add_executable(ShiftDrop WIN32
   src/MouseHook.cpp
   src/Overlay.cpp
   src/Island.cpp
+  src/Accessibility.cpp   # screen readers: the wheel and the top panel through UI Automation (M12)
   src/Canvas.cpp
   src/Theme.cpp
   src/DropDescription.cpp
@@ -252,6 +256,7 @@ add_executable(ShiftDrop WIN32
   src/Tray.cpp
   src/HistoryWindow.cpp
   src/SettingsWindow.cpp
+  src/rename/RenameWindow.cpp
   src/keyboard/ExplorerSelection.cpp
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
@@ -269,7 +274,7 @@ add_executable(ShiftDrop WIN32
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme uiautomationcore)
 
 # The sealed engine host (S6): parses archives inside an AppContainer with no capabilities. A
 # separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
@@ -330,6 +335,9 @@ if(SHIFTDROP_TESTS)
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
     tests/BenchTests.cpp
+    tests/FileActionsTests.cpp
+    tests/RenameTests.cpp
+    tests/ToastTests.cpp
     tests/FfmpegComponentsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})

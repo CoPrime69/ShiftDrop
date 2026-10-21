@@ -85,6 +85,7 @@ namespace sd
         m_canvas = std::make_unique<Canvas>(m_d2d.Get());
         m_textFamily = TextFamily(m_dwrite.Get());
         m_iconFamily = IconFamily(m_dwrite.Get());
+        m_a11y = std::make_unique<a11y::TextElement>(m_hwnd.get());
         return true;
     }
 
@@ -124,6 +125,10 @@ namespace sd
             if (self && wParam == kTimerFrame)
                 self->OnFrame();
             return 0;
+        case WM_GETOBJECT:
+            if (LRESULT result = 0; self && self->m_a11y && self->m_a11y->OnGetObject(wParam, lParam, result))
+                return result;
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         default:
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
@@ -270,6 +275,8 @@ namespace sd
         m_cancelHover = false;
         m_cancelled = false;
         m_bar = 0.f;
+        if (m_a11y)
+            m_a11y->Announce(title, L"ShiftDrop.Progress");
         POINT pt{};
         GetCursorPos(&pt);
         Present(State::Progress, m_monitor ? m_monitor : MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST));
@@ -441,6 +448,8 @@ namespace sd
         m_title = title;
         m_subtitle = subtitle;
         m_resultSince = GetTickCount64();
+        if (m_a11y)
+            m_a11y->Announce(subtitle.empty() ? title : std::format(L"{}. {}", title, subtitle), L"ShiftDrop.Result", true);
         POINT pt{};
         GetCursorPos(&pt);
         Present(State::Result, m_monitor ? m_monitor : MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST));
