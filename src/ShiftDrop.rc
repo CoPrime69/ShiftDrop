@@ -3,6 +3,8 @@
 #include "resource.h"
 
 IDI_APPICON ICON "ShiftDrop.ico"
+IDI_TRAY_DARK ICON "TrayDarkTaskbar.ico"
+IDI_TRAY_LIGHT ICON "TrayLightTaskbar.ico"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 0,5,0,0

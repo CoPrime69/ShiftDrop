@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <wil/resource.h>
 
 #include <string>
 #include <string_view>
@@ -41,8 +42,11 @@ namespace sd
     class Tray
     {
     public:
-        bool Add(HWND owner, HICON icon, std::wstring_view tip);
+        bool Add(HWND owner, std::wstring_view tip);
         bool Readd();   // after Explorer restarts (the "TaskbarCreated" broadcast)
+        // The glyph follows the taskbar's light or dark theme and its DPI: call when Windows says
+        // either changed (WM_SETTINGCHANGE "ImmersiveColorSet", WM_DPICHANGED, WM_DISPLAYCHANGE).
+        void Refresh();
         void Remove();
         void SetTip(std::wstring_view tip);
         void Balloon(std::wstring_view title, std::wstring_view text, DWORD infoFlags = NIIF_INFO);
@@ -51,8 +55,10 @@ namespace sd
 
     private:
         NOTIFYICONDATAW Base(UINT flags) const;
+        bool LoadGlyph();   // true when the picked glyph changed
         HWND m_owner = nullptr;
-        HICON m_icon = nullptr;   // owned by the App
+        wil::unique_hicon m_icon;
+        int m_resource = 0, m_size = 0;   // the glyph m_icon holds
         std::wstring m_tip;
         bool m_added = false;
     };

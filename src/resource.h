@@ -1,6 +1,9 @@
 #pragma once
 
 #define IDI_APPICON     101
+// The tray glyph for a dark and for a light taskbar (see TrayIcon.h)
+#define IDI_TRAY_DARK   102
+#define IDI_TRAY_LIGHT  103
 
 // Tray menu commands
 #define IDM_OPEN_LOGS   40001

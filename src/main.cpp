@@ -374,7 +374,7 @@ namespace sd
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
-            m_tray.Add(m_hwnd.get(), m_icon.get(), IdleTip());
+            m_tray.Add(m_hwnd.get(), IdleTip());
             // Real toasts need the installer's Start menu shortcut; without it, balloons as before.
             m_toasts = toast::Start(OnToastClick);
 
@@ -527,6 +527,15 @@ namespace sd
             case WM_COMMAND:
                 OnCommand(LOWORD(wParam));
                 return 0;
+            case WM_SETTINGCHANGE:
+                // "ImmersiveColorSet": light or dark changed, maybe the taskbar's, which the tray glyph follows.
+                if (lParam && EqualsNoCase(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet"))
+                    m_tray.Refresh();
+                return DefWindowProcW(hwnd, message, wParam, lParam);
+            case WM_DPICHANGED:
+            case WM_DISPLAYCHANGE:
+                m_tray.Refresh();   // the taskbar's DPI may have changed with the display's scale
+                return DefWindowProcW(hwnd, message, wParam, lParam);
             case WM_DESTROY:
                 log::Info(L"shutting down");
                 hook::Uninstall();

@@ -358,6 +358,7 @@ if(SHIFTDROP_TESTS)
     tests/VirtualDropTests.cpp
     tests/PanelTests.cpp
     tests/AccentTests.cpp
+    tests/TrayIconTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
