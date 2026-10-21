@@ -14,6 +14,7 @@ effect is always `DROPEFFECT_COPY`, never `MOVE`.
 
 ## Consequences
 - Text selections and window moves with Shift held never flash a menu.
-- Virtual-file drags (browser images, Outlook attachments) carry no `CF_HDROP` and get no wheel yet.
+- Virtual-file drags (browser images, Outlook attachments) carry no `CF_HDROP`. They were handled
+  later by reading their file descriptors instead (`src/VirtualDrop.h`).
 - Explorer treats Shift-drag as "move"; answering COPY means the source never deletes the original.
 - An elevated source cannot drop on us (UIPI); documented, not worked around.

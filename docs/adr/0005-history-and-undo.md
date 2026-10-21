@@ -18,5 +18,5 @@ ShiftDrop wrote it, deleting that file would lose their edit.
 
 ## Consequences
 - Undo is all-or-nothing per run and can always be undone again from the Recycle Bin.
-- Hashing runs on the UI thread in M2 (images are small); large media in M3 moves it to a worker.
+- Undo re-hashes outputs on the UI thread: quick for pictures, a moment for a large video.
 - If the database cannot be opened, conversions still work, without history or undo.

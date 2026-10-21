@@ -1,119 +1,199 @@
 # ShiftDrop
 
-Drag a file, hold a key, and a wheel appears under the cursor. Drop on a slice to act on the file.
-Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
+[![CI](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml/badge.svg)](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Drag a file and press **Shift**: the wheel opens on the section that suits the file best. Turn the
-mouse wheel to step through the sections (Convert, Tools, Reduce size, File actions) in order, round and round. No mouse wheel? Keep Shift held and tap 1, 2, 3 or 4 to jump to a section.
+Convert and edit files without opening an app. Start dragging a file, press **Shift**, and a wheel
+of actions opens under the cursor. Drop the file on a slice: a photo becomes a WebP, a video shrinks
+to fit under 25 MB, two PDFs become one. The result lands next to the original, which is never
+touched.
 
-| Section | Slices so far |
+ShiftDrop is a small native Windows app (C++20, Win32, COM) that lives in the tray. It works
+offline and sends nothing anywhere.
+
+<!-- Demo GIF goes here: docs/images/demo.gif, about 10 seconds. Drag a phone photo out of Explorer,
+     press Shift, scroll from Convert to Reduce size, hover -70% (the centre shows the new size),
+     drop, and the top panel says it is done. -->
+
+## What a drop looks like
+
+You drag `IMG_2041.jpg` out of Explorer and press Shift. The wheel opens on **Convert** and shows
+only formats that make sense for a photo. Hover **WebP** and a card under the wheel tells you what
+you'll get: about 1.2 MB instead of 3.4 MB, saved as `IMG_2041 (converted).webp`. Drop it there. A
+panel at the top of the screen shows the progress, then "1 file converted to WebP". Click the panel
+to see the file in Explorer. Changed your mind? Tray menu > History > Undo sends it to the Recycle
+Bin.
+
+## Features
+
+The wheel has four sections. Each one shows only what fits the files you drag: a song gets audio
+formats, a folder gets archive formats, and two PDFs get Merge.
+
+### Convert
+
+| Files | Convert to |
 |---|---|
-| Convert | Images (also from AVIF, HEIC and SVG): PNG, JPG, WebP, AVIF, HEIC (with Windows' HEIF codec), TIFF, BMP, Web (a recipe: resize + WebP); an animated GIF or multi-page TIFF keeps every frame. Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown, DOCX, EPUB, HTML. Images: PDF (one PDF from all of them). Documents (DOCX, Markdown, HTML, TXT, RTF, RTFD, Pages): DOCX, PDF, Markdown, HTML, EPUB, TXT. Spreadsheets (XLSX, XLS, ODS, CSV, TSV): XLSX, ODS, CSV, TSV, PDF. Subtitles (SRT, VTT): SRT, VTT, TXT. With Office or LibreOffice installed: Exact PDF of Word, Excel and PowerPoint files, and (PowerPoint) PNG or JPG slides. Archives (ZIP, TAR, TGZ, GZ, 7z, RAR): Extract, ZIP, TAR.GZ, 7z. Folders: ZIP, TAR.GZ, 7z |
-| Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB; for video Trim…, Crop…, Speed…, Join…, Frames…, Split…, Redact…; for audio Normalize, Trim…, Channels…, Bleep…, Visualizer…; PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF. Images: Crop, Redact (cover text, faces and personal details), Share-safe (verified metadata scrub with a review step; also video and audio), Edit (light, colour, detail, dehaze, clarity, noise, grain), Annotate (arrows, text, shapes, callouts, numbers, magnifiers, pictures, pen, highlighter), Background (solid, gradient, blur or picture, with shape, spacing, corners and shadow); for two or more images Collage (grid, row, column, featured) |
-| Reduce size | 90%, 80% … 20% smaller, for photos, video, audio and PDFs. The centre shows the size now; hover a slice to see the size it comes out at |
-| File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Remove metadata (images, video, audio), Zip (one ZIP of everything dropped) |
+| Images (also from AVIF, HEIC and SVG) | PNG, JPG, WebP, AVIF, HEIC, TIFF, BMP, Web (resize + WebP), PDF (one PDF from all of them). An animated GIF or a multi-page TIFF keeps every frame |
+| Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 |
+| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA |
+| PDF | JPG or PNG (every page), TXT, Markdown, DOCX, EPUB, HTML |
+| Documents (DOCX, Markdown, HTML, TXT, RTF, RTFD, Pages) | DOCX, PDF, Markdown, HTML, EPUB, TXT |
+| Spreadsheets (XLSX, XLS, ODS, CSV, TSV) | XLSX, ODS, CSV, TSV, PDF |
+| Subtitles (SRT, VTT) | SRT, VTT, TXT |
+| Word, Excel and PowerPoint files | Exact PDF, and PNG or JPG slides, when Microsoft Office or LibreOffice is installed |
+| Archives (ZIP, TAR, TGZ, GZ, 7z, RAR) | Extract, ZIP, TAR.GZ, 7z |
+| Folders | ZIP, TAR.GZ, 7z |
 
-Each wheel shows only what fits the files you drag: a video gets video formats, a song audio formats.
-Pictures dragged straight out of a browser and attachments dragged out of Outlook or Thunderbird work too: their results go to your Desktop (tray menu > Save browser drops to: Desktop, Downloads or Ask every time).
-A panel at the top of the screen shows which section you are on, then the job's progress and result. The tray menu sets the
-size (Auto adapts to your screen) and the style (Solid or Glass).
+Streams that already fit the new container are copied, not re-encoded, so a phone's `.mov` to MP4
+takes a second or two.
 
-Arrow keys pick a slice and Enter runs it, mid-drag. Without dragging, press Ctrl+Shift+Space on
-Explorer's selection, or right-click > ShiftDrop…, and the wheel opens on those files. While a slice
-is highlighted, a card under the wheel predicts the result: format, size, name and what changes.
+### Tools
 
-The video and audio tools open one timeline editor (filmstrip or waveform, playback, typed timecodes) whose
-tabs hold every tool of its kind: Trim, Crop, Speed, Join, Frames, Split and Redact for video; Trim,
-Channels, Bleep and Visualizer for audio.
+- **Images:** Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Crop, and Inspect (every
+  metadata field, searchable).
+- **Photo editors**, with a live preview drawn on the GPU: Edit (light, colour, detail, dehaze,
+  clarity, noise, grain), Annotate (arrows, text, shapes, callouts, numbers, magnifiers, pictures,
+  pen, highlighter), Background (solid, gradient, blur or picture, with spacing, corners and shadow),
+  and Collage for two or more pictures. Edit, Annotate and Background keep the photo's format and
+  its camera, date and location details.
+- **Privacy:** Redact covers text, faces and personal details such as emails and card numbers.
+  Share-safe removes metadata, checks that the result really is clean, and shows you what it found
+  first. Share-safe also works on video and audio.
+- **Text:** Copy text (OCR from pictures and scanned PDFs, to the clipboard) and Searchable PDF.
+- **PDF:** Merge, Organize (reorder, rotate, duplicate and delete pages), Compress, Smallest.
+- **Video:** Compress, 50% size, Under 10 MB, Under 25 MB, and a timeline editor for Trim, Crop,
+  Speed, Join, Frames, Split and Redact.
+- **Audio:** the same Compress slices, Normalize, and a waveform editor for Trim, Channels, Bleep
+  and Visualizer.
 
-The photo tools (Edit, Annotate, Background, Collage) open an image editor that previews the real
-result live on the GPU (Direct2D, with our own shaders); the saved copy keeps the photo's format and
-its camera, date and location details.
+### Reduce size
 
-Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
-run is in History, and any run can be undone. Long jobs show their progress in the top panel and
-can be cancelled there. It starts with Windows and lives in the tray.
+90%, 80% and so on down to 20% smaller, for photos, video, audio and PDFs. The centre of the wheel
+shows the size now, and hovering a slice shows the size it will come out at.
 
-Video and audio go through a bundled LGPL build of [FFmpeg](https://ffmpeg.org) that ShiftDrop runs
-as a separate process, restricted to local files (no network access). CI builds it from unmodified
-FFmpeg sources with only the codecs, formats and filters the app uses (`scripts/build-ffmpeg.sh`,
-`scripts/ffmpeg-components.txt`), which keeps the installer small; its exact sources ship with each release.
+### File actions
 
-Documents, spreadsheets and subtitles are converted by ShiftDrop's own code (with miniz, pugixml and
-md4c); documents become PDFs through Windows' built-in "Microsoft Print to PDF". Nothing from
-Microsoft Office or LibreOffice is bundled: when one is installed, ShiftDrop drives it for the exact
-PDF and slide-picture slices, invisibly, and closes it again.
+Copy, Move to…, Copy path, Terminal (opens in the file's folder), Duplicate, Rename… (new names from
+a pattern), Float (a shelf at the screen edge that holds files until you drag them into any app),
+Share (the Windows share sheet), Remove metadata, and Zip (one ZIP of everything dropped).
 
-Archives are read by [libarchive](https://libarchive.org) inside a separate worker,
-`engines\ShiftDropWorker.exe`, that runs in a Windows AppContainer with no capabilities: it can't
-open your files or reach the network, it only gets the archive it reads, and ShiftDrop checks every
-name before writing anything. Archives with `..` or absolute paths are refused, links are skipped,
-and zip bombs stop at a size limit.
+### Also
 
-- Plan, REA stages, parity map, decisions and open questions: [docs/PLAN.md](docs/PLAN.md)
-- Build, run and the manual test checklist: [docs/TESTING.md](docs/TESTING.md)
-- Writing recipes: [docs/recipes.md](docs/recipes.md)
-- Plugin design (not built yet): [docs/plugins.md](docs/plugins.md)
-- Design decisions: [docs/adr/](docs/adr/)
+- Pictures dragged straight out of a browser, and attachments dragged out of Outlook or Thunderbird,
+  work too. Their results go to your Desktop, to Downloads, or to a folder you pick each time.
+- Every slice is a recipe, a small JSON file, and you can add your own. See
+  [docs/recipes.md](docs/recipes.md).
+- Every run is in History and can be undone. Undo refuses if you edited the output since, so it
+  never throws away your work.
+- Long jobs show their progress in the top panel and can be cancelled there.
 
 ## Install
 
-Download `ShiftDrop-Setup-<version>.exe` (from a GitHub Release, or the `ShiftDrop-Setup-…` artifact of
-any CI run) and run it. It installs for your user only, needs no admin rights and nothing else
-(no Visual Studio, no runtimes), adds a Start menu entry, and can start ShiftDrop when you sign in.
-Uninstall from Settings > Apps; your settings, recipes and history in `%LOCALAPPDATA%\ShiftDrop` are kept.
+1. Download `ShiftDrop-Setup-<version>.exe` from the
+   [Releases](https://github.com/CoPrime69/ShiftDrop/releases) page.
+2. Run it. It installs for your user only, into `%LOCALAPPDATA%\Programs\ShiftDrop`, with no admin
+   rights and nothing else to install. It adds a Start menu entry and can start ShiftDrop when you
+   sign in.
 
-The installer is not code-signed yet, so Windows SmartScreen may say "Windows protected your PC":
-choose **More info**, then **Run anyway**.
+The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC".
+Choose **More info**, then **Run anyway**.
 
-## Build
+ShiftDrop needs Windows 10 22H2 or Windows 11, 64-bit. To uninstall, use Settings > Apps. Your
+settings, recipes and history in `%LOCALAPPDATA%\ShiftDrop` are kept.
 
+## How to use it
+
+- **Drag and press Shift.** Start dragging one or more files, from Explorer, the desktop or any app
+  that drags real files, and press Shift. The wheel stays open when you let go of Shift. Drop on a
+  slice to run it. Drop on the centre or press Esc to cancel. Drag off the wheel and the drop goes
+  wherever you release it, as usual.
+- **Switch sections.** Turn the mouse wheel to step through Convert, Tools, Reduce size and File
+  actions. No mouse wheel? Keep Shift held and press 1, 2, 3 or 4.
+- **Use the keyboard.** While the wheel is open, the arrow keys pick a slice and Enter runs it.
+- **Without dragging.** Select files in Explorer and press **Ctrl+Shift+Space**, or right-click them
+  and choose **ShiftDrop…** (on Windows 11 it's under Show more options). The wheel opens at the
+  cursor; click a slice.
+- **The tray menu** has History (with Undo), Settings, the Float shelf, the wheel's size (Auto,
+  Small, Medium, Large) and style (Solid or Glass), where browser drops are saved, Start with
+  Windows, and the recipes and logs folders.
+- **The Settings window** turns sections or single slices off, and sets the theme, the output name
+  style (`photo (converted).png`, `photo-converted.png`, `photo_converted.png`, or a `ShiftDrop`
+  subfolder) and which terminal File actions › Terminal opens.
+
+Outputs are named `photo (converted).png`, then `photo (converted 2).png` and so on. An existing
+file is never replaced.
+
+## Privacy
+
+- **Offline.** ShiftDrop makes no network connections: no telemetry, no accounts, no update checks.
+  CI fails the build if either exe imports a networking library.
+- **Video and audio** go through a bundled LGPL build of [FFmpeg](https://ffmpeg.org), run as a
+  separate process. It is built without network support, and ShiftDrop only lets it open local
+  files.
+- **Archives** are read by a separate worker inside a Windows AppContainer with no permissions. It
+  can't open your files or reach the network, and it only gets the one archive it reads. ShiftDrop
+  checks every name before writing anything, refuses `..` and absolute paths, skips links, and stops
+  zip bombs at a size limit.
+- **OCR and face detection** use what Windows already has. Nothing is downloaded.
+- Everything ShiftDrop keeps (settings, history, recipes, logs) stays in `%LOCALAPPDATA%\ShiftDrop`
+  on your PC.
+
+## Limitations
+
+- **Office layouts.** Exact PDFs of Word, Excel and PowerPoint files need Microsoft Office or
+  LibreOffice installed, and slides as pictures need PowerPoint itself. ShiftDrop drives the
+  installed app invisibly and closes it again. Without one, those slices don't appear. If you install
+  Office while ShiftDrop runs, restart ShiftDrop.
+- **HEIC** needs Windows' "HEIF Image Extensions" to read and "HEVC Video Extensions" to save, both
+  from the Microsoft Store. Without them the HEIC slices are dimmed and say what to install. Edits to
+  a HEIC (Rotate, Crop and so on) are saved as JPG.
+- **RAR** files can be extracted and converted to other archive formats, but not created.
+- **Pages** files can be read only when they carry the preview PDF most of them have. ShiftDrop
+  can't write Pages files.
+- **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists. Pictures and
+  page layout are not kept. There is no PDF to XLSX or PDF to PPTX.
+- **No background removal**, or anything else that needs a machine-learning model.
+- **H.264 video** is encoded with your graphics card's encoder, Windows' Media Foundation encoder or
+  OpenH264. x264 and x265 are GPL, so they aren't included.
+- **Elevated windows.** Windows blocks drops from a normal Explorer onto an app running as
+  administrator, so don't run ShiftDrop elevated.
+- **Metadata** can be inspected and removed, but not edited field by field.
+- **Plugins** are designed ([docs/plugins.md](docs/plugins.md)) but not built.
+
+## Building
+
+You need Visual Studio 2022 with the C++ workload, Git and vcpkg. In a Developer PowerShell for VS
+2022, with `VCPKG_ROOT` pointing at vcpkg:
 
 ```powershell
-# Developer PowerShell for VS 2022, with $env:VCPKG_ROOT set (see docs/TESTING.md)
-./scripts/get-ffmpeg.ps1      # once: LGPL ffmpeg.exe into build\engines (our build if in build\ffmpeg-custom, else the pinned BtbN one)
+./scripts/get-ffmpeg.ps1
 cmake --preset x64-release
 cmake --build --preset x64-release
 ctest --preset x64-release
 .\build\x64-release\Release\ShiftDrop.exe
 ```
 
-## Layout
+[docs/BUILDING.md](docs/BUILDING.md) is the full guide: setting up vcpkg, where ffmpeg comes from,
+the presets, the tests and the installer.
 
-```
-shiftdrop/
-├─ CMakeLists.txt          shiftdrop_core (static lib), ShiftDrop.exe, shiftdrop_tests
-├─ CMakePresets.json       x64-release, x64-release-m0, test preset
-├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, qpdf, zlib, libarchive, gtest
-├─ .github/workflows/ci.yml  build, unit tests, no-network imports check, installer + smoke test
-├─ installer/ShiftDrop.iss  per-user Inno Setup installer
-├─ scripts/                build-ffmpeg + ffmpeg-components, get-ffmpeg, check-ffmpeg, time-ffmpeg,
-│                          check-imports, make-notices, test-installer
-├─ docs/                   PLAN, TESTING, recipes, adr/, research/
-├─ tests/                  gtest unit tests
-└─ src/
-   ├─ main.cpp             wWinMain, single instance, App (gesture state, wheels, batches, tray)
-   ├─ MouseHook            WH_MOUSE_LL: records state, posts messages, nothing else
-   ├─ Overlay              layered topmost no-activate wheel, Direct2D, hit-testing
-   ├─ DropTarget           IDropTarget (WRL), CF_HDROP, COPY-never-MOVE
-   ├─ Tray                 Shell_NotifyIcon, menu, notifications
-   ├─ HistoryWindow        runs list with Undo and Show files
-   ├─ Action, Recipe       action registry; recipe JSON parsing and validation
-   ├─ RecipeStore          built-in + user recipes
-   ├─ ImagePipeline        fused WIC/libwebp pipeline: decode → orient → transform → encode
-   ├─ PipelineRunner       staging → pipeline (images) or ffmpeg (media) → atomic commit → hash → history
-   ├─ Media, Ffmpeg        video/audio formats and ffmpeg arguments; the ffmpeg child process (job object, progress, cancel)
-   ├─ Island               the top panel: wheel tabs, job progress with cancel, results
-   ├─ OutputPath           "name (converted).ext", staging and no-replace commit
-   ├─ HistoryStore, Hash   SQLite history, SHA-256 (CNG)
-   ├─ Undo, FileMove       undo to the Recycle Bin or back to the original place; Move to…
-   ├─ FileActions          clipboard copy, copy path, terminal
-   ├─ JobQueue             worker pool (MTA) and the shell thread (STA)
-   ├─ archive/             Zip, Extract and repack (libarchive), entry checks, the worker's read job
-   ├─ sandbox/             AppContainer + job launcher, the worker exe, the ffmpeg jail
-   ├─ Settings, Startup    settings.ini, start with Windows
-   └─ Log, Brand, Utf, Messages, resource, ShiftDrop.rc, app.manifest
-```
+## Documentation
 
-Clean-room note: ShiftDrop reimplements the behaviour of Tangerine (macOS, by @th2049) from public
-descriptions only. No code, names, icons, artwork or text from Tangerine are used.
+- [docs/BUILDING.md](docs/BUILDING.md): build, test and package from a fresh clone
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works inside, from the mouse hook to undo
+- [docs/recipes.md](docs/recipes.md): writing your own slices
+- [docs/TESTING.md](docs/TESTING.md): the manual test checklist
+- [docs/plugins.md](docs/plugins.md): the plugin design
+- [docs/adr/](docs/adr/): records of the main design decisions
+
+## Contributing
+
+Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers
+the rules the code keeps (offline, no GPL, never overwrite a file) and how a new feature plugs in.
+Please follow the [code of conduct](CODE_OF_CONDUCT.md), and report security problems privately as
+described in [SECURITY.md](SECURITY.md).
+
+## Licence
+
+ShiftDrop is released under the [MIT licence](LICENSE). It is built with third-party libraries
+under their own licences, and the bundled `ffmpeg.exe` is under the LGPL. See
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
