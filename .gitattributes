@@ -1,5 +1,5 @@
-# Text files are stored and checked out with LF, which every tool in the build accepts.
-* text=auto eol=lf
+# Text files are stored with LF in the repository; Git picks the line endings on checkout.
+* text=auto
 
 # Binary files.
 *.ico binary
