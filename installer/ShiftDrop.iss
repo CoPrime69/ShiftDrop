@@ -82,7 +82,8 @@ Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: igno
 Source: "{#WorkerExe}"; DestDir: "{app}\engines"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"
+; The ID and the activator let the app show real toasts with buttons (src/toast/ToastXml.h has both).
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; AppUserModelID: "CoPrime69.ShiftDrop"; AppUserModelToastActivatorCLSID: "AF377B89-066C-4AD3-8387-8B77C419B8EE"
 
 [INI]
 ; Same key the app reads (startup::Choice). Written only when there is no saved choice yet.
