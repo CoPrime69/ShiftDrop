@@ -46,11 +46,11 @@ namespace sd::audiotools
     "steps": [ { "action": "audio.normalize" } ] },
   { "id": "audio-trim", "label": "Trim", "description": "Trim Audio to exact times, and silence at the ends", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
     "steps": [ { "action": "audio.trim" } ] },
-  { "id": "audio-channels", "label": "Channels", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
+  { "id": "audio-channels", "label": "Channel", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
     "steps": [ { "action": "audio.channels" } ] },
   { "id": "audio-bleep", "label": "Bleep", "description": "Bleep Audio: a tone, silence or a quieter sound over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
     "steps": [ { "action": "audio.bleep" } ] },
-  { "id": "audio-visualizer", "label": "Visualizer", "description": "Audio Visualizer: an MP4 with moving bars, a wave, circles or squares, or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
+  { "id": "audio-visualizer", "label": "Visuals", "description": "Audio Visualizer: an MP4 with moving bars, a wave, circles or squares, or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
     "steps": [ { "action": "audio.visualizer" } ] }
 ])");
             return all;

@@ -190,7 +190,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Drag a file from Explorer and move slowly across the tiles with Shift: Explorer's drag picture never sits on the hovered tile's label; the label slides along its tile, out from under the picture, and back when the picture moves on (the wheel itself, its tiles and gaps do not move)
 - [ ] The centre: the main line ("1 file", "1.0 MB", "Not for videos") is larger and bold (20 px), the line under it ("Save a WebP copy next to it", the section name) small and grey (12 px); a long main line goes onto two lines, never "…"
 - [ ] Style **Solid**: the tiles sit on a round plate (white in light mode, `#1A1C22` in dark) with a fine edge; Glass keeps the frosted plate
-- [ ] The image Tools wheel shows **Rotate right** and **Rotate left** (not two "Rotate" slices told apart by arrows); the video and audio editor slices read **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact**, **Channels**, **Bleep**, **Visualizer** with no "…"; File actions shows **Move to folder** and **Rename**
+- [ ] The image Tools wheel shows **Rotate right** and **Rotate left** (not two "Rotate" slices told apart by arrows); the video and audio editor slices read **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact**, **Channel**, **Bleep**, **Visuals** with no "…"; File actions shows **Move to folder** and **Rename**
 - [ ] Drag a file from Explorer with Shift: the drag picture sits over the centre, and the count ("1 file", "3 files", or the size on Reduce size) is in a small rounded badge just below the picture (above it when the picture hangs low), never hidden under it; arrow keys while the cursor is still in the centre show the picked slice's detail in that badge. Move onto a slice and the count is back in the centre with the wheel's name under it. In click mode (Explorer selection) there is no picture, and the count sits in the centre as before
 - [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] A new install (no settings.ini) starts at Size **Medium** with the top panel at 100%
@@ -255,8 +255,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
 - [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
 - [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
-- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
-- [ ] Drop `paper.pdf` on **TXT** and on **Markdown**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
+- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **MD**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop `paper.pdf` on **TXT** and on **MD**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
 - [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
 - [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
 - [ ] Drag two PDFs, open **Tools**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
@@ -272,13 +272,13 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drop one PDF on **Edit**, **Add files…** another: the title becomes "Edit 2 PDFs", Save becomes **Merge and export**, and the output has both PDFs' pages
 - [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
 - [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
-- [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
+- [ ] Drop `report.pdf` on **Pages**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
 - [ ] Hover a dimmed slice (for example HEIC on a PC without the HEIF extension): the wheel's centre says why it can't be used, and fades back when you move off
-- [ ] Drop two PDFs on **Organize**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
+- [ ] Drop two PDFs on **Pages**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
 - [ ] Organize, Merge (and its pages) and Edit follow the Windows light/dark setting, and look right at 150% scaling
 - [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
 - [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
-- [ ] Drop the scanned PDF (or `page.jpg`) on **Searchable**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on Searchable is skipped ("already searchable")
+- [ ] Drop the scanned PDF (or `page.jpg`) on **OCR PDF**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on OCR PDF is skipped ("already searchable")
 - [ ] Settings > Time & language > Language: with no OCR-capable language, Copy text and Searchable are dimmed for photos and say why in the centre
 - [ ] Drag two files, open **File actions**, drop on **Share**: the Windows share sheet opens near the cursor with both files (Nearby sharing, Phone Link, Mail, other apps). Share to Mail or OneNote: the files arrive. Close the sheet: nothing else happens
 - [ ] The password PDF on any PDF slice: the panel says "the PDF is locked with a password"; a `.txt` renamed to `.pdf` says "not a PDF file"
@@ -406,7 +406,7 @@ Redact Photos
 - [ ] On a PC with no OCR language installed, the Find section says how to add one
 
 Share-safe
-- [ ] Drag the phone photo, open **Tools**, drop on **Share-safe**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
+- [ ] Drag the phone photo, open **Tools**, drop on **Private**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
 - [ ] The top panel says something like "Removed GPS, camera, 14 fields"; `photo (share-safe).jpg` has no GPS, camera or date in Properties > Details, and still opens upright
 - [ ] Drop the screenshot on Share-safe: a "Review before sharing" editor opens with covers on the email, phone and card number; remove one, add one, Apply: the result says "Covered N details · …"
 - [ ] Esc in the review window saves nothing
@@ -414,7 +414,7 @@ Share-safe
 - [ ] Drop an already clean file (a Share-safe output): it is skipped with "already clean"
 
 Remove metadata (File actions)
-- [ ] Drop the phone photo on **Remove metadata**: `photo (no metadata).jpg`, no editor, the result line lists what went
+- [ ] Drop the phone photo on **No EXIF**: `photo (no metadata).jpg`, no editor, the result line lists what went
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
@@ -440,7 +440,7 @@ Edit Photos
 - [ ] PNG stays PNG with its transparency; WebP stays WebP
 
 Annotate Photos
-- [ ] Drop the screenshot on **Annotate**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
+- [ ] Drop the screenshot on **Mark up**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
 - [ ] Text: click, type, Enter for a new line, Esc (or Ctrl+Enter) to finish; click it again to edit; Esc on an empty text removes it
 - [ ] In a text: the caret follows the arrows, Home/End, Ctrl+arrows; Shift selects, double-click a word; Backspace/Delete, Ctrl+A/C/V/X and Ctrl+Z work as in Notepad; typed Hindi and emoji show and delete whole
 - [ ] **Font** (or Ctrl+Shift+F) lists the installed fonts, each in its own face; type to find one. Size, B/I/U, colour and alignment change the selected box; Ctrl+[ and Ctrl+] step the size
@@ -456,7 +456,7 @@ Annotate Photos
 - [ ] Save: `screenshot (annotated).png`; the marks look as in the editor at 100 %
 
 Add a Background
-- [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
+- [ ] Drop the PNG with transparency on **Frame**: gradient by default with a soft shadow and rounded corners
 - [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
 - [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
 - [ ] Shape **Fit to picture** (after 9:16): the canvas is exactly the picture's size, no margin; Spacing and Shadow leave the panel; raise Rounded corners and the background shows only in the corners. Save: the output has the photo's own pixel size
@@ -530,7 +530,7 @@ Have ffmpeg in place (`scripts/get-ffmpeg.ps1`, see [BUILDING.md](BUILDING.md)),
 
 The wheel:
 - [ ] Drag a video and open **Tools**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact** on two rings
-- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim**, **Channels**, **Bleep**, **Visualizer**; a photo gets none of these
+- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim**, **Channel**, **Bleep**, **Visuals**; a photo gets none of these
 
 The editor window (try with each tool):
 - [ ] Drop the video on **Trim**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
@@ -593,7 +593,7 @@ YouTube; a PowerPoint deck. For the Office bridge you need Microsoft Office or L
 
 Documents
 - [ ] Drag `report.docx` and hold **Shift**: Convert shows PDF, Markdown, HTML, EPUB and TXT (no DOCX), plus **Exact PDF** when Word or LibreOffice is installed
-- [ ] Drop on **Markdown**: a folder `report (converted)` holds `report.md` and `images/`; the Markdown shows headings as `#`, lists, the table as a `|` table, the link, and the picture (open it in VS Code's preview)
+- [ ] Drop on **MD**: a folder `report (converted)` holds `report.md` and `images/`; the Markdown shows headings as `#`, lists, the table as a `|` table, the link, and the picture (open it in VS Code's preview)
 - [ ] Drop on **HTML**: the same folder layout; the page opens in Edge with the picture, the table and working links. With no pictures in the document you get a single `report (converted).html`
 - [ ] Drop on **EPUB**: `report (converted).epub` opens in an e-book app (Thorium, Calibre's viewer, or Edge's extension) with a table of contents; the picture shows
 - [ ] Drop on **TXT**: plain text, bullets as •, the table as tab-separated lines, links as "text (address)"

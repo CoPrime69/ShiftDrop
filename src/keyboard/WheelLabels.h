@@ -28,9 +28,9 @@ namespace sd::wheel
 
     inline constexpr float kLabelDip = 13.f;      // every label, Semibold
     inline constexpr float kIconDip = 20.f;       // every icon glyph, both rings
-    inline constexpr float kIconGapDip = 4.f;     // between the icon and the label
-    inline constexpr float kLineHeight = 1.1f;    // a line's room (and the spacing of two), times kLabelDip
-    inline constexpr float kLabelPadDip = 2.5f;   // text to the tile's edges
+    inline constexpr float kIconGapDip = 3.f;     // between the icon and the label
+    inline constexpr float kLineHeight = 1.05f;   // a line's room (and the spacing of two), times kLabelDip
+    inline constexpr float kLabelPadDip = 1.5f;   // text to the tile's edges
     inline constexpr float kTileGapDip = 4.f;     // the straight gap between tiles
 
     struct LabelSpec

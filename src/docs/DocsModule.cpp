@@ -194,7 +194,7 @@ namespace sd::docs
     "steps": [ { "action": "docs.convert", "params": { "format": "docx" } } ] },
   { "id": "docs-to-pdf", "label": "PDF", "description": "PDF, laid out for A4 or Letter", "icon": "EA90",
     "steps": [ { "action": "docs.convert", "params": { "format": "pdf" } } ] },
-  { "id": "docs-to-md", "label": "Markdown", "description": "Markdown text, pictures in a folder", "icon": "E943",
+  { "id": "docs-to-md", "label": "MD", "description": "Markdown text, pictures in a folder", "icon": "E943",
     "steps": [ { "action": "docs.convert", "params": { "format": "md" } } ] },
   { "id": "docs-to-html", "label": "HTML", "description": "A web page", "icon": "E774",
     "steps": [ { "action": "docs.convert", "params": { "format": "html" } } ] },
