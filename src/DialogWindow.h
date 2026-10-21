@@ -73,8 +73,8 @@ namespace sd
         void ThemeList(HWND list, const wchar_t* light = nullptr) const;
         // Text for what can't be used or went wrong (a name Rename refuses, a failed run), and for
         // what no longer counts (an undone run), readable in the current light or dark.
-        COLORREF ProblemColor() const { return m_colors.dark ? RGB(255, 153, 164) : RGB(196, 43, 28); }
-        COLORREF MutedColor() const { return m_colors.dark ? RGB(150, 150, 150) : GetSysColor(COLOR_GRAYTEXT); }
+        COLORREF ProblemColor() const { return m_colors.problem; }
+        COLORREF MutedColor() const { return m_colors.muted; }
         // An edit box's (or any control's) text.
         static std::wstring Text(HWND control);
         // A button the window draws itself, from its NM_CUSTOMDRAW, with the editors' control kit

@@ -161,7 +161,7 @@ namespace sd::canvas
                          D2D1::RectF(size.width - 220, 52, size.width - kPad, 80), c.textDim);
 
                 const auto card = Card(size);
-                FillRound(card, m_picture ? D2D1::ColorF(0xEDEDED) : D2D1::ColorF(0xFFFFFF), 8.f);
+                FillRound(card, c.paper, 8.f);   // light in both themes: signatures are dark ink
                 StrokeRound(card, c.controlLine, 1.f, 8.f);
                 if (m_picture)
                     PaintPicture(rt, card);
@@ -207,11 +207,11 @@ namespace sd::canvas
             {
                 // A line to sign on, as on a form.
                 const float base = card.top + (card.bottom - card.top) * 0.7f;
-                if (auto* b = Brush(D2D1::ColorF(0xC8C8C8)))
+                if (auto* b = Brush(Theme().paperLine))
                     rt->DrawLine(D2D1::Point2F(card.left + 24, base), D2D1::Point2F(card.right - 24, base), b, 1.f);
                 if (m_strokes.empty())
                     DrawText(L"Sign here with the mouse or a pen", TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
-                             D2D1::RectF(card.left, base + 8, card.right, base + 30), D2D1::ColorF(0x8A8A8A));
+                             D2D1::RectF(card.left, base + 8, card.right, base + 30), Theme().paperFaint);
                 auto* ink = Brush(D2D1::ColorF(kInks[m_ink]));
                 if (!ink)
                     return;
@@ -249,7 +249,7 @@ namespace sd::canvas
                     const std::wstring text = m_loading ? std::wstring(L"Opening…") : m_error.empty() ? std::wstring(L"Choose a photo or a scan of your signature on white paper.")
                                                                                                       : L"Can't use that picture: " + m_error;
                     DrawText(text, TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
-                             D2D1::RectF(card.left + 16, card.top + 16, card.right - 16, (card.top + card.bottom) / 2 - 4), D2D1::ColorF(0x444444));
+                             D2D1::RectF(card.left + 16, card.top + 16, card.right - 16, (card.top + card.bottom) / 2 - 4), Theme().paperText);
                     if (!m_loading)
                         DrawButton(ChooseButton(card), L"Choose a picture…", 0xEB9F, true, { true, m_hot == 5, false, false });   // Photo
                     return;

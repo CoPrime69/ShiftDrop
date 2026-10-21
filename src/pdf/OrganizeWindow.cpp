@@ -791,12 +791,12 @@ namespace sd::pdf
                 D2D1_MATRIX_3X2_F old;
                 rt->GetTransform(&old);
                 rt->SetTransform(D2D1::Matrix3x2F::Rotation(static_cast<float>(rotation), centre) * old);
-                if (auto* b = Brush(D2D1::ColorF(1, 1, 1, 1)))
+                if (auto* b = Brush(c.paper))
                     rt->FillRectangle(page, b);
                 if (bitmap)
                     rt->DrawBitmap(bitmap, page, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
                 else
-                    DrawText(placeholder, TextFormat(20.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), page, D2D1::ColorF(0, 0, 0, 0.35f));
+                    DrawText(placeholder, TextFormat(20.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), page, c.paperFaint);
                 if (auto* b = Brush(selected ? c.accent : c.line))
                     rt->DrawRectangle(page, b, selected ? 2.f : 1.f);
                 rt->SetTransform(old);

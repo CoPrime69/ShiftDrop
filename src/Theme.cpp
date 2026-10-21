@@ -16,8 +16,6 @@ namespace sd::theme
 {
     namespace
     {
-        D2D1_COLOR_F Rgba(UINT rgb, float a) { return D2D1::ColorF(rgb, a); }
-
         ThemeChoice g_choice = ThemeChoice::System;
 
         bool AppsUseLightTheme()
@@ -28,8 +26,6 @@ namespace sd::theme
                 return false;
             return value != 0;
         }
-
-        D2D1_COLOR_F Rgb(uint32_t rgb) { return D2D1::ColorF(rgb, 1.f); }
 
         bool HasFamily(IDWriteFactory* dwrite, const wchar_t* family)
         {
@@ -79,127 +75,19 @@ namespace sd::theme
         g_choice = choice;
     }
 
+    bool IsDark()
+    {
+        return g_choice == ThemeChoice::System ? !AppsUseLightTheme() : g_choice == ThemeChoice::Dark;
+    }
+
     Palette Current(Style style)
     {
-        Palette p{};
-        p.dark = g_choice == ThemeChoice::System ? !AppsUseLightTheme() : g_choice == ThemeChoice::Dark;
-        // The accent's dark tone with dark text in dark mode; in light mode the colour itself, with
-        // whichever text reads on it. The highlight toward the slice's rim stays readable too.
-        const auto tones = accent::Current();
-        const uint32_t fill = p.dark ? tones.dark : tones.fill, onFill = p.dark ? accent::kTextOnDark : accent::TextOn(tones.fill);
-        p.accent = Rgb(fill);
-        p.accentHi = Rgb(accent::Lighter(fill, onFill, p.dark ? 0.28 : 0.20));
-        p.textOnAccent = Rgb(onFill);
-        p.ok = Rgba(0x6CCB5F, 1.f);
-        p.warn = Rgba(0xFCE100, 1.f);
-        p.error = Rgba(0xFF99A4, 1.f);
-        const bool glass = style == Style::Glass;
-        if (p.dark)
-        {
-            p.text = Rgba(0xF7F7F8, 1.f);
-            p.textDim = Rgba(0xF7F7F8, 0.32f);
-            p.shadow = Rgba(0x000000, 0.42f);
-            p.tile = glass ? Rgba(0xFFFFFF, 0.07f) : Rgba(0x3B3B3F, 0.97f);
-            p.tileLine = Rgba(0xFFFFFF, glass ? 0.10f : 0.13f);
-            p.centre = glass ? Rgba(0x000000, 0.25f) : Rgba(0x232326, 0.98f);
-            p.centreLine = Rgba(0xFFFFFF, 0.10f);
-            p.glassTint = Rgba(0x1E1E22, 0.66f);
-        }
-        else
-        {
-            p.text = Rgba(0x1A1A1E, 1.f);
-            p.textDim = Rgba(0x1A1A1E, 0.32f);
-            p.shadow = Rgba(0x000000, 0.20f);
-            p.tile = glass ? Rgba(0xFFFFFF, 0.42f) : Rgba(0xF4F4F6, 0.98f);
-            p.tileLine = Rgba(0x000000, glass ? 0.07f : 0.10f);
-            p.centre = glass ? Rgba(0xFFFFFF, 0.55f) : Rgba(0xFFFFFF, 0.99f);
-            p.centreLine = Rgba(0x000000, 0.08f);
-            p.glassTint = Rgba(0xF6F6F8, 0.62f);
-        }
-        // The top panel is a dark island in both themes (Solid), like a notch; Glass follows the theme.
-        if (glass)
-        {
-            p.panelAccent = p.accent;
-            p.panelTextOnAccent = p.textOnAccent;
-            p.panel = p.glassTint;
-            p.panelLine = p.dark ? Rgba(0xFFFFFF, 0.16f) : Rgba(0x000000, 0.10f);
-            p.panelText = p.text;
-            p.panelTextDim = Mix(p.text, D2D1::ColorF(0, 0, 0, 0), 0.4f);
-            p.keycap = p.dark ? Rgba(0xFFFFFF, 0.12f) : Rgba(0x000000, 0.07f);
-        }
-        else
-        {
-            p.panelAccent = Rgb(tones.dark);
-            p.panelTextOnAccent = Rgb(accent::kTextOnDark);
-            p.panel = Rgba(0x050506, 0.97f);
-            p.panelLine = Rgba(0xFFFFFF, 0.08f);
-            p.panelText = Rgba(0xF7F7F8, 1.f);
-            p.panelTextDim = Rgba(0xF7F7F8, 0.58f);
-            p.keycap = Rgba(0xFFFFFF, 0.13f);
-        }
-        if (!p.dark && !glass)
-        {
-            p.ok = Rgba(0x6CCB5F, 1.f);
-            p.error = Rgba(0xFF99A4, 1.f);
-        }
-        return p;
+        return MakePalette(style, IsDark(), accent::Current());
     }
 
     EditorPalette EditorColors()
     {
-        const auto t = Current(Style::Solid);
-        const auto tones = accent::Current();
-        EditorPalette c{};
-        c.dark = t.dark;
-        // Buttons, switches and accent text: the dark tone with dark text on it in dark mode, the light
-        // tone with white text in light mode; hover a little lighter while its text still reads.
-        const uint32_t accentRgb = c.dark ? tones.dark : tones.light, onAccent = c.dark ? accent::kTextOnDark : accent::kTextOnLight;
-        c.accent = Rgb(accentRgb);
-        c.accentHover = Rgb(accent::Lighter(accentRgb, onAccent, c.dark ? 0.34 : 0.12));
-        c.onAccent = Rgb(onAccent);
-        if (c.dark)
-        {
-            c.window = Rgba(0x202023, 1.f);
-            c.panel = Rgba(0x28282C, 1.f);
-            c.stage = Rgba(0x141416, 1.f);
-            c.track = Rgba(0x18181B, 1.f);
-            c.line = Rgba(0xFFFFFF, 0.08f);
-            c.text = Rgba(0xF3F3F5, 1.f);
-            c.textDim = Rgba(0xF3F3F5, 0.66f);
-            c.textFaint = Rgba(0xF3F3F5, 0.38f);
-            c.control = Rgba(0x36363C, 1.f);
-            c.controlHover = Rgba(0x404047, 1.f);
-            c.controlDown = Rgba(0x2E2E33, 1.f);
-            c.controlLine = Rgba(0xFFFFFF, 0.07f);
-            c.danger = Rgba(0xFF7A7A, 1.f);
-            c.shadow = Rgba(0x000000, 0.5f);
-        }
-        else
-        {
-            c.window = Rgba(0xF3F3F5, 1.f);
-            c.panel = Rgba(0xFBFBFC, 1.f);
-            c.stage = Rgba(0xE2E2E7, 1.f);
-            c.track = Rgba(0xE9E9ED, 1.f);
-            c.line = Rgba(0x000000, 0.09f);
-            c.text = Rgba(0x1A1A1E, 1.f);
-            c.textDim = Rgba(0x1A1A1E, 0.66f);
-            c.textFaint = Rgba(0x1A1A1E, 0.40f);
-            c.control = Rgba(0xFFFFFF, 1.f);
-            c.controlHover = Rgba(0xF5F5F7, 1.f);
-            c.controlDown = Rgba(0xEBEBEF, 1.f);
-            c.controlLine = Rgba(0x000000, 0.12f);
-            c.danger = Rgba(0xC42B1C, 1.f);
-            c.shadow = Rgba(0x000000, 0.18f);
-        }
-        c.accentSoft = WithAlpha(c.accent, c.dark ? 0.22f : 0.16f);
-        c.dangerSoft = WithAlpha(c.danger, 0.24f);
-        c.focus = c.text;
-        return c;
-    }
-
-    COLORREF ToColorRef(const D2D1_COLOR_F& c)
-    {
-        return RGB(static_cast<int>(c.r * 255), static_cast<int>(c.g * 255), static_cast<int>(c.b * 255));
+        return MakeEditorColors(IsDark(), accent::Current());
     }
 
     void ApplyDarkCaption(HWND hwnd, bool dark, COLORREF caption)
@@ -226,12 +114,7 @@ namespace sd::theme
 
     DialogColors Dialog(int lightBackground)
     {
-        DialogColors c;
-        c.dark = Current(Style::Solid).dark;
-        c.background = c.dark ? RGB(32, 32, 32) : GetSysColor(lightBackground);
-        c.text = c.dark ? RGB(240, 240, 240) : GetSysColor(COLOR_WINDOWTEXT);
-        c.field = c.dark ? RGB(45, 45, 45) : GetSysColor(COLOR_WINDOW);
-        return c;
+        return MakeDialog(IsDark(), accent::Current(), lightBackground);
     }
 
     float ScaleFor(HMONITOR monitor, WheelSize size)
@@ -362,16 +245,6 @@ namespace sd::theme
     std::wstring IconFamily(IDWriteFactory* dwrite)
     {
         return HasFamily(dwrite, L"Segoe Fluent Icons") ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets";
-    }
-
-    D2D1_COLOR_F Mix(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t)
-    {
-        return D2D1::ColorF(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
-    }
-
-    D2D1_COLOR_F WithAlpha(const D2D1_COLOR_F& c, float alphaFactor)
-    {
-        return D2D1::ColorF(c.r, c.g, c.b, c.a * alphaFactor);
     }
 
     float EaseOutCubic(float t)

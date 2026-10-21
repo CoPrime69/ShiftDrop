@@ -12,10 +12,11 @@ namespace
 {
     std::string Hex(uint32_t rgb) { return std::format("#{:06X}", rgb); }
 
-    // The surfaces of each theme that accent text and accent fills sit on: the wheel's tiles and centre,
-    // the top panel, the shelf, and the editors' window, panels and controls.
-    constexpr uint32_t kDarkSurfaces[] = { 0x3B3B3F, 0x232326, 0x050506, 0x1F1F23, 0x202023, 0x28282C, 0x36363C };
-    constexpr uint32_t kLightSurfaces[] = { 0xF3F3F5, 0xF4F4F6, 0xF8F8FA, 0xFBFBFC, 0xFFFFFF };
+    // The surfaces of each theme that accent text and accent marks sit on (theme::TokensFor and
+    // theme::MakePalette): the wheel's plate, tiles and centre, the top panel, the result card and the
+    // shelf, and the windows' grey, cards, fields and controls.
+    constexpr uint32_t kDarkSurfaces[] = { 0x1A1C22, 0x2A2D35, 0x141619, 0x1F2127, 0x1B1D22, 0x24272D, 0x2A2D33, 0x2E3138 };
+    constexpr uint32_t kLightSurfaces[] = { 0xF3F4F6, 0xF6F7F9, 0xFFFFFF };
 
     // What the app draws with in each theme (theme::Current and theme::EditorColors): in dark mode the
     // dark tone with dark text on it; in light mode the light tone with white text (buttons, accent
