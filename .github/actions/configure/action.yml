@@ -34,13 +34,13 @@ runs:
 
     # The installed vcpkg ports (build/vcpkg_installed), keyed on the manifest, the triplet and the
     # compiler. When they are there, configure skips vcpkg entirely.
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       id: installed-rw
       if: inputs.save-caches == 'true'
       with:
         path: build/vcpkg_installed
         key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@v6
       id: installed-ro
       if: inputs.save-caches != 'true'
       with:
@@ -48,13 +48,13 @@ runs:
         key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
 
     # Otherwise vcpkg installs them from its built packages, cached between runs, keyed on the manifest.
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       if: inputs.save-caches == 'true' && steps.installed-rw.outputs.cache-hit != 'true'
       with:
         path: ${{ github.workspace }}\vcpkg-cache
         key: vcpkg-${{ hashFiles('vcpkg.json') }}
         restore-keys: vcpkg-
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@v6
       if: inputs.save-caches != 'true' && steps.installed-ro.outputs.cache-hit != 'true'
       with:
         path: ${{ github.workspace }}\vcpkg-cache

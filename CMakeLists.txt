@@ -65,6 +65,7 @@ add_library(shiftdrop_core STATIC
   src/Media.cpp
   src/Modules.cpp
   src/OutputPath.cpp
+  src/PanelLayout.cpp   # the top panel's size and the switcher's layout
   src/PipelineRunner.cpp
   src/Recipe.cpp
   src/RecipeStore.cpp
@@ -74,6 +75,8 @@ add_library(shiftdrop_core STATIC
   src/Startup.cpp
   src/Undo.cpp
   src/VirtualDrop.cpp
+  src/DropTarget.cpp       # the wheel's OLE drop target and the drag picture over it
+  src/DropDescription.cpp
   src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern
   src/toast/ToastXml.cpp         # what a finished batch's toast says
   # Keyboard picking and the wheel without a drag, predicted output, metadata inspector
@@ -253,9 +256,6 @@ add_executable(ShiftDrop WIN32
   src/Accessibility.cpp   # screen readers: the wheel and the top panel through UI Automation
   src/Canvas.cpp
   src/Theme.cpp
-  src/DropDescription.cpp
-  src/HiddenCursor.cpp
-  src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
   src/SettingsWindow.cpp
@@ -335,6 +335,7 @@ if(SHIFTDROP_TESTS)
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
     tests/VirtualDropTests.cpp
+    tests/PanelTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp

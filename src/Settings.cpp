@@ -1,6 +1,7 @@
 #include "Settings.h"
 #include "Log.h"
 
+#include <algorithm>
 #include <cwctype>
 
 namespace sd
@@ -114,9 +115,10 @@ namespace sd
         return s;
     }
 
-    Appearance LoadAppearance()
+    Appearance LoadAppearance() { return LoadAppearance(SettingsPath()); }
+
+    Appearance LoadAppearance(const std::wstring& path)
     {
-        const auto path = SettingsPath();
         wchar_t size[16]{}, style[16]{};
         GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
         GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
@@ -129,17 +131,32 @@ namespace sd
         else if (is(size, L"large"))
             a.size = WheelSize::Large;
         a.style = is(style, L"glass") ? Style::Glass : Style::Solid;
-        a.hideCursor = GetPrivateProfileIntW(L"Appearance", L"HideCursor", 1, path.c_str()) != 0;
         return a;
     }
 
-    void SaveAppearance(const Appearance& a)
+    void SaveAppearance(const Appearance& a) { SaveAppearance(a, SettingsPath()); }
+
+    void SaveAppearance(const Appearance& a, const std::wstring& path)
     {
-        const auto path = SettingsPath();
         const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
         WritePrivateProfileStringW(L"Appearance", L"Size", sizes[static_cast<int>(a.size)], path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid", path.c_str());
-        WritePrivateProfileStringW(L"Appearance", L"HideCursor", a.hideCursor ? L"1" : L"0", path.c_str());
+        // Older versions could hide the pointer over the wheel; the setting is gone, so is its key.
+        WritePrivateProfileStringW(L"Appearance", L"HideCursor", nullptr, path.c_str());
+    }
+
+    float SizeScale(WheelSize size, float dpiScale, float monitorHeightPx)
+    {
+        dpiScale = std::max(dpiScale, 0.5f);
+        switch (size)
+        {
+        case WheelSize::Small: return dpiScale * 0.85f;
+        case WheelSize::Medium: return dpiScale;
+        case WheelSize::Large: return dpiScale * 1.2f;
+        default:
+            // 1080 rows at 100% is the reference; 1440p at 100% gets 1.3x (1.33 clamped).
+            return dpiScale * std::clamp(monitorHeightPx / dpiScale / 1080.f, 0.9f, 1.3f);
+        }
     }
 
     namespace

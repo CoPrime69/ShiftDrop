@@ -1,6 +1,7 @@
 #include "Brand.h"
 #include "Island.h"
 #include "Log.h"
+#include "PanelLayout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,12 +24,12 @@ namespace sd
 
         constexpr wchar_t kClassName[] = L"" SD_NAME L".Island";
 
-        // DIPs.
+        // DIPs, times the panel's scale (panel::Scale: 1.4x the wheel's). The switcher's sizes and the
+        // widest the panel gets are in PanelLayout.h.
         constexpr float kTopGapDip = 10.f;      // work-area top edge to the panel
         constexpr float kPadDip = 24.f;         // shadow room
-        constexpr float kMaxWidthDip = 720.f;   // the window is this wide; the panel inside it is narrower
         constexpr float kMaxHeightDip = 72.f;
-        constexpr float kInsetDip = 8.f;        // panel edge to content
+        using panel::kInsetDip;
 
         constexpr float kPresenceMs = 520.f;    // spring down; settled well before the end
         constexpr float kRetractMs = 220.f;
@@ -139,12 +140,15 @@ namespace sd
     void Island::Layout(HMONITOR monitor)
     {
         m_monitor = monitor;
-        m_scale = ScaleFor(monitor, m_appearance.size);
+        // The tray's Size setting and the monitor's DPI and height, as for the wheel, then larger.
+        m_scale = panel::Scale(ScaleFor(monitor, m_appearance.size));
         EnsureTextFormats();
         MONITORINFO mi{ sizeof(mi) };
         GetMonitorInfoW(monitor, &mi);
         m_pad = std::round(kPadDip * m_scale);
-        const float w = std::round(kMaxWidthDip * m_scale) + 2.f * m_pad;
+        // Never wider than the screen (a 1366 px laptop at Large): the switcher fits itself into this.
+        m_maxContent = std::floor(panel::MaxContentWidth(m_scale, static_cast<float>(mi.rcWork.right - mi.rcWork.left)));
+        const float w = m_maxContent + 2.f * m_pad;
         const float h = std::round(kMaxHeightDip * m_scale) + 2.f * m_pad;
         m_size = SIZE{ static_cast<LONG>(w), static_cast<LONG>(h) };
         const LONG cx = (mi.rcWork.left + mi.rcWork.right) / 2;
@@ -174,7 +178,7 @@ namespace sd
                 // Snapshot before our window covers the area.
                 if (visible)
                     ShowWindow(m_hwnd.get(), SW_HIDE);
-                const int step = std::max(4, static_cast<int>(std::lround(6.f * m_scale)));
+                const int step = std::max(4, static_cast<int>(std::lround(6.f * m_scale / panel::kScale)));   // as blurred as the wheel's
                 m_backdropPx = CaptureBlurred(area, step);
                 m_backdropStep = static_cast<float>(step);
                 m_backdropRect = area;
@@ -546,7 +550,7 @@ namespace sd
         const float s = m_scale;
         switch (m_state)
         {
-        case State::Switcher: return std::round(44.f * s);
+        case State::Switcher: return std::round(panel::kSwitcherHeightDip * s);
         case State::Progress: return std::round(56.f * s);
         default: return std::round(m_subtitle.empty() ? 50.f * s : 60.f * s);
         }
@@ -559,11 +563,7 @@ namespace sd
         switch (m_state)
         {
         case State::Switcher:
-            for (const auto& ring : m_rings)
-            {
-                w += 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
-            }
-            w += 14.f * s + TextWidth(SwitchHint(m_rings.size()), m_hintFont.Get()) + 10.f * s;
+            w = FitSwitcher().width;
             break;
         case State::Progress:
             w = 14.f * s + 26.f * s + 12.f * s + std::max(TextWidth(m_title, m_titleFont.Get()), 200.f * s) + 28.f * s +
@@ -585,7 +585,16 @@ namespace sd
             break;
         }
         }
-        return std::min(std::round(w + 2.f * inset), std::round(kMaxWidthDip * s));
+        return std::min(std::round(w + 2.f * inset), m_maxContent);
+    }
+
+    panel::Switcher Island::FitSwitcher() const
+    {
+        std::vector<float> names;
+        for (const auto& ring : m_rings)
+            names.push_back(TextWidth(ring.title, m_tabFont.Get()));
+        const float hint = TextWidth(SwitchHint(m_rings.size()), m_hintFont.Get());
+        return panel::FitSwitcher(names, hint, m_scale, m_maxContent - 2.f * kInsetDip * m_scale);
     }
 
     // ---- Drawing ---------------------------------------------------------------------------------
@@ -612,9 +621,9 @@ namespace sd
             return true;
         m_fontScale = m_scale;
         constexpr auto L = DWRITE_TEXT_ALIGNMENT_LEADING, C = DWRITE_TEXT_ALIGNMENT_CENTER, R = DWRITE_TEXT_ALIGNMENT_TRAILING;
-        m_tabFont = MakeFormat(m_textFamily, 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
+        m_tabFont = MakeFormat(m_textFamily, panel::kTabFontDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_tabIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_hintFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
+        m_hintFont = MakeFormat(m_textFamily, panel::kHintFontDip, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_subFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_statusIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_BOLD, C);
@@ -652,14 +661,13 @@ namespace sd
     void Island::DrawSwitcher(const D2D1_RECT_F& box, float alpha)
     {
         const float s = m_scale;
-        // Tabs left to right, measured the same way ContentWidth() does.
+        // Tabs left to right, laid out as ContentWidth() measured them. Names only, no Shift / Ctrl /
+        // Alt keycaps: scrolling reaches every wheel, and a key per wheel stops scaling as wheels are added.
+        const auto fit = FitSwitcher();
         std::vector<D2D1_RECT_F> tabs;
         float x = box.left;
-        for (const auto& ring : m_rings)
+        for (const float w : fit.tabs)
         {
-            // Names only, no Shift / Ctrl / Alt keycaps: scrolling reaches every wheel, and a key per
-            // wheel stops scaling as wheels are added.
-            const float w = 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
             tabs.push_back(D2D1::RectF(x, box.top, x + w, box.bottom));
             x += w;
         }
@@ -683,15 +691,16 @@ namespace sd
             const float on = std::max(0.f, 1.f - std::abs(m_tabPos - static_cast<float>(i)));
             const auto colour = Mix(m_palette.panelTextDim, m_palette.textOnAccent, on);
             const float cy = (t.top + t.bottom) / 2.f;
-            float tx = t.left + 12.f * s;
+            float tx = t.left + fit.pad;
             const wchar_t glyph[2]{ ring.icon, 0 };
-            Text(glyph, m_tabIconFont.Get(), D2D1::RectF(tx, cy - 11.f * s, tx + 18.f * s, cy + 11.f * s), colour, alpha);
-            tx += 18.f * s + 7.f * s;
-            const float tw = TextWidth(ring.title, m_tabFont.Get());
-            Text(ring.title, m_tabFont.Get(), D2D1::RectF(tx, t.top, tx + tw + 1.f, t.bottom), colour, alpha);
+            Text(glyph, m_tabIconFont.Get(), D2D1::RectF(tx, cy - 11.f * s, tx + panel::kIconDip * s, cy + 11.f * s), colour, alpha);
+            tx += panel::kIconDip * s + fit.iconGap;
+            // Shortened names (a very narrow screen) end in "...": the text format trims.
+            const float tw = fit.nameScale < 1.f ? t.right - fit.pad - tx : TextWidth(ring.title, m_tabFont.Get()) + 1.f;
+            Text(ring.title, m_tabFont.Get(), D2D1::RectF(tx, t.top, tx + tw, t.bottom), colour, alpha);
         }
-        const float hx = x + 14.f * s;
-        Text(SwitchHint(tabs.size()), m_hintFont.Get(), D2D1::RectF(hx, box.top, box.right, box.bottom), m_palette.panelTextDim, alpha);
+        if (fit.hint)
+            Text(SwitchHint(tabs.size()), m_hintFont.Get(), D2D1::RectF(x + fit.hintGap, box.top, box.right, box.bottom), m_palette.panelTextDim, alpha);
     }
 
     void Island::DrawProgress(const D2D1_RECT_F& box, float alpha)

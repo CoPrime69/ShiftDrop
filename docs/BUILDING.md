@@ -279,34 +279,59 @@ request and every `v*` tag. Its jobs:
    Setting the repository variable `SHIFTDROP_FFMPEG` to `btbn` skips it, and the build then ships
    the pinned BtbN build instead.
 2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures with the `ci`
-   preset, builds the app, runs the offline check, builds the installer, runs the installer smoke
-   test and uploads the installer and the exe.
-3. **tests** (Windows Server 2022, at the same time as build): builds the unit tests with the same
-   ffmpeg and runs them all, four at a time.
-4. **placeholder** (Windows Server 2022, at the same time): builds the placeholder gesture build
+   preset and compiles everything once: the app, the worker and the tests. It runs the offline
+   check, writes the third-party notices and uploads the binaries for the jobs below.
+3. **tests (1 of 3)**, **(2 of 3)**, **(3 of 3)** (Windows, at the same time): each downloads the
+   test exe and runs every third test with CTest (`-I <shard>,<total>,3`), so the three together run
+   each test exactly once; each checks that first. Every test runs in its own process, four at a
+   time.
+4. **installer** (Windows, beside the shards): builds the installer from the uploaded exes, runs the
+   installer smoke test and uploads the installer and the exe.
+5. **placeholder** (Windows, beside build): builds the placeholder gesture build
    (`SHIFTDROP_M0=ON`), the app target only.
-5. **release** (tags only): publishes the installer once the three jobs above passed.
+6. **timings** (tags, runs started by hand, pull requests labelled `bench`): the speed benchmark,
+   the photo tools' 12 MP export times and our ffmpeg against the BtbN build.
+7. **release** (pushes to main and `v*` tags): publishes the GitHub Release for `SD_VERSION` once
+   everything above passed, if that version has none yet (see below).
 
-The Windows jobs share their setup and configure steps through
+**A push to main reuses its pull request's run.** Every pull-request run marks the tree it tested
+(an artifact named `tested-tree-<tree>`). When a push to main has the tree of a pull-request run
+that passed, the **reuse** job takes that run's installer and exe over as this run's artifacts and
+nothing else runs: merge by pushing the merge commit to the pull request's branch, wait for it to
+pass, then fast-forward main to it. A push no passed run covers builds in full, and so does every
+tag. "Run workflow" with "reuse" ticked tries the same on any branch.
+
+Because of that, main itself no longer compiles in CI, yet pull requests read main's compiler cache
+(GitHub Actions caches belong to a branch; a pull request reads its own and main's).
+[.github/workflows/cache.yml](../.github/workflows/cache.yml) keeps it current: after each push to
+main it runs ci.yml's build, ffmpeg and placeholder jobs only (no tests, no installer), and nothing
+waits for it.
+
+The Windows jobs that compile share their setup and configure steps through
 [.github/actions/configure](../.github/actions/configure/action.yml). Every compile goes through
 sccache, which keeps the object files in the GitHub Actions cache, so a push that changes a few
-files only recompiles those, and a library the three jobs all link is compiled once for all of
-them. A pull request reads the cache that `main`'s runs wrote, plus its own. The installed vcpkg
-ports are cached as a folder, keyed on `vcpkg.json`, the triplet and the compiler version; when that
-cache is there, configure doesn't run vcpkg at all. Otherwise vcpkg installs them from its own
-binary cache, also kept between runs. ctest keeps each test's time from the last run, so it starts
-the slowest tests first.
+files only recompiles those. The installed vcpkg ports are cached as a folder, keyed on
+`vcpkg.json`, the triplet and the compiler version; when that cache is there, configure doesn't run
+vcpkg at all. Otherwise vcpkg installs them from its own binary cache, also kept between runs. Each
+test shard keeps its tests' times from the last run, so it starts the slowest ones first.
 
-The timing steps (the photo tools' 12 MP export times, and our ffmpeg against the BtbN build) run on
-tags, on runs started by hand and on pull requests labelled `bench`. The unit tests run the photo
-timing test on every push all the same; the timing step only prints its numbers.
+The unit tests run the photo timing test on every push all the same; the timings job only prints
+its numbers.
 
 The speed benchmark runs only when asked: label a pull request `bench`, or start the workflow by hand
 ("Run workflow" on the Actions page) with "bench" ticked. Its table goes on the run's summary page.
 
-A tag `v<version>` that matches `SD_VERSION` in `src/Brand.h` publishes a GitHub Release with the
-installer and, for the custom ffmpeg build, the ffmpeg source tarball. A tag that doesn't match
-fails the release step.
+**Releases.** After a push to main passes (built here or reused), the release job reads
+`SD_VERSION` from `src/Brand.h`. If there is no release `v<SD_VERSION>` yet, it creates it on that
+commit, which also creates the tag, with the installer, for our own ffmpeg build the ffmpeg
+source tarball, and `SHA256SUMS.txt` (the SHA-256 of each of those files, in `sha256sum` format,
+so `sha256sum -c SHA256SUMS.txt` checks a download). Otherwise it does nothing, so bumping
+`SD_VERSION` is what makes the next release. The notes say how to install, list the titles of the
+pull requests merged since the previous release (all of them for the first one), warn that the
+installer isn't code-signed yet and give the installer's SHA-256. They are built from titles only,
+and the job checks them against a list of names that must not appear before it publishes. A
+pushed tag `v<version>` builds in full and publishes the same way; a tag that doesn't match
+`SD_VERSION` fails the release job.
 
 ## When something goes wrong
 

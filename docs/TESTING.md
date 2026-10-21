@@ -169,12 +169,18 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
-- [ ] When the wheel opens, Explorer's drag picture fades away and the wheel takes its place (no picture or name over the wheel, no mouse pointer); it comes back when you drag off the wheel. The file's own icon staying where it was is Windows: a drag only copies until you drop
-- [ ] Tray menu > **Hide cursor over the wheel** unticked: the pointer stays visible over the wheel
-- [ ] Drag off the wheel onto the desktop or a folder: the pointer comes back and Explorer shows its usual badge there
+- [ ] When the wheel opens, Explorer's drag picture (the file's icon or thumbnail with its full name) stays visible over the wheel and follows the cursor across the tiles, with the mouse pointer; there is no "+ Copy" badge under it. Several files show Explorer's stack and count the same way. The file's own icon staying where it was is Windows: a drag only copies until you drop
+- [ ] With the panel at the top: drag the file up over the top panel, and to the bottom tiles while the predicted-output card shows: the drag picture stays on top of both
+- [ ] Drag a picture off a web page in Edge or Chrome (or an attachment out of Outlook) and press Shift: the browser's (or Outlook's) own drag picture stays over the wheel too, no "+ Copy" badge
+- [ ] Drag off the wheel onto the desktop or a folder: Explorer shows its usual badge there ("+ Copy to Desktop")
+- [ ] The tray menu has no **Hide cursor over the wheel** item, and the pointer is never hidden over the wheel. A `settings.ini` from an older version with `HideCursor=1` under `[Appearance]` changes nothing, and the key is gone after the next Size or Style change
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
 - [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
+- [ ] 1080p at 100%, Size Auto: the top panel's wheel names are easy to read at arm's length (about 18 px text, a panel about 62 px tall), clearly larger than the wheel's own labels; the hint "Scroll or Shift+1–4" is readable too; edges and text are sharp, not blurred
+- [ ] 2560x1440 at 100% and at 125%, Size Auto: the panel is larger again (about 24 px text, about 80 px tall) and still sharp; on a second monitor at a different scaling it is the same size relative to that monitor's text
+- [ ] A 1366x768 screen at 100% (or a window-sized VM), every Size: the whole panel fits on screen with all four names and the hint; at 150% with Size Large the hint is dropped before any name is cut
+- [ ] At the new size, the progress panel ("Converting N files…", bar, ×) and the result panel (badge, two lines, Float and Copy buttons) look as before, only larger: nothing is cut off and the × and buttons are easy to hit
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
 
