@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
 
@@ -68,6 +69,26 @@ namespace sd
             recipe["description"] = Narrow(f.description);
             recipe["steps"] = nlohmann::json::array({ step });
             all.push_back(std::move(recipe));
+        }
+        // Reduce size: 90% to 20% smaller, for pictures and for video and audio (PDFs: PdfModule). Each
+        // result is at most that share of the source's size; the wheel shows which set fits the files.
+        for (int smaller = 90; smaller >= 20; smaller -= 10)
+        {
+            const auto add = [&](const char* kind, const char* action) {
+                nlohmann::json recipe = nlohmann::json::object();
+                recipe["id"] = std::format("reduce-{}-{}", kind, smaller);
+                recipe["label"] = std::format("\xE2\x88\x92{}%", smaller);   // U+2212 minus, as UTF-8
+                recipe["description"] = std::format("{}% smaller", smaller);
+                recipe["ring"] = "reduce";
+                recipe["suffix"] = "reduced";
+                nlohmann::json step = nlohmann::json::object();
+                step["action"] = action;
+                step["params"]["percent"] = 100 - smaller;
+                recipe["steps"] = nlohmann::json::array({ step });
+                all.push_back(std::move(recipe));
+            };
+            add("image", "image.compress");
+            add("media", "media.compress");
         }
         AppendModuleRecipes(all);   // each feature module's own slices (Modules.cpp)
         return all.dump();

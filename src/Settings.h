@@ -6,24 +6,26 @@
 
 namespace sd
 {
-    // The three wheels and the modifier that opens each one.
+    // The wheel's sections, in the order scrolling visits them, and the key that opens each one.
     enum class Ring
     {
-        Convert = 0,   // Shift by default
-        Tools = 1,     // Ctrl (Tangerine uses Command)
-        Files = 2,     // Alt
+        Convert = 0,   // Shift opens the wheel here, on the best fit for the file type
+        Tools = 1,     // the others are reached by scrolling (no key of their own by default)
+        Reduce = 2,    // Reduce size: 90% to 20% smaller
+        Files = 3,
     };
-    inline constexpr int kRingCount = 3;
-    const char* RingId(Ring ring);          // "convert", "tools", "files" (as in recipe JSON)
-    const wchar_t* RingTitle(Ring ring);    // "Convert", "Tools", "File actions"
+    inline constexpr int kRingCount = 4;
+    const char* RingId(Ring ring);          // "convert", "tools", "reduce", "files" (as in recipe JSON)
+    const wchar_t* RingTitle(Ring ring);    // "Convert", "Tools", "Reduce size", "File actions"
 
     // Loaded once at startup from %LOCALAPPDATA%\ShiftDrop\settings.ini. The settings window comes in
     // M12; until then edit the file and restart.
     struct Settings
     {
-        // Virtual key per ring (VK_SHIFT, VK_CONTROL, VK_MENU) or 0 when that wheel is turned off.
-        std::array<UINT, kRingCount> keys{ VK_SHIFT, VK_CONTROL, VK_MENU };
-        std::array<std::wstring, kRingCount> keyNames{ L"Shift", L"Ctrl", L"Alt" };
+        // Virtual key that opens each ring (VK_SHIFT, VK_CONTROL, VK_MENU) or 0 for none. Only Shift
+        // by default: every section is reached by scrolling, so Ctrl and Alt keep their usual meaning.
+        std::array<UINT, kRingCount> keys{ VK_SHIFT, 0, 0, 0 };
+        std::array<std::wstring, kRingCount> keyNames{ L"Shift", L"off", L"off", L"off" };
     };
 
     Settings LoadSettings();

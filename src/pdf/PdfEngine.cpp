@@ -245,25 +245,44 @@ namespace sd::pdf
                                 const ProgressFn& progress) const
             {
                 const auto& params = recipe.steps.front().params;
-                CompressOptions options;
-                options.dpi = params.value("dpi", 150);
-                options.quality = params.value("quality", 70);
+                const uint64_t before = FileSize(source);
+                const int percent = params.value("percent", 0);
+                const uint64_t target = percent > 0 ? before * static_cast<uint64_t>(percent) / 100 : 0;
+                // With a target (Reduce size) the pictures step down until the file fits. Only pictures
+                // shrink: text and drawings stay as they are, so a PDF of mostly text may stop short.
+                std::vector<CompressOptions> ladder;
+                if (target > 0)
+                    ladder = { { 150, 70 }, { 120, 60 }, { 96, 50 }, { 72, 40 }, { 60, 30 }, { 48, 25 } };
+                else
+                    ladder = { { params.value("dpi", 150), params.value("quality", 70) } };
                 StagedOutput out(m_history, runId, source);
                 if (!out.Ready())
                     return out.Fail(out.Error());
-                CompressStats stats;
-                std::wstring error;
-                if (!CompressPdf(source, out.Path(), options, stop, progress, stats, error))
-                    return out.Fail(error, error == kCancelled);
-                const uint64_t before = FileSize(source), after = FileSize(out.Path());
-                log::Info(L"pdf compress: {} -> {} bytes, {} of {} images re-encoded", before, after, stats.recompressed, stats.images);
+                uint64_t after = 0;
+                for (size_t i = 0; i < ladder.size(); ++i)
+                {
+                    CompressStats stats;
+                    std::wstring error;
+                    const auto step = [&](double f) { if (progress) progress((static_cast<double>(i) + f) / static_cast<double>(ladder.size())); };
+                    if (!CompressPdf(source, out.Path(), ladder[i], stop, progress ? ProgressFn(step) : ProgressFn{}, stats, error))
+                        return out.Fail(error, error == kCancelled);
+                    after = FileSize(out.Path());
+                    log::Info(L"pdf compress: {} -> {} bytes at {} dpi, quality {}; {} of {} images re-encoded", before, after,
+                              ladder[i].dpi, ladder[i].quality, stats.recompressed, stats.images);
+                    if (target == 0 || (after > 0 && after <= target) || stats.recompressed == 0)
+                        break;   // fits, or there are no pictures left to shrink
+                }
                 // Never keep a "compressed" file that is not smaller than what it came from.
                 if (after == 0 || after >= before)
                     return out.Fail(L"already compact: compressing would not make it smaller", true);
                 auto result = out.Commit(recipe.suffix, L".pdf");
                 if (result.ok)
+                {
                     result.message = std::format(L"{} to {} ({}% smaller)", SizeText(before), SizeText(after),
                                                  static_cast<int>(100 - after * 100 / before));
+                    if (target > 0 && after > target)
+                        result.message += L"; mostly text, so it could not get smaller";
+                }
                 return result;
             }
 
