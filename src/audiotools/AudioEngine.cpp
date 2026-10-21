@@ -22,14 +22,16 @@ namespace sd::audiotools
         const auto seconds = [](const char* key) { return ParamSpec{ key, ParamType::Number, 0, 1e7, {}, 0 }; };
         registry.Add({ "audio.normalize", L"Normalize volume", StepKind::Engine, { ParamSpec{ "target", ParamType::Number, -40, -5, {}, -16 }, ask() } });
         registry.Add({ "audio.visualizer", L"Audio visualizer", StepKind::Engine,
-                       { ParamSpec{ "style", ParamType::Enum, 0, 0, { "waveform", "image" }, "waveform" },
+                       { ParamSpec{ "style", ParamType::Enum, 0, 0, { "waveform", "image", "bars", "circle", "square", "vertical" }, "waveform" },
                          ParamSpec{ "shape", ParamType::Enum, 0, 0, { "landscape", "portrait", "square" }, "landscape" }, ask() } });
         registry.Add({ "audio.trim", L"Trim audio", StepKind::Engine,
                        { seconds("start"), seconds("end"), ParamSpec{ "silence", ParamType::Bool, 0, 0, {}, false }, ask() } });
         registry.Add({ "audio.channels", L"Convert audio channels", StepKind::Engine,
                        { ParamSpec{ "mode", ParamType::Enum, 0, 0, { "stereo", "mono" }, "stereo" }, ParamSpec{ "swap", ParamType::Bool, 0, 0, {}, false },
                          ParamSpec{ "left", ParamType::Number, 0, 2, {}, 1.0 }, ParamSpec{ "right", ParamType::Number, 0, 2, {}, 1.0 }, ask() } });
-        registry.Add({ "audio.bleep", L"Bleep audio", StepKind::Engine, { ParamSpec{ "tone", ParamType::Enum, 0, 0, { "tone", "silence" }, "tone" } } });
+        registry.Add({ "audio.bleep", L"Bleep audio", StepKind::Engine,
+                       { ParamSpec{ "tone", ParamType::Enum, 0, 0, { "tone", "silence", "duck" }, "tone" },
+                         ParamSpec{ "duck", ParamType::Number, kMinDuckDb, kMaxDuckDb, {}, kDuckDb } } });
     }
 
     namespace
@@ -46,9 +48,9 @@ namespace sd::audiotools
     "steps": [ { "action": "audio.trim" } ] },
   { "id": "audio-channels", "label": "Channels", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
     "steps": [ { "action": "audio.channels" } ] },
-  { "id": "audio-bleep", "label": "Bleep", "description": "Bleep Audio: a tone or silence over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
+  { "id": "audio-bleep", "label": "Bleep", "description": "Bleep Audio: a tone, silence or a quieter sound over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
     "steps": [ { "action": "audio.bleep" } ] },
-  { "id": "audio-visualizer", "label": "Visualizer", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
+  { "id": "audio-visualizer", "label": "Visualizer", "description": "Audio Visualizer: an MP4 with moving bars, a wave, circles or squares, or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
     "steps": [ { "action": "audio.visualizer" } ] }
 ])");
             return all;
@@ -143,10 +145,10 @@ namespace sd::audiotools
         {
             const auto& p = recipe.steps[0].params;
             const auto shape = ShapeByName(p.value("shape", std::string("landscape")));
-            const bool still = p.value("style", std::string("waveform")) == "image";
+            const auto style = VisualStyleByName(p.value("style", std::string("waveform")));
             std::wstring image = Widen(p.value("image", std::string()));
             TempFolder temp;
-            if (still && image.empty() && info.coverArt && temp.Ok())
+            if (style == VisualStyle::Picture && image.empty() && info.coverArt && temp.Ok())
             {
                 // No picture chosen: the song's own cover art.
                 const auto cover = temp.File(L"cover.png");
@@ -154,12 +156,10 @@ namespace sd::audiotools
                     image = cover;
             }
             const H264Encoder h264 = s.ffmpeg->H264();
-            const bool useImage = still && !image.empty();
-            log::Info(L"audio: visualizer for {} ({}, {})", source, useImage ? L"picture" : L"waveform", Widen(p.value("shape", std::string("landscape"))));
+            log::Info(L"audio: visualizer for {} ({}{}, {})", source, Widen(VisualStyleName(style)), image.empty() ? L"" : L" with a picture",
+                      Widen(p.value("shape", std::string("landscape"))));
             return RunToStaged(*s.ffmpeg, s.history, runId, source,
-                               [&](const std::wstring& out) {
-                                   return useImage ? StillVideoArgs(source, image, info, shape, h264, out) : WaveformVideoArgs(source, info, shape, h264, out);
-                               },
+                               [&](const std::wstring& out) { return VisualizerArgs(source, image, info, style, shape, h264, out); },
                                info.DurationUs(), recipe.suffix, L".mp4", stop, progress);
         }
 
@@ -228,10 +228,13 @@ namespace sd::audiotools
             ranges = NormalizeRanges(ranges, info.DurationUs());
             if (ranges.empty())
                 return RecordFailure(s.history, runId, source, L"no parts were marked to bleep");
-            const bool tone = p.value("tone", std::string("tone")) != "silence";
+            const auto sound = BleepSoundByName(p.value("tone", std::string("tone")));
+            const double duck = std::clamp(JsonNumber(p, "duck", kDuckDb), kMinDuckDb, kMaxDuckDb);
             const auto ext = LowerExtension(source);
-            log::Info(L"audio: bleep {} range(s) in {} with {}", ranges.size(), source, tone ? L"a tone" : L"silence");
-            return RunToStaged(*s.ffmpeg, s.history, runId, source, [&](const std::wstring& out) { return BleepArgs(source, ext, info, ranges, tone, out); },
+            log::Info(L"audio: bleep {} range(s) in {} with {}", ranges.size(), source,
+                      sound == BleepSound::Tone ? L"a tone" : sound == BleepSound::Silence ? L"silence" : std::format(L"the sound {} dB lower", Num(duck)));
+            return RunToStaged(*s.ffmpeg, s.history, runId, source,
+                               [&](const std::wstring& out) { return BleepArgs(source, ext, info, ranges, sound, duck, out); },
                                info.DurationUs(), recipe.suffix, AudioOutputFormat(ext).extension, stop, progress);
         }
     }

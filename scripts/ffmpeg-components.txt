@@ -65,6 +65,12 @@ transpose hflip vflip rotate crop
 # the audio tools (normalize, visualizer, trim, channels, bleep, silence finding).
 setsar fps split palettegen paletteuse setpts atempo pad anullsrc concat gblur overlay drawbox
 ebur128 loudnorm color showwaves sine volume amix pan silencedetect
+# Trim's fades and the joined parts around a removed one, Speed with the pitch following, Frames'
+# every Nth frame.
+fade afade asetrate select
+# The visualizer's styles: bars and squares (showfreqs, drawgrid), the mirrored bars (vflip, vstack),
+# circles (the sound against its Hilbert transform in avectorscope).
+showfreqs drawgrid vstack avectorscope hilbert afir adelay join asplit lowpass
 # Test inputs (tests/*.cpp and the speed benchmark make their clips with these).
 testsrc testsrc2 nullsrc geq noise aevalsrc
 

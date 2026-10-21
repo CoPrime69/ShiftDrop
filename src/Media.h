@@ -12,6 +12,8 @@ namespace sd
 
     // What a file is, by extension. Animated GIFs stay images (WIC decodes them).
     MediaKind MediaKindOfExtension(const std::wstring& lowerExtension);
+    // The same extensions as a file dialog's filter: "*.mp4;*.m4v;..." (empty for None).
+    std::wstring MediaFilePatterns(MediaKind kind);
 
     // The H.264 encoders ffmpeg can use, best first. GPU encoders are fast and keep the CPU free; Media
     // Foundation is Windows' own (hardware when the driver offers it, Microsoft's software encoder

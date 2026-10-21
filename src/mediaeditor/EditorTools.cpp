@@ -2,18 +2,21 @@
 // the picture do under the mouse and keys, how a choice sounds while playing, and the parameters
 // handed back to the engine.
 #include "mediaeditor/EditorWindow.h"
+#include "FileMove.h"
+#include "FormatText.h"
 #include "Log.h"
+#include "Media.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "Wic.h"
 #include "audiotools/AudioTools.h"
 #include "videotools/VideoTools.h"
 
-#include <shobjidl.h>
 #include <wincodec.h>
-#include <wil/resource.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cwctype>
 #include <format>
 
 using Microsoft::WRL::ComPtr;
@@ -30,7 +33,9 @@ namespace sd::mediatools
             kIdStart = 100, kIdEnd, kIdStartHere, kIdEndHere, kIdPlaySel, kIdMode = 110, kIdSilence = 120, kIdAspect = 130, kIdOutW = 140, kIdOutH,
             kIdOutReset, kIdSpeed = 150, kIdSpeedCustom = 170, kIdUp = 180, kIdDown, kIdRemove, kIdAdd = 190, kIdSplitKind = 200, kIdParts = 210,
             kIdStyle = 220, kIdWhole = 230, kIdTone = 240, kIdListen = 250, kIdMono = 260, kIdSwap = 270, kIdLeft, kIdRight, kIdResetVol,
-            kIdPicStyle = 280, kIdChoose = 290, kIdClear, kIdShape = 300, kIdJoinFit = 310, kIdRows = 400, kIdRowDelete = 600,
+            kIdPicStyle = 280, kIdChoose = 290, kIdClear, kIdShape = 300, kIdJoinFit = 310, kIdTrimPart = 320, kIdFade = 330, kIdPitch,
+            kIdFramePick = 340, kIdEvery = 350, kIdRate, kIdFormat = 360, kIdSplitEvery = 370, kIdAddClips = 380, kIdDuck = 385,
+            kIdRows = 400, kIdRowDelete = 600,
         };
 
         constexpr float kGrip = 7.f;        // how near an edge or marker the mouse must be (DIPs)
@@ -39,6 +44,9 @@ namespace sd::mediatools
         const char* const kAspects[] = { "free", "original", "16:9", "9:16", "1:1", "4:5" };
         const wchar_t* const kAspectLabels[] = { L"Free", L"Original", L"16:9", L"9:16", L"1:1", L"4:5" };
         const char* const kShapes[] = { "landscape", "portrait", "square" };
+        const char* const kFramePicks[] = { "marks", "every", "rate" };   // FramePick's order
+        const char* const kFrameFormats[] = { "png", "jpg", "webp" };
+        const char* const kBleepSounds[] = { "tone", "silence", "duck" };  // BleepSound's order
 
         nlohmann::json SecondsList(const std::vector<int64_t>& times)
         {
@@ -102,6 +110,24 @@ namespace sd::mediatools
                 return false;
             const int v = std::stoi(text);
             if (v < lo || v > hi)
+                return false;
+            out = v;
+            return true;
+        }
+
+        // A number typed with or without its unit: "30", "30 frames", "2.5 a second".
+        bool ParseNumber(std::wstring text, double& out)
+        {
+            while (!text.empty() && (std::iswalpha(text.back()) || text.back() == L' '))
+                text.pop_back();
+            std::replace(text.begin(), text.end(), L',', L'.');
+            while (!text.empty() && text.front() == L' ')
+                text.erase(0, 1);
+            if (text.empty())
+                return false;
+            wchar_t* end = nullptr;
+            const double v = std::wcstod(text.c_str(), &end);
+            if (!end || *end != 0 || !std::isfinite(v))
                 return false;
             out = v;
             return true;
@@ -409,21 +435,42 @@ namespace sd::mediatools
         case EditorTool::TrimVideo:
         case EditorTool::TrimAudio:
         {
-            caption(L"PART TO KEEP");
+            const bool video = m_req.tool == EditorTool::TrimVideo;
+            const bool remove = video && m_remove;
+            if (video)
+                segments(kIdTrimPart, { L"Keep selection", L"Remove selection" }, m_remove ? 1 : 0, [this](int i) { m_remove = i == 1; Rebuild(); }, 2,
+                         L"Keep the selected part, or cut it out and join what is on either side");
+            caption(remove ? L"PART TO REMOVE" : L"PART TO KEEP");
+            const std::wstring part = remove ? L"removed" : L"kept";
             rangeFields(
-                f.keep, [this](TimeRange r) { Cur().keep = r; Rebuild(); }, L"Where the kept part starts (I sets it at the playhead)",
-                L"Where the kept part ends (O sets it at the playhead)");
-            info(L"Length", FormatTimecode(f.keep.Length()));
-            button(kIdStartHere, L"Start here", nullptr, [this] { ToolKey('I', false, false); }, true, L"Start the kept part at the playhead (I)", x, half);
-            button(kIdEndHere, L"End here", nullptr, [this] { ToolKey('O', false, false); }, true, L"End the kept part at the playhead (O)", x + half + 8, half);
-            button(kIdPlaySel, L"Play the kept part", ui::icon::Play, [this] { StopPlay(); TogglePlay(true); }, true, L"Shift+Space");
-            y += 6;
-            if (m_req.tool == EditorTool::TrimVideo)
+                f.keep, [this](TimeRange r) { Cur().keep = r; Rebuild(); }, std::format(L"Where the {} part starts (I sets it at the playhead)", part),
+                std::format(L"Where the {} part ends (O sets it at the playhead)", part));
+            if (remove)
             {
+                info(L"Removed", FormatTimecode(f.keep.Length()));
+                info(L"Result", FormatTimecode(videotools::TrimmedLength(f.keep, dur, true)));
+            }
+            else
+                info(L"Length", FormatTimecode(f.keep.Length()));
+            button(kIdStartHere, L"Start here", nullptr, [this] { ToolKey('I', false, false); }, true, std::format(L"Start the {} part at the playhead (I)", part), x, half);
+            button(kIdEndHere, L"End here", nullptr, [this] { ToolKey('O', false, false); }, true, std::format(L"End the {} part at the playhead (O)", part), x + half + 8, half);
+            button(kIdPlaySel, remove ? L"Play the selection" : L"Play the kept part", ui::icon::Play, [this] { StopPlay(); TogglePlay(true); }, true, L"Shift+Space");
+            y += 6;
+            if (video)
+            {
+                // Copying the streams only keeps one part as it is: removing a part or fading re-encodes.
+                const bool copies = videotools::TrimCopies(true, { m_remove, m_fade });
                 caption(L"CUT");
-                segments(kIdMode, { L"Exact", L"Fast" }, m_fast ? 1 : 0, [this](int i) { m_fast = i == 1; Rebuild(); });
-                note(m_fast ? L"Copies the video as it is: instant and lossless, but the cut lands on a keyframe, so the start can move a little earlier."
-                            : L"Re-encodes so the cut lands on the exact frame. Slower than Fast.");
+                segments(kIdMode, { L"Exact", L"Fast" }, m_fast && copies ? 1 : 0, [this](int i) { m_fast = i == 1; Rebuild(); }, 4,
+                         copies ? std::wstring() : L"Removing a part or fading always re-encodes", copies);
+                note(!copies  ? L"Removing a part or fading re-encodes, so the cuts land on the exact frames."
+                     : m_fast ? L"Copies the video as it is: instant and lossless, but the cut lands on a keyframe, so the start can move a little earlier."
+                              : L"Re-encodes so the cut lands on the exact frame. Slower than Fast.");
+                toggle(kIdFade, L"Fade in and out", m_fade, [this] { m_fade = !m_fade; Rebuild(); }, true,
+                       L"Half a second of fade at each cut, picture and sound");
+                if (m_fade)
+                    note(remove ? L"The picture fades to black and back, and the sound out and in, where the two parts meet."
+                                : L"The picture fades from and to black, and the sound in and out, where the kept part was cut.");
             }
             else
             {
@@ -506,12 +553,17 @@ namespace sd::mediatools
                       return true;
                   },
                   L"Any speed from 0.25\u00D7 to 4\u00D7, like 1.8 or 180%");
-            y += 4;
+            const bool sound = std::any_of(m_files.begin(), m_files.end(), [](const FileState& file) { return file.ready && file.info.HasAudio(); });
+            toggle(kIdPitch, L"Keep pitch", m_keepPitch && sound, [this, restart] { m_keepPitch = !m_keepPitch; restart(); Rebuild(); }, sound,
+                   L"Off: the sound plays faster or slower like a tape, its pitch going up or down with it");
             caption(L"RESULT");
             info(L"Length", FormatTimecode(static_cast<int64_t>(static_cast<double>(dur) / m_factor)));
             info(L"Was", FormatTimecode(dur));
             y += 4;
-            note(!ready ? L"" : f.info.HasAudio() ? L"The sound keeps its pitch. Space plays at the new speed." : L"This video has no sound; it plays silent at the new speed.");
+            note(!ready          ? L""
+                 : !sound        ? L"This video has no sound; it plays silent at the new speed."
+                 : m_keepPitch   ? L"The sound keeps its pitch. Space plays at the new speed."
+                                 : L"The pitch follows the speed: higher when faster, lower when slower. Space plays at the new speed.");
             if (m_files.size() > 1)
                 note(std::format(L"Applies to all {} videos.", m_files.size()));
             break;
@@ -527,6 +579,7 @@ namespace sd::mediatools
                    L"Move the clip later (Alt+\u2193)", x + third + 4, third);
             button(kIdRemove, L"Remove", nullptr, [this] { ToolKey(VK_DELETE, false, false); }, sel && m_order.size() > 1,
                    L"Leave this clip out (Delete)", x + 2 * third + 8, third);
+            button(kIdAddClips, L"Add clips\u2026", ui::icon::Add, [this] { AddClips(); }, true, L"Add more videos to the end of the list");
             y += 6;
             // Clips of another shape than the first: whole with black bars, or cropped to fill the frame.
             caption(L"OTHER SHAPES");
@@ -571,21 +624,84 @@ namespace sd::mediatools
         case EditorTool::SaveFrames:
         {
             caption(L"FRAMES TO SAVE");
-            button(kIdAdd, L"Add this frame", ui::icon::Add, [this] { ToolKey('M', false, false); }, true, L"M, or double-click the timeline");
-            std::vector<std::pair<std::wstring, std::wstring>> items;
-            for (size_t i = 0; i < f.marks.size(); ++i)
-                items.push_back({ std::format(L"Frame {}", i + 1), FormatTimecode(f.marks[i]) });
-            rows(items, m_selected, [this](int i) { m_selected = i; SetPlayhead(Cur().marks[static_cast<size_t>(i)]); Rebuild(); },
-                 [this](int i) { m_selected = i; ToolKey(VK_DELETE, false, false); }, 60);
-            note(f.marks.empty() ? L"Nothing marked yet: the frame at the playhead is saved."
-                                 : L"Saved full size as PNG pictures, together in one folder next to the video.");
+            segments(kIdFramePick, { L"Marked", L"Every N", L"Per second" }, static_cast<int>(m_frames.pick),
+                     [this](int i) {
+                         m_frames.pick = static_cast<videotools::FramePick>(i);
+                         m_selected = -1;
+                         Rebuild();
+                     },
+                     3);
+            const double fps = ready ? f.info.media.fps : 0;
+            if (m_frames.pick == videotools::FramePick::Marks)
+            {
+                button(kIdAdd, L"Add this frame", ui::icon::Add, [this] { ToolKey('M', false, false); }, true, L"M, or double-click the timeline");
+                std::vector<std::pair<std::wstring, std::wstring>> items;
+                for (size_t i = 0; i < f.marks.size(); ++i)
+                    items.push_back({ std::format(L"Frame {}", i + 1), FormatTimecode(f.marks[i]) });
+                rows(items, m_selected, [this](int i) { m_selected = i; SetPlayhead(Cur().marks[static_cast<size_t>(i)]); Rebuild(); },
+                     [this](int i) { m_selected = i; ToolKey(VK_DELETE, false, false); }, 250);
+                if (f.marks.empty())
+                    note(L"Nothing marked yet: the frame at the playhead is saved.");
+            }
+            else if (m_frames.pick == videotools::FramePick::Every)
+            {
+                field(kIdEvery, L"Every", std::format(L"{} frames", m_frames.every),
+                      [this](const std::wstring& text) {
+                          double v = 0;
+                          if (!ParseNumber(text, v) || v != std::floor(v) || v < 1 || v > videotools::kMaxEvery)
+                              return false;
+                          m_frames.every = static_cast<int>(v);
+                          return true;
+                      },
+                      L"Save the first frame, then one in every N: 1 saves them all");
+                if (fps > 0)
+                    info(L"That is", Num(std::round(fps / m_frames.every * 100) / 100) + L" a second");
+                else if (ready)
+                    note(L"This video's frame rate is unknown, so every Nth frame cannot be counted. Use Per second instead.", 3);
+            }
+            else
+            {
+                field(kIdRate, L"Per second", std::format(L"{} a second", Num(m_frames.perSecond)),
+                      [this](const std::wstring& text) {
+                          double v = 0;
+                          if (!ParseNumber(text, v) || v < videotools::kMinPerSecond - 1e-9 || v > videotools::kMaxPerSecond + 1e-9)
+                              return false;
+                          m_frames.perSecond = std::round(v * 100) / 100;
+                          return true;
+                      },
+                      L"How many frames to save for each second of video, 0.01 to 60, like 2 or 0.5");
+                info(L"One every", FormatRulerLabel(static_cast<int64_t>(std::llround(1e6 / m_frames.perSecond)), 100'000));
+            }
+            y += 4;
+            caption(L"FORMAT");
+            int format = 0;
+            for (int i = 0; i < 3; ++i)
+                if (m_frameFormat == kFrameFormats[i])
+                    format = i;
+            segments(kIdFormat, { L"PNG", L"JPG", L"WebP" }, format, [this](int i) { m_frameFormat = kFrameFormats[i]; Rebuild(); }, 3);
+            caption(L"RESULT");
+            const int64_t count = FrameCount(f);
+            const uint64_t each = ready ? videotools::FrameFileBytes(f.info.width, f.info.height, m_frameFormat) : 0;
+            info(L"Frames", count > 0 ? std::to_wstring(count) : L"\u2013");
+            info(L"Each", each > 0 ? L"about " + SizeText(each) : L"\u2013");
+            info(L"In all", each > 0 && count > 0 ? L"about " + SizeText(each * static_cast<uint64_t>(count)) : L"\u2013");
+            note(format == 0   ? L"Full size, lossless, together in one folder next to the video."
+                 : format == 1 ? std::format(L"Full size at quality {}, together in one folder next to the video.", videotools::FrameQuality("jpg"))
+                               : std::format(L"Full size at quality {}, the smallest files, together in one folder next to the video.",
+                                             videotools::FrameQuality("webp")));
             break;
         }
         case EditorTool::SplitVideo:
         {
             caption(L"SPLIT");
-            segments(kIdSplitKind, { L"At marks", L"Equal parts" }, m_equalParts ? 1 : 0, [this](int i) { m_equalParts = i == 1; Rebuild(); }, 2);
-            if (m_equalParts)
+            segments(kIdSplitKind, { L"At marks", L"Equal parts", L"Every" }, static_cast<int>(m_split),
+                     [this](int i) {
+                         m_split = static_cast<SplitKind>(i);
+                         m_selected = -1;
+                         Rebuild();
+                     },
+                     3);
+            if (m_split == SplitKind::Equal)
             {
                 field(kIdParts, L"Parts", std::to_wstring(m_parts),
                       [this](const std::wstring& text) {
@@ -597,6 +713,21 @@ namespace sd::mediatools
                       },
                       L"How many equal parts, 2 to 100");
                 info(L"Each", FormatTimecode(dur / std::max(1, m_parts)));
+            }
+            else if (m_split == SplitKind::Every)
+            {
+                field(kIdSplitEvery, L"Every", FormatRulerLabel(m_splitEvery, m_splitEvery % 1'000'000 != 0 ? 100'000 : 1'000'000),
+                      [this, dur](const std::wstring& text) {
+                          int64_t us = 0;
+                          if (!ParseTimecode(text, us) || us < 1'000'000 || EveryPoints(dur, us).size() + 1 > static_cast<size_t>(videotools::kMaxSplitParts))
+                              return false;
+                          m_splitEvery = us;
+                          return true;
+                      },
+                      L"How long each part is, like 0:30, 1:30 or 90 (seconds); the last part is what is left");
+                const auto parts = PartsFromPoints(SplitPoints(f), dur);
+                info(L"Parts", std::to_wstring(parts.size()));
+                info(L"Last part", parts.empty() ? std::wstring(L"\u2013") : FormatTimecode(parts.back().Length()));
             }
             else
             {
@@ -694,7 +825,23 @@ namespace sd::mediatools
         case EditorTool::BleepAudio:
         {
             caption(L"SOUND");
-            segments(kIdTone, { L"1 kHz tone", L"Silence" }, m_tone ? 0 : 1, [this, restart](int i) { m_tone = i == 0; restart(); Rebuild(); }, 2);
+            segments(kIdTone, { L"Beep", L"Silence", L"Duck" }, static_cast<int>(m_bleep),
+                     [this, restart](int i) {
+                         m_bleep = static_cast<audiotools::BleepSound>(i);
+                         restart();
+                         Rebuild();
+                     },
+                     3, L"A 1 kHz tone, nothing, or the sound turned down");
+            if (m_bleep == audiotools::BleepSound::Duck)
+                slider(kIdDuck, L"Lower by", m_duckDb, audiotools::kMinDuckDb, audiotools::kMaxDuckDb,
+                       [](double v) { return std::format(L"{} dB", std::lround(v)); },
+                       [this, restart](double v) {
+                           m_duckDb = std::clamp(std::round(v), audiotools::kMinDuckDb, audiotools::kMaxDuckDb);
+                           if (m_drag != Drag::Slider)
+                               restart();
+                           Rebuild();
+                       },
+                       1);
             caption(L"PARTS TO BLEEP");
             button(kIdAdd, L"Add at the playhead", ui::icon::Add, [this] { ToolKey('M', false, false); }, true, L"M, or drag across the waveform");
             std::vector<std::pair<std::wstring, std::wstring>> items;
@@ -726,20 +873,24 @@ namespace sd::mediatools
         }
         case EditorTool::AudioVisualizer:
         {
-            caption(L"PICTURE");
-            segments(kIdPicStyle, { L"Waveform", L"Still picture" }, m_imageStyle ? 1 : 0, [this](int i) { m_imageStyle = i == 1; Rebuild(); }, 2);
-            if (m_imageStyle)
+            caption(L"STYLE");
+            segments(kIdPicStyle, { L"Bars", L"Wave", L"Circle", L"Square", L"Vertical", L"Picture" }, static_cast<int>(m_style),
+                     [this](int i) {
+                         m_style = static_cast<audiotools::VisualStyle>(i);
+                         Rebuild();
+                     },
+                     3);
+            const bool still = m_style == audiotools::VisualStyle::Picture;
+            caption(still ? L"PICTURE" : L"BACKGROUND");
+            button(kIdChoose, m_image.empty() ? L"Choose a picture\u2026" : L"Choose another\u2026", ui::icon::Picture, [this] { ChoosePicture(); });
+            if (!m_image.empty())
             {
-                button(kIdChoose, m_image.empty() ? L"Choose a picture\u2026" : L"Choose another\u2026", ui::icon::Picture, [this] { ChoosePicture(); });
-                if (!m_image.empty())
-                {
-                    const auto slash = m_image.find_last_of(L"\\/");
-                    info(L"Picture", slash == std::wstring::npos ? m_image : m_image.substr(slash + 1));
-                    button(kIdClear, L"Use the cover art instead", nullptr, [this] { m_image.clear(); m_imagePicture = {}; Rebuild(); });
-                }
-                else
-                    note(L"Without a picture, each song's own cover art is used; a song without one gets the waveform.");
+                info(L"Picture", FileName(m_image));
+                button(kIdClear, still ? L"Use the cover art instead" : L"No picture", nullptr, [this] { m_image.clear(); m_imagePicture = {}; Rebuild(); });
             }
+            else
+                note(still ? L"Without a picture, each song's own cover art is used; a song without one gets the waveform."
+                           : L"Without a picture the background is plain dark. A picture is fitted to fill the video and darkened a little.");
             caption(L"SHAPE");
             int chosen = 0;
             for (int i = 0; i < 3; ++i)
@@ -772,13 +923,18 @@ namespace sd::mediatools
         switch (m_req.tool)
         {
         case EditorTool::TrimVideo:
-        case EditorTool::TrimAudio: return L"Trim";
+        case EditorTool::TrimAudio: return m_req.tool == EditorTool::TrimVideo && m_remove ? L"Remove part" : L"Trim";
         case EditorTool::CropVideo: return L"Crop";
         case EditorTool::SpeedVideo: return L"Make it " + videotools::SpeedLabel(m_factor);
         case EditorTool::JoinVideos: return std::format(L"Join {} clips", m_order.size());
         case EditorTool::SaveFrames:
-            return f.marks.empty() ? L"Save this frame" : f.marks.size() == 1 ? L"Save 1 frame" : std::format(L"Save {} frames", f.marks.size());
-        case EditorTool::SplitVideo: return std::format(L"Split into {} parts", m_equalParts ? m_parts : static_cast<int>(f.marks.size()) + 1);
+        {
+            if (m_frames.pick == videotools::FramePick::Marks && f.marks.empty())
+                return L"Save this frame";
+            const int64_t count = FrameCount(f);
+            return count <= 0 ? L"Save frames" : count == 1 ? L"Save 1 frame" : std::format(L"Save {} frames", count);
+        }
+        case EditorTool::SplitVideo: return std::format(L"Split into {} parts", SplitPoints(f).size() + 1);
         case EditorTool::RedactVideo: return L"Redact";
         case EditorTool::AudioChannels: return m_mono ? L"Make mono" : L"Convert";
         case EditorTool::BleepAudio: return L"Bleep";
@@ -807,7 +963,8 @@ namespace sd::mediatools
         const int64_t dur = f.info.DurationUs();
         switch (m_req.tool)
         {
-        case EditorTool::TrimVideo: return f.keep.start > 0 || f.keep.end < dur;
+        case EditorTool::TrimVideo:
+            return m_remove ? videotools::TrimmedLength(f.keep, dur, true) >= kMinRangeUs && f.keep.Length() > 0 : f.keep.start > 0 || f.keep.end < dur;
         case EditorTool::TrimAudio: return f.keep.start > 0 || f.keep.end < dur || m_silence;
         case EditorTool::CropVideo:
         {
@@ -815,7 +972,8 @@ namespace sd::mediatools
             CropOutputSize(f.crop, f.outW, f.outH, ow, oh);
             return f.crop != PixelRect{ 0, 0, f.info.width, f.info.height } || ow != f.info.width || oh != f.info.height;
         }
-        case EditorTool::SplitVideo: return m_equalParts ? m_parts >= 2 : !f.marks.empty();
+        case EditorTool::SplitVideo: return !SplitPoints(f).empty();
+        case EditorTool::SaveFrames: return FrameCount(f) > 0;
         case EditorTool::RedactVideo: return !f.areas.empty();
         case EditorTool::BleepAudio: return !f.ranges.empty();
         default: return true;
@@ -826,13 +984,20 @@ namespace sd::mediatools
     {
         switch (m_req.tool)
         {
-        case EditorTool::TrimVideo: return L"I and O set the start and end at the playhead  \u00B7  \u2190 \u2192 step one frame  \u00B7  Shift+Space plays the kept part  \u00B7  The wheel zooms";
+        case EditorTool::TrimVideo:
+            return m_remove ? L"I and O set the start and end of the part to remove  \u00B7  \u2190 \u2192 step one frame  \u00B7  Shift+Space plays it  \u00B7  The wheel zooms"
+                            : L"I and O set the start and end at the playhead  \u00B7  \u2190 \u2192 step one frame  \u00B7  Shift+Space plays the kept part  \u00B7  The wheel zooms";
         case EditorTool::TrimAudio: return L"I and O set the start and end  \u00B7  Space plays  \u00B7  Shift+Space plays the kept part  \u00B7  The wheel zooms";
         case EditorTool::CropVideo: return L"Drag on the picture to draw the area  \u00B7  Drag its edges or corners to adjust  \u00B7  \u2190 \u2192 step one frame";
         case EditorTool::SpeedVideo: return L"Space plays at the new speed  \u00B7  \u2190 \u2192 step one frame";
         case EditorTool::JoinVideos: return L"Drag to reorder  \u00B7  Alt+\u2191 Alt+\u2193 move the selected clip  \u00B7  Delete leaves it out";
-        case EditorTool::SaveFrames: return L"M or a double-click adds the frame at the playhead  \u00B7  Drag a mark to move it  \u00B7  Delete removes it";
-        case EditorTool::SplitVideo: return L"M or a double-click cuts at the playhead  \u00B7  Drag a cut to move it  \u00B7  Delete removes it";
+        case EditorTool::SaveFrames:
+            return m_frames.pick == videotools::FramePick::Marks
+                       ? L"M or a double-click adds the frame at the playhead  \u00B7  Drag a mark to move it  \u00B7  Delete removes it"
+                       : L"The ticks on the timeline are the frames saved  \u00B7  M marks frames by hand instead";
+        case EditorTool::SplitVideo:
+            return m_split == SplitKind::Marks ? L"M or a double-click cuts at the playhead  \u00B7  Drag a cut to move it  \u00B7  Delete removes it"
+                                               : L"The dashed lines are where it is cut  \u00B7  M marks cuts by hand instead";
         case EditorTool::RedactVideo: return L"Drag on the picture to add an area  \u00B7  I and O set when the selected area shows  \u00B7  Delete removes it";
         case EditorTool::AudioChannels: return L"Space plays  \u00B7  A switches between the original and the result";
         case EditorTool::BleepAudio: return L"Drag across the waveform to mark a part  \u00B7  M adds one at the playhead  \u00B7  A compares with the original";
@@ -849,7 +1014,7 @@ namespace sd::mediatools
         const int64_t t = TT(x);
         m_downTime = t;
         const auto tool = m_req.tool;
-        if (tool == EditorTool::SaveFrames || (tool == EditorTool::SplitVideo && !m_equalParts))
+        if (MarksOnTrack())
         {
             if (doubleClick)
             {
@@ -1224,8 +1389,7 @@ namespace sd::mediatools
             return IDC_ARROW;
         if (HasTimeline() && m_rcTrack.Contains(x, y))
         {
-            if ((m_req.tool == EditorTool::SaveFrames || (m_req.tool == EditorTool::SplitVideo && !m_equalParts)) &&
-                HitMarker(m_view, f.marks, x - m_rcTrack.x, kGrip) >= 0)
+            if (MarksOnTrack() && HitMarker(m_view, f.marks, x - m_rcTrack.x, kGrip) >= 0)
                 return IDC_SIZEWE;
             const auto hit = HitRange(m_view, EditableRanges(), x - m_rcTrack.x, kGrip);
             if (hit.part == RangeHit::Part::Start || hit.part == RangeHit::Part::End)
@@ -1316,8 +1480,11 @@ namespace sd::mediatools
         case VK_INSERT:
             if (tool == EditorTool::SaveFrames || tool == EditorTool::SplitVideo)
             {
-                if (tool == EditorTool::SplitVideo && m_equalParts)
-                    m_equalParts = false;
+                // Marking a frame or a cut goes back to marks.
+                if (tool == EditorTool::SplitVideo)
+                    m_split = SplitKind::Marks;
+                else
+                    m_frames.pick = videotools::FramePick::Marks;
                 auto marks = f.marks;
                 marks.push_back(m_playhead);
                 marks = tool == EditorTool::SaveFrames ? videotools::NormalizeFrameTimes(marks, Fps(), dur) : NormalizePoints(marks, dur);
@@ -1367,7 +1534,7 @@ namespace sd::mediatools
                 Rebuild();
                 return true;
             };
-            if (tool == EditorTool::SaveFrames || tool == EditorTool::SplitVideo)
+            if (MarksOnTrack())
                 return drop(f.marks);
             if (tool == EditorTool::BleepAudio)
                 return drop(f.ranges);
@@ -1391,7 +1558,7 @@ namespace sd::mediatools
             // Through the marked items, the playhead following.
             const int dir = vk == VK_UP ? -1 : 1;
             std::vector<int64_t> starts;
-            if (tool == EditorTool::SaveFrames || tool == EditorTool::SplitVideo)
+            if (MarksOnTrack())
                 starts = f.marks;
             else if (tool == EditorTool::BleepAudio)
                 for (const auto& r : f.ranges)
@@ -1421,7 +1588,7 @@ namespace sd::mediatools
         {
         case EditorTool::SpeedVideo:
         {
-            const std::wstring chain = videotools::AtempoChain(m_factor);
+            const std::wstring chain = videotools::SpeedAudioFilter(m_factor, m_keepPitch, f.info.sampleRate);
             return [chain](TimeRange) { return Playback::Filter{ chain, false }; };
         }
         case EditorTool::AudioChannels:
@@ -1441,9 +1608,12 @@ namespace sd::mediatools
             if (!m_listenProcessed || f.ranges.empty())
                 return {};
             const auto ranges = f.ranges;
-            const bool tone = m_tone;
+            const auto sound = m_bleep;
+            const double duck = m_duckDb;
             const int rate = f.info.sampleRate > 0 ? f.info.sampleRate : 48000;
-            return [ranges, tone, rate](TimeRange chunk) { return Playback::Filter{ audiotools::BleepGraph(ranges, tone, rate, chunk.start), true }; };
+            return [ranges, sound, duck, rate](TimeRange chunk) {
+                return Playback::Filter{ audiotools::BleepGraph(ranges, sound, duck, rate, chunk.start), true };
+            };
         }
         default:
             return {};
@@ -1459,13 +1629,27 @@ namespace sd::mediatools
         nlohmann::json p = nlohmann::json::object();
         switch (m_req.tool)
         {
-        case EditorTool::TrimVideo: p["mode"] = m_fast ? "fast" : "exact"; break;
+        case EditorTool::TrimVideo:
+            p["mode"] = m_fast && videotools::TrimCopies(true, { m_remove, m_fade }) ? "fast" : "exact";
+            p["part"] = m_remove ? "remove" : "keep";
+            p["fade"] = m_fade;
+            break;
         case EditorTool::CropVideo: p["aspect"] = m_aspect; break;
-        case EditorTool::SpeedVideo: p["factor"] = m_factor; break;
+        case EditorTool::SpeedVideo:
+            p["factor"] = m_factor;
+            p["pitch"] = m_keepPitch;
+            break;
         case EditorTool::JoinVideos: p["fit"] = m_joinFill ? "fill" : "fit"; break;
         case EditorTool::SplitVideo:
             p["mode"] = m_fast ? "fast" : "exact";
-            p["parts"] = m_equalParts ? m_parts : 0;
+            p["parts"] = m_split == SplitKind::Equal ? m_parts : 0;
+            p["every"] = m_split == SplitKind::Every ? ToSeconds(m_splitEvery) : 0.0;
+            break;
+        case EditorTool::SaveFrames:
+            p["pick"] = kFramePicks[static_cast<int>(m_frames.pick)];
+            p["every"] = m_frames.every;
+            p["rate"] = m_frames.perSecond;
+            p["format"] = m_frameFormat;
             break;
         case EditorTool::RedactVideo: p["style"] = m_blurStyle ? "blur" : "solid"; break;
         case EditorTool::TrimAudio: p["silence"] = m_silence; break;
@@ -1475,11 +1659,14 @@ namespace sd::mediatools
             p["left"] = m_left;
             p["right"] = m_right;
             break;
-        case EditorTool::BleepAudio: p["tone"] = m_tone ? "tone" : "silence"; break;
+        case EditorTool::BleepAudio:
+            p["tone"] = kBleepSounds[static_cast<int>(m_bleep)];
+            p["duck"] = m_duckDb;
+            break;
         case EditorTool::AudioVisualizer:
-            p["style"] = m_imageStyle ? "image" : "waveform";
+            p["style"] = audiotools::VisualStyleName(m_style);
             p["shape"] = m_shape;
-            p["image"] = m_imageStyle ? Narrow(m_image) : std::string();
+            p["image"] = Narrow(m_image);   // the background of a moving style, or the still picture
             break;
         default: break;
         }
@@ -1501,8 +1688,11 @@ namespace sd::mediatools
             p["width"] = f.outW;
             p["height"] = f.outH;
             break;
-        case EditorTool::SaveFrames: p["frames"] = SecondsList(f.marks.empty() ? std::vector<int64_t>{ f.playhead } : f.marks); break;
-        case EditorTool::SplitVideo: p["points"] = SecondsList(m_equalParts ? std::vector<int64_t>{} : f.marks); break;
+        case EditorTool::SaveFrames:
+            if (m_frames.pick == videotools::FramePick::Marks)
+                p["frames"] = SecondsList(f.marks.empty() ? std::vector<int64_t>{ f.playhead } : f.marks);
+            break;
+        case EditorTool::SplitVideo: p["points"] = SecondsList(m_split == SplitKind::Marks ? f.marks : std::vector<int64_t>{}); break;
         case EditorTool::RedactVideo:
         {
             auto boxes = nlohmann::json::array();
@@ -1527,28 +1717,63 @@ namespace sd::mediatools
 
     void EditorWindow::ChoosePicture()
     {
-        ComPtr<IFileOpenDialog> dialog;
-        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
-            return;
-        const COMDLG_FILTERSPEC types[] = { { L"Pictures", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.tif;*.tiff" } };
-        dialog->SetFileTypes(1, types);
-        dialog->SetTitle(L"Picture for the video");
-        DWORD options = 0;
-        dialog->GetOptions(&options);
-        dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
-        ComPtr<IShellItem> item;
-        wil::unique_cotaskmem_string path;
-        if (FAILED(dialog->Show(Hwnd())) || FAILED(dialog->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-            return;
+        std::vector<std::wstring> paths;
+        if (!PickFiles(Hwnd(), L"Picture for the video", L"Pictures", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.tif;*.tiff", paths))
+            return;   // of several chosen, the first is the picture
         Frame picture;
-        if (!LoadPicture(path.get(), 1600, picture))
+        if (!LoadPicture(paths.front(), 1600, picture))
         {
             MessageBoxW(Hwnd(), L"This picture could not be opened.", m_req.title.c_str(), MB_ICONWARNING);
             return;
         }
-        m_image = path.get();
+        m_image = paths.front();
         m_imagePicture = { std::move(picture), nullptr, 0 };
         Rebuild();
+    }
+
+    void EditorWindow::AddClips()
+    {
+        std::vector<std::wstring> paths;
+        if (!m_loader || !PickFiles(Hwnd(), L"Videos to add", L"Videos", MediaFilePatterns(MediaKind::Video), paths))
+            return;
+        for (const auto& path : paths)
+        {
+            FileState f;
+            f.path = path;
+            f.name = FileName(path);
+            m_files.push_back(std::move(f));
+            const int index = static_cast<int>(m_files.size()) - 1;
+            m_order.push_back(index);
+            m_loader->Probe(index, path);   // its thumbnail follows once it is probed (OnLoaded)
+        }
+        m_selected = static_cast<int>(m_order.size()) - 1;
+        Rebuild();
+    }
+
+    std::vector<int64_t> EditorWindow::SplitPoints(const FileState& f) const
+    {
+        const int64_t dur = f.ready ? f.info.DurationUs() : 0;
+        switch (m_split)
+        {
+        case SplitKind::Equal: return EqualPartPoints(dur, m_parts);
+        case SplitKind::Every: return EveryPoints(dur, m_splitEvery);
+        default: return f.marks;
+        }
+    }
+
+    int64_t EditorWindow::FrameCount(const FileState& f) const
+    {
+        if (!f.ready)
+            return 0;
+        if (m_frames.pick == videotools::FramePick::Marks)
+            return f.marks.empty() ? 1 : static_cast<int64_t>(f.marks.size());
+        return videotools::FrameSequenceCount(m_frames, f.info.media.fps, f.info.DurationUs());
+    }
+
+    bool EditorWindow::MarksOnTrack() const
+    {
+        return (m_req.tool == EditorTool::SaveFrames && m_frames.pick == videotools::FramePick::Marks) ||
+               (m_req.tool == EditorTool::SplitVideo && m_split == SplitKind::Marks);
     }
 
     // ---- Tool drawing -------------------------------------------------------------------------------------------
@@ -1571,6 +1796,16 @@ namespace sd::mediatools
         case EditorTool::TrimAudio:
         {
             const float x0 = TX(f.keep.start), x1 = TX(f.keep.end);
+            if (m_req.tool == EditorTool::TrimVideo && m_remove)
+            {
+                // The part that goes: shaded and edged in the warning colour; the rest stays clear.
+                p.Fill({ x0, track.y, x1 - x0, track.h }, D2D1::ColorF(0, 0, 0, 0.62f));
+                p.Fill({ x0, track.y, x1 - x0, track.h }, WithAlpha(k.danger, 0.28f));
+                p.Fill({ x0, track.y, x1 - x0, 2 }, k.danger);
+                p.Fill({ x0, track.Bottom() - 2, x1 - x0, 2 }, k.danger);
+                rangeHandles(x0, x1, k.danger, 10);
+                break;
+            }
             const D2D1_COLOR_F shade = D2D1::ColorF(0, 0, 0, Video() ? 0.62f : (k.dark ? 0.35f : 0.12f));
             p.Fill({ track.x, track.y, x0 - track.x, track.h }, shade);
             p.Fill({ x1, track.y, track.Right() - x1, track.h }, shade);
@@ -1616,6 +1851,26 @@ namespace sd::mediatools
             }
             break;
         case EditorTool::SaveFrames:
+            if (m_frames.pick != videotools::FramePick::Marks)
+            {
+                // A tick at each frame saved; where they crowd, every so many of them.
+                const int64_t count = FrameCount(f);
+                const double fps = f.info.media.fps;
+                if (count <= 0)
+                    break;
+                const double spacing = static_cast<double>(f.info.DurationUs()) / static_cast<double>(count) / std::max(1e-9, m_view.usPerPx);
+                const int64_t stride = std::max<int64_t>(1, static_cast<int64_t>(std::ceil(4 / std::max(1e-9, spacing))));
+                for (int64_t i = 0; i < count; i += stride)
+                {
+                    const float x = TX(videotools::FrameSequenceTime(m_frames, fps, i));
+                    if (x < track.x - 1)
+                        continue;
+                    if (x > track.Right() + 1)
+                        break;
+                    p.Line(x, track.y, x, track.y + track.h * 0.35f, WithAlpha(k.accent, 0.9f), 1.5f);
+                }
+                break;
+            }
             for (size_t i = 0; i < f.marks.size(); ++i)
             {
                 const float x = TX(f.marks[i]);
@@ -1628,7 +1883,8 @@ namespace sd::mediatools
             break;
         case EditorTool::SplitVideo:
         {
-            const auto points = m_equalParts ? EqualPartPoints(f.info.DurationUs(), m_parts) : f.marks;
+            const bool marks = m_split == SplitKind::Marks;
+            const auto points = SplitPoints(f);
             const auto parts = PartsFromPoints(points, f.info.DurationUs());
             for (size_t i = 0; i < parts.size(); ++i)
             {
@@ -1642,8 +1898,8 @@ namespace sd::mediatools
             for (size_t i = 0; i < points.size(); ++i)
             {
                 const float x = TX(points[i]);
-                const bool sel = !m_equalParts && static_cast<int>(i) == m_selected;
-                if (m_equalParts)
+                const bool sel = marks && static_cast<int>(i) == m_selected;
+                if (!marks)
                     Target()->DrawLine({ x, track.y }, { x, track.Bottom() }, p.Brush(k.text), 2.f, m_dash.Get());
                 else
                 {
@@ -1743,6 +1999,7 @@ namespace sd::mediatools
 
     void EditorWindow::PaintVisualizer(ui::Painter& p)
     {
+        using audiotools::VisualStyle;
         const auto& first = m_files.front();
         p.Fill(m_rcStage, Theme().stage, 8);
         int vw = 0, vh = 0;
@@ -1753,14 +2010,15 @@ namespace sd::mediatools
         p.Text(std::format(L"{}  \u00B7  {} \u00D7 {}", first.name, vw, vh), { m_rcStage.x, frame.Bottom() + 12, m_rcStage.w, 22 }, ui::Font::Small,
                Theme().textDim, 1);
         const D2D1_COLOR_F white = D2D1::ColorF(1, 1, 1, 0.75f);
-        if (m_imageStyle)
+        ID2D1Bitmap* picture = BitmapOf(m_imagePicture);
+        if (m_style == VisualStyle::Picture)
         {
-            if (ID2D1Bitmap* bmp = BitmapOf(m_imagePicture))
+            if (picture)
             {
-                const auto size = bmp->GetPixelSize();
+                const auto size = picture->GetPixelSize();
                 const RectF fit = FitInside(static_cast<float>(size.width), static_cast<float>(size.height), frame);
                 p.Fill(frame, D2D1::ColorF(0, 0, 0, 1));
-                Target()->DrawBitmap(bmp, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                Target()->DrawBitmap(picture, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             }
             else
             {
@@ -1770,34 +2028,119 @@ namespace sd::mediatools
             }
             return;
         }
-        // A frame of the waveform video: about 1/30 s of sound around a third of the way in, each
-        // column a centred line (ffmpeg's showwaves cline, sqrt scale), in the band across the middle.
-        const D2D1_COLOR_F wave = D2D1::ColorF(0x7AB8FF);
-        const float mid = frame.y + frame.h / 2, band = frame.h / 4;
-        const int cols = std::max(1, static_cast<int>(frame.w / 2));
-        if (first.peaks && first.peaks->SampleCount() > 0)
+        // The background: the picture filling the frame, darkened as in the video.
+        if (picture)
         {
-            const int64_t count = std::max<int64_t>(64, first.peaks->SampleRate() / 30);
-            const int64_t s0 = std::min(first.peaks->SampleCount() / 3, std::max<int64_t>(0, first.peaks->SampleCount() - count));
-            const float gain = std::clamp(0.9f / std::max(0.01f, first.peaks->Peak()), 1.f, 6.f);
-            for (int c = 0; c < cols; ++c)
-            {
-                const int64_t a = s0 + count * c / cols, b = std::max(a + 1, s0 + count * (c + 1) / cols);
-                const auto [lo, hi] = first.peaks->Range(a, b);
-                const float v = std::sqrt(std::min(1.f, std::max(std::abs(lo), std::abs(hi)) * gain));
-                const float x = frame.x + (static_cast<float>(c) + 0.5f) * frame.w / cols;
-                p.Line(x, mid - v * band, x, mid + v * band, wave, 1.2f);
-            }
+            DrawCover(p, picture, frame);
+            p.Fill(frame, D2D1::ColorF(0, 0, 0, 0.45f));
         }
-        else
+        // One frame of the video, drawn from the first song's loudness about a third of the way in
+        // (`n` short windows over `seconds`); the spectrum the bars show is only worked out by ffmpeg.
+        const bool live = first.peaks && first.peaks->SampleCount() > 0;
+        const auto levels = [&](int n, double seconds) {
+            std::vector<float> out(static_cast<size_t>(n));
+            if (!live)
+            {
+                for (int c = 0; c < n; ++c)
+                {
+                    const float t = static_cast<float>(c) / static_cast<float>(n);
+                    out[static_cast<size_t>(c)] = (0.15f + 0.35f * std::abs(std::sin(t * 23.f) * std::sin(t * 5.f + 1.f)));
+                }
+                return out;
+            }
+            const auto& peaks = *first.peaks;
+            const int64_t count = std::max<int64_t>(n, static_cast<int64_t>(peaks.SampleRate() * seconds));
+            const int64_t s0 = std::min(peaks.SampleCount() / 3, std::max<int64_t>(0, peaks.SampleCount() - count));
+            const float gain = std::clamp(0.9f / std::max(0.01f, peaks.Peak()), 1.f, 6.f);
+            for (int c = 0; c < n; ++c)
+            {
+                const int64_t a = s0 + count * c / n, b = std::max(a + 1, s0 + count * (c + 1) / n);
+                const auto [lo, hi] = peaks.Range(a, b);
+                out[static_cast<size_t>(c)] = std::sqrt(std::min(1.f, std::max(std::abs(lo), std::abs(hi)) * gain));
+            }
+            return out;
+        };
+        const D2D1_COLOR_F blue = D2D1::ColorF(0x7AB8FF);
+        const float sc = frame.w / static_cast<float>(vw);
+        const float cx = frame.x + frame.w / 2, cy = frame.y + frame.h / 2;
+        switch (m_style)
         {
+        case VisualStyle::Bars:
+        case VisualStyle::Vertical:
+        {
+            // Bars 20 px apart across five sixths of the width, low notes on the left: rising from
+            // the bottom of a band half the height, or mirrored on the middle line.
+            const int cols = std::max(16, vw * 5 / 6 / 20);
+            const float pitch = 20 * sc, bar = 16 * sc, x0 = cx - static_cast<float>(cols) * pitch / 2;
+            const float tall = static_cast<float>(m_style == VisualStyle::Bars ? vh / 2 : vh / 4) * sc;
+            const auto v = levels(cols, 0.4);
             for (int c = 0; c < cols; ++c)
             {
-                const float t = static_cast<float>(c) / cols;
-                const float v = 0.15f + 0.35f * std::abs(std::sin(t * 23.f) * std::sin(t * 5.f + 1.f));
-                const float x = frame.x + (static_cast<float>(c) + 0.5f) * frame.w / cols;
-                p.Line(x, mid - v * band, x, mid + v * band, WithAlpha(wave, 0.5f), 1.2f);
+                const float h = std::max(1.5f * sc, v[static_cast<size_t>(c)] * (1.f - 0.55f * static_cast<float>(c) / static_cast<float>(cols)) * tall);
+                const float bx = x0 + static_cast<float>(c) * pitch;
+                if (m_style == VisualStyle::Bars)
+                    p.Fill({ bx, cy + tall / 2 - h, bar, h }, blue);
+                else
+                    p.Fill({ bx, cy - h, bar, 2 * h }, blue);
             }
+            break;
+        }
+        case VisualStyle::Square:
+        {
+            // The same, in 40 px blocks over two thirds of the height.
+            const int cols = std::max(8, vw * 5 / 6 / 40), rows = std::max(6, vh * 2 / 3 / 40);
+            const float pitch = 40 * sc, block = 34 * sc;
+            const float x0 = cx - static_cast<float>(cols) * pitch / 2, bottom = cy + static_cast<float>(rows) * pitch / 2;
+            const auto v = levels(cols, 0.4);
+            for (int c = 0; c < cols; ++c)
+            {
+                const int lit = std::max(1, static_cast<int>(std::lround(v[static_cast<size_t>(c)] * (1.f - 0.55f * static_cast<float>(c) / static_cast<float>(cols)) * rows)));
+                for (int r = 0; r < lit && r < rows; ++r)
+                    p.Fill({ x0 + static_cast<float>(c) * pitch + (pitch - block), bottom - static_cast<float>(r + 1) * pitch + (pitch - block), block, block }, blue);
+            }
+            break;
+        }
+        case VisualStyle::Circle:
+        {
+            // A ring as wide as the sound is loud, a little uneven where it changes, and the fading
+            // trace of an earlier one inside it.
+            const int n = 120;
+            const auto v = levels(n, 0.25);
+            float mean = 0;
+            for (const float a : v)
+                mean += a / n;
+            const float big = static_cast<float>(std::min(vw, vh)) * sc * 0.5f * 0.85f;
+            for (const auto& [scale, alpha] : { std::pair{ 0.62f, 0.35f }, std::pair{ 1.f, 1.f } })
+            {
+                const float r0 = big * (0.25f + 0.75f * mean) * scale;
+                float px = 0, py = 0;
+                for (int i = 0; i <= n; ++i)
+                {
+                    const float angle = 6.2831853f * static_cast<float>(i) / n;
+                    const float r = r0 * (0.85f + 0.3f * v[static_cast<size_t>(i % n)]);
+                    const float qx = cx + r * std::cos(angle), qy = cy + r * std::sin(angle);
+                    if (i > 0)
+                        p.Line(px, py, qx, qy, WithAlpha(blue, alpha), 1.5f);
+                    px = qx;
+                    py = qy;
+                }
+            }
+            break;
+        }
+        default:
+        {
+            // A frame of the waveform video: about 1/30 s of sound, each column a centred line
+            // (showwaves cline, sqrt scale), in the band across the middle.
+            const float band = frame.h / 4;
+            const int cols = std::max(1, static_cast<int>(frame.w / 2));
+            const auto v = levels(cols, 1.0 / 30);
+            for (int c = 0; c < cols; ++c)
+            {
+                const float x = frame.x + (static_cast<float>(c) + 0.5f) * frame.w / static_cast<float>(cols);
+                p.Line(x, cy - v[static_cast<size_t>(c)] * band, x, cy + v[static_cast<size_t>(c)] * band, live ? blue : WithAlpha(blue, 0.5f), 1.2f);
+            }
+            break;
+        }
         }
     }
 
