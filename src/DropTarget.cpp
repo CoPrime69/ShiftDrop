@@ -71,6 +71,9 @@ namespace sd
             }
         }
         POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
+        // Only a picture the helper keeps showing over the wheel is in the way of its centre.
+        const auto picture = m_helper ? DragImageRect(data, p) : std::nullopt;
+        m_sink->OnDragPicture(picture ? &*picture : nullptr);
         m_accepting = m_sink->OnDragEnter(files, p);
         if (!m_accepting)
             EndVirtual();

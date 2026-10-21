@@ -24,6 +24,9 @@ namespace sd
         virtual DWORD OnDragOver(POINT pt, DWORD allowed) = 0;
         virtual void OnDragLeave() = 0;
         virtual void OnDrop(const std::vector<std::wstring>& files, POINT pt) = 0;
+        // Just before OnDragEnter: where the drag picture is, px from the cursor (DragImageRect), or
+        // null when the source shows none.
+        virtual void OnDragPicture(const RECT* aroundCursor) { (void)aroundCursor; }
 
     protected:
         ~IDropSink() = default;

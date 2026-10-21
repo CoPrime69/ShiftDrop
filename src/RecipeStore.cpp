@@ -26,7 +26,7 @@ namespace sd
   { "id": "to-tiff", "label": "TIFF", "description": "TIFF, lossless", "steps": [ { "action": "image.encode", "params": { "format": "tiff" } } ] },
   { "id": "to-bmp",  "label": "BMP",  "description": "Bitmap, uncompressed",  "steps": [ { "action": "image.encode", "params": { "format": "bmp" } } ] },
 
-  { "id": "rotate-right", "label": "Rotate \u21bb", "description": "Rotate 90\u00b0 clockwise", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-right", "label": "Rotate right", "description": "Rotate 90\u00b0 clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "90" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "max-1920", "label": "1920 px", "description": "Fit within 1920 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1920 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
@@ -34,7 +34,7 @@ namespace sd
     "steps": [ { "action": "image.flip", "params": { "axis": "horizontal" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "half-size", "label": "50%", "description": "Half the width and height", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.scale", "params": { "percent": 50 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
-  { "id": "rotate-left", "label": "Rotate \u21ba", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
+  { "id": "rotate-left", "label": "Rotate left", "description": "Rotate 90\u00b0 counter-clockwise", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.rotate", "params": { "degrees": "270" } }, { "action": "image.encode", "params": { "format": "same" } } ] },
   { "id": "max-1080", "label": "1080 px", "description": "Fit within 1080 px", "ring": "tools", "suffix": "edited",
     "steps": [ { "action": "image.resize", "params": { "maxEdge": 1080 } }, { "action": "image.encode", "params": { "format": "same" } } ] },
@@ -53,11 +53,11 @@ namespace sd
     "steps": [ { "action": "media.compress", "params": { "targetMB": 25 } } ] },
 
   { "id": "copy",      "label": "Copy",      "description": "Copy to the clipboard", "ring": "files", "steps": [ { "action": "file.copy" } ] },
-  { "id": "move",      "label": "Move to\u2026", "description": "Move to a folder you pick", "ring": "files", "steps": [ { "action": "file.move" } ] },
+  { "id": "move",      "label": "Move to folder", "description": "Move to a folder you pick", "ring": "files", "steps": [ { "action": "file.move" } ] },
   { "id": "copy-path", "label": "Copy path", "description": "Copy the full path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
   { "id": "terminal",  "label": "Terminal",  "description": "Open a terminal here", "ring": "files", "steps": [ { "action": "file.terminal" } ] },
   { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] },
-  { "id": "rename",    "label": "Rename\u2026", "description": "Rename with a pattern: {name}, {n}, {date}", "ring": "files", "steps": [ { "action": "file.rename" } ] }
+  { "id": "rename",    "label": "Rename", "description": "Rename with a pattern: {name}, {n}, {date}", "ring": "files", "steps": [ { "action": "file.rename" } ] }
 ])");
         // Video and audio formats, one Convert slice each, in MediaFormats() order. They share the
         // Convert wheel with the image formats; the wheel shows only those that fit the dragged files.

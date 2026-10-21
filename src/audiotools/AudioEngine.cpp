@@ -42,13 +42,13 @@ namespace sd::audiotools
             static const json all = json::parse(R"([
   { "id": "audio-normalize", "label": "Normalize", "description": "Normalize Volume: speech, music or broadcast loudness, peaks at \u22121 dBTP", "ring": "tools", "suffix": "normalized", "icon": "E767",
     "steps": [ { "action": "audio.normalize" } ] },
-  { "id": "audio-trim", "label": "Trim\u2026", "description": "Trim Audio to exact times, and silence at the ends", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
+  { "id": "audio-trim", "label": "Trim", "description": "Trim Audio to exact times, and silence at the ends", "ring": "tools", "suffix": "trimmed", "icon": "E78A",
     "steps": [ { "action": "audio.trim" } ] },
-  { "id": "audio-channels", "label": "Channels\u2026", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
+  { "id": "audio-channels", "label": "Channels", "description": "Convert Audio Channels: mono, stereo, left and right volume, swap", "ring": "tools", "suffix": "channels", "icon": "E7F5",
     "steps": [ { "action": "audio.channels" } ] },
-  { "id": "audio-bleep", "label": "Bleep\u2026", "description": "Bleep Audio: a tone or silence over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
+  { "id": "audio-bleep", "label": "Bleep", "description": "Bleep Audio: a tone or silence over the parts you mark", "ring": "tools", "suffix": "bleeped", "icon": "E74F",
     "steps": [ { "action": "audio.bleep" } ] },
-  { "id": "audio-visualizer", "label": "Visualizer\u2026", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
+  { "id": "audio-visualizer", "label": "Visualizer", "description": "Audio Visualizer: an MP4 with a moving waveform or a picture", "ring": "tools", "suffix": "video", "icon": "E9E9",
     "steps": [ { "action": "audio.visualizer" } ] }
 ])");
             return all;

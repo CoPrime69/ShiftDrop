@@ -57,6 +57,45 @@ namespace sd
         return IsWindow(hwnd) ? hwnd : nullptr;
     }
 
+    std::optional<RECT> DragImageRect(IDataObject* data, POINT cursor)
+    {
+        if (!data)
+            return std::nullopt;
+        constexpr LONG kMaxPx = 4096;
+        const auto sane = [](const RECT& r) {
+            return r.right > r.left && r.bottom > r.top && r.right - r.left <= kMaxPx && r.bottom - r.top <= kMaxPx &&
+                   r.left <= 0 && r.top <= 0 && r.right >= 0 && r.bottom >= 0;   // the cursor is on the picture
+        };
+        static const auto format = static_cast<CLIPFORMAT>(RegisterClipboardFormatW(L"DragImageBits"));
+        FORMATETC fmt{ format, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        STGMEDIUM medium{};
+        if (SUCCEEDED(data->GetData(&fmt, &medium)))
+        {
+            auto release = wil::scope_exit([&] { ReleaseStgMedium(&medium); });
+            // Only the first two fields are read (SIZE sizeDragImage, POINT ptOffset): they come before
+            // the bitmap handle, so a 32-bit source lays them out the same way.
+            if (medium.tymed == TYMED_HGLOBAL && GlobalSize(medium.hGlobal) >= 4 * sizeof(LONG))
+                if (const auto* v = static_cast<const LONG*>(GlobalLock(medium.hGlobal)))
+                {
+                    const RECT r{ -v[2], -v[3], v[0] - v[2], v[1] - v[3] };
+                    GlobalUnlock(medium.hGlobal);
+                    if (sane(r))
+                        return r;
+                }
+        }
+        if (const HWND window = DragImageWindow(data); window && IsWindowVisible(window))
+        {
+            RECT r{};
+            if (GetWindowRect(window, &r))
+            {
+                OffsetRect(&r, -cursor.x, -cursor.y);
+                if (sane(r))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
     int KeepDragImageOnTop(HWND dragWindow)
     {
         if (!dragWindow || !IsWindow(dragWindow))

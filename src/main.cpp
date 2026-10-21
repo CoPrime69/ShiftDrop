@@ -186,7 +186,7 @@ namespace sd
         {
             if (recipe.icon)
                 return { recipe.icon };   // the recipe names its own (feature modules, user recipes)
-            if (recipe.IsSingleEncode() || recipe.IsMedia() || recipe.steps.empty())
+            if (recipe.NameOnlySlice())
                 return {};
             const auto& step = recipe.steps.front();
             const auto& a = step.action;
