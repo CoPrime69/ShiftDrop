@@ -148,6 +148,8 @@ namespace sd
         void EnsureRings(int rings);       // grows the window (around the same centre) for two rings
         void Arrange(int page);            // m_layout and m_shown for m_content
         int HitTest(POINT screenPt) const;
+        int PointerSlot(POINT screenPt);   // HitTest, but the opening spot of a moved wheel is the centre
+        POINT ClampCentre(POINT screenPt, float extentPx) const;   // keeps a wheel this big on the monitor
         bool Open(const std::vector<std::wstring>& files, POINT pt);   // the probe becomes the wheel
         void SetHot(int hot, bool byKey = false);
         bool Selectable(int slot) const;   // an enabled slice or "More"
@@ -201,7 +203,10 @@ namespace sd
         float m_scale = 1.f;          // pixels per DIP (monitor DPI and the Size setting)
         POINT m_origin{};             // window top-left, screen px
         SIZE m_size{};
-        D2D1_POINT_2F m_c{};          // wheel centre: the cursor when it opened
+        D2D1_POINT_2F m_c{};          // wheel centre: the cursor when it opened, moved in near a screen edge
+        POINT m_openPt{};             // the cursor when the wheel opened, screen px
+        bool m_shifted = false;       // the wheel was moved in from an edge, so it is not centred on m_openPt
+        bool m_edgeGuard = false;     // ... and the cursor has not moved off m_openPt yet
         float m_radius = 0.f;         // outer edge of the tiles (hit-testing stops here)
         float m_inner = 0.f;          // centre dead zone: dropping here cancels
         float m_tileIn = 0.f, m_tileOut = 0.f;   // inner edge of the inner ring, outer edge of the outermost
