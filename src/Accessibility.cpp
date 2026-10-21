@@ -1,5 +1,8 @@
 #include "Accessibility.h"
 
+// ole2.h first: UIAutomationCore.h uses `interface`, which comes from objbase.h.
+#include <ole2.h>
+#include <uiautomation.h>
 #include <oleauto.h>
 #include <wil/resource.h>
 #include <wrl/implements.h>
