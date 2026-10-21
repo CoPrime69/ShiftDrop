@@ -1,0 +1,74 @@
+# Shared by the Windows jobs in ci.yml: the MSVC environment, sccache, vcpkg's installed ports and
+# the configure of the "ci" preset (CMakePresets.json: Ninja, build/ci, every compile through sccache).
+name: Configure (ci preset)
+description: Sets up MSVC and sccache, restores vcpkg's installed ports and configures the ci preset
+inputs:
+  options:
+    description: Extra options for the configure (-D...)
+    default: ''
+  save-caches:
+    description: "'true' in the one job that saves vcpkg's caches when they missed; the others only read them"
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Set up MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    # sccache keeps every object file in the GitHub Actions cache, so unchanged files are not compiled again.
+    - uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: v0.18.0
+
+    - name: Cache settings
+      shell: pwsh
+      run: |
+        "SCCACHE_GHA_ENABLED=true" >> $env:GITHUB_ENV
+        $mode = if ('${{ inputs.save-caches }}' -eq 'true') { 'readwrite' } else { 'read' }
+        "VCPKG_BINARY_SOURCES=clear;files,${{ github.workspace }}\vcpkg-cache,$mode" >> $env:GITHUB_ENV
+
+    # The installed vcpkg ports (build/vcpkg_installed), keyed on the manifest, the triplet and the
+    # compiler. When they are there, configure skips vcpkg entirely.
+    - uses: actions/cache@v4
+      id: installed-rw
+      if: inputs.save-caches == 'true'
+      with:
+        path: build/vcpkg_installed
+        key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
+    - uses: actions/cache/restore@v4
+      id: installed-ro
+      if: inputs.save-caches != 'true'
+      with:
+        path: build/vcpkg_installed
+        key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
+
+    # Otherwise vcpkg installs them from its built packages, cached between runs, keyed on the manifest.
+    - uses: actions/cache@v4
+      if: inputs.save-caches == 'true' && steps.installed-rw.outputs.cache-hit != 'true'
+      with:
+        path: ${{ github.workspace }}\vcpkg-cache
+        key: vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-
+    - uses: actions/cache/restore@v4
+      if: inputs.save-caches != 'true' && steps.installed-ro.outputs.cache-hit != 'true'
+      with:
+        path: ${{ github.workspace }}\vcpkg-cache
+        key: vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-
+
+    - name: Configure
+      shell: pwsh
+      run: |
+        $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+        $options = @(-split '${{ inputs.options }}' | Where-Object { $_ })
+        if ('${{ steps.installed-rw.outputs.cache-hit || steps.installed-ro.outputs.cache-hit }}' -eq 'true') {
+          cmake --preset ci -DVCPKG_MANIFEST_INSTALL=OFF @options
+        } else {
+          New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
+          # The runner's vcpkg clone can be older than our builtin-baseline commit; fetch so it resolves.
+          git -C $env:VCPKG_ROOT fetch --quiet origin
+          cmake --preset ci @options
+        }
+        if ($LASTEXITCODE) { exit 1 }

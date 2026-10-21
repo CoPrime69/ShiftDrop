@@ -54,51 +54,21 @@ jobs:
           path: build/ffmpeg-custom
           if-no-files-found: error
 
+  # The app and its installer. The unit tests run beside it in the "tests" job, and the placeholder
+  # build in the "placeholder" job: the three Windows jobs share one compiler cache, so the libraries
+  # they all link are compiled once and come out of the cache for the others.
   build:
     needs: ffmpeg
     # Also when the ffmpeg job was skipped (SHIFTDROP_FFMPEG=btbn): get-ffmpeg.ps1 then falls back.
     if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
     runs-on: windows-2022
-    env:
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
-      # The "ci" preset (Ninja, build/ci) compiles through sccache, which keeps every object file in
-      # the GitHub Actions cache: a push that changes a few files recompiles only those.
-      SCCACHE_GHA_ENABLED: 'true'
-      # The timing steps (photo tools, our ffmpeg vs BtbN) print numbers for a person to read, so
-      # they run on tags, manual runs and pull requests labelled "bench", not on every push.
-      SD_TIMINGS: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench') }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          version: v0.18.0
-
-      # The installed vcpkg ports (build/vcpkg_installed), keyed on the manifest, the triplet and the
-      # compiler. On a hit, Configure skips vcpkg entirely.
-      - uses: actions/cache@v4
-        id: vcpkg-installed
-        with:
-          path: build/vcpkg_installed
-          key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
-
-      # Otherwise vcpkg installs them from its built packages, cached between runs, keyed on the manifest.
-      - uses: actions/cache@v4
-        if: steps.vcpkg-installed.outputs.cache-hit != 'true'
-        with:
-          path: ${{ github.workspace }}\vcpkg-cache
-          key: vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-
-
       # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
-      # that pins its URL and hash. Only needed without our own build, or to time the two.
+      # that pins its URL and hash. Only needed without our own build.
       - uses: actions/cache@v4
-        if: needs.ffmpeg.result != 'success' || env.SD_TIMINGS == 'true'
+        if: needs.ffmpeg.result != 'success'
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
@@ -109,7 +79,7 @@ jobs:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
-      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe and gives it to the tests.
+      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe.
       # Our own build when the ffmpeg job made one, else the pinned BtbN build.
       - name: Get ffmpeg
         shell: pwsh
@@ -121,27 +91,13 @@ jobs:
         shell: pwsh
         run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
 
-      - name: Configure
-        shell: pwsh
-        run: |
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          if ('${{ steps.vcpkg-installed.outputs.cache-hit }}' -eq 'true') {
-            cmake --preset ci -DVCPKG_MANIFEST_INSTALL=OFF
-          } else {
-            New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
-            # The runner's vcpkg clone can be older than our builtin-baseline commit; fetch so it resolves.
-            git -C $env:VCPKG_ROOT fetch --quiet origin
-            cmake --preset ci
-          }
-          if ($LASTEXITCODE) { exit 1 }
+      - uses: ./.github/actions/configure
+        with:
+          options: -DSHIFTDROP_TESTS=OFF
 
+      # ShiftDrop.exe, and ShiftDropWorker.exe with it.
       - name: Build
-        run: cmake --build --preset ci
-
-      # In parallel (the test preset sets the job count): each test runs in its own process, with its
-      # own temporary folder (tests/TestUtil.h names it after the process).
-      - name: Unit tests
-        run: ctest --preset ci
+        run: cmake --build --preset ci --target ShiftDrop
 
       - name: Offline check (no networking imports)
         shell: pwsh
@@ -190,6 +146,47 @@ jobs:
           name: ShiftDrop-${{ github.sha }}
           path: build/ci/ShiftDrop.exe
 
+  tests:
+    needs: ffmpeg
+    if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
+    runs-on: windows-2022
+    env:
+      # The timing steps (photo tools, our ffmpeg vs BtbN) print numbers for a person to read, so
+      # they run on tags, manual runs and pull requests labelled "bench", not on every push.
+      SD_TIMINGS: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success' || env.SD_TIMINGS == 'true'
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      # Before Configure: CMake hands engines/ffmpeg.exe to the tests. The same ffmpeg.exe as the
+      # build job ships.
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
+
+      - uses: ./.github/actions/configure
+        with:
+          save-caches: 'true'
+
+      - name: Build the tests
+        run: cmake --build --preset ci --target shiftdrop_tests
+
+      # In parallel (the test preset sets the job count): each test runs in its own process, with its
+      # own temporary folder (tests/TestUtil.h names it after the process).
+      - name: Unit tests
+        run: ctest --preset ci
+
       # The speed benchmark (Bench.*, skipped in the unit tests above) only runs when asked: "Run
       # workflow" with "bench" ticked, or a pull request labelled "bench". Its table goes into the
       # run's summary page.
@@ -218,14 +215,49 @@ jobs:
           ./scripts/get-ffmpeg.ps1 -Btbn -Out build/engines-btbn
           ./scripts/time-ffmpeg.ps1 -New build/engines/ffmpeg.exe -NewName ours -Old build/engines-btbn/ffmpeg.exe -OldName BtbN
 
-      # A version tag (v0.2.0) publishes the installer as a GitHub Release.
+  # The placeholder gesture build (SHIFTDROP_M0, the x64-release-m0 preset's build) only changes the
+  # app's own sources, so it builds the app target alone.
+  placeholder:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/configure
+        with:
+          options: -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF
+
+      - name: Build the placeholder gesture build
+        run: cmake --build --preset ci --target ShiftDrop
+
+  # A version tag (v0.2.0) publishes the installer as a GitHub Release, once the app, the tests and
+  # the placeholder build all passed.
+  release:
+    needs: [ffmpeg, build, tests, placeholder]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.placeholder.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ShiftDrop-Setup-${{ github.sha }}
+          path: build/installer
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $env:SD_VERSION = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          $env:SD_SETUP = "build/installer/ShiftDrop-Setup-$env:SD_VERSION.exe"
           if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
+          if (-not (Test-Path $env:SD_SETUP)) { throw "$env:SD_SETUP is missing from the build job's artifact" }
           # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
           $files = @($env:SD_SETUP)
           if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
@@ -233,52 +265,3 @@ jobs:
             $files += "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
           }
           gh release create "${{ github.ref_name }}" @files --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."
-
-  # The placeholder gesture build (SHIFTDROP_M0, see CMakePresets.json's x64-release-m0) only changes
-  # the app's own sources, so it builds the app target alone, beside the main build rather than after
-  # it. It shares the main build's compiler cache: the libraries come out of it unchanged.
-  placeholder:
-    runs-on: windows-2022
-    env:
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,read
-      SCCACHE_GHA_ENABLED: 'true'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          version: v0.18.0
-
-      - uses: actions/cache/restore@v4
-        id: vcpkg-installed
-        with:
-          path: build/vcpkg_installed
-          key: vcpkg-installed-${{ env.VCToolsVersion }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
-
-      - uses: actions/cache/restore@v4
-        if: steps.vcpkg-installed.outputs.cache-hit != 'true'
-        with:
-          path: ${{ github.workspace }}\vcpkg-cache
-          key: vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-
-
-      - name: Configure
-        shell: pwsh
-        run: |
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          if ('${{ steps.vcpkg-installed.outputs.cache-hit }}' -eq 'true') {
-            cmake --preset ci -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF -DVCPKG_MANIFEST_INSTALL=OFF
-          } else {
-            New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
-            git -C $env:VCPKG_ROOT fetch --quiet origin
-            cmake --preset ci -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF
-          }
-          if ($LASTEXITCODE) { exit 1 }
-
-      - name: Build the placeholder gesture build
-        run: cmake --build --preset ci --target ShiftDrop
