@@ -1,0 +1,10 @@
+# Text files are stored and checked out with LF, which every tool in the build accepts.
+* text=auto eol=lf
+
+# Binary files.
+*.ico binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.zip binary
