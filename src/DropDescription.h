@@ -4,6 +4,8 @@
 #include <shlobj.h>   // DROPIMAGETYPE, IDropTargetHelper
 #include <wrl/client.h>
 
+#include <optional>
+
 // The drag picture: the item's icon or thumbnail and its name that the drag source (Explorer, a
 // browser, a mail app) shows under the cursor, and the badge under it.
 namespace sd
@@ -21,6 +23,12 @@ namespace sd
     // The window the drag picture is drawn in: the shell's drag-source helper puts its handle in the
     // data object ("DragWindow", 32 bits). Null when there is none (the source draws no picture).
     HWND DragImageWindow(IDataObject* data);
+
+    // Where the drag picture is, in px from the cursor (`cursor`, screen px). The drag-source helper
+    // stores the picture's size and the cursor's spot in it at the start of "DragImageBits" (an
+    // SHDRAGIMAGE); without that, the picture's window (DragImageWindow) is measured. Nothing when
+    // the source shows no picture, or reports one of a size no picture has.
+    std::optional<RECT> DragImageRect(IDataObject* data, POINT cursor);
 
     // The picture is a topmost window of the drag source's. Our topmost windows that appear after the
     // drag started (the wheel, the top panel, the predicted-output card) would go above it and hide

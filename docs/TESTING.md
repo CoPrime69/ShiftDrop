@@ -120,17 +120,17 @@ the Tools section. Section Z needs a PC without Visual Studio.
 
 ### E. Wheel sections
 - [ ] Drag `photo.jpg`, hold **Shift**: the Convert section shows the image formats (PNG, JPG dimmed, WebP, AVIF, HEIC, TIFF, BMP, Web and PDF)
-- [ ] Scroll one notch: Tools, with Rotate, Flip, 1920 px, 1080 px, 50% and the other image tools
-- [ ] Scroll again: Reduce size, then File actions (Copy, Move to…, Copy path, Terminal, Duplicate and the rest), then back to Convert
+- [ ] Scroll one notch: Tools, with Rotate right, Rotate left, Flip, 1920 px, 1080 px, 50% and the other image tools
+- [ ] Scroll again: Reduce size, then File actions (Copy, Move to folder, Copy path, Terminal, Duplicate and the rest), then back to Convert
 - [ ] Drag `notes.txt` with Shift and scroll to File actions: every action that takes any file is available
 - [ ] Drag `folder` with Shift and scroll to File actions: Duplicate is dimmed, the others work
 
 ### F. Convert and tools
 - [ ] Convert › **Web** on a large photo: one file `photo (converted).webp`, at most 2048 px on the long edge; no `~photo...sdpart` file is left behind and no intermediate PNG appears
 - [ ] Convert › **WebP** on a transparent PNG: transparency is kept (check in a browser)
-- [ ] Tools › **Rotate ↻** on `photo.jpg`: `photo (edited).jpg`, rotated clockwise, still a JPG
+- [ ] Tools › **Rotate right** on `photo.jpg`: `photo (edited).jpg`, rotated clockwise, still a JPG
 - [ ] Tools › **1080 px** on a small image (under 1080 px): output has the same size (never upscales)
-- [ ] Portrait phone photo on Tools › Rotate ↻: the result is rotated relative to how the photo *looks* (EXIF applied first)
+- [ ] Portrait phone photo on Tools › Rotate right: the result is rotated relative to how the photo *looks* (EXIF applied first)
 - [ ] Drop 5 images on Convert › BMP: one result in the top panel for the batch
 
 ### G. File actions
@@ -139,7 +139,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] With a clipboard manager running (Win+V history on), **Copy**, **Copy path**, **Copy text** and the inspector's Ctrl+C still work every time
 - [ ] File actions › **Terminal**: Windows Terminal (or PowerShell) opens in that folder
 - [ ] File actions › **Duplicate** on `notes.txt`: `notes (copy).txt` with the same content
-- [ ] File actions › **Move to…** on `photo.jpg` + `folder`: a folder picker titled "Move 2 items to" opens **in front** of Explorer; pick `C:\temp\sd-target`; both move there; the top panel says they moved
+- [ ] File actions › **Move to folder** on `photo.jpg` + `folder`: a folder picker titled "Move 2 items to" opens **in front** of Explorer; pick `C:\temp\sd-target`; both move there; the top panel says they moved
 - [ ] Move a file into a folder that already has a file with that name: the existing file is untouched and the moved one gets a new name
 - [ ] Cancel the folder picker: nothing moves
 
@@ -177,6 +177,10 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Drag off the wheel onto the desktop or a folder: Explorer shows its usual badge there ("+ Copy to Desktop")
 - [ ] The tray menu has no **Hide cursor over the wheel** item, and the pointer is never hidden over the wheel. A `settings.ini` from an older version with `HideCursor=1` under `[Appearance]` changes nothing, and the key is gone after the next Size or Style change
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
+- [ ] Labels are never cut off: drag `song.mp3`, a video, a BMP and a PDF and open **Tools** (and page with **More**) at Size Small, Medium, Large and Auto, at 100%, 125%, 150% and 200% scaling: no slice label ends in "…" anywhere. **Under 10 MB** and **Under 25 MB** read in full (on two lines, "Under" over "10 MB", when one is too wide), **Compress** and **50% size** are whole, and every label keeps clear of its tile's edges and of the centre disc with a little room to spare
+- [ ] A label that is long for its tile goes onto two lines at a space before it gets smaller, and never gets so small it is hard to read; a number and its unit ("10 MB", "1920 px") always stay on one line. The log line `overlay: label '…' drawn as '…'` appears only for a label that had to be shortened (none of ShiftDrop's own)
+- [ ] The image Tools wheel shows **Rotate right** and **Rotate left** (not two "Rotate" slices told apart by arrows); the video and audio editor slices read **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact**, **Channels**, **Bleep**, **Visualizer** with no "…"; File actions shows **Move to folder** and **Rename**
+- [ ] Drag a file from Explorer with Shift: the drag picture sits over the centre, and the count ("1 file", "3 files", or the size on Reduce size) is in a small rounded badge just below the picture (above it when the picture hangs low), never hidden under it; arrow keys while the cursor is still in the centre show the picked slice's detail in that badge. Move onto a slice and the count is back in the centre with the wheel's name under it. In click mode (Explorer selection) there is no picture, and the count sits in the centre as before
 - [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] A new install (no settings.ini) starts at Size **Medium** with the top panel at 100%
 - [ ] Tray menu > **Size**: Small, Medium and Large change the wheel and panel size on the next drag; Auto is larger on a 2K/1440p screen than on 1080p
@@ -332,7 +336,7 @@ Predicted output
 - [ ] The small PNG on **JPG**: the size has no "~" (exact)
 - [ ] The video on **MKV**: "same streams, ~…"; on **MP4**: a size from duration × bitrate; the song on **MP3**: "audio only" style sizes
 - [ ] Moving quickly across slices never stutters the wheel; the card follows within a moment; near the bottom of the screen it shows above the wheel
-- [ ] File actions (Copy, Move to…) show no card
+- [ ] File actions (Copy, Move to folder) show no card
 
 Inspector
 - [ ] Drag the phone photo, open **Tools**, drop on **Inspect**: a window opens with groups File, Image, Camera, GPS, …, EXIF; nothing is written next to the photo
@@ -497,11 +501,11 @@ Animated GIFs and multi-page TIFFs
 Have ffmpeg in place (`scripts/get-ffmpeg.ps1`, see [BUILDING.md](BUILDING.md)), a phone video with sound (1080p, 20–60 s), a second clip of another size, a video with no sound, a stereo song with cover art, and a mono voice memo.
 
 The wheel:
-- [ ] Drag a video and open **Tools**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim…**, **Crop…**, **Speed…**, **Join…**, **Frames…**, **Split…**, **Redact…** on two rings
-- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim…**, **Channels…**, **Bleep…**, **Visualizer…**; a photo gets none of these
+- [ ] Drag a video and open **Tools**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact** on two rings
+- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim**, **Channels**, **Bleep**, **Visualizer**; a photo gets none of these
 
 The editor window (try with each tool):
-- [ ] Drop the video on **Trim…**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
+- [ ] Drop the video on **Trim**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
 - [ ] The tabs at the top read Trim, Crop, Speed, Join, Frames, Split, Redact (for a song: Trim, Channels, Bleep, Visualizer). Clicking one, or Ctrl+1 to Ctrl+7, switches tool without reloading the file, and the window title follows. Confirming runs the tool chosen last: History and the output name say so ("clip (speed…)")
 - [ ] Turn the mouse wheel over the timeline: it zooms around the cursor with sharper thumbnails; **0** shows the whole clip; drag the thin bar under the timeline to scroll
 - [ ] Type `0:05.5` in the time field and press Enter: the playhead jumps there; text that is not a time stays red
@@ -513,12 +517,12 @@ Video tools:
 - [ ] **Trim**: drag the handles, or press I and O at the playhead, or type in From and To; "Play the kept part" (Shift+Space) plays only that. Exact gives `clip (trimmed).mp4` that starts and ends on those frames; Fast is instant, and its start can move back to a keyframe
 - [ ] **Crop**: drag on the picture, then drag the edges and corners; 16:9, 9:16, 1:1, 4:5, Original and Free keep the shape; type a Width (the height follows). The result has exactly that size and keeps the sound
 - [ ] **Speed**: pick 0.5× or 2×, or type 1.8 or 180%; Space previews at that speed with the pitch kept. 2× halves the length; the silent video works too
-- [ ] **Join**: drop three clips on **Join…**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
+- [ ] **Join**: drop three clips on **Join**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
 - [ ] **Join** a landscape and a portrait clip: under OTHER SHAPES, **Fit** (the default) keeps the whole picture with black bars; **Fill** crops the portrait clip to fill the frame, no bars, and the note under RESULT says so
 - [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
 - [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
 - [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
-- [ ] Drop three videos on **Crop…**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
+- [ ] Drop three videos on **Crop**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
 
 Audio tools:
 - [ ] **Normalize** a song: a small window asks "How loud should it be?" with **Speech** (−16 LUFS), **Music** (−14) and **Broadcast** (−23); Esc or Cancel does nothing. With several songs it says they all get the same loudness and asks once
@@ -530,7 +534,7 @@ Audio tools:
 
 Always:
 - [ ] Cancel (×) in the top panel during a long render: nothing is left in the folder (no `.sdpart`)
-- [ ] An `.mp4` that holds only sound, dropped with a real video on **Crop…**: its page says "This file has no video to edit." and Skip moves on; the other video is still cropped
+- [ ] An `.mp4` that holds only sound, dropped with a real video on **Crop**: its page says "This file has no video to edit." and Skip moves on; the other video is still cropped
 - [ ] Undo from History removes the outputs (a frames or split folder goes with all its files)
 
 Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
@@ -590,7 +594,7 @@ Office bridge (with Microsoft Office)
 - [ ] Drop `report.docx` and `book.xlsx` on **Exact PDF**: the PDFs match Word's and Excel's own PDF export; Task Manager shows no WINWORD.EXE or EXCEL.EXE left afterwards
 - [ ] Drop a password-protected DOCX on **Exact PDF**: it fails with a message instead of a hidden password prompt
 - [ ] Start an Exact PDF of a large deck and press × in the top panel: it stops, nothing is left next to the deck, and PowerPoint (if we started it) is gone from Task Manager
-- [ ] Start an Exact PDF of a large deck, then drop another file on **Move to…** (or **Rename…**): the move is done at once, while the export keeps running
+- [ ] Start an Exact PDF of a large deck, then drop another file on **Move to folder** (or **Rename**): the move is done at once, while the export keeps running
 
 Office bridge (LibreOffice only, no Microsoft Office)
 - [ ] The deck shows **Exact PDF** but not the slide pictures; the PDF comes out right, no LibreOffice window appears, and a LibreOffice window you already had open is not disturbed
@@ -640,7 +644,7 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Edge and Chrome: drag a picture off a web page (a PNG or JPG; WebP if the page serves it), press Shift: the wheel shows image formats for it (named after the picture), with the predicted name on the card; drop on **PNG**: `name (converted).png` appears on the Desktop and the panel says "Saved to Desktop"
 - [ ] The same in Firefox, and with **Tools › 50%**: `name (edited).png` on the Desktop
 - [ ] Do it twice: the second result is `name (converted 2).png`, the first one is untouched
-- [ ] **File actions › Copy**: the picture is saved on the Desktop (`name.png`, or `name (2).png` if that is taken) and pasting in Explorer pastes it; **Float** puts that saved copy on the shelf; **Duplicate** writes `name (copy).png` on the Desktop; **Move to…** saves it into the folder you pick
+- [ ] **File actions › Copy**: the picture is saved on the Desktop (`name.png`, or `name (2).png` if that is taken) and pasting in Explorer pastes it; **Float** puts that saved copy on the shelf; **Duplicate** writes `name (copy).png` on the Desktop; **Move to folder** saves it into the folder you pick
 - [ ] Outlook (classic): drag an attachment (a PDF or a photo) out of a mail with Shift: its slices show; convert it: the result is on the Desktop. Drag a whole mail onto **File actions › Copy**: a `.msg` is saved on the Desktop and opens in Outlook
 - [ ] Thunderbird: drag an attachment with Shift: the same
 - [ ] A large attachment (50 MB or more): the top panel shows "Saving 1 dropped file…" with progress before the job starts
@@ -672,7 +676,7 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Folder style with a file called `ShiftDrop` next to a photo, a text file and a video: **PNG**, **Duplicate** and **MP4** each fail with "cannot write next to the source", and tray › **History** lists each as failed
 - [ ] Folder style, a broken `bad.png` (a text file renamed) on **JPG** in a folder with no `ShiftDrop` folder yet: the convert fails and no empty `ShiftDrop` folder is left behind
 - [ ] All four settings survive a restart (`[Appearance] Theme`, `[FileActions] Terminal` / `TerminalCommand`, `[Output] Naming` in settings.ini)
-- [ ] Select 12 photos, **File actions › Rename…**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
+- [ ] Select 12 photos, **File actions › Rename**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
 - [ ] A pattern without `{n}` (two files would get the same name): those rows turn red, the status says why and **Rename** is greyed out; a name with `?` or ending in a dot is refused the same way; a name already taken in the folder is refused
 - [ ] **Rename**: the top panel says "Renamed 12 items"; tray › **History** › the run › **Undo**: every file has its old name back. Renaming `a.txt` to `A.txt` works
 - [ ] Narrator on: Shift+drag a photo: Narrator says "Convert wheel, 8 actions"; moving over slices reads each one ("PNG, lossless", "TIFF, not available: …"); scrolling to another section says its name; Shift+1–4 the same

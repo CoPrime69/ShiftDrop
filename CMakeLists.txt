@@ -92,6 +92,7 @@ add_library(shiftdrop_core STATIC
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
   src/keyboard/ShellVerb.cpp
+  src/keyboard/WheelLabels.cpp   # how each slice label fits its tile, and the centre beside the drag picture
   src/keyboard/WheelLayout.cpp
   src/keyboard/WheelRequest.cpp
   src/preview/Prediction.cpp
@@ -334,6 +335,7 @@ if(SHIFTDROP_TESTS)
     tests/PipelineTests.cpp
     tests/MediaTests.cpp
     tests/KeyboardTests.cpp
+    tests/WheelLabelTests.cpp
     tests/PreviewTests.cpp
     tests/InspectTests.cpp
     tests/ShelfTests.cpp
