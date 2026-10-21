@@ -1,5 +1,6 @@
 #include "pdf/PageEdits.h"
 #include "Brand.h"
+#include "FileIo.h"
 #include "Log.h"
 #include "Recipe.h"
 #include "TempPath.h"
@@ -10,8 +11,10 @@
 #include "photo/PhotoEngine.h"
 #include "photo/PhotoTools.h"
 #include "pdf/ImagePdf.h"
+#include "pdf/PageMarks.h"
 #include "redact/RedactEngine.h"
 #include "redact/RedactTool.h"
+#include "Utf.h"
 
 #include <windows.h>
 
@@ -30,13 +33,46 @@ namespace sd::pdf
             const auto temp = TempDirectory();
             return temp.empty() ? std::filesystem::path() : std::filesystem::path(temp) / (SD_NAME L" pages");
         }
+
+        // Beside a page edited with marks: the picture without them, and the marks.
+        std::wstring StemOf(const std::wstring& path)
+        {
+            std::wstring stem = std::filesystem::path(path).replace_extension().wstring();
+            if (stem.ends_with(L".base"))
+                stem.resize(stem.size() - 5);
+            return stem;
+        }
+        std::wstring MarksFileOf(const std::wstring& path) { return StemOf(path) + L".marks.json"; }
+
+        // The marks an earlier edit left beside its picture: where the unmarked page came from, and
+        // the marks. False when the picture has none.
+        bool ReadMarksFile(const std::wstring& picture, std::wstring& source, uint32_t& page, photo::Annotations& marks)
+        {
+            std::string text;
+            std::error_code ec;
+            const auto path = MarksFileOf(picture);
+            if (!std::filesystem::path(picture).stem().wstring().ends_with(L".base") || !std::filesystem::exists(path, ec) || !ReadFileBytes(path, text))
+                return false;
+            const auto j = nlohmann::json::parse(text, nullptr, false);
+            if (!j.is_object() || !j.contains("source") || !j["source"].is_string())
+                return false;
+            source = Widen(j["source"].get<std::string>());
+            page = j.value("page", 0u);
+            marks = photo::Annotations::FromJson(j.value("marks", nlohmann::json::object()));
+            return true;
+        }
+
+        bool UsesMarks(PageTool tool) { return tool == PageTool::Annotate || tool == PageTool::Sign; }
     }
+
+    bool KeepsPage(PageTool tool) { return UsesMarks(tool); }
 
     const std::vector<PageToolInfo>& PageTools()
     {
         static const std::vector<PageToolInfo> tools = {
             { PageTool::Redact, L"Redact…" },
             { PageTool::Annotate, L"Annotate…" },
+            { PageTool::Sign, L"Fill and sign…" },
             { PageTool::Adjust, L"Light and colour…" },
         };
         return tools;
@@ -120,7 +156,20 @@ namespace sd::pdf
         case PageTool::Redact:
             return std::make_unique<redact::RedactTool>(pictures, redact::RedactTool::Mode::Redact);
         case PageTool::Annotate:
-            return photo::MakeAnnotateTool(pictures);
+        case PageTool::Sign:
+        {
+            auto annotate = std::make_unique<photo::AnnotateTool>(pictures, photo::AnnotateOptions{ true, tool == PageTool::Sign });
+            // A page edited with marks before opens with them, to change or add to.
+            for (size_t i = 0; i < pictures.size(); ++i)
+            {
+                std::wstring source;
+                uint32_t page = 0;
+                photo::Annotations marks;
+                if (ReadMarksFile(pictures[i], source, page, marks))
+                    annotate->Seed(i, std::move(marks));
+            }
+            return annotate;
+        }
         case PageTool::Crop:
             return std::make_unique<crop::CropTool>(pictures.size());
         case PageTool::Adjust:
@@ -149,7 +198,7 @@ namespace sd::pdf
         photo::Annotations marks;
         photo::Adjustments adjust;
         crop::CropParams cropping;
-        if (tool == PageTool::Annotate)
+        if (UsesMarks(tool))
         {
             marks = photo::Annotations::FromJson(own);
             if (marks.Items().empty())
@@ -172,7 +221,7 @@ namespace sd::pdf
         if (FAILED(canvas::LoadRaster(picture, image, error)))
             return false;
         HRESULT hr = S_OK;
-        if (tool == PageTool::Annotate)
+        if (UsesMarks(tool))
             hr = photo::RenderAnnotated(image, marks, photo::LoadInsertedPictures(marks), result, error);
         else if (tool == PageTool::Crop)
         {
@@ -220,5 +269,94 @@ namespace sd::pdf
     std::wstring PictureOf(const std::wstring& editedPage)
     {
         return std::filesystem::path(editedPage).replace_extension(L".png").wstring();
+    }
+
+    std::wstring PictureOf(const std::wstring& editedPage, PageTool tool)
+    {
+        const std::wstring stem = std::filesystem::path(editedPage).replace_extension().wstring();
+        std::error_code ec;
+        if (UsesMarks(tool) && std::filesystem::exists(stem + L".marks.json", ec) && std::filesystem::exists(stem + L".base.png", ec))
+            return stem + L".base.png";
+        return PictureOf(editedPage);
+    }
+
+    bool SavePageEdit(PageTool tool, const nlohmann::json& params, const std::wstring& picture, const std::wstring& source, uint32_t page,
+                      double pointsPerPixel, const std::wstring& stem, bool& changed, std::wstring& error)
+    {
+        changed = false;
+        const std::wstring png = stem + L".png", pdf = stem + L".pdf";
+        const auto asPicture = [&] {
+            // The whole page as a picture: the tools that change pixels, and the fallback.
+            return RenderPageEdit(tool, params, picture, png, changed, error) && (!changed || WritePicturePage(png, pointsPerPixel, pdf, error));
+        };
+        if (!UsesMarks(tool))
+            return asPicture();
+
+        // Marks over the page as it was: an earlier edit's unmarked page when this picture is one, or
+        // the earlier edit's own page (a redacted page stays redacted).
+        std::wstring base = source;
+        uint32_t basePage = page;
+        photo::Annotations before;
+        const bool seeded = ReadMarksFile(picture, base, basePage, before);
+        std::error_code exists;
+        const std::wstring earlier = std::filesystem::path(picture).replace_extension(L".pdf").wstring();
+        if (!seeded && std::filesystem::exists(earlier, exists))
+        {
+            base = earlier;
+            basePage = 0;
+        }
+        photo::Annotations marks = photo::Annotations::FromJson(ParamsForFile(params, picture));
+        if (seeded ? marks.ToJson() == before.ToJson() : marks.Items().empty())
+            return true;   // left as it was
+
+        auto image = std::make_shared<canvas::Raster>();
+        if (FAILED(canvas::LoadRaster(picture, *image, error)))
+            return false;
+        const auto images = photo::LoadInsertedPictures(marks);
+        PageOverlay overlay;
+        size_t pictures = 0;
+        std::wstring why;
+        MarkedPageInfo info;
+        if (FAILED(photo::MarksToPdf(photo::Picture::Of(image), marks, images, overlay, &pictures, why)) || !WriteMarkedPage(base, basePage, overlay, pdf, why, &info))
+        {
+            log::Warn(L"pages: the marks could not be written over the page ({}); saving a picture of it", why);
+            std::error_code ec;
+            std::filesystem::remove(pdf, ec);
+            return asPicture();
+        }
+        log::Info(L"pages: marks written over the page: {} text runs in {} fonts, {} images ({} drawn as pictures), {} shapes", info.textRuns, info.fonts,
+                  info.images, pictures, info.paths);
+
+        // For editing it again: the page without the marks, the marks, and the pictures they place.
+        std::error_code ec;
+        std::filesystem::copy_file(picture, stem + L".base.png", std::filesystem::copy_options::overwrite_existing, ec);
+        auto json = marks.ToJson();
+        size_t copied = 0;
+        std::map<std::wstring, std::wstring> copies;
+        for (auto& item : json["items"])
+        {
+            if (!item.contains("image") || !item["image"].is_string())
+                continue;
+            const std::wstring from = Widen(item["image"].get<std::string>());
+            auto& copy = copies[from];
+            if (copy.empty())
+            {
+                copy = std::format(L"{}.picture {}{}", stem, ++copied, std::filesystem::path(from).extension().wstring());
+                if (!std::filesystem::copy_file(from, copy, std::filesystem::copy_options::overwrite_existing, ec))
+                    copy = from;
+            }
+            item["image"] = Narrow(copy);
+        }
+        const nlohmann::json sidecar = { { "source", Narrow(base) }, { "page", basePage }, { "marks", std::move(json) } };
+        if (!WriteFileBytes(MarksFileOf(png), sidecar.dump(), WriteMode::Any))
+            log::Warn(L"pages: the marks could not be kept for editing again");
+
+        // The picture with the marks, for the tools that change pixels.
+        bool drawn = false;
+        std::wstring drawError;
+        if (marks.Items().empty() || !RenderPageEdit(tool, params, picture, png, drawn, drawError) || !drawn)
+            std::filesystem::copy_file(picture, png, std::filesystem::copy_options::overwrite_existing, ec);
+        changed = true;
+        return true;
     }
 }

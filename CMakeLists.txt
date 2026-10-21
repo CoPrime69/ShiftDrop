@@ -125,8 +125,10 @@ add_library(shiftdrop_core STATIC
   src/redact/Vision.cpp
   src/sharesafe/ShareSafeEngine.cpp
   # PDF module: plain C++ and QPDF; the WinRT and UI parts are in the libraries below
+  src/pdf/FontSubset.cpp
   src/pdf/ImagePdf.cpp
   src/pdf/PageEdits.cpp
+  src/pdf/PageMarks.cpp
   src/pdf/PageRenderer.cpp
   src/pdf/PagePlan.cpp
   src/pdf/PdfCompress.cpp
@@ -354,6 +356,7 @@ if(SHIFTDROP_TESTS)
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
+    tests/FillSignTests.cpp
     tests/BenchTests.cpp
     tests/FileActionsTests.cpp
     tests/RenameTests.cpp

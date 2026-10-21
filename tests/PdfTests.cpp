@@ -999,7 +999,7 @@ TEST(PdfPages, EditSliceSavesOneAndMergesSeveral)
 
 TEST(PdfPages, EditedPagesFolderGoesAfterTheExport)
 {
-    EXPECT_EQ(PageTools().size(), 3u);
+    EXPECT_EQ(PageTools().size(), 4u);
     const auto folder = NewEditFolder();
     ASSERT_FALSE(folder.empty());
     EXPECT_TRUE(std::filesystem::is_directory(folder));

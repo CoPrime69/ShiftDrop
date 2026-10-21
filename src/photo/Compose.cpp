@@ -1,6 +1,7 @@
 #include "photo/Compose.h"
 #include "ErrorText.h"
 #include "Log.h"
+#include "pdf/FontSubset.h"
 #include "photo/Gpu.h"
 
 #include <d2d1effects.h>
@@ -650,6 +651,474 @@ namespace sd::photo
             return E_OUTOFMEMORY;
         dc->DrawBitmap(base, D2D1::RectF(0, 0, float(photo.width), float(photo.height)), 1.f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr);
         return DrawMarks(dc, device, transform, photo, marks, images, bitmaps, {});
+    }
+
+    // ---- Marks as PDF content -----------------------------------------------------------------------
+
+    namespace
+    {
+        // Collects what a DirectWrite layout draws (its glyph runs and underlines) instead of drawing
+        // it, so a PDF can show the same glyphs at the same places as real text.
+        class GlyphCapture final : public IDWriteTextRenderer
+        {
+        public:
+            struct Run
+            {
+                ComPtr<IDWriteFontFace> face;
+                pdf::MarkGlyphs glyphs;
+            };
+            std::vector<Run> runs;
+            std::vector<RectD> lines;   // underlines and strike-throughs
+
+            IFACEMETHODIMP QueryInterface(REFIID riid, void** out) override
+            {
+                if (riid == __uuidof(IUnknown) || riid == __uuidof(IDWritePixelSnapping) || riid == __uuidof(IDWriteTextRenderer))
+                {
+                    *out = static_cast<IDWriteTextRenderer*>(this);
+                    return S_OK;
+                }
+                *out = nullptr;
+                return E_NOINTERFACE;
+            }
+            IFACEMETHODIMP_(ULONG) AddRef() override { return 2; }    // on the stack: never freed through COM
+            IFACEMETHODIMP_(ULONG) Release() override { return 1; }
+            IFACEMETHODIMP IsPixelSnappingDisabled(void*, BOOL* disabled) override
+            {
+                *disabled = TRUE;
+                return S_OK;
+            }
+            IFACEMETHODIMP GetCurrentTransform(void*, DWRITE_MATRIX* m) override
+            {
+                *m = { 1, 0, 0, 1, 0, 0 };
+                return S_OK;
+            }
+            IFACEMETHODIMP GetPixelsPerDip(void*, FLOAT* ppd) override
+            {
+                *ppd = 1;
+                return S_OK;
+            }
+            IFACEMETHODIMP DrawGlyphRun(void*, FLOAT x, FLOAT y, DWRITE_MEASURING_MODE, const DWRITE_GLYPH_RUN* run, const DWRITE_GLYPH_RUN_DESCRIPTION* desc,
+                                        IUnknown*) override
+            {
+                if (!run || !run->fontFace || run->glyphCount == 0)
+                    return S_OK;
+                Run r;
+                r.face = run->fontFace;
+                auto& g = r.glyphs;
+                g.size = run->fontEmSize;
+                g.origin = { x, y };
+                g.rtl = (run->bidiLevel & 1) != 0;
+                const auto sim = run->fontFace->GetSimulations();
+                g.bold = (sim & DWRITE_FONT_SIMULATIONS_BOLD) != 0;
+                g.oblique = (sim & DWRITE_FONT_SIMULATIONS_OBLIQUE) != 0;
+                g.glyphs.assign(run->glyphIndices, run->glyphIndices + run->glyphCount);
+                for (UINT32 i = 0; i < run->glyphCount; ++i)
+                {
+                    g.advances.push_back(run->glyphAdvances ? run->glyphAdvances[i] : 0.0);
+                    if (run->glyphOffsets)
+                        g.offsets.push_back({ run->glyphOffsets[i].advanceOffset, run->glyphOffsets[i].ascenderOffset });
+                }
+                // Each cluster's characters go with its first glyph (for copying and searching the text).
+                g.text.assign(run->glyphCount, {});
+                if (desc && desc->string && desc->clusterMap)
+                    for (UINT32 c = 0; c < desc->stringLength; ++c)
+                        if (desc->clusterMap[c] < run->glyphCount)
+                            g.text[desc->clusterMap[c]].push_back(desc->string[c]);
+                runs.push_back(std::move(r));
+                return S_OK;
+            }
+            IFACEMETHODIMP DrawUnderline(void*, FLOAT x, FLOAT y, const DWRITE_UNDERLINE* u, IUnknown*) override
+            {
+                if (u)
+                    Line(x, y, u->width, u->thickness, u->offset, u->readingDirection == DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
+                return S_OK;
+            }
+            IFACEMETHODIMP DrawStrikethrough(void*, FLOAT x, FLOAT y, const DWRITE_STRIKETHROUGH* s, IUnknown*) override
+            {
+                if (s)
+                    Line(x, y, s->width, s->thickness, s->offset, s->readingDirection == DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
+                return S_OK;
+            }
+            IFACEMETHODIMP DrawInlineObject(void*, FLOAT, FLOAT, IDWriteInlineObject*, BOOL, BOOL, IUnknown*) override { return S_OK; }
+
+        private:
+            void Line(double x, double y, double width, double thickness, double offset, bool rtl)
+            {
+                lines.push_back({ rtl ? x - width : x, y + offset, width, std::max(0.1, thickness) });
+            }
+        };
+
+        // A font face's file, read once per face.
+        struct FaceFile
+        {
+            std::string key;
+            std::string bytes;
+            uint32_t index = 0;
+        };
+
+        bool ReadFace(IDWriteFontFace* face, FaceFile& out)
+        {
+            UINT32 count = 0;
+            if (FAILED(face->GetFiles(&count, nullptr)) || count != 1)
+                return false;
+            ComPtr<IDWriteFontFile> file;
+            ComPtr<IDWriteFontFileLoader> loader;
+            ComPtr<IDWriteFontFileStream> stream;
+            const void* key = nullptr;
+            UINT32 keySize = 0;
+            UINT64 size = 0;
+            if (FAILED(face->GetFiles(&count, &file)) || FAILED(file->GetReferenceKey(&key, &keySize)) || FAILED(file->GetLoader(&loader)) ||
+                FAILED(loader->CreateStreamFromKey(key, keySize, &stream)) || FAILED(stream->GetFileSize(&size)) || size == 0 || size > (256u << 20))
+                return false;
+            const void* data = nullptr;
+            void* context = nullptr;
+            if (FAILED(stream->ReadFileFragment(&data, 0, size, &context)))
+                return false;
+            out.bytes.assign(static_cast<const char*>(data), static_cast<size_t>(size));
+            stream->ReleaseFileFragment(context);
+            out.index = face->GetIndex();
+            out.key = std::string(static_cast<const char*>(key), keySize) + "#" + std::to_string(out.index);
+            return true;
+        }
+
+        uint32_t ColorOf(const Annotation& m) { return m.color & 0xFFFFFF; }
+
+        pdf::MarkItem PathItem(pdf::MarkPath path)
+        {
+            pdf::MarkItem item;
+            item.kind = pdf::MarkItem::Kind::Path;
+            item.path = std::move(path);
+            return item;
+        }
+
+        pdf::MarkPath Filled(uint32_t rgb, float alpha = 1)
+        {
+            pdf::MarkPath p;
+            p.fill = true;
+            p.rgb = rgb;
+            p.alpha = alpha;
+            return p;
+        }
+
+        pdf::MarkPath Stroked(uint32_t rgb, double width, float alpha = 1)
+        {
+            pdf::MarkPath p;
+            p.stroke = true;
+            p.rgb = rgb;
+            p.width = width;
+            p.alpha = alpha;
+            return p;
+        }
+
+        // Builds the PDF items of the marks, one by one, in order.
+        class OverlayBuilder
+        {
+        public:
+            OverlayBuilder(const Picture& page, Annotations& marks, const std::map<std::wstring, Picture>& images, pdf::PageOverlay& out)
+                : m_page(page), m_marks(marks), m_images(images), m_out(out)
+            {
+            }
+
+            HRESULT Add(const Annotation& m, std::wstring& error)
+            {
+                switch (m.kind)
+                {
+                case Mark::Arrow:
+                {
+                    if (std::hypot(m.b.x - m.a.x, m.b.y - m.a.y) < 0.5)
+                        return S_OK;
+                    const ArrowShape shape = ArrowGeometry(m);
+                    auto line = Stroked(ColorOf(m), m.width);
+                    line.MoveTo(m.a);
+                    line.LineTo(shape.lineEnd);
+                    m_out.items.push_back(PathItem(std::move(line)));
+                    auto head = Stroked(ColorOf(m), shape.headStroke);
+                    head.fill = true;
+                    head.MoveTo(shape.head[0]);
+                    head.LineTo(shape.head[1]);
+                    head.LineTo(shape.head[2]);
+                    head.Close();
+                    m_out.items.push_back(PathItem(std::move(head)));
+                    return S_OK;
+                }
+                case Mark::Rect:
+                case Mark::Ellipse:
+                {
+                    const RectD r = canvas::FromCorners(m.a, m.b);
+                    auto p = m.fill ? Filled(ColorOf(m)) : Stroked(ColorOf(m), m.width);
+                    if (m.kind == Mark::Rect)
+                        p.Rect(r);
+                    else
+                        p.Ellipse(r.Centre(), r.w / 2, r.h / 2);
+                    m_out.items.push_back(PathItem(std::move(p)));
+                    return S_OK;
+                }
+                case Mark::Text:
+                case Mark::Callout:
+                case Mark::Number:
+                    return AddTextMark(m, error);
+                case Mark::Image:
+                {
+                    const auto it = m_images.find(m.image);
+                    if (it == m_images.end() || it->second.Empty())
+                        return S_OK;
+                    pdf::MarkItem item;
+                    item.kind = pdf::MarkItem::Kind::Image;
+                    item.image.raster = it->second.raster;
+                    item.image.at = canvas::FromCorners(m.a, m.b);
+                    m_out.items.push_back(std::move(item));
+                    return S_OK;
+                }
+                case Mark::Pen:
+                case Mark::Highlighter:
+                {
+                    if (m.points.empty())
+                        return S_OK;
+                    auto p = Stroked(ColorOf(m), m.width, m.kind == Mark::Highlighter ? kHighlighterOpacity : 1.f);
+                    p.MoveTo(m.points[0]);
+                    const auto segments = SmoothStroke(m.points);
+                    for (const auto& s : segments)
+                        p.QuadTo(s.control, s.end);
+                    if (segments.empty())
+                        p.LineTo(m.points[0]);   // a dot: a round cap on a line of no length
+                    m_out.items.push_back(PathItem(std::move(p)));
+                    return S_OK;
+                }
+                case Mark::Check:
+                case Mark::Cross:
+                {
+                    double width = 1;
+                    for (const auto& stroke : CheckStrokes(m, width))
+                    {
+                        auto p = Stroked(ColorOf(m), width);
+                        p.MoveTo(stroke[0]);
+                        for (size_t i = 1; i < stroke.size(); ++i)
+                            p.LineTo(stroke[i]);
+                        m_out.items.push_back(PathItem(std::move(p)));
+                    }
+                    return S_OK;
+                }
+                case Mark::Magnifier:
+                {
+                    // Pixels of the page itself, enlarged: a picture is all it can be.
+                    const double R = m.radius * m.zoom;
+                    RectD box = canvas::FromCorners({ m.a.x - m.radius, m.a.y - m.radius }, { m.a.x + m.radius, m.a.y + m.radius });
+                    box = Union(box, { m.b.x - R, m.b.y - R, 2 * R, 2 * R });
+                    return AddPicture(m, Inflate(box, std::max(4.0, m.width * 2)), 1.0, error);
+                }
+                }
+                return S_OK;
+            }
+
+            size_t Pictures() const { return m_pictures; }
+
+        private:
+            static RectD Union(const RectD& a, const RectD& b)
+            {
+                const double l = std::min(a.x, b.x), t = std::min(a.y, b.y);
+                return { l, t, std::max(a.Right(), b.Right()) - l, std::max(a.Bottom(), b.Bottom()) - t };
+            }
+            static RectD Inflate(const RectD& r, double d) { return { r.x - d, r.y - d, r.w + 2 * d, r.h + 2 * d }; }
+
+            HRESULT AddTextMark(const Annotation& m, std::wstring& error)
+            {
+                MarkText text;
+                if (!MakeMarkText(m, m_marks, text))
+                    return S_OK;
+                if (m.kind == Mark::Text || m.kind == Mark::Callout)
+                    m_marks.SetMeasured(m.id, text.measured);
+                GlyphCapture capture;
+                if (text.layout && FAILED(text.layout->Draw(nullptr, &capture, float(text.origin.x), float(text.origin.y))))
+                    capture.runs.clear();
+                // Every face must go into the PDF as it is drawn; otherwise the whole mark is a picture.
+                std::vector<size_t> fonts;
+                for (const auto& run : capture.runs)
+                {
+                    const size_t f = FontFor(run.face.Get(), m);
+                    if (f == SIZE_MAX)
+                    {
+                        RectD box = m_marks.Bounds(m);
+                        if (m.kind == Mark::Callout)
+                            box = Union(box, { m.tip.x, m.tip.y, 0, 0 });
+                        return AddPicture(m, Inflate(box, std::max(2.0, m.fontSize * 0.2)), 3.0, error);
+                    }
+                    fonts.push_back(f);
+                }
+                // The shapes behind the text.
+                switch (m.kind)
+                {
+                case Mark::Text:
+                    if (m.fill)
+                    {
+                        const double pad = m.fontSize * 0.3;
+                        const RectD box = m_marks.TextBox(m);
+                        auto back = Filled(ColorOf(m));
+                        back.RoundedRect({ box.x - pad, box.y - pad, box.w + 2 * pad, box.h + 2 * pad }, pad);
+                        m_out.items.push_back(PathItem(std::move(back)));
+                    }
+                    break;
+                case Mark::Callout:
+                {
+                    PointD tail[3];
+                    CalloutTail(m, tail);
+                    auto t = Filled(ColorOf(m));
+                    t.MoveTo(tail[0]);
+                    t.LineTo(tail[1]);
+                    t.LineTo(tail[2]);
+                    t.Close();
+                    m_out.items.push_back(PathItem(std::move(t)));
+                    auto box = Filled(ColorOf(m));
+                    box.RoundedRect(canvas::FromCorners(m.a, m.b), CalloutRadius(m));
+                    m_out.items.push_back(PathItem(std::move(box)));
+                    break;
+                }
+                case Mark::Number:
+                {
+                    const double r = m.fontSize * 0.75;
+                    auto disc = Filled(ColorOf(m));
+                    disc.Ellipse(m.a, r, r);
+                    m_out.items.push_back(PathItem(std::move(disc)));
+                    auto ring = Stroked(0xFFFFFF, std::max(1.0, r * 0.08), 0.9f);
+                    ring.Ellipse(m.a, r, r);
+                    m_out.items.push_back(PathItem(std::move(ring)));
+                    break;
+                }
+                default: break;
+                }
+                if (m.kind == Mark::Text && m.text.empty())
+                    return S_OK;
+                for (size_t i = 0; i < capture.runs.size(); ++i)
+                {
+                    pdf::MarkItem item;
+                    item.kind = pdf::MarkItem::Kind::Glyphs;
+                    item.glyphs = std::move(capture.runs[i].glyphs);
+                    item.glyphs.font = fonts[i];
+                    item.glyphs.rgb = text.ink & 0xFFFFFF;
+                    item.clip = text.clip;
+                    m_out.items.push_back(std::move(item));
+                }
+                for (const auto& line : capture.lines)
+                {
+                    auto p = Filled(text.ink & 0xFFFFFF);
+                    p.Rect(line);
+                    pdf::MarkItem item = PathItem(std::move(p));
+                    item.clip = text.clip;
+                    m_out.items.push_back(std::move(item));
+                }
+                return S_OK;
+            }
+
+            // The overlay's font for a face, or SIZE_MAX when it may not or cannot be embedded.
+            size_t FontFor(IDWriteFontFace* face, const Annotation& m)
+            {
+                if (const auto it = m_faces.find(face); it != m_faces.end())
+                    return it->second;
+                size_t index = SIZE_MAX;
+                FaceFile file;
+                if (ReadFace(face, file))
+                {
+                    const auto use = pdf::CheckFont(file.bytes, file.index, m.kind == Mark::Text ? m.weight : 600, m.kind == Mark::Text && m.italic);
+                    if (use == pdf::FontUse::Embed)
+                    {
+                        for (size_t f = 0; f < m_out.fonts.size() && index == SIZE_MAX; ++f)
+                            if (m_out.fonts[f].key == file.key)
+                                index = f;
+                        if (index == SIZE_MAX)
+                        {
+                            pdf::MarkFont font;
+                            font.key = file.key;
+                            font.index = file.index;
+                            font.file = std::move(file.bytes);
+                            std::wstring family = m.kind == Mark::Text ? FontOf(m) : L"Segoe UI";
+                            font.name.clear();
+                            for (const wchar_t c : family)
+                                if (c < 128)
+                                    font.name.push_back(char(c));
+                            index = m_out.fonts.size();
+                            m_out.fonts.push_back(std::move(font));
+                        }
+                    }
+                    else
+                        log::Info(L"pages: a text mark's font can't be embedded ({}); it goes in as a picture", static_cast<int>(use));
+                }
+                m_faces.emplace(face, index);
+                return index;
+            }
+
+            // One mark drawn as pixels at `scale` times the page picture's resolution, cropped to `box`.
+            HRESULT AddPicture(const Annotation& m, RectD box, double scale, std::wstring& error)
+            {
+                box = Intersect(box, { 0, 0, double(m_page.width), double(m_page.height) });
+                if (box.w < 1 || box.h < 1)
+                    return S_OK;
+                if (!m_dc)
+                {
+                    const auto device = gpu::Device::Get();
+                    m_dc = device ? device->NewContext() : nullptr;
+                    if (!m_dc)
+                    {
+                        error = L"no Direct2D device to draw with";
+                        return E_FAIL;
+                    }
+                }
+                const double limit = std::max(256u, gpu::MaxEdge(m_dc.Get()));
+                scale = std::min(scale, limit / std::max(box.w, box.h));
+                const unsigned w = static_cast<unsigned>(std::ceil(box.w * scale)), h = static_cast<unsigned>(std::ceil(box.h * scale));
+                auto pixels = std::make_shared<Raster>();
+                const auto transform = D2D1::Matrix3x2F::Translation(float(-box.x), float(-box.y)) * D2D1::Matrix3x2F::Scale(float(scale), float(scale));
+                const uint32_t id = m.id;
+                const HRESULT hr = gpu::RenderToRaster(m_dc.Get(), w, h, [&](ID2D1DeviceContext* dc) {
+                    return DrawMarks(dc, 0, transform, m_page, m_marks, m_images, m_bitmaps, [id](const Annotation& a) { return a.id == id; });
+                }, *pixels);
+                if (FAILED(hr))
+                {
+                    error = L"a mark could not be drawn (" + HexCode(hr) + L")";
+                    return hr;
+                }
+                pdf::MarkItem item;
+                item.kind = pdf::MarkItem::Kind::Image;
+                item.image.raster = std::move(pixels);
+                item.image.at = { box.x, box.y, w / scale, h / scale };
+                m_out.items.push_back(std::move(item));
+                ++m_pictures;
+                return S_OK;
+            }
+
+            static RectD Intersect(const RectD& a, const RectD& b)
+            {
+                const double l = std::max(a.x, b.x), t = std::max(a.y, b.y), r = std::min(a.Right(), b.Right()), btm = std::min(a.Bottom(), b.Bottom());
+                return r > l && btm > t ? RectD{ l, t, r - l, btm - t } : RectD{};
+            }
+
+            const Picture& m_page;
+            Annotations& m_marks;
+            const std::map<std::wstring, Picture>& m_images;
+            pdf::PageOverlay& m_out;
+            std::map<IDWriteFontFace*, size_t> m_faces;
+            ComPtr<ID2D1DeviceContext> m_dc;
+            Bitmaps m_bitmaps;
+            size_t m_pictures = 0;
+        };
+    }
+
+    HRESULT MarksToPdf(const Picture& page, Annotations& marks, const std::map<std::wstring, Picture>& images, pdf::PageOverlay& out, size_t* pictures,
+                       std::wstring& error)
+    {
+        out = {};
+        out.width = page.width;
+        out.height = page.height;
+        if (page.width <= 0 || page.height <= 0)
+        {
+            error = L"the page has no size";
+            return E_INVALIDARG;
+        }
+        OverlayBuilder builder(page, marks, images, out);
+        for (const auto& m : marks.Items())
+            if (const HRESULT hr = builder.Add(m, error); FAILED(hr))
+                return hr;
+        if (pictures)
+            *pictures = builder.Pictures();
+        return S_OK;
     }
 
     // ---- Add a Background ---------------------------------------------------------------------------

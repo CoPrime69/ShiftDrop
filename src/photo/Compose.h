@@ -1,5 +1,6 @@
 #pragma once
 #include "canvas/Raster.h"
+#include "pdf/PageMarks.h"
 #include "photo/Annotations.h"
 #include "photo/TextBox.h"
 #include "photo/Effects.h"
@@ -87,6 +88,12 @@ namespace sd::photo
     // size Annotations::SetMeasured takes. False for other marks.
     bool LayOutMarkText(const Annotation& m, const Annotations& marks, TextLayoutInfo& info, canvas::PointD& origin, canvas::SizeD* measured);
     TextLayoutInfo DescribeTextLayout(IDWriteTextLayout* layout, const std::wstring& text);
+    // The marks as PDF content over the page they were drawn on (pdf/PageMarks.h): shapes as paths,
+    // text as the glyphs DirectWrite lays out, pictures as images. A mark that can't be written that
+    // way (a magnifier, text in a font that may not be embedded) is drawn as pixels, sharper than the
+    // page picture; `pictures` counts those.
+    HRESULT MarksToPdf(const Picture& page, Annotations& marks, const std::map<std::wstring, Picture>& images, pdf::PageOverlay& out, size_t* pictures,
+                       std::wstring& error);
     // The font families installed on this PC (DirectWrite's system collection), sorted, by the names
     // DirectWrite finds them by. Made once.
     const std::vector<std::wstring>& SystemFontFamilies();

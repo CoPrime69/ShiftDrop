@@ -10,6 +10,11 @@ until 1.0, a minor version may change behaviour.
 - Merge PDFs has More…: every page in one view to reorder across files, turn, leave out, preview
   and edit (Redact, Annotate, Crop, Light and colour) before Merge and export.
 - An Edit slice next to Organize opens the same page view for one or more PDFs.
+- Fill and sign for PDF pages: type into a form in text boxes with any installed font, add a
+  signature (drawn, or from a photo, kept on this PC), ticks, crosses and the date. The page stays
+  as it was; the typed text is real, searchable text in the PDF.
+- Annotate text boxes edit in place (caret, selection, clipboard) with font, size, bold, italic,
+  underline, colour, alignment and Auto-wrap.
 
 ### Changed
 

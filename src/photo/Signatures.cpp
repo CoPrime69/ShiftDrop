@@ -61,8 +61,9 @@ namespace sd::photo
         const std::wstring stem = std::format(L"{}-{:04}{:02}{:02}-{:02}{:02}{:02}-{:03}", draft ? L"draft" : L"signature", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
                                               t.wMilliseconds);
         fs::path path = fs::path(m_folder) / (stem + L".png");
-        for (int n = 2; fs::exists(path, ec) && n < 100; ++n)
-            path = fs::path(m_folder) / std::format(L"{}-{}.png", stem, n);
+        // Another in the same tick: a letter after the time keeps the newest first by name.
+        for (wchar_t n = L'b'; fs::exists(path, ec) && n <= L'z'; ++n)
+            path = fs::path(m_folder) / std::format(L"{}{}.png", stem, n);
         const auto& png = canvas::EditedFormatFor(L".png");
         if (FAILED(canvas::SaveRasterToFile(ink, png, canvas::EditedQuality(png), path.wstring(), error)))
         {
