@@ -2,7 +2,6 @@
 #include "Accessibility.h"
 #include "Canvas.h"
 #include "DropTarget.h"
-#include "HiddenCursor.h"
 #include "Settings.h"
 #include "Theme.h"
 #include "keyboard/KeyNav.h"
@@ -262,8 +261,6 @@ namespace sd
         bool m_dropped = false;                   // closing after a drop (not because the cursor left)
         int m_switchDir = 1;
         std::vector<float> m_hotT;
-
-        HiddenCursor m_cursor;   // the pointer can be hidden over the wheel (tray menu)
 
         // Glass style: the screen under the window, captured when the wheel opens, shrunk and blurred.
         theme::Pixels m_backdropPx;

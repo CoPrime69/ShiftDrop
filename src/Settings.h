@@ -42,10 +42,16 @@ namespace sd
     {
         WheelSize size = WheelSize::Auto;
         Style style = Style::Solid;
-        bool hideCursor = true;   // no mouse pointer over the wheel; the dragged item's picture marks the spot
     };
     Appearance LoadAppearance();
     void SaveAppearance(const Appearance& appearance);
+    // The same for a given settings.ini (tests).
+    Appearance LoadAppearance(const std::wstring& path);
+    void SaveAppearance(const Appearance& appearance, const std::wstring& path);
+    // Pixels per DIP for the wheel at `size` on a monitor with this DPI scale (1 = 100%) and height in
+    // physical pixels (theme::ScaleFor reads both from the monitor). Auto is 1 on a 1080p screen at
+    // 100% and grows with the screen's height in DIPs, between 0.9 and 1.3 times the DPI scale.
+    float SizeScale(WheelSize size, float dpiScale, float monitorHeightPx);
 
     // Where the outputs of files dragged out of a browser or a mail app go (they have no folder of
     // their own, see VirtualDrop.h); [Output] VirtualFiles=desktop|downloads|ask, set from the tray.

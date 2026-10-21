@@ -595,10 +595,6 @@ namespace sd
                 m_appearance.style = static_cast<Style>(id - IDM_STYLE_BASE);
                 ApplyAppearance();
                 break;
-            case IDM_HIDE_CURSOR:
-                m_appearance.hideCursor = !m_appearance.hideCursor;
-                ApplyAppearance();
-                break;
             case IDM_EXPLORER_HOTKEY:
                 if (m_keyboard)
                     m_keyboard->ToggleHotkey();

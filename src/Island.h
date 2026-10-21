@@ -1,6 +1,7 @@
 #pragma once
 #include "Canvas.h"
 #include "Overlay.h"
+#include "PanelLayout.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -80,6 +81,7 @@ namespace sd
         void OnFrame();
         float ContentWidth() const;
         float ContentHeight() const;
+        panel::Switcher FitSwitcher() const;          // the tabs measured and fitted to the screen
         void OnMouse(UINT msg, POINT pt);
         void OnResultMouse(UINT msg, POINT pt);
         int ActionAt(POINT pt) const;                 // index into m_actionRects, or -1
@@ -118,6 +120,7 @@ namespace sd
         POINT m_origin{};
         SIZE m_size{};
         float m_pad = 0.f;   // transparent room around the panel for its shadow
+        float m_maxContent = 0.f;   // the widest the panel may be on this monitor
         theme::Palette m_palette{};
         theme::Pixels m_backdropPx;
         float m_backdropStep = 1.f;

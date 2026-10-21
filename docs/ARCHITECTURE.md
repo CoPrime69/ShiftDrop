@@ -71,9 +71,9 @@ folder:
 |---|---|
 | `main.cpp` | `wWinMain`, single instance, the `App` class: gesture state, wheels, batches, tray, command line |
 | `MouseHook` | The `WH_MOUSE_LL` hook |
-| `Overlay`, `Canvas`, `Theme`, `HiddenCursor` | The wheel window and how it is drawn |
-| `DropTarget`, `DropDescription`, `VirtualDrop` | The OLE drop target, the drag badge, files dragged out of browsers and mail |
-| `Island` | The top panel |
+| `Overlay`, `Canvas`, `Theme` | The wheel window and how it is drawn |
+| `DropTarget`, `DropDescription`, `VirtualDrop` | The OLE drop target, the drag picture and its badge, files dragged out of browsers and mail |
+| `Island`, `PanelLayout` | The top panel, and its size and layout (unit-tested) |
 | `Accessibility` | The wheel and the top panel for screen readers (UI Automation) |
 | `Action`, `Recipe`, `RecipeStore` | The action registry, recipe parsing, built-in and user recipes |
 | `Engine.h`, `Modules.cpp` | The feature-module interface and the one list of modules |
@@ -184,8 +184,19 @@ run (already that format, a codec missing) is dimmed, and hovering it shows why 
 
 Up to 8 slices sit on one ring, 9 to 16 on two, and more page through a "More" slice
 ([keyboard/WheelLayout.h](../src/keyboard/WheelLayout.h)). The Glass style captures the screen behind
-the wheel when it opens, shrinks it and blurs it. Size, style and the hidden cursor come from the tray
-menu.
+the wheel when it opens, shrinks it and blurs it. Size and style come from the tray menu.
+
+**The drag picture.** The drag source draws a picture of what is dragged (Explorer: the icon or
+thumbnail and the full name; a browser: the image) in a topmost window of its own. The shell shows it
+only over drop targets that hand their drag events to the drag-image helper (`IDropTargetHelper`)
+and fades it away over any other window. The wheel's `DropTarget` forwards DragEnter, DragOver,
+DragLeave and Drop to the helper with the wheel's window, so the picture follows the cursor over the
+wheel. It sets an empty `DROPIMAGE_NOIMAGE` drop description while over the wheel, so there is no
+"+ Copy" badge, and `DROPIMAGE_INVALID` on leave, so other windows show their usual badge. The wheel,
+the top panel and the predicted-output card open after the drag began and are topmost too, so they
+would cover the picture's window: `KeepDragImageOnTop` moves any of ours that are above it to just
+below it (the window's handle is in the drag's data object as "DragWindow"). The mouse pointer is
+never hidden.
 
 **The predicted-output card** ([preview/Predictor.h](../src/preview/Predictor.h)) appears under the
 wheel when a slice is highlighted. On its own worker thread, it encodes small samples of a picture to
@@ -193,7 +204,10 @@ estimate the output size, or reads ffmpeg's plan for a video and multiplies bitr
 also shows the output name `StagedOutput` will pick and what metadata is lost. Results are cached
 per file, size, modified time and recipe.
 
-**The top panel** ([Island.h](../src/Island.h)) hangs from the top centre of the monitor. While the
+**The top panel** ([Island.h](../src/Island.h)) hangs from the top centre of the monitor. It is drawn
+1.4 times the wheel's scale at the same Size setting ([PanelLayout.h](../src/PanelLayout.h)), so it can be
+read at a glance on large screens, and it never gets wider than the screen: on a narrow one the gaps
+shrink first, then the hint goes, and only then are the wheel names shortened. While the
 wheel is open it shows the sections and which one you are on. After a drop it shows the job's
 progress with a cancel button, then the result. A success tucks itself away after two seconds; a
 failure stays until clicked. A finished result can be clicked (Explorer opens with the outputs
@@ -453,7 +467,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 |---|---|
 | `[Gesture]` | `Convert`, `Tools`, `Reduce`, `Files`: the key that opens each section (`Shift`, `Ctrl`, `Alt` or `None`; never the Win key). Only Shift by default |
 | `[Keyboard]` | `ExplorerHotkey`, for example `Ctrl+Shift+Space` |
-| `[Appearance]` | `Size` (auto, small, medium, large), `Style` (solid, glass), `HideCursor`, `Theme` |
+| `[Appearance]` | `Size` (auto, small, medium, large), `Style` (solid, glass), `Theme`. An older `HideCursor` key is ignored and removed |
 | `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`) |
 | `[Output]` | `Naming` (output name style), `VirtualFiles` (desktop, downloads, ask) |
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |

@@ -1,5 +1,6 @@
 #include "Brand.h"
 #include "Overlay.h"
+#include "DropDescription.h"
 #include "Log.h"
 
 #include <windowsx.h>
@@ -45,9 +46,6 @@ namespace sd
         constexpr float kEdgeGuardDip = 6.f;   // a moved wheel ignores the cursor until it moves this far
 
         constexpr wchar_t kMoreIcon = 0xE712;   // "More" (three dots)
-
-        // Private messages to the overlay window.
-        constexpr UINT kMsgHideCursor = WM_APP + 1;   // after DragEnter has returned to the drag source
     }
 
     Overlay::Overlay(HINSTANCE instance, std::vector<WheelRing> rings, ContentProvider provider, DropHandler onDrop, Events events)
@@ -88,7 +86,9 @@ namespace sd
         m_iconFamily = IconFamily(m_dwrite.Get());
         m_a11y = std::make_unique<a11y::WheelElement>(m_hwnd.get(), static_cast<a11y::WheelView&>(*this));
 
-        m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), this);
+        // With the shell's drag-image helper, the dragged item's picture (Explorer's icon or thumbnail
+        // and its name, a browser's image) stays visible and follows the cursor over the wheel.
+        m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), this, MakeDragImageHelper());
         const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get());
         if (FAILED(hr))
         {
@@ -107,7 +107,6 @@ namespace sd
 
     void Overlay::Destroy()
     {
-        m_cursor.Restore();
         m_captureScroll = false;
         if (m_registered && m_hwnd)
             RevokeDragDrop(m_hwnd.get());   // releases OLE's reference to m_dropTarget
@@ -169,10 +168,6 @@ namespace sd
                 if (self->InClickMode() && !self->m_keyHot)
                     self->SetHot(kOutside);
             }
-            return 0;
-        case kMsgHideCursor:
-            if (self && self->m_inDrag && self->m_mode == Mode::Wheel && self->m_appearance.hideCursor)
-                self->m_cursor.Hide();
             return 0;
         case WM_GETOBJECT:
             if (LRESULT result = 0; self && self->m_a11y && self->m_a11y->OnGetObject(wParam, lParam, result))
@@ -360,7 +355,6 @@ namespace sd
     {
         if (!m_hwnd)
             return;
-        m_cursor.Restore();
         KillTimer(m_hwnd.get(), kTimerFrame);
         KillTimer(m_hwnd.get(), kTimerMore);
         m_animating = false;
@@ -376,7 +370,6 @@ namespace sd
 
     void Overlay::BeginClose()
     {
-        m_cursor.Restore();
         KillTimer(m_hwnd.get(), kTimerMore);
         if (m_mode != Mode::Wheel || (!m_motion && !m_sink))
         {
@@ -872,12 +865,7 @@ namespace sd
         m_content = m_provider ? m_provider(files, m_ring) : WheelContent{};
         Arrange(0);
         if (opening)
-        {
             m_openT = m_motion ? 0.f : 1.f;
-            // A wheel moved in from an edge keeps the pointer: it is off the centre, so it has to be seen.
-            if (m_appearance.hideCursor && !m_click && !m_shifted)
-                PostMessageW(m_hwnd.get(), kMsgHideCursor, 0, 0);   // not inside DragEnter: the source is waiting on us
-        }
         SetMode(Mode::Wheel);
         m_lastPt = pt;
         m_hot = PointerSlot(pt);
@@ -947,7 +935,6 @@ namespace sd
     void Overlay::OnDragLeave()
     {
         m_inDrag = false;
-        m_cursor.Restore();
         if (EndSink())
             return;
         if (m_mode == Mode::Closing)
@@ -960,7 +947,6 @@ namespace sd
     void Overlay::OnDrop(const std::vector<std::wstring>& files, POINT pt)
     {
         m_inDrag = false;
-        m_cursor.Restore();
         if (EndSink())
             return;   // the slice already ran by key: this drop only ends the drag
         m_dropped = true;
