@@ -15,6 +15,12 @@ namespace sd
 {
     namespace
     {
+        // Numbers as far as there are sections ("Shift+1-4"), for anyone without a mouse wheel.
+        std::wstring SwitchHint(size_t sections)
+        {
+            return sections > 1 ? std::format(L"Scroll or Shift+1\u2013{}", sections) : std::wstring(L"Scroll to switch");
+        }
+
         constexpr wchar_t kClassName[] = L"" SD_NAME L".Island";
 
         // DIPs.
@@ -540,7 +546,7 @@ namespace sd
             {
                 w += 2.f * 12.f * s + 18.f * s + 7.f * s + TextWidth(ring.title, m_tabFont.Get());
             }
-            w += 14.f * s + TextWidth(L"Scroll to switch", m_hintFont.Get()) + 10.f * s;
+            w += 14.f * s + TextWidth(SwitchHint(m_rings.size()), m_hintFont.Get()) + 10.f * s;
             break;
         case State::Progress:
             w = 14.f * s + 26.f * s + 12.f * s + std::max(TextWidth(m_title, m_titleFont.Get()), 200.f * s) + 28.f * s +
@@ -668,7 +674,7 @@ namespace sd
             Text(ring.title, m_tabFont.Get(), D2D1::RectF(tx, t.top, tx + tw + 1.f, t.bottom), colour, alpha);
         }
         const float hx = x + 14.f * s;
-        Text(L"Scroll to switch", m_hintFont.Get(), D2D1::RectF(hx, box.top, box.right, box.bottom), m_palette.panelTextDim, alpha);
+        Text(SwitchHint(tabs.size()), m_hintFont.Get(), D2D1::RectF(hx, box.top, box.right, box.bottom), m_palette.panelTextDim, alpha);
     }
 
     void Island::DrawProgress(const D2D1_RECT_F& box, float alpha)

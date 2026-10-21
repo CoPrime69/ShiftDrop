@@ -116,6 +116,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl** or **Alt**: nothing changes (only Shift opens the wheel; Ctrl and Alt keep their usual drag meaning)
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] No mouse wheel: still dragging with Shift held, tap **1**, **2**, **3** or **4**: the wheel jumps straight to that section (Convert, Tools, Reduce size, File actions); with a section turned off in Settings the numbers follow the sections that are left. The top panel hint reads "Scroll or Shift+1–4"
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
@@ -217,6 +218,7 @@ Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a 
 Keyboard during a drag
 - [ ] Drag a photo, hold **Shift**, let go of the mouse-free hand: **Right** highlights the slice at 12 o'clock, then each one clockwise; **Left** goes back; dimmed slices are skipped; holding an arrow repeats
 - [ ] **Up** / **Down** on a one-ring wheel switch to the previous / next wheel (like scrolling); the first slice of the new wheel is lit
+- [ ] With the wheel open from Explorer, press **1**–**4** (with or without Shift): the wheel jumps to that section
 - [ ] Press **Enter** on a highlighted slice: the job runs on the dragged photo (top panel), the drag ends as if Esc was pressed, and nothing is moved or copied into the folder under the cursor. Release the mouse afterwards: nothing happens
 - [ ] A slice picked by key stays lit while the mouse is still; moving the mouse a few pixels hands the highlight back to the pointer
 - [ ] **Esc** still cancels the drag; the source window never loses focus (its title bar stays active the whole time)
