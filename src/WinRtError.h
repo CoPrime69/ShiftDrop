@@ -1,6 +1,7 @@
 #pragma once
 #include "ErrorText.h"
 
+#include <unknwn.h>   // before winrt/base.h, for its classic COM support
 #include <winrt/base.h>
 
 #include <format>
