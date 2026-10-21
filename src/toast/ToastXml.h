@@ -37,7 +37,11 @@ namespace sd::toast
         std::wstring title;                 // "4 files converted to PNG"
         std::wstring text;                  // a line or two under it
         std::vector<std::wstring> outputs;  // what the buttons act on; none: a toast with no buttons
+        bool failed = false;                // nothing was made: a Dismiss button instead of Open
     };
+    // The line under a batch's title, as the brand kit words it: "photo (converted).webp and 2 more,
+    // next to the originals." (`names` are the outputs' file names, `where` SavedWhere's phrase).
+    std::wstring Summary(const std::vector<std::wstring>& names, std::wstring_view where);
     // A batch that runs longer than this may have lost the user's eye, so it gets a toast even when
     // its own top panel showed the result.
     inline constexpr std::chrono::seconds kLongJob{ 10 };
@@ -47,8 +51,8 @@ namespace sd::toast
     // so a batch of many files is one toast.
     bool ShouldNotify(bool shownInPanel, std::chrono::milliseconds took, bool cancelled);
 
-    // The toast: title and text, a click shows the outputs, "Open folder" does the same and "Open"
-    // (only for a single output) opens it.
+    // The toast: title and text, a click shows the outputs, "Open" (only for a single output) opens
+    // it and "Open folder" shows them. A failed one has only Dismiss.
     std::wstring BuildXml(const Content& content);
     // Text for an XML attribute or element: & < > " ' escaped, control characters dropped.
     std::wstring EscapeXml(std::wstring_view text);

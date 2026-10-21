@@ -1107,7 +1107,7 @@ namespace sd
                     return;
                 lastFrame = now;
                 if (!shown)
-                    m_island->ShowProgress(std::format(L"Saving {}\u2026", Count(count, L"dropped file")), 1);
+                    m_island->ShowProgress(std::format(L"Saving {}", Count(count, L"dropped file")), 1);
                 shown = true;
                 if (total > 0)
                     m_island->SetProgress(std::min(1.0, static_cast<double>(done) / static_cast<double>(total)));
@@ -1238,7 +1238,7 @@ namespace sd
                                                                            : std::format(L"{}: {}", recipe.label, Count(files.size(), L"file"));
             // The panel's × stops this batch: the file in progress is abandoned (its staging file
             // deleted) and the rest are skipped. Files already finished stay.
-            m_island->ShowProgress(verb + L"\u2026", files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
+            m_island->ShowProgress(verb, files.size(), [cancel = state->cancel]() mutable { cancel.request_stop(); });
             // Video and audio go through the media queue, one file at a time; images use every worker;
             // shell work and office exports each have an STA thread. A batch action (join, merge, zip) is
             // one job for all files.
@@ -1267,7 +1267,7 @@ namespace sd
                     done->cancelled = state->cancel.stop_requested();
                     PostBatch(state->notify, std::move(done));
                 });
-                m_island->ShowProgress(std::format(L"{}: {}\u2026", recipe.label, Count(files.size(), L"file")), 1,
+                m_island->ShowProgress(std::format(L"{}: {}", recipe.label, Count(files.size(), L"file")), 1,
                                        [cancel = state->cancel]() mutable { cancel.request_stop(); });
                 return;
             }
@@ -1340,7 +1340,7 @@ namespace sd
             }
             m_tray.SetTip(std::format(L"" SD_NAME L": moving {} item(s)...", files.size()));
             const uint64_t token = m_islandBatch = m_nextBatch++;
-            m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FolderName(folder)),
+            m_island->ShowProgress(std::format(L"Moving {} to {}", Count(files.size(), L"item"), FolderName(folder)),
                                    files.size());
             m_lanes->For(JobLane::Shell).Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
                                                  history = m_history.get(), token, started = std::chrono::steady_clock::now()](std::stop_token) {
@@ -1371,7 +1371,7 @@ namespace sd
         {
             m_renameWindow->Show(std::move(files), [this, recipe](std::vector<Rename> renames) {
                 const uint64_t token = m_islandBatch = m_nextBatch++;
-                m_island->ShowProgress(std::format(L"Renaming {}\u2026", Count(renames.size(), L"item")), renames.size());
+                m_island->ShowProgress(std::format(L"Renaming {}", Count(renames.size(), L"item")), renames.size());
                 m_lanes->For(JobLane::Shell).Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token,
                                                      started = std::chrono::steady_clock::now()](std::stop_token) {
                     int64_t runId = 0;
@@ -1447,6 +1447,9 @@ namespace sd
             // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
             if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
                 title = batch->files[0].result.message;
+            // One file that could not be converted says which (the brand kit's wording).
+            if (total == 1 && ok == 0 && batch->kind == BatchKind::Convert)
+                title = std::format(L"Couldn\u2019t convert {}", FileName(batch->files[0].source));
             const bool shownInPanel = batch->token == m_islandBatch;
             if (shownInPanel)
             {
@@ -1485,7 +1488,32 @@ namespace sd
             {
                 if (ok > 0 && m_history)
                     details += L"Undo: tray menu > History";
-                if (!m_toasts || !toast::Show(toast::Content{ title, details, outputs }))
+                // The toast in the brand kit's words: what was made and where, a long single job's
+                // size and time, or what went wrong with the one file.
+                toast::Content content{ title, details, outputs };
+                if (ok == 0 && !batch->files.empty())
+                {
+                    content.text = total == 1 ? batch->files[0].result.error : details;
+                    content.failed = true;
+                }
+                else if (!failed && !skipped && outputs.size() == 1 && total == 1)
+                {
+                    const auto& out = outputs.front();
+                    const auto kind = MediaKindOfExtension(LowerExtension(out));
+                    content.title = kind == MediaKind::Video ? L"Your video is ready" : kind == MediaKind::Audio ? L"Your audio is ready" : L"Your file is ready";
+                    std::error_code ec;
+                    const auto bytes = std::filesystem::file_size(out, ec);
+                    content.text = ec ? std::format(L"{} \u00b7 took {}", FileName(out), DurationText(took.count()))
+                                      : std::format(L"{} \u00b7 {} \u00b7 took {}", FileName(out), SizeText(bytes), DurationText(took.count()));
+                }
+                else if (!failed && !skipped && !outputs.empty())
+                {
+                    std::vector<std::wstring> names;
+                    for (const auto& out : outputs)
+                        names.push_back(FileName(out));
+                    content.text = toast::Summary(names, SavedWhere(batch->savedTo));
+                }
+                if (!m_toasts || !toast::Show(content))
                     m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
             }
             log::Info(L"batch (run {}): {} ok, {} skipped, {} failed, {:.1f} s", batch->runId, ok, skipped, failed, took.count() / 1000.0);

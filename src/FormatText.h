@@ -16,4 +16,6 @@ namespace sd
     // A duration rounded to the millisecond: "0:01:23.456", or "00:01:23.456" with `padHours`.
     // A negative time reads as 0.
     std::wstring Timecode(int64_t us, bool padHours);
+    // How long something took, to the second: "38 s", "4 min 12 s", "1 h 5 min" (under a second: "1 s").
+    std::wstring DurationText(int64_t ms);
 }

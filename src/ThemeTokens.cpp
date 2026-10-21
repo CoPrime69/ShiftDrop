@@ -157,6 +157,9 @@ namespace sd::theme
             p.panelTextDim = Rgb(0x9DA2AC);
             p.keycap = White(0.12f);
             p.hover = White(0.07f);
+            p.track = Rgb(0x353A44);
+            p.page = Rgb(0x1E2128);
+            p.pageLine = Rgb(0x353A44);
         }
         else
         {
@@ -176,8 +179,13 @@ namespace sd::theme
             p.panelTextDim = Rgb(0x5E6370);
             p.keycap = Ink(0.07f);
             p.hover = Ink(0.05f);
+            p.track = Rgb(kN100);
+            p.page = Rgb(kN0);
+            p.pageLine = Rgb(kN200);
         }
         p.glassTint = p.disc;
+        // The file mark's corner says "done": the accent's own colour in light, its light-on-dark tone in dark.
+        p.pageMark = Rgb(dark ? tones.dark : tones.fill);
         // A dimmed tile's label (an action that can't take these files). Disabled text is exempt from
         // the contrast minimum; the reason is spelled out in the centre.
         p.textDim = WithAlpha(p.text, 0.38f);

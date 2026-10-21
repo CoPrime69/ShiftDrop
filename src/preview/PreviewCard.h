@@ -45,6 +45,7 @@ namespace sd
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         void OnPrediction(std::unique_ptr<preview::Prediction> prediction);
         void Place(const WheelHighlight& highlight);
+        void Fit();   // the window's size and place for what the card now says
         void HideNow();
         void Render();
         bool EnsureFormats();
@@ -60,6 +61,9 @@ namespace sd
         theme::Palette m_palette{};
         POINT m_origin{};
         SIZE m_size{};
+        LONG m_edgeY = 0;        // the card's edge nearest the wheel: its top below the wheel, its bottom above it
+        bool m_above = false;    // above the wheel (no room under it)
+        LONG m_left = 0;         // the card's left edge
         bool m_shown = false;
 
         uint64_t m_token = 0;              // the request the card shows

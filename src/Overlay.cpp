@@ -50,11 +50,13 @@ namespace sd
 
         constexpr wchar_t kMoreIcon = 0xE712;   // "More" (three dots)
 
-        // The centre's count line ("3 files"): this size, smaller when it is long, then two lines.
-        constexpr float kCountDip = 19.f, kCountMinDip = 13.f;
-        // The badge the count moves into when the drag picture is over the centre.
-        constexpr float kBadgeFontDip = 13.f;
-        constexpr float kBadgeLineDip = 18.f;
+        // The badge the count moves into when the drag picture is over the centre: the centre's two
+        // styles (wheel::kCentreMainDip and kCentreDetailDip), in a pill.
+        constexpr float kBadgeLineDip = 26.f;
+        // The centre's main line and the detail under it, DIPs from the wheel's centre (the dots sit
+        // below them, 9 DIPs above the disc's edge).
+        constexpr float kMainTopDip = -29.f, kMainBottomDip = -3.f;
+        constexpr float kDetailTopDip = -1.f, kDetailBottomDip = 35.f;
         constexpr float kBadgePadDip = 9.f, kBadgeVPadDip = 3.f;
         constexpr float kBadgeMaxDip = 210.f;
 
@@ -282,16 +284,13 @@ namespace sd
         std::vector<wheel::LabelSpec> labels;
         for (const auto& slice : slices)
             labels.push_back(wheel::LabelSpec{ slice.label, slice.icon ? wheel::LabelStyle::Icon : wheel::LabelStyle::Name });
-        const auto measure = [this](const std::wstring& text, wheel::LabelStyle style) {
-            const float full = wheel::FullSize(style);
-            return theme::TextWidth(m_dwrite.Get(), text, SizedFormat(style == wheel::LabelStyle::Name ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, full)) /
-                   m_scale;
+        EnsureTextFormats();
+        const auto measure = [this](const std::wstring& text) { return theme::TextWidth(m_dwrite.Get(), text, SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kLabelDip)) / m_scale;
         };
         auto fits = wheel::FitLabels(layout, labels, measure);
         for (size_t i = 0; i < fits.size(); ++i)
-            if (fits[i].shortened || !fits[i].fits || fits[i].size < wheel::MinSize(labels[i].style))
-                log::Info(L"overlay: label '{}' drawn as '{}' at {:.1f} DIP{}", labels[i].text, fits[i].Text(), fits[i].size,
-                          fits[i].fits ? L"" : L" (does not fit)");
+            if (!fits[i].fits)
+                log::Warn(L"overlay: label '{}' does not fit its tile on two lines; its recipe needs a shorter label", labels[i].text);
         return fits;
     }
 
@@ -906,6 +905,7 @@ namespace sd
     {
         if (m_mode != Mode::Wheel)
             return DROPEFFECT_NONE;
+        const bool moved = pt.x != m_lastPt.x || pt.y != m_lastPt.y;
         m_lastPt = pt;
         // OLE calls DragOver repeatedly even when the mouse is still: a slice picked by key keeps the
         // highlight until the cursor really moves.
@@ -917,6 +917,8 @@ namespace sd
             SetHot(hot);
         }
         UpdateCentrePlan();   // the badge follows the picture
+        if (moved && m_picture && Selectable(m_hot))
+            Animate();        // ...and the hovered label moves out from under it
         // Heading out past the tiles, the wheel fades a little with distance, so leaving it is a
         // gradual hand-off rather than a sudden disappearance at the window edge.
         const float d = std::hypot(static_cast<float>(pt.x - m_origin.x) - m_c.x, static_cast<float>(pt.y - m_origin.y) - m_c.y);
@@ -1003,15 +1005,17 @@ namespace sd
         m_sizedFonts.clear();
         // Centred: every label sits in the middle of its tile or the wheel's centre.
         constexpr auto C = DWRITE_TEXT_ALIGNMENT_CENTER;
-        m_labelFont = MakeFormat(m_textFamily, wheel::kIconLabelDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
-        m_formatFont = MakeFormat(m_textFamily, wheel::kNameLabelDip, DWRITE_FONT_WEIGHT_BOLD, C);
-        m_iconFont = MakeFormat(m_iconFamily, wheel::kIconFontDip, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_countFont = MakeFormat(m_textFamily, kCountDip, DWRITE_FONT_WEIGHT_BOLD, C);
-        m_ringFont = MakeFormat(m_textFamily, 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
-        m_detailFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        // Brand Guidelines › Wheel type rules: the labels and the centre's two lines, never smaller.
+        m_labelFont = MakeFormat(m_textFamily, wheel::kLabelDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        m_iconFont = MakeFormat(m_iconFamily, wheel::kIconDip, DWRITE_FONT_WEIGHT_NORMAL, C);
+        m_countFont = MakeFormat(m_textFamily, wheel::kCentreMainDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        m_detailFont = MakeFormat(m_textFamily, wheel::kCentreDetailDip, DWRITE_FONT_WEIGHT_NORMAL, C);
         if (m_detailFont)
+        {
             m_detailFont->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-        return m_labelFont && m_formatFont && m_iconFont && m_countFont && m_ringFont && m_detailFont;
+            m_detailFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);   // under the main line, however many lines
+        }
+        return m_labelFont && m_iconFont && m_countFont && m_detailFont;
     }
 
     IDWriteTextFormat* Overlay::SizedFormat(DWRITE_FONT_WEIGHT weight, float dip, bool wrap, bool icon)
@@ -1161,27 +1165,31 @@ namespace sd
             }
             m_rt->DrawGeometry(tile.Get(), Brush(m_palette.tileLine, alpha * (1.f - t)).Get(), 1.f);
 
-            // Icon above the label, or a format name alone in bold, where wheel::FitLabels found room
-            // for it in this tile: on one line or two, as large as fits, clear of the tile's edges.
+            // Icon above the label, or the label alone (format names, sizes), where wheel::FitLabels
+            // found room for it in this tile: one style everywhere, on one line or two. The hovered
+            // tile's label moves along its tile out from under the drag picture.
             const auto& fit = fits[i];
-            const auto at = Polar(fit.radius * s + 2.f * s * e, mid);
+            float radius = fit.radius;
+            if (t > 0.f && &slices == &m_shown)
+                if (const auto picture = DragPicture())
+                    radius += (wheel::ClearOfPicture(layout, si, fit, *picture) - fit.radius) * e;
+            const auto at = Polar(radius * s + 2.f * s * e, mid);
             const auto colour = slice.enabled ? Mix(m_palette.text, m_palette.textOnAccent, t) : m_palette.textDim;
             if (slice.icon)
             {
-                const float iy = at.y + fit.iconDy * s, ih = 0.75f * fit.iconSize * s;
+                const float iy = at.y + fit.iconDy * s, ih = 0.75f * wheel::kIconDip * s;
                 const auto box = D2D1::RectF(at.x - ih, iy - ih, at.x + ih, iy + ih);
                 D2D1_MATRIX_3X2_F current{};
                 m_rt->GetTransform(&current);
                 if (slice.mirrorIcon)
                     m_rt->SetTransform(D2D1::Matrix3x2F::Scale(-1.f, 1.f, D2D1::Point2F(at.x, iy)) * current);
                 const wchar_t glyph[2]{ slice.icon, 0 };
-                Text(glyph, fit.iconSize < wheel::kIconFontDip ? SizedFormat(DWRITE_FONT_WEIGHT_NORMAL, fit.iconSize, false, true) : m_iconFont.Get(), box,
-                     colour, alpha);
+                Text(glyph, m_iconFont.Get(), box, colour, alpha);
                 m_rt->SetTransform(current);
             }
-            auto* font = SizedFormat(slice.icon ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_BOLD, fit.size);
+            auto* font = SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kLabelDip);
             // The lines were measured to fit; the wide box only keeps DirectWrite from wrapping them.
-            const float half = tileOut, lineHalf = 0.75f * fit.size * s;
+            const float half = tileOut, lineHalf = 0.75f * wheel::kLabelDip * s;
             for (size_t k = 0; k < fit.lines.size() && k < fit.lineDy.size(); ++k)
             {
                 const float ly = at.y + fit.lineDy[k] * s;
@@ -1197,7 +1205,7 @@ namespace sd
         m_rt->FillEllipse(D2D1::Ellipse(m_c, m_inner, m_inner), Brush(m_palette.centre).Get());
         m_rt->DrawEllipse(D2D1::Ellipse(m_c, m_inner - 0.5f, m_inner - 0.5f), Brush(m_palette.centreLine).Get(), 1.f);
 
-        const float w = 2.f * m_inner - 14.f * s;
+        const float w = 2.f * m_inner - 8.f * s;
         float detailT = 0.f;
         if (m_detail >= 0 && static_cast<size_t>(m_detail) < m_hotT.size())
             detailT = m_hotT[static_cast<size_t>(m_detail)];
@@ -1205,8 +1213,8 @@ namespace sd
         // With the drag picture over the middle, the text is in the badge beside it instead (DrawBadge).
         const float shown = 1.f - m_badgeT;
 
-        // The count (or a size), crossfading to the hovered slice's headline when it has one.
-        const auto upper = D2D1::RectF(m_c.x - w / 2, m_c.y - 22.f * s, m_c.x + w / 2, m_c.y + 2.f * s);
+        // The main line: the count (or a size), crossfading to the hovered slice's headline when it has one.
+        const auto upper = D2D1::RectF(m_c.x - w / 2, m_c.y + kMainTopDip * s, m_c.x + w / 2, m_c.y + kMainBottomDip * s);
         const std::wstring* headline = nullptr;
         if (m_detail >= 0 && static_cast<size_t>(m_detail) < m_shown.size() && !m_shown[static_cast<size_t>(m_detail)].headline.empty())
             headline = &m_shown[static_cast<size_t>(m_detail)].headline;
@@ -1214,31 +1222,24 @@ namespace sd
         if (headline && detailT > 0.f)
             DrawCentreLine(*headline, upper, detailT * shown);
 
-        // Below the count: the wheel's name, crossfading to the hovered slice's detail.
-        const auto lower = D2D1::RectF(m_c.x - w / 2, m_c.y + 2.f * s, m_c.x + w / 2, m_c.y + 20.f * s);
+        // Under it the detail: the wheel's name, crossfading to the hovered slice's detail, or to why a
+        // dimmed slice can't be used ("Needs HEIF Image Extensions").
+        const auto lower = D2D1::RectF(m_c.x - w / 2, m_c.y + kDetailTopDip * s, m_c.x + w / 2, m_c.y + kDetailBottomDip * s);
         if (!m_rings.empty())
-        {
-            std::wstring title = m_rings[static_cast<size_t>(m_ring)].title;
-            for (auto& ch : title)
-                ch = static_cast<wchar_t>(towupper(ch));
-            Text(title, m_ringFont.Get(), lower, m_palette.text, 0.62f * (1.f - std::max(detailT, m_whyT)) * shown);
-        }
-        // A dimmed slice says why it can't be used ("Needs HEIF Image Extensions").
+            Text(m_rings[static_cast<size_t>(m_ring)].title, m_detailFont.Get(), lower, m_palette.subtleText, (1.f - std::max(detailT, m_whyT)) * shown);
         if (m_whyT > 0.f && m_why >= 0 && static_cast<size_t>(m_why) < m_shown.size())
-            Text(m_shown[static_cast<size_t>(m_why)].detail, m_detailFont.Get(),
-                 D2D1::RectF(lower.left, lower.top - 1.f * s, lower.right, lower.bottom + 12.f * s), m_palette.text, 0.85f * m_whyT * shown);
+            Text(m_shown[static_cast<size_t>(m_why)].detail, m_detailFont.Get(), lower, m_palette.subtleText, m_whyT * shown);
         if (detailT > 0.f && m_detail >= 0 && static_cast<size_t>(m_detail) < m_shown.size())
         {
             const auto& slice = m_shown[static_cast<size_t>(m_detail)];
-            Text(slice.detail.empty() ? slice.label : slice.detail, m_detailFont.Get(),
-                 D2D1::RectF(lower.left, lower.top - 1.f * s, lower.right, lower.bottom + 12.f * s), m_palette.text, 0.85f * detailT * shown);
+            Text(slice.detail.empty() ? slice.label : slice.detail, m_detailFont.Get(), lower, m_palette.subtleText, detailT * shown);
         }
 
         // Dots: one per wheel, the current one in the accent colour (scroll to move between them).
         const size_t n = m_rings.size();
         if (n > 1)
         {
-            const float gap = 9.f * s, dotY = m_c.y + m_inner - 12.f * s;
+            const float gap = 9.f * s, dotY = m_c.y + m_inner - 9.f * s;
             const float x0 = m_c.x - gap * static_cast<float>(n - 1) / 2.f;
             for (size_t i = 0; i < n; ++i)
             {
@@ -1251,40 +1252,42 @@ namespace sd
         DrawBadge();
     }
 
-    // The count line: at full size if it fits the disc, smaller if it is long, and on two lines (growing
-    // upward) at the smallest size if even that is too wide. Never trimmed.
+    // The main line: on one line if it fits the disc, else on two (growing upward) at the same size.
+    // Never smaller, never trimmed.
     void Overlay::DrawCentreLine(const std::wstring& text, const D2D1_RECT_F& line, float alpha)
     {
         if (text.empty() || alpha <= 0.f)
             return;
-        const float s = m_scale;
-        const float room = (line.right - line.left) / s;
-        const float full = TextWidth(text, m_countFont.Get()) / s;
-        const float size = wheel::ShrinkToFit(full, kCountDip, kCountMinDip, room);
-        if (full * size / kCountDip <= room)
+        if (TextWidth(text, m_countFont.Get()) <= line.right - line.left)
         {
-            Text(text, SizedFormat(DWRITE_FONT_WEIGHT_BOLD, size), line, m_palette.text, alpha);
+            Text(text, SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kCentreMainDip), line, m_palette.text, alpha);
             return;
         }
-        const float extra = kCountMinDip * 1.3f * s;
-        Text(text, SizedFormat(DWRITE_FONT_WEIGHT_BOLD, kCountMinDip, true), D2D1::RectF(line.left, line.top - extra, line.right, line.bottom), m_palette.text,
-             alpha);
+        const float extra = wheel::kCentreMainDip * 1.25f * m_scale;
+        Text(text, SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kCentreMainDip, true), D2D1::RectF(line.left, line.top - extra, line.right, line.bottom),
+             m_palette.text, alpha);
     }
 
     // ---- The badge: the count beside the drag picture ----------------------------------------------
 
-    std::optional<wheel::Rect> Overlay::PictureRect() const
+    std::optional<wheel::Rect> Overlay::DragPicture() const
     {
         if (!m_picture || !m_inDrag || m_click)
             return std::nullopt;
         const float s = m_scale;
         const float cx = static_cast<float>(m_lastPt.x - m_origin.x) - m_c.x, cy = static_cast<float>(m_lastPt.y - m_origin.y) - m_c.y;
-        // Only while the cursor is on the centre disc. Over a slice the picture is on that slice, and a
-        // badge following it there would cover the labels around it.
-        if (std::hypot(cx, cy) > m_inner)
-            return std::nullopt;
         return wheel::Rect{ (cx + static_cast<float>(m_picture->left)) / s, (cy + static_cast<float>(m_picture->top)) / s,
                             (cx + static_cast<float>(m_picture->right)) / s, (cy + static_cast<float>(m_picture->bottom)) / s };
+    }
+
+    std::optional<wheel::Rect> Overlay::PictureRect() const
+    {
+        // Only while the cursor is on the centre disc. Over a slice the picture is on that slice (whose
+        // label moves out from under it), and a badge following it there would cover the labels around it.
+        const float cx = static_cast<float>(m_lastPt.x - m_origin.x) - m_c.x, cy = static_cast<float>(m_lastPt.y - m_origin.y) - m_c.y;
+        if (std::hypot(cx, cy) > m_inner)
+            return std::nullopt;
+        return DragPicture();
     }
 
     std::wstring Overlay::BadgeDetail() const
@@ -1302,7 +1305,7 @@ namespace sd
     D2D1_SIZE_F Overlay::BadgeSize()
     {
         const float s = m_scale;
-        auto* font = SizedFormat(DWRITE_FONT_WEIGHT_BOLD, kBadgeFontDip);
+        auto* font = SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kCentreMainDip);
         float w = TextWidth(m_content.centerText, font) / s;
         if (Selectable(m_hot) && !m_shown[static_cast<size_t>(m_hot)].headline.empty())
             w = std::max(w, TextWidth(m_shown[static_cast<size_t>(m_hot)].headline, font) / s);
@@ -1324,8 +1327,8 @@ namespace sd
             return;
         const float s = m_scale;
         // The count line and the name or detail under it, as DrawCentre lays them out, DIPs from the centre.
-        const float half = m_inner / s - 7.f;
-        const wheel::Rect text{ -half, -22.f, half, 20.f };
+        const float half = m_inner / s - 4.f;
+        const wheel::Rect text{ -half, kMainTopDip, half, kDetailBottomDip };
         const auto picture = PictureRect();
         const auto size = picture ? BadgeSize() : D2D1::SizeF(0.f, 0.f);   // no measuring on every move without one
         const auto plan = wheel::PlanCentre(text, picture, size.width, size.height, m_badge);
@@ -1361,13 +1364,13 @@ namespace sd
             headline = &m_shown[static_cast<size_t>(m_detail)].headline;
         const float top = box.top + kBadgeVPadDip * s;
         const auto line = D2D1::RectF(box.left, top, box.right, top + kBadgeLineDip * s);
-        auto* font = SizedFormat(DWRITE_FONT_WEIGHT_BOLD, kBadgeFontDip);
+        auto* font = SizedFormat(DWRITE_FONT_WEIGHT_SEMI_BOLD, wheel::kCentreMainDip);
         Text(m_content.centerText, font, line, m_palette.text, a * (headline ? 1.f - detailT : 1.f));
         if (headline && detailT > 0.f)
             Text(*headline, font, line, m_palette.text, a * detailT);
         if (const auto detail = BadgeDetail(); !detail.empty())
             Text(detail, m_detailFont.Get(), D2D1::RectF(box.left + kBadgePadDip * s, line.bottom, box.right - kBadgePadDip * s, box.bottom - kBadgeVPadDip * s),
-                 m_palette.text, 0.85f * a * std::max(detailT, m_whyT));
+                 m_palette.subtleText, a * std::max(detailT, m_whyT));
     }
 
     void Overlay::DrawScene()
@@ -1405,7 +1408,7 @@ namespace sd
 
         if (m_appearance.style == Style::Glass)
         {
-            // Frosted disc: the blurred snapshot, then the tint, then two hairlines.
+            // Frosted disc: the blurred snapshot, then the tint, then a hairline.
             if (!m_backdrop || m_backdropGeneration != m_canvas->DeviceGeneration())
             {
                 m_backdrop = ToBitmap(m_rt, m_backdropPx);
@@ -1428,6 +1431,13 @@ namespace sd
                 }
             }
             m_rt->FillEllipse(disc, Brush(m_palette.glassTint, m_backdrop ? 1.f : 1.3f).Get());
+            m_rt->DrawEllipse(D2D1::Ellipse(m_c, r - 0.5f, r - 0.5f), Brush(m_palette.discLine).Get(), 1.f);
+        }
+        else
+        {
+            // Solid: the tiles sit on a plate of the theme's surface, as in the brand kit.
+            const float r = m_tileOut + 4.f * s;
+            m_rt->FillEllipse(D2D1::Ellipse(m_c, r, r), Brush(m_palette.disc).Get());
             m_rt->DrawEllipse(D2D1::Ellipse(m_c, r - 0.5f, r - 0.5f), Brush(m_palette.discLine).Get(), 1.f);
         }
 

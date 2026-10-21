@@ -176,7 +176,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
 - [ ] No mouse wheel: still dragging with Shift held, tap **1**, **2**, **3** or **4**: the wheel jumps straight to that section (Convert, Tools, Reduce size, File actions); with a section turned off in Settings the numbers follow the sections that are left. The top panel hint reads "Scroll or Shift+1–4"
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
-- [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
+- [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with a warning icon and the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
 - [ ] When the wheel opens, Explorer's drag picture (the file's icon or thumbnail with its full name) stays visible over the wheel and follows the cursor across the tiles, with the mouse pointer; there is no "+ Copy" badge under it. Several files show Explorer's stack and count the same way. The file's own icon staying where it was is Windows: a drag only copies until you drop
 - [ ] With the panel at the top: drag the file up over the top panel, and to the bottom tiles while the predicted-output card shows: the drag picture stays on top of both
@@ -185,8 +185,12 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] The tray menu has no **Hide cursor over the wheel** item, and the pointer is never hidden over the wheel. A `settings.ini` from an older version with `HideCursor=1` under `[Appearance]` changes nothing, and the key is gone after the next Size or Style change
 - [ ] Drag slowly out of the wheel: it fades as you pass the tiles and shrinks away smoothly when you leave it
 - [ ] Labels are never cut off: drag `song.mp3`, a video, a BMP and a PDF and open **Tools** (and page with **More**) at Size Small, Medium, Large and Auto, at 100%, 125%, 150% and 200% scaling: no slice label ends in "…" anywhere. **Under 10 MB** and **Under 25 MB** read in full (on two lines, "Under" over "10 MB", when one is too wide), **Compress** and **50% size** are whole, and every label keeps clear of its tile's edges and of the centre disc with a little room to spare
-- [ ] A label that is long for its tile goes onto two lines at a space before it gets smaller, and never gets so small it is hard to read; a number and its unit ("10 MB", "1920 px") always stay on one line. The log line `overlay: label '…' drawn as '…'` appears only for a label that had to be shortened (none of ShiftDrop's own)
-- [ ] The image Tools wheel shows **Rotate right** and **Rotate left** (not two "Rotate" slices told apart by arrows); the video and audio editor slices read **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact**, **Channels**, **Bleep**, **Visualizer** with no "…"; File actions shows **Move to folder** and **Rename**
+- [ ] One label style on every tile: every slice label is the same size and weight (13 px Semibold at Size Medium, larger only with Small / Medium / Large and the screen's scaling), on the inner and the outer ring, on icon tiles and on text-only tiles (**Reduce size** 90%…20%, **PNG**, **Under 10 MB**) alike; a wheel never mixes two label sizes. A label too long for one line goes onto two at a space and is never made smaller; a number and its unit ("10 MB", "1920 px") always stay on one line. The log line `overlay: label '…' does not fit its tile` never appears for ShiftDrop's own slices
+- [ ] One icon size on both rings: on **File actions** with a PDF (two rings) the inner and the outer icons are the same size (20 px at Medium), each above its label
+- [ ] Drag a file from Explorer and move slowly across the tiles with Shift: Explorer's drag picture never sits on the hovered tile's label; the label slides along its tile, out from under the picture, and back when the picture moves on (the wheel itself, its tiles and gaps do not move)
+- [ ] The centre: the main line ("1 file", "1.0 MB", "Not for videos") is larger and bold (20 px), the line under it ("Save a WebP copy next to it", the section name) small and grey (12 px); a long main line goes onto two lines, never "…"
+- [ ] Style **Solid**: the tiles sit on a round plate (white in light mode, `#1A1C22` in dark) with a fine edge; Glass keeps the frosted plate
+- [ ] The image Tools wheel shows **Rotate right** and **Rotate left** (not two "Rotate" slices told apart by arrows); the video and audio editor slices read **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact**, **Channel**, **Bleep**, **Visuals** with no "…"; File actions shows **Move to folder** and **Rename**
 - [ ] Drag a file from Explorer with Shift: the drag picture sits over the centre, and the count ("1 file", "3 files", or the size on Reduce size) is in a small rounded badge just below the picture (above it when the picture hangs low), never hidden under it; arrow keys while the cursor is still in the centre show the picked slice's detail in that badge. Move onto a slice and the count is back in the centre with the wheel's name under it. In click mode (Explorer selection) there is no picture, and the count sits in the centre as before
 - [ ] Drag `notes.txt` and hold **Shift**: the Tools wheel opens with Inspect (nothing on Convert applies); scrolling still visits the all-dimmed wheels, which show why nothing applies
 - [ ] A new install (no settings.ini) starts at Size **Medium** with the top panel at 100%
@@ -194,7 +198,11 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] 1080p at 100%, Size Auto: the top panel's wheel names are easy to read at arm's length (about 18 px text, a panel about 62 px tall), clearly larger than the wheel's own labels; the hint "Scroll or Shift+1–4" is readable too; edges and text are sharp, not blurred
 - [ ] 2560x1440 at 100% and at 125%, Size Auto: the panel is larger again (about 24 px text, about 80 px tall) and still sharp; on a second monitor at a different scaling it is the same size relative to that monitor's text
 - [ ] A 1366x768 screen at 100% (or a window-sized VM), every Size: the whole panel fits on screen with all four names and the hint; at 150% with Size Large the hint is dropped before any name is cut
-- [ ] At the new size, the progress panel ("Converting N files…", bar, ×) and the result panel (badge, two lines, Float and Copy buttons) look as before, only larger: nothing is cut off and the × and buttons are easy to hit
+- [ ] At the new size, the progress panel (spinner, "Converting N files to …", "· 40%", ×, the thin bar along its bottom edge) and the result panel (handle, two lines, Float and Copy buttons) only grow: nothing is cut off and the × and buttons are easy to hit
+- [ ] Progress, as the brand kit draws it: a small accent spinner, the job's name, then "· N%" in grey (one file of a video moves within itself), a round × at the end that turns red under the mouse, and a thin accent bar along the bottom edge of the pill
+- [ ] A finished convert: on the left a small chip with grip dots and a page with an accent corner, then "N files converted to …" over a small grey line, then the round Float and Copy buttons; hovering the pill says "Click to show in folder · drag the file out" ("the files" for several); dragging the chip (or the pill) carries the outputs into another app
+- [ ] A failed job (rename a `.txt` to `.png` and convert it alone): the pill is outlined in red, with a red ! icon, "Couldn’t convert name.png" and "Click to dismiss" beside it, the reason under it; it stays until clicked, and clicking only dismisses it (no Explorer window)
+- [ ] The predicted-output card under the wheel: white (light) or `#1F2127` (dark) with a soft shadow and small corners; the picture's thumbnail (or a page mark for a file without one), "WebP" in bold with "1.2 MB · was 3.4 MB" in grey on the right, and the output's name under it; a third grey line only when something changes (pixel size, metadata removed)
 - [ ] Settings › **Top panel size**: a slider from 50% to 300% in 10% steps (100% by default), with its value beside it ("160%"); arrow keys move it one step. At 100% the panel is as above; drag a file with Shift after each change (no restart): the switcher, the progress and the result panels grow by that share on top of the tray's Size (Small, Medium, Large and Auto still differ), text, icons, gaps and corners together, sharp at 100%, 125% and 150% scaling. At 50% the panel is half that size and still sharp, all four names whole
 - [ ] Top panel size at 300% on a 1366x768 screen (or at 150% scaling): the panel grows only as far as all four names stay whole and it stays in the top half of the screen (the log says `island: top panel size 300% does not fit this screen; drawn at N%`); the value survives a restart as `[Appearance] PanelSize=` in settings.ini
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
@@ -247,8 +255,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
 - [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
 - [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
-- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
-- [ ] Drop `paper.pdf` on **TXT** and on **Markdown**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
+- [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **MD**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop `paper.pdf` on **TXT** and on **MD**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
 - [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
 - [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
 - [ ] Drag two PDFs, open **Tools**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
@@ -264,13 +272,13 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drop one PDF on **Edit**, **Add files…** another: the title becomes "Edit 2 PDFs", Save becomes **Merge and export**, and the output has both PDFs' pages
 - [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
 - [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
-- [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
+- [ ] Drop `report.pdf` on **Pages**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
 - [ ] Hover a dimmed slice (for example HEIC on a PC without the HEIF extension): the wheel's centre says why it can't be used, and fades back when you move off
-- [ ] Drop two PDFs on **Organize**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
+- [ ] Drop two PDFs on **Pages**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
 - [ ] Organize, Merge (and its pages) and Edit follow the Windows light/dark setting, and look right at 150% scaling
 - [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
 - [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
-- [ ] Drop the scanned PDF (or `page.jpg`) on **Searchable**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on Searchable is skipped ("already searchable")
+- [ ] Drop the scanned PDF (or `page.jpg`) on **OCR PDF**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on OCR PDF is skipped ("already searchable")
 - [ ] Settings > Time & language > Language: with no OCR-capable language, Copy text and Searchable are dimmed for photos and say why in the centre
 - [ ] Drag two files, open **File actions**, drop on **Share**: the Windows share sheet opens near the cursor with both files (Nearby sharing, Phone Link, Mail, other apps). Share to Mail or OneNote: the files arrive. Close the sheet: nothing else happens
 - [ ] The password PDF on any PDF slice: the panel says "the PDF is locked with a password"; a `.txt` renamed to `.pdf` says "not a PDF file"
@@ -279,6 +287,9 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 
 ### O. Float shelf, carry and clipboard
 Float shelf:
+- [ ] The shelf's look, light and dark: small (8 px) corners; a header with the pin icon, "Float shelf" and "N files" in grey, then Pin, **Clear all** and Close as the Settings window's buttons (square-cornered hover, a push button for Clear all, the same focus ring under Tab); a selected row has a light accent wash with a short accent bar on its left; a hovered row shows the folder and × buttons in the same style
+- [ ] An empty shelf: a dashed grey outline with a blank page and "Drag files here to keep them for later." on two lines; dragging files over it turns the outline and the page's corner accent
+- [ ] The folded tab is wider (30 px) and shows the newest thumbnail over an accent badge with the count in white
 - [ ] Drag `photo.jpg` and open **File actions**: it has **Float** (pin icon); dropping on it slides a shelf out of the right edge of that screen with the photo's thumbnail, name and "size · folder"; the top panel says "photo.jpg on the Float shelf"
 - [ ] About two seconds later (mouse elsewhere) the pinned shelf folds into a slim tab on the edge showing the thumbnail and "1"; hovering the tab unfolds it smoothly, leaving folds it again
 - [ ] Drag three more files straight onto the tab (no key held): it unfolds as the drag arrives, the badge under the drag picture says "Add to the Float shelf", and the files are added at the top; dropping one that is already there moves it up instead of adding it twice
@@ -395,7 +406,7 @@ Redact Photos
 - [ ] On a PC with no OCR language installed, the Find section says how to add one
 
 Share-safe
-- [ ] Drag the phone photo, open **Tools**, drop on **Share-safe**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
+- [ ] Drag the phone photo, open **Tools**, drop on **Private**: a small "Checking the photo for personal details" window shows progress; with nothing found in the picture it saves straight away
 - [ ] The top panel says something like "Removed GPS, camera, 14 fields"; `photo (share-safe).jpg` has no GPS, camera or date in Properties > Details, and still opens upright
 - [ ] Drop the screenshot on Share-safe: a "Review before sharing" editor opens with covers on the email, phone and card number; remove one, add one, Apply: the result says "Covered N details · …"
 - [ ] Esc in the review window saves nothing
@@ -403,7 +414,7 @@ Share-safe
 - [ ] Drop an already clean file (a Share-safe output): it is skipped with "already clean"
 
 Remove metadata (File actions)
-- [ ] Drop the phone photo on **Remove metadata**: `photo (no metadata).jpg`, no editor, the result line lists what went
+- [ ] Drop the phone photo on **No EXIF**: `photo (no metadata).jpg`, no editor, the result line lists what went
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
@@ -429,7 +440,7 @@ Edit Photos
 - [ ] PNG stays PNG with its transparency; WebP stays WebP
 
 Annotate Photos
-- [ ] Drop the screenshot on **Annotate**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
+- [ ] Drop the screenshot on **Mark up**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
 - [ ] Text: click, type, Enter for a new line, Esc (or Ctrl+Enter) to finish; click it again to edit; Esc on an empty text removes it
 - [ ] In a text: the caret follows the arrows, Home/End, Ctrl+arrows; Shift selects, double-click a word; Backspace/Delete, Ctrl+A/C/V/X and Ctrl+Z work as in Notepad; typed Hindi and emoji show and delete whole
 - [ ] **Font** (or Ctrl+Shift+F) lists the installed fonts, each in its own face; type to find one. Size, B/I/U, colour and alignment change the selected box; Ctrl+[ and Ctrl+] step the size
@@ -445,7 +456,7 @@ Annotate Photos
 - [ ] Save: `screenshot (annotated).png`; the marks look as in the editor at 100 %
 
 Add a Background
-- [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
+- [ ] Drop the PNG with transparency on **Frame**: gradient by default with a soft shadow and rounded corners
 - [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
 - [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
 - [ ] Shape **Fit to picture** (after 9:16): the canvas is exactly the picture's size, no margin; Spacing and Shadow leave the panel; raise Rounded corners and the background shows only in the corners. Save: the output has the photo's own pixel size
@@ -519,7 +530,7 @@ Have ffmpeg in place (`scripts/get-ffmpeg.ps1`, see [BUILDING.md](BUILDING.md)),
 
 The wheel:
 - [ ] Drag a video and open **Tools**: Compress, 50% size, Under 10 MB, Under 25 MB, Inspect, and **Trim**, **Crop**, **Speed**, **Join**, **Frames**, **Split**, **Redact** on two rings
-- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim**, **Channels**, **Bleep**, **Visualizer**; a photo gets none of these
+- [ ] Drag a song: the four Compress slices, Inspect, **Normalize**, **Trim**, **Channel**, **Bleep**, **Visuals**; a photo gets none of these
 
 The editor window (try with each tool):
 - [ ] Drop the video on **Trim**: a window opens on the monitor you dropped on, titled "Trim Video – ShiftDrop", in the Windows light or dark theme with your accent colour (the title bar matches); the picture, then the filmstrip under it, fill in within a second or two
@@ -582,7 +593,7 @@ YouTube; a PowerPoint deck. For the Office bridge you need Microsoft Office or L
 
 Documents
 - [ ] Drag `report.docx` and hold **Shift**: Convert shows PDF, Markdown, HTML, EPUB and TXT (no DOCX), plus **Exact PDF** when Word or LibreOffice is installed
-- [ ] Drop on **Markdown**: a folder `report (converted)` holds `report.md` and `images/`; the Markdown shows headings as `#`, lists, the table as a `|` table, the link, and the picture (open it in VS Code's preview)
+- [ ] Drop on **MD**: a folder `report (converted)` holds `report.md` and `images/`; the Markdown shows headings as `#`, lists, the table as a `|` table, the link, and the picture (open it in VS Code's preview)
 - [ ] Drop on **HTML**: the same folder layout; the page opens in Edge with the picture, the table and working links. With no pictures in the document you get a single `report (converted).html`
 - [ ] Drop on **EPUB**: `report (converted).epub` opens in an e-book app (Thorium, Calibre's viewer, or Edge's extension) with a table of contents; the picture shows
 - [ ] Drop on **TXT**: plain text, bullets as •, the table as tab-separated lines, links as "text (address)"
@@ -687,7 +698,9 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
 
 ### Y. Toasts, more settings, Rename and screen readers
-- [ ] Installed copy: convert a long video and drop a photo on **PNG** while it runs; when the video finishes a Windows toast (not a balloon) says so, with **Open folder** and **Open**. **Open folder** selects the output in Explorer, **Open** plays it
+- [ ] Installed copy: convert a long video and drop a photo on **PNG** while it runs; when the video finishes a Windows toast (not a balloon) says "Your video is ready" over "name (converted).mp4 · 31 MB · took 4 min 12 s", with **Open** and **Open folder**. **Open folder** selects the output in Explorer, **Open** plays it
+- [ ] Three photos converted while another job owns the panel: the toast says "3 files converted to …" over "photo (converted).webp and 2 more, next to the originals." (or "to Downloads." when saved there)
+- [ ] One file that fails to convert while another job owns the panel (a `.txt` renamed to `.png`): the toast says "Couldn’t convert name.png" over the reason, with only **Dismiss**, which closes it
 - [ ] Two outputs in that toast: only **Open folder**, and it selects both. Quit ShiftDrop and click a toast still in the notification centre: Explorer opens all the same, and no tray icon appears
 - [ ] Installed copy: one job that takes over 10 seconds (a long video on MP4, or 50 photos on AVIF), with nothing else dropped: the top panel shows the result and a toast with **Open folder** (and **Open** for one output) also appears; a batch of many files gives one toast, not one per file
 - [ ] A job under 10 seconds (one photo on PNG): the panel only, no toast. Cancel a long job with the panel's ×: no toast

@@ -26,9 +26,9 @@ namespace sd
     "icon": "E7A8", "steps": [ { "action": "crop.image" } ] },
   { "id": "redact", "label": "Redact", "description": "Cover faces, text and details for good", "ring": "tools", "suffix": "redacted",
     "icon": "ED1A", "steps": [ { "action": "redact.image" } ] },
-  { "id": "share-safe", "label": "Share-safe", "description": "A copy without location, camera or personal details", "ring": "tools",
+  { "id": "share-safe", "label": "Private", "description": "A copy without location, camera or personal details", "ring": "tools",
     "suffix": "share-safe", "icon": "EA18", "steps": [ { "action": "sharesafe.clean" } ] },
-  { "id": "remove-metadata", "label": "Remove metadata", "description": "A copy without EXIF, GPS or tags", "ring": "files",
+  { "id": "remove-metadata", "label": "No EXIF", "description": "A copy without EXIF, GPS or tags", "ring": "files",
     "suffix": "no metadata", "icon": "E8EC", "steps": [ { "action": "metadata.remove" } ] }
 ])";
         }

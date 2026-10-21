@@ -242,9 +242,9 @@ namespace sd::photo
         return R"([
   { "id": "edit-photos", "label": "Edit", "description": "Light, colour and detail: dehaze, clarity, grain, noise", "ring": "tools",
     "suffix": "edited", "icon": "E706", "steps": [ { "action": "photo.adjust" } ] },
-  { "id": "annotate-photos", "label": "Annotate", "description": "Arrows, text, shapes, numbers, magnifiers, drawing", "ring": "tools",
+  { "id": "annotate-photos", "label": "Mark up", "description": "Arrows, text, shapes, numbers, magnifiers, drawing", "ring": "tools",
     "suffix": "annotated", "icon": "E70F", "steps": [ { "action": "photo.annotate" } ] },
-  { "id": "add-background", "label": "Background", "description": "Put the picture on a backdrop with a shadow", "ring": "tools",
+  { "id": "add-background", "label": "Frame", "description": "Put the picture on a backdrop with a shadow", "ring": "tools",
     "suffix": "background", "icon": "E790", "steps": [ { "action": "photo.background" } ] },
   { "id": "collage", "label": "Collage", "description": "One picture from all of them: grid, row, column or featured", "ring": "tools",
     "suffix": "collage", "icon": "E80A", "steps": [ { "action": "photo.collage" } ] }

@@ -119,16 +119,17 @@ namespace sd::shelf
 
     Metrics::Metrics(float s)
         : scale(s),
-          width(std::round(272.f * s)),
-          header(std::round(42.f * s)),
-          row(std::round(52.f * s)),
+          // As the brand kit's App UI page draws the shelf (8 px corners, 28 px buttons, 30 px tab).
+          width(std::round(268.f * s)),
+          header(std::round(46.f * s)),
+          row(std::round(53.f * s)),
           footer(std::round(50.f * s)),
-          inset(std::round(8.f * s)),
-          thumb(std::round(38.f * s)),
-          button(std::round(26.f * s)),
-          clearAll(std::round(64.f * s)),
-          radius(std::round(14.f * s)),
-          tabThickness(std::round(22.f * s)),
+          inset(std::round(6.f * s)),
+          thumb(std::round(37.f * s)),
+          button(std::round(28.f * s)),
+          clearAll(std::round(70.f * s)),
+          radius(std::round(8.f * s)),
+          tabThickness(std::round(30.f * s)),
           tabLength(std::round(84.f * s)),
           snap(std::round(32.f * s))
     {

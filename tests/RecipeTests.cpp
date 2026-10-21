@@ -51,7 +51,7 @@ TEST(Recipe, SliceLabelsReadAsWholeWords)
     const std::pair<const char*, const wchar_t*> editors[] = {
         { "video-trim", L"Trim" },   { "video-crop", L"Crop" },         { "video-speed", L"Speed" },   { "video-join", L"Join" },
         { "video-frames", L"Frames" }, { "video-split", L"Split" },     { "video-redact", L"Redact" }, { "audio-trim", L"Trim" },
-        { "audio-channels", L"Channels" }, { "audio-bleep", L"Bleep" }, { "audio-visualizer", L"Visualizer" },
+        { "audio-channels", L"Channel" }, { "audio-bleep", L"Bleep" }, { "audio-visualizer", L"Visuals" },
     };
     for (const auto& [id, label] : editors)
         EXPECT_EQ(recipes.Get(id).label, label) << id;

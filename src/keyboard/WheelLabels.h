@@ -8,38 +8,30 @@
 
 // How each slice's label fits its tile, and where the centre's text goes when the drag picture is
 // over it (pure math, kept free of Direct2D so it can be unit-tested; Overlay.cpp draws with it).
-// Lengths are DIPs. Text is never cut off with "...":
+// Lengths are DIPs, times the wheel's scale (the monitor's DPI and the Size setting) when drawn.
 //
-//   1. the label on one line at its full size, else on two lines broken at a space (never between a
-//      number and its unit: "10 MB" stays together), most even split first;
-//   2. both again, half a DIP smaller each time, down to the style's readable minimum. Wrapping comes
-//      before shrinking so a ring's labels keep one size wherever a second line has room;
-//   3. only then is the label shortened: "Under 10 MB" becomes "≤10 MB", words it shares with the
-//      other labels go, then words from its end. A shortening that would read like another slice's
-//      label is never used, so slices that differ still look different;
-//   4. if none of that fits, the whole label is drawn smaller than the minimum, as small as it needs.
+// Every tile's label has one style (Brand Guidelines › Wheel type rules): Segoe UI Variable Text,
+// kLabelDip Semibold, one colour, on both rings, with or without an icon. The icon is kIconDip on
+// both rings, kIconGapDip above the label, the two centred in the tile as one block. A label goes on
+// one line, else on two broken at a space (never between a number and its unit: "10 MB" stays
+// together), the most even split first. It is never made smaller, shortened or cut off with "...":
+// a label that does not fit two lines needs a shorter string in its recipe, which the unit tests
+// catch for every wheel the app can show.
 //
 // Each check is against the tile's real shape: the text's box stays kLabelPadDip inside the tile's
 // arcs and its straight sides (so also clear of the centre disc), wherever the tile is on the wheel.
 namespace sd::wheel
 {
-    // Format names (PNG, Compress, Under 10 MB) are bold text alone; everything else has an icon
-    // above a smaller label.
+    // Format names, sizes and amounts (PNG, Compress, Under 10 MB) are the label alone; everything
+    // else has an icon above it.
     enum class LabelStyle { Name, Icon };
 
-    inline constexpr float kNameLabelDip = 18.f, kNameLabelMinDip = 10.f;
-    inline constexpr float kIconLabelDip = 13.f, kIconLabelMinDip = 9.f;
-    inline constexpr float kLabelFloorDip = 6.f;   // step 4 stops here
-    inline constexpr float kLabelStepDip = 0.5f;
-    // The icon glyph at a label's full size; it shrinks with its label, its room with it.
-    inline constexpr float kIconFontDip = 22.f;
-    inline constexpr float kIconGapDip = 3.f;      // between the icon and the label
-    inline constexpr float kLineHeight = 1.1f;     // a line's room (and the spacing of two), times the font size
-    inline constexpr float kLabelPadDip = 3.f;     // text to the tile's edges
-    inline constexpr float kTileGapDip = 4.f;      // the straight gap between tiles
-
-    float FullSize(LabelStyle style);
-    float MinSize(LabelStyle style);
+    inline constexpr float kLabelDip = 13.f;      // every label, Semibold
+    inline constexpr float kIconDip = 20.f;       // every icon glyph, both rings
+    inline constexpr float kIconGapDip = 3.f;     // between the icon and the label
+    inline constexpr float kLineHeight = 1.05f;   // a line's room (and the spacing of two), times kLabelDip
+    inline constexpr float kLabelPadDip = 1.5f;   // text to the tile's edges
+    inline constexpr float kTileGapDip = 4.f;     // the straight gap between tiles
 
     struct LabelSpec
     {
@@ -47,21 +39,18 @@ namespace sd::wheel
         LabelStyle style = LabelStyle::Icon;
     };
 
-    // How wide `text` is drawn in `style` at FullSize(style), DIPs. Widths at other sizes are taken
-    // in proportion (DirectWrite's natural metrics scale with the font size).
-    using MeasureLabel = std::function<float(const std::wstring& text, LabelStyle style)>;
+    // How wide `text` is drawn at kLabelDip Semibold, DIPs.
+    using MeasureLabel = std::function<float(const std::wstring& text)>;
 
     struct FittedLabel
     {
         std::vector<std::wstring> lines;   // one or two
-        float size = 0.f;                  // font size, DIPs
+        std::vector<float> widths;         // each line's width, DIPs
+        bool icon = false;                 // an icon sits above the lines
         float radius = 0.f;                // the block's centre, on the tile's middle line
-        float iconSize = 0.f;              // the icon glyph's size, DIPs (Icon style)
         float iconDy = 0.f;                // the icon's centre below the block's centre
         std::vector<float> lineDy;         // each line's centre below the block's centre
-        float lineHeight = 0.f;
-        bool shortened = false;            // step 3: the lines are not the whole label
-        bool fits = true;                  // false only when even kLabelFloorDip does not fit
+        bool fits = true;                  // false: even two lines overflow the tile (the label is too long)
 
         std::wstring Text() const;         // the lines joined by a space
     };
@@ -71,24 +60,33 @@ namespace sd::wheel
     {
         float w = 0.f, h = 0.f;
     };
+    std::vector<Row> RowsOf(const FittedLabel& label);
 
     // Whether `rows`, stacked top to bottom, each centred on the tile's middle line, with the stack
     // centred `radius` from the wheel's centre, stay `pad` inside `slot`'s tile.
     bool RowsFit(const Layout& layout, int slot, const std::vector<Row>& rows, float radius, float pad = kLabelPadDip);
 
-    // Every visible slot's label (labels[i] for layout.slots[i]), as the steps above say.
+    // Every visible slot's label (labels[i] for layout.slots[i]), as the rules above say.
     std::vector<FittedLabel> FitLabels(const Layout& layout, const std::vector<LabelSpec>& labels, const MeasureLabel& measure);
-
-    // ---- The centre -----------------------------------------------------------------------------
 
     struct Rect
     {
         float l = 0.f, t = 0.f, r = 0.f, b = 0.f;
     };
 
-    // The font size for one line of text `fullWidth` wide at `full` that has `room`: `full` when it
-    // fits, smaller in proportion, never below `min`.
-    float ShrinkToFit(float fullWidth, float full, float min, float room);
+    // Where `label` (fitted to `slot`) sits clearest of the drag picture `picture` (DIPs from the
+    // wheel's centre): its own radius when the picture is clear of it, else the spot along the tile's
+    // middle line, inside the tile, that the picture covers least (none at all if there is one).
+    float ClearOfPicture(const Layout& layout, int slot, const FittedLabel& label, const Rect& picture);
+    // How much of `label` at `radius` on `slot` the rectangle covers, DIP².
+    float CoveredArea(const Layout& layout, int slot, const FittedLabel& label, float radius, const Rect& picture);
+
+    // ---- The centre -----------------------------------------------------------------------------
+
+    // Two styles only: the main line (the count, a new size, "Not for videos") kCentreMainDip
+    // Semibold, on two lines when it is too wide for one; under it the detail kCentreDetailDip Regular.
+    inline constexpr float kCentreMainDip = 20.f;
+    inline constexpr float kCentreDetailDip = 12.f;
 
     struct CentrePlan
     {

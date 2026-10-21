@@ -112,6 +112,8 @@ TEST(Theme, WheelAndPanelTextReadsForEveryStyleAndAccent)
                 EXPECT_READS(p.panelTextDim, p.panel, under, kText, what + " panel's other sections");
                 EXPECT_READS(p.panelTextOnAccent, p.panelAccent, Over(p.panel, under), kText, what + " active section");
                 EXPECT_READS(p.panelText, Over(p.hover, p.panel), under, kText, what + " hovered row");
+                EXPECT_READS(p.accentMark, p.track, Over(p.panel, under), kMark, what + " progress");
+                EXPECT_READS(p.pageLine, p.panel, under, 1.2, what + " file mark's edge");
                 for (const auto& status : { p.ok, p.warn, p.error, p.info })
                     EXPECT_READS(status, p.panel, under, kText, what + " status");
                 // A dimmed tile looks dimmed: clearly fainter than an enabled one.

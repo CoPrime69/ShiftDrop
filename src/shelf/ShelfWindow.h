@@ -1,5 +1,6 @@
 #pragma once
 #include "DropTarget.h"
+#include "EditorFrame.h"
 #include "Island.h"
 #include "JobQueue.h"
 #include "PanelWindow.h"
@@ -144,8 +145,10 @@ namespace sd
         using PanelWindow::Text;
         void Text(const std::wstring& text, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
         void Glyph(wchar_t glyph, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
-        void RoundButton(const shelf::Box& box, wchar_t glyph, bool hover, bool danger, float alpha);
-        void PillButton(const shelf::Box& box, const std::wstring& text, bool hover, bool danger, float alpha);
+        // The shared control kit's icon and push buttons (EditorFrame.h), drawn at the shelf's scale.
+        ControlKit::ControlState StateOf(shelf::Part part, bool focused) const;
+        void IconButton(const shelf::Box& box, wchar_t glyph, ControlKit::ControlState state);
+        void PushButton(const shelf::Box& box, const std::wstring& text, ControlKit::ControlState state);
         void DrawThumb(Item& item, const shelf::Box& box, float alpha);
         void DrawPanel(const shelf::Layout& layout, float alpha);
         void DrawDropZone(const shelf::Box& box, float alpha);
@@ -163,7 +166,9 @@ namespace sd
         bool m_registered = false;
         HWND m_tips = nullptr;   // tooltips for the header buttons; owned by m_hwnd, destroyed with it
         Microsoft::WRL::ComPtr<ID2D1StrokeStyle> m_dashes;   // the empty shelf's drop outline
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_titleFont, m_nameFont, m_detailFont, m_iconFont, m_smallIconFont, m_countFont, m_footerFont;
+        ControlKit m_kit;                                     // its buttons; on m_rt while drawing
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_titleFont, m_nameFont, m_detailFont, m_iconFont, m_countFont, m_footerFont,
+            m_hintFont, m_badgeFont;
 
         // Content.
         shelf::Visibility m_shown;   // switched on (on screen) or off

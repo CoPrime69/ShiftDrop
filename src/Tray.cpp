@@ -150,13 +150,6 @@ namespace sd
             return;
         AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, press Shift, scroll for sections");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu.get(), MF_STRING, IDM_SETTINGS, L"Settings\x2026");
-        AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
-        if (extras.shelf)
-            AppendMenuW(menu.get(), MF_STRING | (extras.shelfOn ? MF_CHECKED : MF_UNCHECKED), IDM_SHOW_SHELF, L"Show Float shelf");
-        AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
-        AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
-        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         // Size and Style submenus, each with a radio-style check on the current choice.
         wil::unique_hmenu size(CreatePopupMenu()), style(CreatePopupMenu());
         const wchar_t* sizes[] = { L"Auto (fits the screen)", L"Small", L"Medium", L"Large" };
@@ -179,11 +172,18 @@ namespace sd
             CheckMenuRadioItem(sub.get(), c.baseId, c.baseId + static_cast<UINT>(c.items.size()) - 1, c.baseId + static_cast<UINT>(c.checked), MF_BYCOMMAND);
             AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(sub.release()), c.text.c_str());
         }
+        // Then the windows and the shelf, as the brand kit groups the menu.
+        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        if (extras.shelf)
+            AppendMenuW(menu.get(), MF_STRING | (extras.shelfOn ? MF_CHECKED : MF_UNCHECKED), IDM_SHOW_SHELF, L"Show Float shelf");
+        AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
+        AppendMenuW(menu.get(), MF_STRING, IDM_SETTINGS, L"Settings\x2026");
+        AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");
+        AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_LOGS, L"Open logs folder");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         for (const auto& t : extras.toggles)
             AppendMenuW(menu.get(), MF_STRING | (t.checked ? MF_CHECKED : MF_UNCHECKED), t.id, t.text.c_str());
         AppendMenuW(menu.get(), MF_STRING | (startWithWindows ? MF_CHECKED : MF_UNCHECKED), IDM_START_WITH_WINDOWS, L"Start with Windows");
-        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, IDM_QUIT, L"Quit");
 
         // Known shell quirk: the owner must be foreground or the menu will not close when you click
