@@ -29,24 +29,6 @@ namespace sd::pdf
             return 0;
         }
 
-        std::vector<std::string> Filters(QPDFObjectHandle filter)
-        {
-            std::vector<std::string> out;
-            if (filter.isName())
-                out.push_back(filter.getName());
-            else if (filter.isArray())
-                for (int i = 0; i < filter.getArrayNItems(); ++i)
-                    if (filter.getArrayItem(i).isName())
-                        out.push_back(filter.getArrayItem(i).getName());
-            return out;
-        }
-
-        bool Lossless(const std::string& f)
-        {
-            return f == "/FlateDecode" || f == "/Fl" || f == "/LZWDecode" || f == "/LZW" || f == "/RunLengthDecode" || f == "/RL" ||
-                   f == "/ASCII85Decode" || f == "/A85" || f == "/ASCIIHexDecode" || f == "/AHx";
-        }
-
         // One picture on its way to a smaller JPEG. Reading it from and writing it back to the PDF is
         // QPDF's work and stays on one thread; the decode, scale and encode in between (the slow part)
         // run on several pictures at once.
@@ -82,21 +64,21 @@ namespace sd::pdf
             if (static_cast<uint64_t>(w) * h < 64 * 64)
                 return false;   // icons and bullets: nothing to win
 
-            const auto filters = Filters(dict.getKey("/Filter"));
+            const auto filters = StreamFilters(dict.getKey("/Filter"));
             const auto length = dict.getKey("/Length");
             job.image = image;
             job.channels = channels;
             job.w = w;
             job.h = h;
             job.before = length.isInteger() ? static_cast<uint64_t>(length.getIntValue()) : image.getRawStreamData()->getSize();
-            if (filters.size() == 1 && (filters[0] == "/DCTDecode" || filters[0] == "/DCT"))
+            if (filters.size() == 1 && IsDctFilter(filters[0]))
             {
                 const auto raw = image.getRawStreamData();
                 job.dct.assign(reinterpret_cast<const char*>(raw->getBuffer()), raw->getSize());
             }
             else
             {
-                if (!std::all_of(filters.begin(), filters.end(), Lossless))
+                if (!std::all_of(filters.begin(), filters.end(), IsLosslessFilter))
                     return false;   // JPX, JBIG2, CCITT: leave them be
                 const auto data = image.getStreamData(qpdf_dl_generalized);
                 if (data->getSize() != static_cast<size_t>(w) * h * channels)

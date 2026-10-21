@@ -2,6 +2,7 @@
 #include "ImagePipeline.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "canvas/Raster.h"
 #include "metadata/Container.h"
 #include "metadata/Exif.h"
@@ -329,9 +330,9 @@ namespace sd::metadata
 
         bool WalkFile(const std::wstring& path, const std::function<void(const std::wstring&, const PROPVARIANT&)>& visit)
         {
-            ComPtr<IWICImagingFactory> factory;
+            const auto factory = wic::Factory();
             ComPtr<IWICBitmapDecoder> decoder;
-            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+            if (!factory ||
                 FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)))
                 return false;
             ComPtr<IWICMetadataQueryReader> reader;
@@ -571,13 +572,13 @@ namespace sd::metadata
         canvas::Raster image;
         if (const HRESULT hr = canvas::LoadRaster(source, image, error); FAILED(hr))
             return hr;
-        const auto& format = canvas::EditedFormatFor(LowerExtension(source));
-        if (const HRESULT hr = canvas::SaveRasterToFile(image, format, canvas::EditedQuality(format), target, error); FAILED(hr))
+        const ImageFormatInfo* format = nullptr;
+        if (const HRESULT hr = canvas::SaveEdited(image, source, target, error, &format); FAILED(hr))
             return hr;
         report = ReportFor(before);
         report.reencoded = true;
-        report.lossless = !format.lossy;
-        extension = IsAlreadyFormat(format, LowerExtension(source)) ? LowerExtension(source) : std::wstring(format.extension);
+        report.lossless = !format->lossy;
+        extension = IsAlreadyFormat(*format, LowerExtension(source)) ? LowerExtension(source) : std::wstring(format->extension);
         return S_OK;
         }
     }

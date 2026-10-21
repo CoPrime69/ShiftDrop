@@ -162,31 +162,6 @@ namespace sd::docs
             }
         };
 
-        std::string DecodeEntities(std::string_view s)
-        {
-            std::string out;
-            out.reserve(s.size());
-            for (size_t i = 0; i < s.size(); ++i)
-            {
-                if (s[i] == '&')
-                {
-                    const auto semi = s.find(';', i + 1);
-                    if (semi != std::string_view::npos && semi - i <= 12)
-                    {
-                        const auto decoded = DecodeEntity(s.substr(i + 1, semi - i - 1));
-                        if (!decoded.empty())
-                        {
-                            out += decoded;
-                            i = semi;
-                            continue;
-                        }
-                    }
-                }
-                out.push_back(s[i]);
-            }
-            return out;
-        }
-
         // Parses the tag starting at s[i] == '<'. Returns false when it is not a tag (a stray '<').
         bool ParseTag(std::string_view s, size_t& i, Tag& tag)
         {

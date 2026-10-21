@@ -2,6 +2,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "formats/Avif.h"
 #include "formats/Frames.h"
 
@@ -183,7 +184,7 @@ namespace
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
         return SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(formats::FromWicSource(factory.Get(), frame.Get(), out));
+               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(wic::CopyBgra(factory.Get(), frame.Get(), out.width, out.height, out.bgra));
     }
 
     const uint8_t* Px(const formats::Image& image, uint32_t x, uint32_t y) { return image.Row(y) + static_cast<size_t>(x) * 4; }

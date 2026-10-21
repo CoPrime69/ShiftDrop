@@ -9,6 +9,7 @@
 #include "docs/Paper.h"
 #include "docs/PdfPrint.h"
 #include "docs/Rtf.h"
+#include "docs/Xml.h"
 #include "docs/Zip.h"
 
 #include <pugixml.hpp>
@@ -161,6 +162,23 @@ namespace
     uint16_t U16At(const std::string& s, size_t at) { return static_cast<uint16_t>(static_cast<uint8_t>(s[at]) | static_cast<uint8_t>(s[at + 1]) << 8); }
 }
 
+TEST(Docs, XmlNamesMatchByTheirLocalPart)
+{
+    pugi::xml_document xml;
+    ASSERT_TRUE(xml.load_string(R"(<w:p xmlns:w="x"><w:r w:val="on" empty=""/><r2/></w:p>)"));
+    const auto p = xml.first_child();
+    EXPECT_EQ(Local(p.name()), "p");
+    EXPECT_EQ(Local("plain"), "plain");
+    const auto r = Child(p, "r");
+    ASSERT_TRUE(r);
+    EXPECT_FALSE(Child(p, "missing"));
+    EXPECT_EQ(Attr(r, "val"), "on");
+    EXPECT_EQ(Attr(r, "missing"), "");
+    ASSERT_NE(AttrOrNull(r, "empty"), nullptr);   // present but empty, unlike absent
+    EXPECT_STREQ(AttrOrNull(r, "empty"), "");
+    EXPECT_EQ(AttrOrNull(r, "missing"), nullptr);
+}
+
 TEST(Docs, HelpersDecodeAndSniff)
 {
     EXPECT_EQ(Base64Decode("SGVs bG8=\n"), "Hello");
@@ -171,6 +189,8 @@ TEST(Docs, HelpersDecodeAndSniff)
     EXPECT_EQ(DecodeEntity("#233"), "é");
     EXPECT_EQ(DecodeEntity("#x1F600"), "😀");
     EXPECT_EQ(DecodeEntity("bogus"), "");
+    EXPECT_EQ(DecodeEntity("lrm"), "\xE2\x80\x8E");
+    EXPECT_EQ(DecodeEntities("a &amp; b&#233;&rlm; &bogus; & c"), "a & b\xC3\xA9\xE2\x80\x8F &bogus; & c");
     EXPECT_EQ(XmlEscape("a<b>&\"c'\x01"), "a&lt;b&gt;&amp;&quot;c&apos;");
     EXPECT_EQ(NormalizeNewlines("a\r\nb\rc\n"), "a\nb\nc\n");
 

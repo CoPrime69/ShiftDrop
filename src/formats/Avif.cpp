@@ -1,5 +1,6 @@
 #include "formats/Avif.h"
 #include "Utf.h"
+#include "Wic.h"
 
 #include <avif/avif.h>
 #include <avif/avif_cxx.h>
@@ -80,7 +81,7 @@ namespace sd::formats
             HRESULT Encode(IWICImagingFactory* factory, IWICBitmapSource* pixels, int quality, IStream* out, std::wstring& error) const override
             {
                 Image image;
-                if (const HRESULT hr = FromWicSource(factory, pixels, image); FAILED(hr))
+                if (const HRESULT hr = wic::CopyBgra(factory, pixels, image.width, image.height, image.bgra); FAILED(hr))
                     return hr;
                 AvifOptions options;
                 options.quality = std::clamp(quality, 1, 100);

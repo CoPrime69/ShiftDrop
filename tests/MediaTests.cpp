@@ -413,6 +413,44 @@ TEST(MediaEngine, CancelStopsFfmpegAndLeavesNothing)
     EXPECT_EQ(CountFiles(dir, L".webm"), 0u);
 }
 
+// Media outputs go through StagedOutput too: a failed conversion removes the "ShiftDrop" folder made
+// for it, and an output that cannot start is still a failed row in history.
+TEST(MediaEngine, FailuresLeaveNoOutputFolderAndAreInHistory)
+{
+    const auto engine = Engine();
+    if (!engine->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    TempDir dir;
+    Recipes recipes(dir);
+    std::wstring error;
+    auto history = HistoryStore::Open(dir / L"history.db", error);
+    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), history.get(), engine);
+    NamingScope scope(OutputNaming::Subfolder);
+    const auto source = dir / L"broken.avi";
+    WriteText(source, "not a video");
+    const auto run = [&] {
+        const auto& recipe = recipes.Get("to-mp4");
+        const auto runId = history->BeginRun(recipe, 1);
+        auto r = runner.Run(recipe, runId, source, std::stop_token{});
+        history->FinishRun(runId);
+        const auto items = history->Items(runId);
+        EXPECT_EQ(items.size(), 1u);
+        if (!items.empty())
+            EXPECT_EQ(items[0].status, status::Failed);
+        return r;
+    };
+
+    EXPECT_FALSE(run().ok);
+    EXPECT_FALSE(std::filesystem::exists(dir / L"ShiftDrop"));
+    EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
+
+    WriteText(dir / L"ShiftDrop", "a file, not a folder");
+    const auto r = run();
+    EXPECT_FALSE(r.ok);
+    EXPECT_TRUE(r.error.starts_with(L"cannot write next to the source")) << Narrow(r.error);
+    EXPECT_EQ(ReadAll(dir / L"ShiftDrop"), "a file, not a folder");
+}
+
 TEST(MediaEngine, CompressKeepsUnderTheTarget)
 {
     const auto engine = Engine();

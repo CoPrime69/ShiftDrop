@@ -1,6 +1,7 @@
 #include "docs/Bytes.h"
 #include "docs/Formats.h"
 #include "docs/Paper.h"
+#include "docs/Xml.h"
 #include "docs/Zip.h"
 
 #include <pugixml.hpp>
@@ -18,43 +19,12 @@ namespace sd::docs
 {
     namespace
     {
-        // Element and attribute names are matched by their local part, so any namespace prefix works
-        // (Strict OOXML and some generators use prefixes other than "w:").
-        std::string_view Local(const char* name)
-        {
-            const std::string_view n(name);
-            const auto colon = n.find(':');
-            return colon == std::string_view::npos ? n : n.substr(colon + 1);
-        }
-
-        pugi::xml_node Child(pugi::xml_node node, std::string_view local)
-        {
-            for (auto c = node.first_child(); c; c = c.next_sibling())
-                if (c.type() == pugi::node_element && Local(c.name()) == local)
-                    return c;
-            return {};
-        }
-
-        const char* Attr(pugi::xml_node node, std::string_view local)
-        {
-            for (auto a = node.first_attribute(); a; a = a.next_attribute())
-                if (Local(a.name()) == local)
-                    return a.value();
-            return nullptr;
-        }
-
-        std::string AttrStr(pugi::xml_node node, std::string_view local)
-        {
-            const char* v = Attr(node, local);
-            return v ? std::string(v) : std::string();
-        }
-
         // <w:b/>, <w:b w:val="true"/> are on; w:val="0", "false", "off", "none" are off.
         bool OnOff(pugi::xml_node node)
         {
             if (!node)
                 return false;
-            const char* v = Attr(node, "val");
+            const char* v = AttrOrNull(node, "val");
             if (!v)
                 return true;
             const std::string s = AsciiLower(v);
@@ -113,10 +83,10 @@ namespace sd::docs
                 if (Local(r.name()) != "Relationship")
                     continue;
                 Rel rel;
-                rel.type = AttrStr(r, "Type");
-                rel.target = AttrStr(r, "Target");
-                rel.external = AsciiLower(AttrStr(r, "TargetMode")) == "external";
-                rels[AttrStr(r, "Id")] = std::move(rel);
+                rel.type = Attr(r, "Type");
+                rel.target = Attr(r, "Target");
+                rel.external = AsciiLower(Attr(r, "TargetMode")) == "external";
+                rels[Attr(r, "Id")] = std::move(rel);
             }
             return rels;
         }
@@ -239,21 +209,21 @@ namespace sd::docs
                     if (Local(s.name()) != "style")
                         continue;
                     StyleInfo info;
-                    info.name = AsciiLower(AttrStr(Child(s, "name"), "val"));
-                    info.basedOn = AttrStr(Child(s, "basedOn"), "val");
+                    info.name = AsciiLower(Attr(Child(s, "name"), "val"));
+                    info.basedOn = Attr(Child(s, "basedOn"), "val");
                     const auto ppr = Child(s, "pPr");
                     if (const auto o = Child(ppr, "outlineLvl"))
-                        info.outline = std::atoi(AttrStr(o, "val").c_str());
+                        info.outline = std::atoi(Attr(o, "val").c_str());
                     if (const auto num = Child(ppr, "numPr"))
                     {
-                        info.numId = AttrStr(Child(num, "numId"), "val");
-                        info.numLevel = std::atoi(AttrStr(Child(num, "ilvl"), "val").c_str());
+                        info.numId = Attr(Child(num, "numId"), "val");
+                        info.numLevel = std::atoi(Attr(Child(num, "ilvl"), "val").c_str());
                     }
                     const auto rpr = Child(s, "rPr");
                     info.bold = OnOff(Child(rpr, "b"));
                     info.italic = OnOff(Child(rpr, "i"));
-                    info.mono = IsMonoFontName(AttrStr(Child(rpr, "rFonts"), "ascii"));
-                    m_styles[AttrStr(s, "styleId")] = std::move(info);
+                    info.mono = IsMonoFontName(Attr(Child(rpr, "rFonts"), "ascii"));
+                    m_styles[Attr(s, "styleId")] = std::move(info);
                 }
             }
 
@@ -268,27 +238,27 @@ namespace sd::docs
                     const auto local = Local(n.name());
                     if (local == "abstractNum")
                     {
-                        auto& levels = m_numbering.abstracts[AttrStr(n, "abstractNumId")];
+                        auto& levels = m_numbering.abstracts[Attr(n, "abstractNumId")];
                         for (auto l = n.first_child(); l; l = l.next_sibling())
                         {
                             if (Local(l.name()) != "lvl")
                                 continue;
                             NumLevel level;
-                            const auto fmt = AttrStr(Child(l, "numFmt"), "val");
+                            const auto fmt = Attr(Child(l, "numFmt"), "val");
                             level.ordered = !fmt.empty() && fmt != "bullet" && fmt != "none";
                             if (const auto st = Child(l, "start"))
-                                level.start = std::atoi(AttrStr(st, "val").c_str());
-                            levels[std::atoi(AttrStr(l, "ilvl").c_str())] = level;
+                                level.start = std::atoi(Attr(st, "val").c_str());
+                            levels[std::atoi(Attr(l, "ilvl").c_str())] = level;
                         }
                     }
                     else if (local == "num")
                     {
-                        const auto id = AttrStr(n, "numId");
-                        m_numbering.numToAbstract[id] = AttrStr(Child(n, "abstractNumId"), "val");
+                        const auto id = Attr(n, "numId");
+                        m_numbering.numToAbstract[id] = Attr(Child(n, "abstractNumId"), "val");
                         for (auto o = n.first_child(); o; o = o.next_sibling())
                             if (Local(o.name()) == "lvlOverride")
                                 if (const auto st = Child(o, "startOverride"))
-                                    m_numbering.startOverride[id][std::atoi(AttrStr(o, "ilvl").c_str())] = std::atoi(AttrStr(st, "val").c_str());
+                                    m_numbering.startOverride[id][std::atoi(Attr(o, "ilvl").c_str())] = std::atoi(Attr(st, "val").c_str());
                     }
                 }
             }
@@ -320,7 +290,7 @@ namespace sd::docs
             {
                 if (const auto o = Child(ppr, "outlineLvl"))
                 {
-                    const int v = std::atoi(AttrStr(o, "val").c_str());
+                    const int v = std::atoi(Attr(o, "val").c_str());
                     if (v >= 0 && v < 9)
                         return std::min(v + 1, 6);
                 }
@@ -395,7 +365,7 @@ namespace sd::docs
                 // The displayed size (EMU, 914400 per inch) wins over the picture's own pixels.
                 if (const auto extent = FindDeep(container, "extent"))
                 {
-                    const double cx = std::atof(AttrStr(extent, "cx").c_str()), cy = std::atof(AttrStr(extent, "cy").c_str());
+                    const double cx = std::atof(Attr(extent, "cx").c_str()), cy = std::atof(Attr(extent, "cy").c_str());
                     if (cx > 0 && cy > 0)
                     {
                         m_doc.images[static_cast<size_t>(index)].width = static_cast<int>(cx / 9525 + 0.5);
@@ -429,7 +399,7 @@ namespace sd::docs
                 {
                     if (OnOff(Child(rpr, "vanish")))
                         return;   // hidden text
-                    const auto rstyle = AttrStr(Child(rpr, "rStyle"), "val");
+                    const auto rstyle = Attr(Child(rpr, "rStyle"), "val");
                     if (!rstyle.empty())
                     {
                         run.bold |= FromStyle(rstyle, [](const StyleInfo& s) { return s.bold; }) || StyleNameHas(rstyle, "strong");
@@ -441,7 +411,7 @@ namespace sd::docs
                     if (const auto i = Child(rpr, "i"))
                         run.italic = OnOff(i);
                     run.strike = OnOff(Child(rpr, "strike")) || OnOff(Child(rpr, "dstrike"));
-                    if (const auto fonts = Child(rpr, "rFonts"); fonts && IsMonoFontName(AttrStr(fonts, "ascii")))
+                    if (const auto fonts = Child(rpr, "rFonts"); fonts && IsMonoFontName(Attr(fonts, "ascii")))
                         run.code = true;
                 }
                 for (auto c = r.first_child(); c; c = c.next_sibling())
@@ -451,7 +421,7 @@ namespace sd::docs
                     const auto n = Local(c.name());
                     if (n == "fldChar")
                     {
-                        const auto type = AttrStr(c, "fldCharType");
+                        const auto type = Attr(c, "fldCharType");
                         if (type == "begin")
                             m_fields.push_back({});
                         else if (type == "separate" && !m_fields.empty())
@@ -489,7 +459,7 @@ namespace sd::docs
                         AddText(out, run, "\t");
                     else if (n == "br" || n == "cr")
                     {
-                        const auto type = AttrStr(c, "type");
+                        const auto type = Attr(c, "type");
                         if (type != "page" && type != "column")
                         {
                             Span s;
@@ -504,17 +474,17 @@ namespace sd::docs
                         if (const auto blip = FindDeep(c, "blip"))
                         {
                             const auto docPr = FindDeep(c, "docPr");
-                            AddImage(out, AttrStr(blip, "embed"), c, docPr ? AttrStr(docPr, "descr") : std::string());
+                            AddImage(out, Attr(blip, "embed"), c, docPr ? Attr(docPr, "descr") : std::string());
                         }
                     }
                     else if (n == "pict" || n == "object")
                     {
                         if (const auto data = FindDeep(c, "imagedata"))
-                            AddImage(out, AttrStr(data, "id"), c, AttrStr(data, "title"));
+                            AddImage(out, Attr(data, "id"), c, Attr(data, "title"));
                     }
                     else if (n == "sym")
                     {
-                        const auto code = AttrStr(c, "char");
+                        const auto code = Attr(c, "char");
                         if (!code.empty())
                         {
                             std::string t;
@@ -544,17 +514,17 @@ namespace sd::docs
                     else if (n == "hyperlink")
                     {
                         Run linked = run;
-                        const auto rid = AttrStr(c, "id");
+                        const auto rid = Attr(c, "id");
                         if (const auto rel = m_rels.find(rid); !rid.empty() && rel != m_rels.end())
                             linked.link = rel->second.target;
-                        else if (const auto anchor = AttrStr(c, "anchor"); !anchor.empty())
+                        else if (const auto anchor = Attr(c, "anchor"); !anchor.empty())
                             linked.link = "#" + anchor;
                         ReadInline(c, linked, out);
                     }
                     else if (n == "fldSimple")
                     {
                         Run linked = run;
-                        const auto instr = std::string(Trim(AttrStr(c, "instr")));
+                        const auto instr = std::string(Trim(Attr(c, "instr")));
                         if (instr.starts_with("HYPERLINK"))
                         {
                             const auto q1 = instr.find('"');
@@ -575,7 +545,7 @@ namespace sd::docs
             void ReadParagraph(pugi::xml_node p, std::vector<Span>* cell)
             {
                 const auto ppr = Child(p, "pPr");
-                const auto styleId = AttrStr(Child(ppr, "pStyle"), "val");
+                const auto styleId = Attr(Child(ppr, "pStyle"), "val");
                 std::vector<Span> spans;
                 Run run;
                 // Paragraph styles can make every run bold (rare) or monospace (code styles).
@@ -599,8 +569,8 @@ namespace sd::docs
                 int ilvl = 0;
                 if (const auto num = Child(ppr, "numPr"))
                 {
-                    numId = AttrStr(Child(num, "numId"), "val");
-                    ilvl = std::atoi(AttrStr(Child(num, "ilvl"), "val").c_str());
+                    numId = Attr(Child(num, "numId"), "val");
+                    ilvl = std::atoi(Attr(Child(num, "ilvl"), "val").c_str());
                 }
                 else if (!styleId.empty())
                 {
@@ -709,7 +679,7 @@ namespace sd::docs
                         ReadContainer(tc, &c.spans);
                         row.push_back(std::move(c));
                         // A merged cell spanning columns is followed by empty cells to keep the grid.
-                        const int span = std::atoi(AttrStr(Child(Child(tc, "tcPr"), "gridSpan"), "val").c_str());
+                        const int span = std::atoi(Attr(Child(Child(tc, "tcPr"), "gridSpan"), "val").c_str());
                         for (int k = 1; k < span && k < 64; ++k)
                             row.emplace_back();
                     }

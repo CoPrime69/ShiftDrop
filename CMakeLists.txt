@@ -54,6 +54,7 @@ add_link_options($<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 add_library(shiftdrop_core STATIC
   src/Action.cpp
   src/Ask.cpp       # questions a running job asks (a password, print every row?) on the UI thread
+  src/Clipboard.cpp
   src/Ffmpeg.cpp
   src/FileActions.cpp
   src/FileMove.cpp
@@ -75,6 +76,7 @@ add_library(shiftdrop_core STATIC
   src/Startup.cpp
   src/Undo.cpp
   src/VirtualDrop.cpp
+  src/Wic.cpp       # the WIC factory, EXIF orientation and pixel copies every image area shares
   src/DropTarget.cpp       # the wheel's OLE drop target and the drag picture over it
   src/DropDescription.cpp
   src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern
@@ -98,6 +100,7 @@ add_library(shiftdrop_core STATIC
   src/canvas/Covers.cpp
   src/canvas/Editor.cpp
   src/canvas/Geometry.cpp
+  src/canvas/PictureEngine.cpp   # what Crop, Redact and the photo tools share: the files they take, edited copies
   src/canvas/Raster.cpp
   src/canvas/RegionTool.cpp
   src/canvas/Regions.cpp

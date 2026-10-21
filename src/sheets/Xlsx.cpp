@@ -1,8 +1,7 @@
 #include "sheets/Workbook.h"
 #include "docs/Bytes.h"
+#include "docs/Xml.h"
 #include "docs/Zip.h"
-
-#include <pugixml.hpp>
 
 #include <cmath>
 #include <cstring>
@@ -16,29 +15,9 @@ namespace sd::sheets
     namespace
     {
         using docs::XmlEscape;
-
-        std::string_view Local(const char* name)
-        {
-            const std::string_view n(name);
-            const auto colon = n.find(':');
-            return colon == std::string_view::npos ? n : n.substr(colon + 1);
-        }
-
-        pugi::xml_node Child(pugi::xml_node node, std::string_view local)
-        {
-            for (auto c = node.first_child(); c; c = c.next_sibling())
-                if (c.type() == pugi::node_element && Local(c.name()) == local)
-                    return c;
-            return {};
-        }
-
-        std::string Attr(pugi::xml_node node, std::string_view local)
-        {
-            for (auto a = node.first_attribute(); a; a = a.next_attribute())
-                if (Local(a.name()) == local)
-                    return a.value();
-            return {};
-        }
+        using docs::Local;
+        using docs::Child;
+        using docs::Attr;
 
         // Text of an <si> or <is>: its <t>, or the <t> of each rich-text run (<r>), skipping
         // phonetic guides (<rPh>).
