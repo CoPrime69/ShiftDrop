@@ -4,6 +4,7 @@
 #include "DropTarget.h"
 #include "FileActions.h"
 #include "Log.h"
+#include "PanelLayout.h"
 #include "Utf.h"
 #include "shelf/Carry.h"
 
@@ -103,52 +104,6 @@ namespace sd
         bool IsGoneError(DWORD error)
         {
             return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
-        }
-
-        // The shell's thumbnail (or icon) for a file, as premultiplied BGRA. Worker thread.
-        Pixels Thumbnail(const std::wstring& path, unsigned px)
-        {
-            Pixels out;
-            ComPtr<IShellItemImageFactory> factory;
-            if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&factory))))
-                return out;
-            HBITMAP raw = nullptr;
-            const SIZE size{ static_cast<LONG>(px), static_cast<LONG>(px) };
-            if (FAILED(factory->GetImage(size, SIIGBF_RESIZETOFIT, &raw)) || !raw)
-                return out;
-            wil::unique_hbitmap bitmap(raw);
-            BITMAP info{};
-            if (!GetObjectW(bitmap.get(), sizeof(info), &info) || info.bmWidth <= 0 || info.bmHeight == 0)
-                return out;
-            const UINT w = static_cast<UINT>(info.bmWidth), h = static_cast<UINT>(std::abs(info.bmHeight));
-            BITMAPINFO bi{};
-            bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-            bi.bmiHeader.biWidth = static_cast<LONG>(w);
-            bi.bmiHeader.biHeight = -static_cast<LONG>(h);   // top-down, whatever the source is
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 32;
-            bi.bmiHeader.biCompression = BI_RGB;
-            out.px.resize(static_cast<size_t>(w) * h);
-            auto dc = wil::GetDC(nullptr);
-            if (!dc || GetDIBits(dc.get(), bitmap.get(), 0, h, out.px.data(), &bi, DIB_RGB_COLORS) != static_cast<int>(h))
-                return Pixels{};
-            // Photos come back with alpha 0 everywhere (no alpha at all): make them opaque. Icons carry
-            // premultiplied alpha; clamp so a sloppy one can't make Direct2D draw garbage.
-            const bool anyAlpha = std::any_of(out.px.begin(), out.px.end(), [](uint32_t p) { return (p >> 24) != 0; });
-            for (auto& p : out.px)
-            {
-                if (!anyAlpha)
-                {
-                    p |= 0xFF000000;
-                    continue;
-                }
-                const uint32_t a = p >> 24;
-                const uint32_t b = std::min(p & 0xFF, a), g = std::min((p >> 8) & 0xFF, a), r = std::min((p >> 16) & 0xFF, a);
-                p = (a << 24) | (r << 16) | (g << 8) | b;
-            }
-            out.w = w;
-            out.h = h;
-            return out;
         }
 
         // OLE drop target for the shelf. Files dragged over it are added on drop; our own drag out is
@@ -258,28 +213,15 @@ namespace sd
 
     bool Shelf::Create()
     {
-        WNDCLASSEXW wc{ sizeof(wc) };
-        wc.style = CS_DBLCLKS;
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = m_instance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        wc.lpszClassName = kClassName;
-        RegisterClassExW(&wc);
         // Not WS_EX_NOACTIVATE: a click gives it the keyboard. WS_EX_TOOLWINDOW keeps it off the
         // taskbar and out of Alt+Tab.
-        m_hwnd.reset(CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW, kClassName, L"" SD_NAME L" Float shelf", WS_POPUP,
-                                     0, 0, 1, 1, nullptr, nullptr, m_instance, this));
-        if (!m_hwnd ||
-            FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.ReleaseAndGetAddressOf())) ||
-            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                       reinterpret_cast<IUnknown**>(m_dwrite.ReleaseAndGetAddressOf()))))
+        m_hwnd.reset(CreatePanel(m_instance, kClassName, WndProc, WS_EX_TOPMOST | WS_EX_TOOLWINDOW, L"" SD_NAME L" Float shelf", this,
+                                 IDC_ARROW, CS_DBLCLKS));
+        if (!m_hwnd || !InitGraphics())
         {
             log::Error(L"shelf: could not create the window");
             return false;
         }
-        m_canvas = std::make_unique<Canvas>(m_d2d.Get());
-        m_textFamily = TextFamily(m_dwrite.Get());
-        m_iconFamily = IconFamily(m_dwrite.Get());
         m_worker = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);   // shell thumbnails want an STA
 
         m_dropTarget = Microsoft::WRL::Make<ShelfDropTarget>(m_hwnd.get(), this);
@@ -440,7 +382,7 @@ namespace sd
                     result->folder = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
                     result->size = (static_cast<unsigned long long>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
                     if (!stop.stop_requested())
-                        result->pixels = Thumbnail(path, px);
+                        result->pixels = ShellThumbnail(path, px);
                 }
                 else
                 {
@@ -736,29 +678,19 @@ namespace sd
     {
         if (!m_hwnd || !m_visible)
             return;
-        if (!m_animating)
-        {
-            m_animating = true;
-            m_lastFrame = GetTickCount64();
-            SetTimer(m_hwnd.get(), kTimerFrame, 10, nullptr);
-        }
+        m_frames.Start(m_hwnd.get(), kTimerFrame);
         Render();
     }
 
     void Shelf::OnFrame()
     {
         const ULONGLONG now = GetTickCount64();
-        const float dt = static_cast<float>(std::min<ULONGLONG>(now - m_lastFrame, 50));
-        m_lastFrame = now;
-        // Exponential easing toward a target, snapping once within `close` of it.
+        const float dt = m_frames.Tick(now);
+        // Without motion everything is where it is going at once.
         const auto approach = [dt, this](float& value, float target, float tau, float close) {
-            if (!m_motion)
-            {
-                value = target;
-                return;
-            }
-            value += (target - value) * (1.f - std::exp(-dt / tau));
-            if (std::abs(target - value) < close)
+            if (m_motion)
+                panel::Approach(value, target, dt, tau, close);
+            else
                 value = target;
         };
         const float height = shelf::PanelHeight(m_metrics, m_items.size());
@@ -778,8 +710,7 @@ namespace sd
                 m_hiding = false;
                 m_visible = false;
                 ShowWindow(m_hwnd.get(), SW_HIDE);
-                KillTimer(m_hwnd.get(), kTimerFrame);
-                m_animating = false;
+                m_frames.Stop(m_hwnd.get(), kTimerFrame);
                 return;
             }
         }
@@ -792,10 +723,7 @@ namespace sd
         const bool settled = !m_hiding && m_presence >= 1.f && m_open == (m_wantOpen ? 1.f : 0.f) && m_h == height && m_slideX == 0.f &&
                              m_slideY == 0.f && m_scroll == m_scrollTarget && m_note.empty();
         if (settled)
-        {
-            KillTimer(m_hwnd.get(), kTimerFrame);
-            m_animating = false;
-        }
+            m_frames.Stop(m_hwnd.get(), kTimerFrame);
     }
 
     // ---- Mouse and keyboard ----------------------------------------------------------------------
@@ -1260,22 +1188,6 @@ namespace sd
 
     // ---- Drawing ---------------------------------------------------------------------------------
 
-    ComPtr<IDWriteTextFormat> Shelf::MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align) const
-    {
-        ComPtr<IDWriteTextFormat> format;
-        if (FAILED(m_dwrite->CreateTextFormat(family.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                              dip * m_scale, L"", &format)))
-            return nullptr;
-        format->SetTextAlignment(align);
-        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-        ComPtr<IDWriteInlineObject> ellipsis;
-        if (SUCCEEDED(m_dwrite->CreateEllipsisTrimmingSign(format.Get(), &ellipsis)))
-            format->SetTrimming(&trimming, ellipsis.Get());
-        return format;
-    }
-
     bool Shelf::EnsureTextFormats()
     {
         if (m_titleFont && m_fontScale == m_scale)
@@ -1292,30 +1204,10 @@ namespace sd
         return m_titleFont && m_nameFont && m_detailFont && m_iconFont && m_smallIconFont && m_countFont && m_footerFont;
     }
 
-    float Shelf::TextWidth(const std::wstring& text, IDWriteTextFormat* format) const
-    {
-        ComPtr<IDWriteTextLayout> layout;
-        DWRITE_TEXT_METRICS metrics{};
-        if (text.empty() || !format ||
-            FAILED(m_dwrite->CreateTextLayout(text.c_str(), static_cast<UINT32>(text.size()), format, 10000.f, 100.f, &layout)) ||
-            FAILED(layout->GetMetrics(&metrics)))
-            return 0.f;
-        return std::ceil(metrics.widthIncludingTrailingWhitespace);
-    }
-
-    ComPtr<ID2D1SolidColorBrush> Shelf::Brush(const D2D1_COLOR_F& color, float alpha)
-    {
-        ComPtr<ID2D1SolidColorBrush> brush;
-        m_rt->CreateSolidColorBrush(WithAlpha(color, alpha), &brush);
-        return brush;
-    }
-
     void Shelf::Text(const std::wstring& text, IDWriteTextFormat* format, const Box& box, const D2D1_COLOR_F& color, float alpha)
     {
-        if (text.empty() || !format || alpha <= 0.f || box.Width() <= 0.f)
-            return;
-        m_rt->DrawText(text.c_str(), static_cast<UINT32>(text.size()), format, D2D1::RectF(box.left, box.top, box.right, box.bottom),
-                       Brush(color, alpha).Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        if (box.Width() > 0.f)
+            Text(text, format, D2D1::RectF(box.left, box.top, box.right, box.bottom), color, alpha);
     }
 
     void Shelf::Glyph(wchar_t glyph, IDWriteTextFormat* format, const Box& box, const D2D1_COLOR_F& color, float alpha)

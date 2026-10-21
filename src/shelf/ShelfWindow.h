@@ -1,7 +1,7 @@
 #pragma once
-#include "Canvas.h"
 #include "Island.h"
 #include "JobQueue.h"
+#include "PanelWindow.h"
 #include "Settings.h"
 #include "Theme.h"
 #include "shelf/ShelfGeometry.h"
@@ -34,7 +34,7 @@ namespace sd
     // Thumbnails, existence checks and clipboard pictures are made on its own worker thread.
     //
     // Created, used and destroyed on the UI thread, before OleUninitialize.
-    class Shelf
+    class Shelf : private PanelWindow
     {
     public:
         Shelf(HINSTANCE instance, std::wstring storePath);
@@ -127,11 +127,8 @@ namespace sd
         void ScrollIntoView(size_t index);
 
         // Drawing.
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight,
-                                                             DWRITE_TEXT_ALIGNMENT align) const;
         bool EnsureTextFormats();
-        float TextWidth(const std::wstring& text, IDWriteTextFormat* format) const;
-        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> Brush(const D2D1_COLOR_F& color, float alpha = 1.f);
+        using PanelWindow::Text;
         void Text(const std::wstring& text, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
         void Glyph(wchar_t glyph, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
         void RoundButton(const shelf::Box& box, wchar_t glyph, bool hover, bool danger, float alpha);
@@ -148,13 +145,7 @@ namespace sd
         wil::unique_hwnd m_hwnd;
         Microsoft::WRL::ComPtr<IDropTarget> m_dropTarget;
         bool m_registered = false;
-        Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
-        Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;
-        std::unique_ptr<Canvas> m_canvas;
-        ID2D1RenderTarget* m_rt = nullptr;   // valid during Render
-        std::wstring m_textFamily, m_iconFamily;
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_titleFont, m_nameFont, m_detailFont, m_iconFont, m_smallIconFont, m_countFont, m_footerFont;
-        float m_fontScale = 0.f;
 
         // Content.
         std::vector<Item> m_items;   // newest first
@@ -168,7 +159,6 @@ namespace sd
         // Place.
         HMONITOR m_monitor = nullptr;
         shelf::Box m_work, m_screen;   // the monitor's work area and whole area, pixels
-        float m_scale = 1.f;
         shelf::Metrics m_metrics{ 1.f };
         theme::Palette m_palette{};
         shelf::Edge m_edge = shelf::Edge::Right;
@@ -178,8 +168,8 @@ namespace sd
         SIZE m_size{};
 
         // Animation.
-        bool m_visible = false, m_hiding = false, m_animating = false, m_motion = true;
-        ULONGLONG m_lastFrame = 0;
+        bool m_visible = false, m_hiding = false, m_motion = true;
+        FrameClock m_frames;
         float m_presence = 0.f;        // 0 hidden .. 1 shown
         float m_open = 1.f;            // 0 folded into the tab .. 1 open
         bool m_wantOpen = true;

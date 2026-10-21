@@ -2,13 +2,9 @@
 #include "Brand.h"
 #include "Log.h"
 
-#include <shlobj.h>
-#include <shobjidl.h>
-
 #include <algorithm>
 #include <cmath>
 
-using Microsoft::WRL::ComPtr;
 using namespace sd::theme;
 
 namespace sd
@@ -29,53 +25,11 @@ namespace sd
         constexpr float kCornerDip = 10.f;
         constexpr uint32_t kThumbPx = 128;   // asked of the shell; drawn smaller
 
-        // The shell's thumbnail (Explorer's cache, so usually instant), as premultiplied BGRA. Runs on
-        // the predictor's worker thread.
-        std::shared_ptr<const preview::Thumbnail> ShellThumbnail(const std::wstring& path)
+        // The source's thumbnail for the card. Runs on the predictor's worker thread.
+        std::shared_ptr<const preview::Thumbnail> CardThumbnail(const std::wstring& path)
         {
-            ComPtr<IShellItemImageFactory> factory;
-            wil::unique_hbitmap bitmap;
-            if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&factory))) ||
-                FAILED(factory->GetImage(SIZE{ static_cast<LONG>(kThumbPx), static_cast<LONG>(kThumbPx) }, SIIGBF_RESIZETOFIT, &bitmap)))
-                return nullptr;
-            BITMAP info{};
-            if (!GetObjectW(bitmap.get(), sizeof(info), &info) || info.bmWidth <= 0 || info.bmHeight == 0)
-                return nullptr;
-            auto thumb = std::make_shared<preview::Thumbnail>();
-            thumb->w = static_cast<uint32_t>(info.bmWidth);
-            thumb->h = static_cast<uint32_t>(std::abs(info.bmHeight));
-            thumb->px.resize(static_cast<size_t>(thumb->w) * thumb->h);
-            BITMAPINFO bi{};
-            bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-            bi.bmiHeader.biWidth = info.bmWidth;
-            bi.bmiHeader.biHeight = -static_cast<LONG>(thumb->h);   // top-down rows
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 32;
-            bi.bmiHeader.biCompression = BI_RGB;
-            wil::unique_hdc dc(CreateCompatibleDC(nullptr));
-            if (!dc || !GetDIBits(dc.get(), bitmap.get(), 0, thumb->h, thumb->px.data(), &bi, DIB_RGB_COLORS))
-                return nullptr;
-            // Opaque pictures often come with alpha 0 everywhere; ones with alpha may or may not be
-            // premultiplied. Fix both so Direct2D gets premultiplied pixels.
-            bool anyAlpha = false, straight = false;
-            for (const uint32_t p : thumb->px)
-            {
-                const uint32_t a = p >> 24;
-                anyAlpha |= a != 0;
-                straight |= ((p >> 16) & 0xFF) > a || ((p >> 8) & 0xFF) > a || (p & 0xFF) > a;
-            }
-            for (auto& p : thumb->px)
-            {
-                if (!anyAlpha)
-                    p |= 0xFF000000u;
-                else if (straight)
-                {
-                    const uint32_t a = p >> 24;
-                    const auto mul = [a](uint32_t c) { return (c * a + 127) / 255; };
-                    p = (a << 24) | (mul((p >> 16) & 0xFF) << 16) | (mul((p >> 8) & 0xFF) << 8) | mul(p & 0xFF);
-                }
-            }
-            return thumb;
+            auto thumb = ShellThumbnail(path, kThumbPx);
+            return thumb.px.empty() ? nullptr : std::make_shared<const preview::Thumbnail>(std::move(thumb));
         }
     }
 
@@ -88,25 +42,15 @@ namespace sd
 
     bool PreviewCard::Create()
     {
-        WNDCLASSEXW wc{ sizeof(wc) };
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = m_instance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        wc.lpszClassName = kClassName;
-        RegisterClassExW(&wc);
         // WS_EX_TRANSPARENT: clicks, hovers and drops go straight through to what is underneath.
-        m_hwnd.reset(CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                                     kClassName, SD_NAME, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, m_instance, this));
-        if (!m_hwnd ||
-            FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.ReleaseAndGetAddressOf())) ||
-            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.ReleaseAndGetAddressOf()))))
+        m_hwnd.reset(CreatePanel(m_instance, kClassName, WndProc, WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                                 SD_NAME, this));
+        if (!m_hwnd || !InitGraphics())
         {
             log::Error(L"preview: window or Direct2D unavailable; no predictions");
             m_hwnd.reset();
             return false;
         }
-        m_canvas = std::make_unique<Canvas>(m_d2d.Get());
-        m_family = TextFamily(m_dwrite.Get());
         HWND hwnd = m_hwnd.get();
         m_predictor = std::make_unique<preview::Predictor>(
             m_media,
@@ -115,7 +59,7 @@ namespace sd
                 if (PostMessageW(hwnd, kMsgPrediction, 0, reinterpret_cast<LPARAM>(owned.get())))
                     owned.release();   // the window owns it now
             },
-            ShellThumbnail);
+            CardThumbnail);
         return true;
     }
 
@@ -219,41 +163,17 @@ namespace sd
         m_origin = POINT{ x, y };
     }
 
-    ComPtr<IDWriteTextFormat> PreviewCard::MakeFormat(float dip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align) const
-    {
-        ComPtr<IDWriteTextFormat> format;
-        if (FAILED(m_dwrite->CreateTextFormat(m_family.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                              dip * m_scale, L"", &format)))
-            return nullptr;
-        format->SetTextAlignment(align);
-        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-        ComPtr<IDWriteInlineObject> ellipsis;
-        if (SUCCEEDED(m_dwrite->CreateEllipsisTrimmingSign(format.Get(), &ellipsis)))
-            format->SetTrimming(&trimming, ellipsis.Get());
-        return format;
-    }
-
     bool PreviewCard::EnsureFormats()
     {
         if (m_titleFont && m_fontScale == m_scale)
             return true;
         m_fontScale = m_scale;
-        m_titleFont = MakeFormat(14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_LEADING);
-        m_sizeFont = MakeFormat(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
-        m_lineFont = MakeFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
-        m_smallFont = MakeFormat(11.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
+        constexpr auto L = DWRITE_TEXT_ALIGNMENT_LEADING, R = DWRITE_TEXT_ALIGNMENT_TRAILING;
+        m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
+        m_sizeFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, R);
+        m_lineFont = MakeFormat(m_textFamily, 12.f, DWRITE_FONT_WEIGHT_NORMAL, L);
+        m_smallFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_NORMAL, L);
         return m_titleFont && m_sizeFont && m_lineFont && m_smallFont;
-    }
-
-    void PreviewCard::Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color)
-    {
-        if (text.empty() || !format)
-            return;
-        ComPtr<ID2D1SolidColorBrush> brush;
-        m_rt->CreateSolidColorBrush(color, &brush);
-        m_rt->DrawText(text.c_str(), static_cast<UINT32>(text.size()), format, rect, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
     void PreviewCard::Render()
@@ -266,10 +186,7 @@ namespace sd
         const float s = m_scale;
         const float w = static_cast<float>(m_size.cx), h = static_cast<float>(m_size.cy);
         const auto& pal = m_palette;
-        ComPtr<ID2D1SolidColorBrush> panel, line, dim;
-        m_rt->CreateSolidColorBrush(pal.panel, &panel);
-        m_rt->CreateSolidColorBrush(pal.panelLine, &line);
-        m_rt->CreateSolidColorBrush(WithAlpha(pal.panelTextDim, 0.25f), &dim);
+        const auto panel = Brush(pal.panel), line = Brush(pal.panelLine), dim = Brush(pal.panelTextDim, 0.25f);
         const auto card = D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), kCornerDip * s, kCornerDip * s);
         m_rt->FillRoundedRectangle(card, panel.Get());
         m_rt->DrawRoundedRectangle(card, line.Get(), 1.f);
@@ -280,9 +197,7 @@ namespace sd
         const auto& thumb = m_current.thumb;
         if (thumb && (thumb.get() != m_thumbFor || m_thumbGeneration != m_canvas->DeviceGeneration() || !m_thumbBitmap))
         {
-            m_thumbBitmap.Reset();
-            m_rt->CreateBitmap(D2D1::SizeU(thumb->w, thumb->h), thumb->px.data(), thumb->w * 4,
-                               D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)), &m_thumbBitmap);
+            m_thumbBitmap = ToBitmap(m_rt, *thumb);
             m_thumbFor = thumb.get();
             m_thumbGeneration = m_canvas->DeviceGeneration();
         }

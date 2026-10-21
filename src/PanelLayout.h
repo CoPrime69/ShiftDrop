@@ -1,8 +1,9 @@
 #pragma once
 #include <vector>
 
-// The top panel's sizes and the switcher's layout, kept free of Win32 and Direct2D so they can be
-// unit-tested (Island.cpp draws with them). Lengths named ...Dip are DIPs; everything else is pixels.
+// The top panel's sizes and the switcher's layout, and the easing every panel window animates with,
+// kept free of Win32 and Direct2D so they can be unit-tested (Island.cpp draws with them). Lengths
+// named ...Dip are DIPs; everything else is pixels.
 namespace sd::panel
 {
     // The panel is drawn this much larger than the wheel at the same Size setting: at the wheel's own
@@ -46,4 +47,9 @@ namespace sd::panel
     // shrink, then the hint goes, then the names are shortened. The tabs are the last to give way
     // (their icons and smallest gaps always stay, so `width` can exceed a room narrower than those).
     Switcher FitSwitcher(const std::vector<float>& names, float hint, float scale, float available);
+
+    // One frame of exponential easing, as the wheel, the top panel and the Float shelf animate: over
+    // `dtMs`, `value` closes the gap to `target` as with time constant `tauMs`, and lands on it once
+    // it is within `snap`.
+    void Approach(float& value, float target, float dtMs, float tauMs, float snap);
 }

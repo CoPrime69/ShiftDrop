@@ -1,11 +1,10 @@
 #include "audiotools/AudioEngine.h"
+#include "Ask.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "StagedOutput.h"
 #include "Utf.h"
 #include "audiotools/AudioTools.h"
-
-#include <commctrl.h>
 
 #include <algorithm>
 #include <cmath>
@@ -81,32 +80,18 @@ namespace sd::audiotools
 
     bool ChooseLoudness(HWND owner, size_t files, double& target)
     {
-        // Command links: a bold name over a line saying what it is for.
-        const TASKDIALOG_BUTTON buttons[] = {
-            { 16, L"Speech\n\u221216 LUFS, for podcasts, voice notes, talks and lectures" },
-            { 14, L"Music\n\u221214 LUFS, the level streaming apps play at" },
-            { 23, L"Broadcast\n\u221223 LUFS, the EBU R128 level for TV and radio" },
-        };
-        const std::wstring content = files > 1 ? std::format(L"All {} files get the same loudness. Peaks stay under \u22121 dBTP.", files)
-                                               : std::wstring(L"Peaks stay under \u22121 dBTP.");
-        TASKDIALOGCONFIG config{ sizeof(config) };
-        config.hwndParent = owner;
-        config.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
-        config.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-        config.pszWindowTitle = L"Normalize Volume";
-        config.pszMainInstruction = L"How loud should it be?";
-        config.pszContent = content.c_str();
-        config.cButtons = static_cast<UINT>(std::size(buttons));
-        config.pButtons = buttons;
-        config.nDefaultButton = 16;
-        // Looked up at run time: TaskDialogIndirect is only in Common Controls 6, which the app's
-        // manifest selects; a static import would stop the test runner (no manifest) from loading.
-        using TaskDialogFn = HRESULT(WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
-        const HMODULE comctl = LoadLibraryW(L"comctl32.dll");
-        const auto taskDialog = comctl ? reinterpret_cast<TaskDialogFn>(GetProcAddress(comctl, "TaskDialogIndirect")) : nullptr;
-        int picked = 0;
-        if (!taskDialog || FAILED(taskDialog(&config, &picked, nullptr, nullptr)) || (picked != 16 && picked != 14 && picked != 23))
-            return false;
+        ask::Question q;
+        q.title = L"Normalize Volume";
+        q.heading = L"How loud should it be?";
+        q.text = files > 1 ? std::format(L"All {} files get the same loudness. Peaks stay under \u22121 dBTP.", files)
+                           : std::wstring(L"Peaks stay under \u22121 dBTP.");
+        // The ids are the targets, in LUFS below zero.
+        q.choices = { { 16, L"Speech", L"\u221216 LUFS, for podcasts, voice notes, talks and lectures" },
+                      { 14, L"Music", L"\u221214 LUFS, the level streaming apps play at" },
+                      { 23, L"Broadcast", L"\u221223 LUFS, the EBU R128 level for TV and radio" } };
+        const int picked = ask::ChooseNow(owner, q);
+        if (picked != 16 && picked != 14 && picked != 23)
+            return false;   // cancelled
         target = -picked;
         return true;
     }
