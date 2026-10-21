@@ -833,3 +833,12 @@ TEST_F(ArchiveTest, SlicesApplyToTheRightFiles)
     EXPECT_FALSE(runner.IsNoOp(recipes.Get("archive-to-7z"), zip));
 }
 
+TEST_F(ArchiveTest, RepackingAZipAsZipIsSkipped)
+{
+    const auto zip = dir / L"a.zip";
+    WriteCrafted(zip, "zip", { { "x.txt", "x" } });
+    const auto result = Run("archive-to-zip", zip);
+    EXPECT_TRUE(result.skipped);
+    EXPECT_EQ(result.error, L"already ZIP");
+}
+
