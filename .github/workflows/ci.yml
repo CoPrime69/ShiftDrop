@@ -502,6 +502,17 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $setup = "build/installer/ShiftDrop-Setup-$version.exe"
           if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts" }
+          # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
+          $files = @($setup)
+          if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
+            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
+            $files += "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
+          }
+          # SHA256SUMS.txt is in sha256sum's format, so `sha256sum -c SHA256SUMS.txt` checks a download.
+          $sums = @($files | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $_ -Leaf)" })
+          [IO.File]::WriteAllText("$PWD/build/installer/SHA256SUMS.txt", ($sums -join "`n") + "`n")
+          $files += 'build/installer/SHA256SUMS.txt'
+          $setupHash = ($sums[0] -split ' ')[0]
           $since = gh api "repos/$env:REPO/releases?per_page=1" --jq '.[0].created_at // empty'
           $prs = @{}
           foreach ($line in @(gh api --paginate "repos/$env:REPO/pulls?state=closed&base=main&per_page=100" --jq '.[] | select(.merged_at != null) | [.number, .merged_at, .title] | @tsv') +
@@ -520,18 +531,14 @@ jobs:
           if ($prs.Count) { $notes += $prs.Keys | Sort-Object | ForEach-Object { "- $($prs[$_]) (#$_)" } } else { $notes += '- Maintenance changes' }
           $notes += @(
             '',
-            "The installer isn't code-signed yet, so Windows SmartScreen may warn the first time you run it (""Windows protected your PC""): choose **More info**, then **Run anyway**."
+            "The installer isn't code-signed yet, so Windows SmartScreen may warn the first time you run it (""Windows protected your PC""): choose **More info**, then **Run anyway**.",
+            '',
+            "SHA-256 of ShiftDrop-Setup-$version.exe: ``$setupHash``. SHA256SUMS.txt lists every file in this release."
           )
           $text = $notes -join "`n"
           if ($text -match '(?i)claude|anthropic') { throw 'The release notes mention a name they must not; nothing was published.' }
           $text | Set-Content build/release-notes.md -Encoding utf8
           Write-Host $text
-          # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
-          $files = @($setup)
-          if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
-            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
-            $files += "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
-          }
           gh release create "v$version" @files --repo $env:REPO --target $env:GITHUB_SHA --title "ShiftDrop $version" --notes-file build/release-notes.md
           if ($LASTEXITCODE) { exit 1 }
           "Published [v$version](https://github.com/$env:REPO/releases/tag/v$version)" >> $env:GITHUB_STEP_SUMMARY

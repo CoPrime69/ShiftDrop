@@ -323,11 +323,13 @@ The speed benchmark runs only when asked: label a pull request `bench`, or start
 
 **Releases.** After a push to main passes (built here or reused), the release job reads
 `SD_VERSION` from `src/Brand.h`. If there is no release `v<SD_VERSION>` yet, it creates it on that
-commit, which also creates the tag, with the installer and, for our own ffmpeg build, the ffmpeg
-source tarball. Otherwise it does nothing, so bumping `SD_VERSION` is what makes the next release.
-The notes say how to install, list the titles of the pull requests merged since the previous
-release (all of them for the first one) and warn that the installer isn't code-signed yet; they
-are built from titles only, and the job fails rather than publish notes that name an AI tool. A
+commit, which also creates the tag, with the installer, for our own ffmpeg build the ffmpeg
+source tarball, and `SHA256SUMS.txt` (the SHA-256 of each of those files, in `sha256sum` format,
+so `sha256sum -c SHA256SUMS.txt` checks a download). Otherwise it does nothing, so bumping
+`SD_VERSION` is what makes the next release. The notes say how to install, list the titles of the
+pull requests merged since the previous release (all of them for the first one), warn that the
+installer isn't code-signed yet and give the installer's SHA-256. They are built from titles only,
+and the job checks them against a list of names that must not appear before it publishes. A
 pushed tag `v<version>` builds in full and publishes the same way; a tag that doesn't match
 `SD_VERSION` fails the release job.
 
