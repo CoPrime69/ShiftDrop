@@ -1,4 +1,5 @@
 #include "JobQueue.h"
+#include "Engine.h"
 #include "Log.h"
 
 #include <windows.h>
@@ -80,5 +81,41 @@ namespace sd
                 log::Error(L"job: unhandled non-standard exception");
             }
         }
+    }
+
+    JobLanes::JobLanes(unsigned poolThreads)
+        : m_pool(std::make_unique<JobQueue>(Threads(JobLane::Pool, poolThreads))),
+          m_media(std::make_unique<JobQueue>(Threads(JobLane::Media))),
+          m_audio(std::make_unique<JobQueue>(Threads(JobLane::Audio, poolThreads))),
+          m_office(std::make_unique<JobQueue>(Threads(JobLane::Office), JobQueue::Apartment::Sta)),
+          m_shell(std::make_unique<JobQueue>(Threads(JobLane::Shell), JobQueue::Apartment::Sta))
+    {
+    }
+
+    JobLanes::~JobLanes()
+    {
+        m_pool.reset();
+        m_media.reset();
+        m_audio.reset();
+        m_office.reset();
+        m_shell.reset();
+    }
+
+    JobQueue& JobLanes::For(JobLane lane)
+    {
+        switch (lane)
+        {
+        case JobLane::Media: return *m_media;
+        case JobLane::Audio: return *m_audio;
+        case JobLane::Shell: return *m_shell;
+        case JobLane::Office: return *m_office;
+        case JobLane::Pool: break;
+        }
+        return *m_pool;
+    }
+
+    unsigned JobLanes::Threads(JobLane lane, unsigned poolThreads)
+    {
+        return lane == JobLane::Pool || lane == JobLane::Audio ? std::max(poolThreads, 1u) : 1u;
     }
 }

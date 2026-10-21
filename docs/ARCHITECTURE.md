@@ -109,11 +109,13 @@ shared helpers.
 | Pool workers (MTA) | Image recipes, PDF pages and most feature engines. One per logical processor minus one, at most 8 (`JobQueue::PoolThreads`) |
 | Media worker | One thread for video: one ffmpeg run already uses every core, so videos go one at a time |
 | Audio workers | Sound-only ffmpeg runs use one core each, so several run side by side (same count as the pool) |
-| Shell worker (STA) | `IFileOperation` work such as Move to… and Rename…, and the Office bridge |
+| Shell worker (STA) | `IFileOperation` work such as Move to… and Rename… |
+| Office worker (STA) | Word, Excel and PowerPoint exports through COM, apart from the shell worker so a long export never holds up a move |
 | Shelf worker (STA) | Float shelf thumbnails, missing-file checks, clipboard pictures |
 | Predictor worker | The predicted-output card, so the wheel never waits |
 
-An engine picks its lane with `IEngine::Lane` (`Pool`, `Media`, `Audio` or `Shell`). Workers post
+An engine picks its lane with `IEngine::Lane` (`Pool`, `Media`, `Audio`, `Shell` or `Office`), and
+`JobLanes` in [JobQueue.h](../src/JobQueue.h) holds one queue per lane. Workers post
 their results back to the main window with `PostMessage`; nothing touches a window from a worker.
 
 ## The gesture: mouse hook and probe

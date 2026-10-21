@@ -218,14 +218,15 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Three files: the centre shows their total size, and hovering shows the total they come out at
 
 ### N. PDF, text from anything and Share
-Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a scanned PDF (a phone
-scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
+Have ready: a text PDF with a few pages (`report.pdf`, e.g. saved from Word), a two-column PDF
+(`paper.pdf`, e.g. a journal article), a scanned PDF (a phone scan with no text layer), two more PDFs, a phone photo of a printed page (`page.jpg`, taken upright and
 one taken sideways), a PNG with transparency, and a PDF with a password.
 
 - [ ] Drag `report.pdf` and hold **Shift**: Convert shows JPG, PNG, TXT and Markdown
 - [ ] Drop on **PNG**: a folder `report (pages)` holds `report page 01.png`, `report page 02.png`, … at 300 DPI (an A4 page is 2480 × 3508); a one-page PDF gives `report (converted).png` instead
 - [ ] Drop on **JPG**: the same as JPEGs; they open in Photos
 - [ ] Drop on **TXT**: `report (converted).txt` has the text in reading order with blank lines between paragraphs; on **Markdown**, headings get `#`, paragraphs are one line each, bullets become `- `
+- [ ] Drop `paper.pdf` on **TXT** and on **Markdown**: the title and any heading that runs across both columns come first, then the left column top to bottom, then the right; lines of the two columns are never mixed. A one-column PDF reads as before
 - [ ] Drop the scanned PDF on **TXT**: the text comes from OCR (the log says `ocr`); with no OCR language installed, the file says nothing for those pages and the log explains why
 - [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
 - [ ] Drag two PDFs, open **Tools**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
@@ -535,6 +536,9 @@ Documents
 - [ ] Drop the `.rtfd` folder with **Shift**: the documents slices appear; **DOCX** includes its pictures
 - [ ] Drop the `.pages` file on **DOCX**: the text arrives (from its preview PDF); a newer `.pages` with no preview PDF says so in the panel
 - [ ] Drop the text PDF with **Shift**: besides the PDF slices of section N there are **DOCX**, **EPUB** and **HTML**; the DOCX has the text reflowed with headings and bullets
+- [ ] Drop a PDF with photos or charts (a Word report saved as PDF) on **DOCX**: each picture sits between the paragraphs it sat between in the PDF, about the size it had on the page and never wider than the text, as a normal inline picture in Word. A logo on every page appears once; bullets and thin rules don't appear as pictures
+- [ ] The same PDF on **EPUB**: the pictures show in the e-book app. On **HTML**: a folder `… (converted)` holds the page and `images/`, and Edge shows the pictures
+- [ ] A scanned PDF on **DOCX**: the text comes from OCR, and the page scans are not added as pictures
 
 Spreadsheets
 - [ ] Drag `book.xlsx` with **Shift**: ODS, CSV, TSV and PDF (no XLSX)
@@ -556,6 +560,7 @@ Office bridge (with Microsoft Office)
 - [ ] Drop `report.docx` and `book.xlsx` on **Exact PDF**: the PDFs match Word's and Excel's own PDF export; Task Manager shows no WINWORD.EXE or EXCEL.EXE left afterwards
 - [ ] Drop a password-protected DOCX on **Exact PDF**: it fails with a message instead of a hidden password prompt
 - [ ] Start an Exact PDF of a large deck and press × in the top panel: it stops, nothing is left next to the deck, and PowerPoint (if we started it) is gone from Task Manager
+- [ ] Start an Exact PDF of a large deck, then drop another file on **Move to…** (or **Rename…**): the move is done at once, while the export keeps running
 
 Office bridge (LibreOffice only, no Microsoft Office)
 - [ ] The deck shows **Exact PDF** but not the slide pictures; the PDF comes out right, no LibreOffice window appears, and a LibreOffice window you already had open is not disturbed

@@ -34,6 +34,8 @@ namespace sd
         Media,   // the single media worker (anything that runs ffmpeg on video: one run uses every core)
         Audio,   // ffmpeg on sound only: one run uses one core, so several files run at once
         Shell,   // the STA shell thread (IFileOperation, shell COM objects)
+        Office,  // an STA thread of its own for Word, Excel and PowerPoint through COM, so a long
+                 // export never holds up the shell thread's moves and renames
     };
 
     class IEngine

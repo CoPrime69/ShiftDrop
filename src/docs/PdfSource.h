@@ -5,9 +5,10 @@
 #include <string>
 
 // PDF as a document source (on top of the PDF engine in src/pdf): the PDF module reads each page's text
-// (its text layer, or Windows OCR for scans) and rebuilds paragraphs, headings and bullets as
-// Markdown, which becomes the document model. Reflowed text only: page layout and pictures are not
-// kept. Kept in its own file because it needs QPDF.
+// (its text layer, or Windows OCR for scans) in reading order (two columns left then right) and
+// rebuilds paragraphs, headings and bullets as Markdown, which becomes the document model. The
+// pictures come along, each between the paragraphs it sat between on its page, as wide as it was
+// drawn there. Page layout itself is not kept. Kept in its own file because it needs QPDF.
 namespace sd::docs
 {
     bool ReadPdfDocument(const std::wstring& path, Document& doc, std::stop_token stop, std::wstring& error);

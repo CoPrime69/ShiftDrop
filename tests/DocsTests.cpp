@@ -744,3 +744,47 @@ TEST(Docs, PdfInputReflowsToDocx)
     ASSERT_TRUE(ReadDocx(ReadAll(result.output), doc, error)) << error;
     EXPECT_EQ(Describe(doc), "H1 Findings\nP The first paragraph.\nL0* A point\n");
 }
+
+TEST(Docs, PdfPicturesComeAlong)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    const auto path = dir / L"illustrated.pdf";
+    WritePicturePdf(path,
+                    { "BT /F1 24 Tf 72 700 Td (Findings) Tj ET\n"
+                      "BT /F1 12 Tf 72 660 Td (Before the chart.) Tj ET\n"
+                      "q 300 0 0 225 72 400 cm /Im0 Do Q\n"
+                      "BT /F1 12 Tf 72 360 Td (After the chart.) Tj ET" },
+                    { { "/Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceRGB /BitsPerComponent 8", RgbRamp(40, 30), true } });
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+
+    // DOCX: an inline picture in word/media where it was on the page, drawn 300 pt wide there, so
+    // 400 pixels at 96 dpi, in the picture's own shape.
+    const auto docx = runner.Run(recipes.Get("docs-to-docx"), 0, path, {});
+    ASSERT_TRUE(docx.ok) << Narrow(docx.error);
+    const auto bytes = ReadAll(docx.output);
+    ZipReader zip;
+    ASSERT_TRUE(zip.Open(bytes));
+    EXPECT_TRUE(zip.Has("word/media/image1.png"));
+    Document doc;
+    std::string error;
+    ASSERT_TRUE(ReadDocx(bytes, doc, error)) << error;
+    EXPECT_EQ(Describe(doc), "H1 Findings\nP Before the chart.\nP ![](400x300)\nP After the chart.\n");
+
+    // EPUB: the picture is in the package and its manifest.
+    const auto epub = runner.Run(recipes.Get("docs-to-epub"), 0, path, {});
+    ASSERT_TRUE(epub.ok) << Narrow(epub.error);
+    ZipReader book;
+    ASSERT_TRUE(book.Open(ReadAll(epub.output)));
+    EXPECT_TRUE(book.Has("OEBPS/images/image1.png"));
+    const auto opf = book.Read("OEBPS/content.opf").value_or("");
+    EXPECT_NE(opf.find("href=\"images/image1.png\" media-type=\"image/png\""), std::string::npos) << opf;
+
+    // HTML: like any HTML output with pictures, a folder holding the page and an images folder.
+    const auto html = runner.Run(recipes.Get("docs-to-html"), 0, path, {});
+    ASSERT_TRUE(html.ok) << Narrow(html.error);
+    ASSERT_TRUE(std::filesystem::is_directory(html.output));
+    const auto page = ReadAll((std::filesystem::path(html.output) / L"illustrated.html").wstring());
+    EXPECT_NE(page.find("<img src=\"images/image1.png\""), std::string::npos) << page;
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(html.output) / L"images" / L"image1.png"));
+}

@@ -24,7 +24,8 @@ namespace sd::pdf
     // Writes an opaque bitmap as PNG or JPEG (quality 1-100) with `dpi` in its header.
     HRESULT EncodeImageFile(const Bitmap& image, const std::wstring& path, bool jpeg, int quality, double dpi);
 
-    // Raw 8-bit samples: 1 channel (gray) or 3 (RGB, in that order, as PDF images store them).
+    // Raw 8-bit samples: 1 channel (gray) or 3 (RGB, in that order, as PDF images store them); 4
+    // (RGBA) only for EncodePng.
     struct Samples
     {
         uint32_t width = 0, height = 0, channels = 0;
@@ -32,6 +33,8 @@ namespace sd::pdf
     };
     HRESULT DecodeJpeg(const std::string& bytes, Samples& out);
     HRESULT EncodeJpeg(const Samples& in, int quality, std::string& out);
+    // PNG in memory from 1 (gray), 3 (RGB) or 4 (RGB plus straight alpha) channel samples.
+    HRESULT EncodePng(const Samples& in, std::string& out);
     // High-quality downscale (WIC Fant) to width x height.
     HRESULT ResizeSamples(Samples& samples, uint32_t width, uint32_t height);
 }

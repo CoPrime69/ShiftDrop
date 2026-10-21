@@ -480,9 +480,7 @@ namespace
     // The worker count the app gives a lane (main.cpp).
     unsigned AppThreads(JobLane lane)
     {
-        if (lane == JobLane::Media || lane == JobLane::Shell)
-            return 1;
-        return JobQueue::PoolThreads();   // the pool and the audio lane
+        return JobLanes::Threads(lane);
     }
 }
 
