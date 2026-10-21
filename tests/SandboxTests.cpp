@@ -464,8 +464,19 @@ TEST(MediaSandbox, EveryMediaRecipeWorksOnHandles)
             if (!runner.Applies(recipe, source) || runner.IsNoOp(recipe, source))
                 continue;
             const auto r = runner.Run(recipe, 0, source, {});
-            if (!r.ok && r.error.starts_with(L"already"))
-                continue;   // a size preset on a clip that is already small enough
+            if (!r.ok)
+            {
+                // A refusal that has nothing to do with the jail (a size preset on a clip that is
+                // already small, or too short for the target) fails the same way outside it.
+                sd::sandbox::SetMediaSandbox(false);
+                const auto plain = runner.Run(recipe, 0, source, {});
+                sd::sandbox::SetMediaSandbox(true);
+                if (plain.ok)
+                    std::filesystem::remove(plain.output);
+                ASSERT_FALSE(plain.ok) << recipe.id << " on " << Narrow(source) << " works outside the jail but not inside: " << Narrow(r.error);
+                EXPECT_EQ(Narrow(plain.error), Narrow(r.error)) << recipe.id;
+                continue;
+            }
             ++(tool ? toolRuns : runs);
             ASSERT_TRUE(r.ok) << recipe.id << " on " << Narrow(source) << ": " << Narrow(r.error);
             EXPECT_GT(r.size, 0u) << recipe.id;
