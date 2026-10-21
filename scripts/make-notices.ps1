@@ -1,5 +1,5 @@
 # Builds THIRD-PARTY-NOTICES.txt for the installer from the copyright files vcpkg installs.
-# Lists what is linked into ShiftDrop.exe (gtest is test-only and not shipped), plus the bundled ffmpeg.exe.
+# Lists what is linked into ShiftDrop.exe and engines\ShiftDropWorker.exe (gtest is test-only and not shipped), plus the bundled ffmpeg.exe.
 param(
     [string]$Installed = "build/x64-release/vcpkg_installed/x64-windows-static",
     [string]$Out = "build/installer/THIRD-PARTY-NOTICES.txt",
@@ -18,6 +18,10 @@ $ports = [ordered]@{
     'miniz'         = 'miniz (ZIP containers: DOCX, XLSX, ODS, EPUB)'
     'pugixml'       = 'pugixml (XML of documents and spreadsheets)'
     'md4c'          = 'MD4C (Markdown parsing)'
+    'libarchive'    = 'libarchive (ZIP, TAR, 7z and RAR archives; in ShiftDropWorker.exe and ShiftDrop.exe)'
+    'bzip2'         = 'bzip2 (used by libarchive)'
+    'liblzma'       = 'XZ Utils liblzma (used by libarchive for 7z and .xz)'
+    'zstd'          = 'Zstandard (used by libarchive)'
 }
 
 $text = [System.Text.StringBuilder]::new()

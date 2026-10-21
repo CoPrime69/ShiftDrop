@@ -3,6 +3,7 @@
 
 #include <array>
 #include <string>
+#include <string_view>
 
 namespace sd
 {
@@ -17,6 +18,7 @@ namespace sd
     inline constexpr int kRingCount = 4;
     const char* RingId(Ring ring);          // "convert", "tools", "reduce", "files" (as in recipe JSON)
     const wchar_t* RingTitle(Ring ring);    // "Convert", "Tools", "Reduce size", "File actions"
+    Ring RingFromId(std::string_view id);   // the reverse of RingId; Convert for anything else
 
     // Loaded once at startup from %LOCALAPPDATA%\ShiftDrop\settings.ini. The settings window comes in
     // M12; until then edit the file and restart.

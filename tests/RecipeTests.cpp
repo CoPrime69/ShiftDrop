@@ -1,3 +1,4 @@
+#include "Features.h"
 #include "Recipe.h"
 #include "TestUtil.h"
 
@@ -30,10 +31,10 @@ TEST(Recipe, BuiltInsAndExampleLoadWithoutErrors)
     size_t convert = 0, tools = 0, reduce = 0, files = 0;
     for (const auto& r : recipes.store.All())
         ++(r.ring == "convert" ? convert : r.ring == "tools" ? tools : r.ring == "reduce" ? reduce : files);
-    EXPECT_EQ(convert, 43u);  // PNG, JPG, WebP, TIFF, BMP + Web + 15 video/audio formats + 5 PDF (M5) + 6 documents, 5 spreadsheets, 3 subtitles, 3 office bridge (M11)
+    EXPECT_EQ(convert, 50u);  // PNG, JPG, WebP, TIFF, BMP + Web + 15 video/audio formats + 5 PDF (M5) + 6 documents, 5 spreadsheets, 3 subtitles, 3 office bridge (M11) + 7 archive (M7)
     EXPECT_EQ(tools, 38u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect (M4) + 6 PDF/OCR (M5) + 7 video and 5 audio tools (M9, M10) + Crop, Redact, Share-safe (M6) + Edit, Annotate, Background, Collage (M8)
     EXPECT_EQ(reduce, 24u);   // 90% to 20% smaller, for pictures, video and audio, and PDFs
-    EXPECT_EQ(files, 8u);     // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share (M5), Remove metadata (M6)
+    EXPECT_EQ(files, 9u);     // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share (M5), Remove metadata (M6), Zip (M7)
     EXPECT_TRUE(recipes.Get("move").IsFileAction());
 }
 
@@ -107,4 +108,28 @@ TEST(Recipe, UserRecipeReplacesBuiltIn)
     EXPECT_EQ(recipes.Get("to-png").label, L"PNG!");
     ASSERT_EQ(recipes.store.Errors().size(), 1u);
     EXPECT_NE(recipes.store.Errors()[0].find(L"broken.json"), std::wstring::npos);
+}
+
+TEST(Features, SlicesAndSectionsTurnOff)
+{
+    EXPECT_EQ(SplitIds(" to-tiff, to-bmp,,to-tiff "), (std::set<std::string>{ "to-bmp", "to-tiff" }));
+    EXPECT_EQ(JoinIds({ "b", "a" }), "a,b");
+    EXPECT_TRUE(SplitIds("").empty());
+
+    Features f;
+    Recipe tiff;
+    tiff.id = "to-tiff";
+    tiff.ring = "convert";
+    Recipe rotate;
+    rotate.id = "rotate-right";
+    rotate.ring = "tools";
+    EXPECT_TRUE(f.RecipeOn(tiff));
+    f.off.insert("to-tiff");
+    EXPECT_FALSE(f.RecipeOn(tiff));
+    EXPECT_TRUE(f.RecipeOn(rotate));
+    f.sections[static_cast<size_t>(Ring::Tools)] = false;
+    EXPECT_FALSE(f.RecipeOn(rotate));
+    EXPECT_EQ(f.SectionsOn(), 3);
+    EXPECT_EQ(RingFromId("reduce"), Ring::Reduce);
+    EXPECT_EQ(RingFromId("nonsense"), Ring::Convert);
 }

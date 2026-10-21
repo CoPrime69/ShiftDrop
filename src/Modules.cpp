@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "archive/ArchiveModule.h"
 #include "inspect/InspectModule.h"
 #include "imagetools/ImageToolsModule.h"
 #include "shelf/ShelfModule.h"
@@ -27,6 +28,7 @@ namespace sd
             MediaToolsModule(),   // video tools (M9) and audio tools (M10)
             ImageToolsModule(),   // Crop, Redact, Share-safe, Remove metadata, src/imagetools
             photo::Module(),   // Edit Photos, Annotate, Background, Collage (M8), src/photo
+            archive::Module(),   // Zip, Extract, convert archives; parsed in the sandboxed worker (src/archive, src/sandbox)
         };
         return modules;
     }

@@ -116,6 +116,7 @@ Tick each line. If a line fails, send me that line plus the log excerpt.
 - [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl** or **Alt**: nothing changes (only Shift opens the wheel; Ctrl and Alt keep their usual drag meaning)
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] No mouse wheel: still dragging with Shift held, tap **1**, **2**, **3** or **4**: the wheel jumps straight to that section (Convert, Tools, Reduce size, File actions); with a section turned off in Settings the numbers follow the sections that are left. The top panel hint reads "Scroll or Shift+1–4"
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with the reason, until you click it; clicking shows the outputs in Explorer
 - [ ] Release over the centre: nothing runs, the wheel fades and the panel goes up
@@ -217,6 +218,7 @@ Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a 
 Keyboard during a drag
 - [ ] Drag a photo, hold **Shift**, let go of the mouse-free hand: **Right** highlights the slice at 12 o'clock, then each one clockwise; **Left** goes back; dimmed slices are skipped; holding an arrow repeats
 - [ ] **Up** / **Down** on a one-ring wheel switch to the previous / next wheel (like scrolling); the first slice of the new wheel is lit
+- [ ] With the wheel open from Explorer, press **1**–**4** (with or without Shift): the wheel jumps to that section
 - [ ] Press **Enter** on a highlighted slice: the job runs on the dragged photo (top panel), the drag ends as if Esc was pressed, and nothing is moved or copied into the folder under the cursor. Release the mouse afterwards: nothing happens
 - [ ] A slice picked by key stays lit while the mouse is still; moving the mouse a few pixels hands the highlight back to the pointer
 - [ ] **Esc** still cancels the drag; the source window never loses focus (its title bar stays active the whole time)
@@ -317,6 +319,16 @@ Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 - [ ] A PDF of scans on **−70%**: `(reduced).pdf` at most 30% of the size; a PDF of mostly text gets as small as it can and the panel says it could not get smaller; one that cannot shrink at all leaves no file
 - [ ] Three files: the centre shows their total size, and hovering shows the total they come out at
 
+### U. Settings and tray entries
+- [ ] Right-click the tray icon: **Settings…**, **History…** and **Show Float shelf** are near the top
+- [ ] **Settings…** opens a window (dark when Windows is dark) with Convert, Tools, Reduce size and File actions, each split by kind of file (Photos, Video, Audio, PDF, Any file…) with a tick on every line
+- [ ] Untick **TIFF** under Convert › Photos: drag a photo, press Shift: TIFF is gone and the other formats share the circle evenly; tick it again: it is back
+- [ ] Untick **Convert › Video**: a video's Convert wheel has no video formats; Photos shows a partly ticked box when only some of its slices are on; clicking a partly ticked line ticks everything under it
+- [ ] Untick the whole **Tools** section: scrolling goes Convert, Reduce size, File actions (no Tools tab in the top panel); unticking the last section left is refused with a note
+- [ ] **Turn everything on** ticks everything again; quitting and starting again keeps your choices (`[Features]` in settings.ini)
+- [ ] **Show Float shelf** with an empty shelf: it opens saying "Drop files here to keep them"; drop a file on it: it stays; Clear hides it
+- [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
+
 ### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
 
@@ -361,7 +373,7 @@ Remove metadata (File-actions wheel, **Alt**)
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
-### U. Documents, spreadsheets, subtitles, Office bridge (M11)
+### V. Documents, spreadsheets, subtitles, Office bridge (M11)
 Have ready: a Word document with headings, a bulleted and a numbered list, a table, a link and a
 picture (`report.docx`); a Markdown file (`notes.md`); an RTF saved from WordPad with a picture; an
 RTFD package from a Mac (a folder ending in `.rtfd`); an old `.pages` file; a text PDF; an Excel
@@ -409,6 +421,35 @@ Office bridge (LibreOffice only, no Microsoft Office)
 - [ ] With neither installed, no Office bridge slices appear at all
 
 - [ ] With Wi-Fi off, everything above works the same; Tray > History lists each job and Undo moves its output (or folder) to the Recycle Bin
+
+### Q. Archives and the sandbox (M7)
+
+Prepare a folder `Photos` with a few pictures, a subfolder and a file with a non-English name
+(for example `Müller 日本.txt`); a ZIP, a TAR.GZ, a 7z and a RAR made elsewhere (7-Zip or WinRAR);
+a password-protected ZIP; and an old ZIP made on a non-UTF-8 system if you have one.
+
+Compress
+- [ ] Drag `Photos` onto **Zip** on the File-actions wheel: `Photos (zipped).zip` appears next to the folder; open it in Explorer: the subfolder, the non-English name and the dates are all there
+- [ ] Select three files in one folder and drop them on **Zip** on the File-actions wheel: one ZIP named after their folder holding the three files
+- [ ] Drag `Photos` to the Convert wheel: it shows ZIP, TAR.GZ and 7z; **TAR.GZ** makes `Photos (archived).tar.gz`, **7z** makes `Photos (archived).7z`; both open in 7-Zip with the same files
+- [ ] Zip a folder of a few GB: the top panel's progress moves smoothly; press × halfway: no `.zip` and no `.sdpart` file is left
+
+Extract and convert
+- [ ] Drag each archive (ZIP, TAR.GZ, 7z, RAR) to the Convert wheel: it shows Extract, ZIP, TAR.GZ, 7z (on a ZIP, TAR.GZ or 7z its own format is dimmed)
+- [ ] **Extract** on each: a folder `name (extracted)` next to it with the same files, names and dates; an archive holding one top-level folder doesn't add an extra folder level
+- [ ] The old non-UTF-8 ZIP: accented names come out right (not `M├╝ller`)
+- [ ] **ZIP** on the RAR and the 7z: `name (converted).zip` with the same contents
+- [ ] The password-protected ZIP on Extract: the top panel says it is password-protected; nothing is created
+- [ ] A big archive on Extract, × halfway: no folder and no `.sdpart` is left next to it
+- [ ] Undo the last extract from History: the folder goes to the Recycle Bin
+
+Sandbox
+- [ ] Extract an archive, then open `%LOCALAPPDATA%\ShiftDrop\logs`: no "sandbox:" warning line
+- [ ] While a large extract runs, Process Explorer (or Task Manager > Details, column "Integrity level") shows `ShiftDropWorker.exe` at **AppContainer**, under ShiftDrop.exe, and it disappears when the job ends
+- [ ] Kill ShiftDrop.exe in Task Manager during a large extract: ShiftDropWorker.exe ends at once
+- [ ] Set `[Sandbox] Archives=0` in `settings.ini`, restart, extract: it still works, and the worker shows integrity level Medium
+- [ ] Optional (open question 10), on a PC with a GPU: set `[Sandbox] Media=1`, restart, convert a video to MP4 and compress one (GPU encoder in use): both work, ffmpeg.exe shows **AppContainer** in Process Explorer; note any failure and the log lines
+- [ ] Uninstall: the AppContainer profile is removed (`%LOCALAPPDATA%\Packages\shiftdrop.sandbox` is gone)
 
 ### V. Photo tools: Edit, Annotate, Background, Collage (M8)
 Have ready: a 12 MP phone photo (JPEG with camera, date and GPS), a hazy or foggy landscape, a noisy night shot, a screenshot (PNG), a PNG with transparency, and four photos of different shapes (portrait, landscape, square).

@@ -27,6 +27,7 @@ find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
 find_package(miniz CONFIG REQUIRED)    # ZIP containers: DOCX, XLSX, ODS, EPUB (MIT)
 find_package(pugixml CONFIG REQUIRED)  # XML of those containers (MIT)
 find_package(md4c CONFIG REQUIRED)     # Markdown parsing, CommonMark + GitHub tables (MIT)
+find_package(LibArchive REQUIRED)    # ZIP, TAR, 7z, RAR (BSD-2); vcpkg's wrapper adds its static codecs
 # QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
 # linker must be able to find them in vcpkg's lib folder.
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
@@ -61,6 +62,7 @@ add_library(shiftdrop_core STATIC
   src/Recipe.cpp
   src/RecipeStore.cpp
   src/Settings.cpp
+  src/Features.cpp
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
@@ -153,6 +155,17 @@ add_library(shiftdrop_core STATIC
   src/videotools/VideoTools.cpp
   src/audiotools/AudioEngine.cpp
   src/audiotools/AudioTools.cpp
+  src/archive/ArchiveFormats.cpp
+  src/archive/ArchiveModule.cpp
+  src/archive/ArchiveReader.cpp
+  src/archive/ArchiveSource.cpp
+  src/archive/ArchiveWriter.cpp
+  src/archive/Entries.cpp
+  src/archive/EntryPipe.cpp
+  src/archive/Sinks.cpp
+  src/sandbox/MediaSandbox.cpp
+  src/sandbox/Sandbox.cpp
+  src/sandbox/Worker.cpp
   # Photo tools (M8): Edit Photos, Annotate, Background, Collage; Direct2D on the GPU (WARP without one)
   src/photo/Adjust.cpp
   src/photo/AnnotateTool.cpp
@@ -181,6 +194,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   miniz::miniz
   pugixml::pugixml
   md4c::md4c
+  LibArchive::LibArchive
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
   dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
   d2d1 d3d11 dxgi dxguid  # photo tools: Direct2D on the GPU (WARP without one); dxguid has the effect CLSIDs
@@ -219,6 +233,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/SettingsWindow.cpp
   src/keyboard/ExplorerSelection.cpp
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
@@ -236,7 +251,20 @@ add_executable(ShiftDrop WIN32
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme)
+
+# The sealed engine host (S6): parses archives inside an AppContainer with no capabilities. A
+# separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
+# lives in "engines" next to ffmpeg.exe; every build copies it there so the build folder runs like
+# an install.
+add_executable(ShiftDropWorker WIN32 src/sandbox/WorkerExe.cpp)
+target_compile_options(ShiftDropWorker PRIVATE ${SHIFTDROP_OPTIONS})
+target_link_libraries(ShiftDropWorker PRIVATE shiftdrop_core)
+add_dependencies(ShiftDrop ShiftDropWorker)
+add_custom_command(TARGET ShiftDropWorker POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShiftDropWorker>/engines"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ShiftDropWorker>" "$<TARGET_FILE_DIR:ShiftDropWorker>/engines/ShiftDropWorker.exe"
+  COMMENT "Copying ShiftDropWorker.exe into engines")
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
@@ -277,10 +305,13 @@ if(SHIFTDROP_TESTS)
     tests/CropTests.cpp
     tests/RedactTests.cpp
     tests/ShareSafeTests.cpp
+    tests/ArchiveTests.cpp
+    tests/SandboxTests.cpp
     tests/PhotoTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
-  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)
+  # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
+  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest ws2_32)
   include(GoogleTest)
   # The MediaEngine tests run the real ffmpeg.exe when there is one; they are skipped otherwise.
   if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")
