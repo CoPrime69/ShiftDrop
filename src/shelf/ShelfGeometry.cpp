@@ -126,6 +126,7 @@ namespace sd::shelf
           inset(std::round(8.f * s)),
           thumb(std::round(38.f * s)),
           button(std::round(26.f * s)),
+          clearAll(std::round(64.f * s)),
           radius(std::round(14.f * s)),
           tabThickness(std::round(22.f * s)),
           tabLength(std::round(84.f * s)),
@@ -151,11 +152,21 @@ namespace sd::shelf
         l.header = Box{ panel.left, panel.top, panel.right, panel.top + m.header };
         const float hy = (l.header.top + l.header.bottom) / 2.f;
         const float b = m.button;
-        l.clear = Box{ panel.right - m.inset - b, hy - b / 2.f, panel.right - m.inset, hy + b / 2.f };
-        l.pin = l.clear.Offset(-(b + std::round(4.f * m.scale)), 0);
+        const float gap = std::round(4.f * m.scale);
+        l.close = Box{ panel.right - m.inset - b, hy - b / 2.f, panel.right - m.inset, hy + b / 2.f };
+        float left = l.close.left;
+        if (count > 0)
+        {
+            l.clear = Box{ left - gap - m.clearAll, l.close.top, left - gap, l.close.bottom };
+            left = l.clear.left;
+        }
+        l.pin = Box{ left - gap - b, l.close.top, left - gap, l.close.bottom };
         l.title = Box{ panel.left + m.inset + std::round(8.f * m.scale), l.header.top, l.pin.left - m.inset, l.header.bottom };
-        l.footer = Box{ panel.left + m.inset, panel.bottom - m.footer + std::round(4.f * m.scale), panel.right - m.inset, panel.bottom - m.inset };
         l.list = Box{ panel.left, l.header.bottom, panel.right, panel.bottom - m.footer };
+        if (count > 0)
+            l.footer = Box{ panel.left + m.inset, panel.bottom - m.footer + std::round(4.f * m.scale), panel.right - m.inset, panel.bottom - m.inset };
+        else
+            l.drop = Box{ panel.left + m.inset, l.header.bottom + std::round(4.f * m.scale), panel.right - m.inset, panel.bottom - m.inset };
 
         scroll = std::clamp(scroll, 0.f, MaxScroll(m, count));
         const float pad = std::round(6.f * m.scale);
@@ -185,6 +196,8 @@ namespace sd::shelf
     {
         if (!l.panel.Contains(x, y))
             return {};
+        if (l.close.Contains(x, y))
+            return { Part::Close };
         if (l.clear.Contains(x, y))
             return { Part::Clear };
         if (l.pin.Contains(x, y))

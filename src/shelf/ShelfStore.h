@@ -9,7 +9,7 @@
 
 // What the Float shelf keeps between runs, and the list operations behind its buttons. No Win32
 // UI here, so it is unit-tested. Saved as %LOCALAPPDATA%\ShiftDrop\shelf.json:
-//   { "version": 1, "items": [ "C:\\a.png", ... ], "edge": "right", "x": 1500, "y": 300 }
+//   { "version": 1, "items": [ "C:\\a.png", ... ], "edge": "right", "x": 1500, "y": 300, "shown": true }
 namespace sd::shelf
 {
     struct SavedShelf
@@ -17,6 +17,7 @@ namespace sd::shelf
         std::vector<std::wstring> items;   // newest first
         Edge edge = Edge::Right;
         std::optional<int> x, y;           // the panel's top-left corner in screen pixels; none = first run
+        bool shown = true;                 // the tray's "Show Float shelf" (a file without it: on)
     };
 
     std::string ToJson(const SavedShelf& shelf);
@@ -36,6 +37,28 @@ namespace sd::shelf
     size_t AddToTop(std::vector<std::wstring>& items, const std::vector<std::wstring>& added, size_t limit = 500);
     // Removes the items `gone` says are gone; returns how many went.
     size_t RemoveIf(std::vector<std::wstring>& items, const std::function<bool(const std::wstring&)>& gone);
+
+    // When the shelf is on screen. It stays there while it is switched on, with files or empty:
+    // removing, clearing or dragging out its last file never hides it, and an empty shelf is a place
+    // to drop files. Only switching it off hides it (the tray's "Show Float shelf", the shelf's own
+    // close button), and the window saves that, so it lasts across restarts. Files put on it switch it
+    // back on: they are there to be seen.
+    class Visibility
+    {
+    public:
+        explicit Visibility(bool on = true) : m_on(on) {}
+        // On screen (and ticked in the tray), however many files it holds.
+        bool On() const { return m_on; }
+        // The tray item and the close button. Returns whether it changed (then it is saved).
+        bool Switch(bool on);
+        // Files put on the shelf, from wherever they come: the Float slice, a result's Float button or
+        // a drop on the shelf itself. All of them go through AddToTop, so a file already there moves up
+        // instead of appearing twice. Returns how many were new.
+        size_t Put(std::vector<std::wstring>& items, const std::vector<std::wstring>& files, size_t limit = 500);
+
+    private:
+        bool m_on;
+    };
 
     // Which items are selected, one flag per item, with Explorer's click rules.
     class Selection
@@ -67,4 +90,7 @@ namespace sd::shelf
 
     // "1 item", "3 items" (folders can be on the shelf too).
     std::wstring CountText(size_t count);
+    // The header's count: "3 files", "1 folder", "4 items" when both are there; nothing when empty
+    // (the empty shelf's drop box says that).
+    std::wstring CountText(size_t files, size_t folders);
 }

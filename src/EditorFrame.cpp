@@ -7,6 +7,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace sd
 {
@@ -17,25 +18,35 @@ namespace sd
         bool Same(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b) { return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a; }
     }
 
-    EditorFrame::EditorFrame(bool opaque) : m_opaque(opaque)
+    ControlKit::ControlKit() : m_colors(theme::EditorColors())
     {
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.GetAddressOf());
         DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.GetAddressOf()));
         if (m_dwrite)
         {
             m_textFamily = theme::TextFamily(m_dwrite.Get());
             m_iconFamily = theme::IconFamily(m_dwrite.Get());
         }
-        LoadColors();
+    }
+
+    void ControlKit::SetTarget(ID2D1RenderTarget* target)
+    {
+        if (target != m_target)
+            m_brushes.clear();
+        m_target = target;
+    }
+
+    EditorFrame::EditorFrame(bool opaque) : m_opaque(opaque)
+    {
+        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.GetAddressOf());
     }
 
     EditorFrame::~EditorFrame() = default;
 
     void EditorFrame::LoadColors()
     {
-        m_colors = theme::EditorColors();
+        SetPalette(theme::EditorColors());
         if (m_hwnd)
-            theme::ApplyDarkCaption(m_hwnd, m_colors.dark, theme::ToColorRef(m_colors.window));
+            theme::ApplyDarkCaption(m_hwnd, Theme().dark, theme::ToColorRef(Theme().window));
     }
 
     EditorFrame::Monitor EditorFrame::CursorMonitor()
@@ -62,7 +73,7 @@ namespace sd
             wc.lpszClassName = kClass;
             return RegisterClassExW(&wc) != 0;
         }();
-        if (!registered || !m_d2d || !m_dwrite)
+        if (!registered || !m_d2d || !DWrite())
             return false;
         m_minDip = { minWidthDip, minHeightDip };
 
@@ -129,13 +140,13 @@ namespace sd
             InvalidateRect(m_hwnd, nullptr, FALSE);
     }
 
-    ID2D1SolidColorBrush* EditorFrame::Brush(const D2D1_COLOR_F& color)
+    ID2D1SolidColorBrush* ControlKit::Brush(const D2D1_COLOR_F& color)
     {
         for (const auto& b : m_brushes)
             if (Same(b.color, color))
                 return b.brush.Get();
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
-        if (!m_rt || FAILED(m_rt->CreateSolidColorBrush(color, &brush)))
+        if (!m_target || FAILED(m_target->CreateSolidColorBrush(color, &brush)))
             return nullptr;
         if (m_brushes.size() > 64)
             m_brushes.clear();
@@ -143,7 +154,7 @@ namespace sd
         return brush.Get();
     }
 
-    IDWriteTextFormat* EditorFrame::TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
+    IDWriteTextFormat* ControlKit::TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
     {
         for (const auto& f : m_formats)
             if (!f.icon && f.size == sizeDip && f.weight == weight && f.align == align)
@@ -164,7 +175,7 @@ namespace sd
         return format.Get();
     }
 
-    IDWriteTextFormat* EditorFrame::IconFormat(float sizeDip)
+    IDWriteTextFormat* ControlKit::IconFormat(float sizeDip)
     {
         for (const auto& f : m_formats)
             if (f.icon && f.size == sizeDip)
@@ -180,14 +191,14 @@ namespace sd
         return format.Get();
     }
 
-    void EditorFrame::DrawText(std::wstring_view text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color)
+    void ControlKit::DrawText(std::wstring_view text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color)
     {
-        if (format && m_rt && !text.empty())
+        if (format && m_target && !text.empty())
             if (auto* brush = Brush(color))
-                m_rt->DrawText(text.data(), static_cast<UINT32>(text.size()), format, rect, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                m_target->DrawText(text.data(), static_cast<UINT32>(text.size()), format, rect, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
-    float EditorFrame::TextWidth(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight)
+    float ControlKit::TextWidth(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight)
     {
         return theme::TextWidth(m_dwrite.Get(), text, TextFormat(sizeDip, weight));
     }
@@ -205,29 +216,29 @@ namespace sd
 
     // ---- Controls ------------------------------------------------------------------------------------
 
-    void EditorFrame::FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius)
+    void ControlKit::FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius)
     {
-        if (r.right <= r.left || r.bottom <= r.top || !m_rt)
+        if (r.right <= r.left || r.bottom <= r.top || !m_target)
             return;
         if (auto* brush = Brush(color))
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(r, radius, radius), brush);
+            m_target->FillRoundedRectangle(D2D1::RoundedRect(r, radius, radius), brush);
     }
 
-    void EditorFrame::StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius)
+    void ControlKit::StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius)
     {
         const float in = width / 2;
-        if (r.right - r.left <= width || r.bottom - r.top <= width || !m_rt)
+        if (r.right - r.left <= width || r.bottom - r.top <= width || !m_target)
             return;
         if (auto* brush = Brush(color))
-            m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left + in, r.top + in, r.right - in, r.bottom - in), radius, radius), brush, width);
+            m_target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left + in, r.top + in, r.right - in, r.bottom - in), radius, radius), brush, width);
     }
 
-    void EditorFrame::DrawFocusRing(const D2D1_RECT_F& r, float radius)
+    void ControlKit::DrawFocusRing(const D2D1_RECT_F& r, float radius)
     {
         StrokeRound(D2D1::RectF(r.left - 3, r.top - 3, r.right + 3, r.bottom + 3), m_colors.focus, 2.f, radius + 3);
     }
 
-    void EditorFrame::DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s)
+    void ControlKit::DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s)
     {
         const auto& c = m_colors;
         const bool hot = s.enabled && s.hot, pressed = hot && s.pressed;
@@ -253,7 +264,7 @@ namespace sd
             DrawFocusRing(r, kControlRadius);
     }
 
-    void EditorFrame::DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s)
+    void ControlKit::DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s)
     {
         const auto& c = m_colors;
         if (on)
@@ -268,7 +279,7 @@ namespace sd
             DrawFocusRing(r, kControlRadius);
     }
 
-    void EditorFrame::DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s)
+    void ControlKit::DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s)
     {
         const auto& c = m_colors;
         const bool hot = s.enabled && s.hot;
@@ -286,7 +297,7 @@ namespace sd
             DrawFocusRing(r, kControlRadius);
     }
 
-    void EditorFrame::DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s)
+    void ControlKit::DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s)
     {
         const auto& c = m_colors;
         const bool hot = s.enabled && s.hot;
@@ -301,15 +312,15 @@ namespace sd
         }
         const float knob = on ? 7.f : 6.f;
         const auto centre = D2D1::Point2F(on ? r.right - radius : r.left + radius, (r.top + r.bottom) / 2);
-        if (auto* brush = m_rt ? Brush(theme::WithAlpha(on ? c.onAccent : c.textDim, alpha)) : nullptr)
-            m_rt->FillEllipse(D2D1::Ellipse(centre, knob, knob), brush);
+        if (auto* brush = m_target ? Brush(theme::WithAlpha(on ? c.onAccent : c.textDim, alpha)) : nullptr)
+            m_target->FillEllipse(D2D1::Ellipse(centre, knob, knob), brush);
         if (s.focused)
             DrawFocusRing(r, radius);
     }
 
-    void EditorFrame::DrawSlider(const D2D1_RECT_F& track, float value, float from, ControlState s)
+    void ControlKit::DrawSlider(const D2D1_RECT_F& track, float value, float from, ControlState s)
     {
-        if (!m_rt)
+        if (!m_target)
             return;
         const auto& c = m_colors;
         const bool hot = s.enabled && s.hot;
@@ -323,16 +334,16 @@ namespace sd
         const float radius = s.pressed ? 8.f : hot ? 7.5f : 7.f;
         const auto thumb = D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius);
         if (auto* brush = Brush(theme::WithAlpha(c.dark ? D2D1::ColorF(0x45454C) : D2D1::ColorF(1, 1, 1, 1), alpha)))
-            m_rt->FillEllipse(thumb, brush);
+            m_target->FillEllipse(thumb, brush);
         if (auto* brush = Brush(theme::WithAlpha(c.controlLine, alpha)))
-            m_rt->DrawEllipse(thumb, brush, 1.f);
+            m_target->DrawEllipse(thumb, brush, 1.f);
         if (auto* brush = Brush(theme::WithAlpha(c.accent, alpha)))
-            m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius - 3.5f, radius - 3.5f), brush);
+            m_target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius - 3.5f, radius - 3.5f), brush);
         if (s.focused)
             DrawFocusRing(D2D1::RectF(x - radius, y - radius, x + radius, y + radius), radius);
     }
 
-    void EditorFrame::DrawField(const D2D1_RECT_F& r, bool editing, bool invalid, ControlState s)
+    void ControlKit::DrawField(const D2D1_RECT_F& r, bool editing, bool invalid, ControlState s)
     {
         const auto& c = m_colors;
         const D2D1_COLOR_F fill = editing ? (c.dark ? c.stage : D2D1::ColorF(1, 1, 1, 1)) : s.enabled && s.hot ? c.controlHover : c.control;
@@ -342,6 +353,36 @@ namespace sd
             FillRound(D2D1::RectF(r.left + 2, r.bottom - 2, r.right - 2, r.bottom), invalid ? c.danger : c.accent, 1.f);
         if (s.focused && !editing)
             DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawSwatch(const D2D1_RECT_F& r, const D2D1_COLOR_F& colour, wchar_t glyph, const D2D1_COLOR_F& ink, bool selected, ControlState s)
+    {
+        if (!m_target)
+            return;
+        const auto& c = m_colors;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        const auto centre = D2D1::Point2F((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        const float outer = std::max(4.f, std::min(r.right - r.left, r.bottom - r.top) / 2 - 4.f);   // the focus ring goes around it
+        // Selected: a ring in the text colour, a gap, then the colour; hot or pressed: the colour grows
+        // a little, like the slider's thumb.
+        const bool hot = s.enabled && s.hot;
+        const float dot = selected ? outer - 4.5f : hot && s.pressed ? outer : hot ? outer - 0.5f : outer - 1.5f;
+        if (selected)
+            if (auto* brush = Brush(theme::WithAlpha(c.text, alpha)))
+                m_target->DrawEllipse(D2D1::Ellipse(centre, outer - 1.f, outer - 1.f), brush, 2.f);
+        if (auto* brush = Brush(theme::WithAlpha(colour, alpha)))
+            m_target->FillEllipse(D2D1::Ellipse(centre, dot, dot), brush);
+        // A faint edge, so a colour close to the window's still shows its shape.
+        if (auto* brush = Brush(theme::WithAlpha(c.controlLine, alpha)))
+            m_target->DrawEllipse(D2D1::Ellipse(centre, dot - 0.5f, dot - 0.5f), brush, 1.f);
+        if (glyph)
+        {
+            const wchar_t text[2] = { glyph, 0 };
+            DrawText(text, IconFormat(std::max(8.f, std::round(dot * 0.9f))), D2D1::RectF(centre.x - dot, centre.y - dot, centre.x + dot, centre.y + dot),
+                     theme::WithAlpha(ink, alpha));
+        }
+        if (s.focused)
+            DrawFocusRing(D2D1::RectF(centre.x - outer, centre.y - outer, centre.x + outer, centre.y + outer), outer);
     }
 
     int EditorFrame::ButtonAt(D2D1_POINT_2F p) const
@@ -367,6 +408,7 @@ namespace sd
         const auto hwndProps = D2D1::HwndRenderTargetProperties(m_hwnd, D2D1::SizeU(static_cast<UINT32>(r.right), static_cast<UINT32>(r.bottom)));
         if (FAILED(m_d2d->CreateHwndRenderTarget(props, hwndProps, &m_rt)))
             return false;
+        SetTarget(m_rt.Get());
         if (!m_opaque)
             m_rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);   // no ClearType on a transparent target
         ++m_generation;
@@ -379,12 +421,12 @@ namespace sd
             return;
         m_rt->BeginDraw();
         m_rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        m_rt->Clear(m_colors.window);
+        m_rt->Clear(Theme().window);
         Paint(m_rt.Get(), m_rt->GetSize());
         if (m_rt->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
         {
+            SetTarget(nullptr);
             m_rt.Reset();
-            m_brushes.clear();
             Invalidate();
         }
     }

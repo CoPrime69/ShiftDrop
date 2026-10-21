@@ -4,14 +4,17 @@
 #include "DropTarget.h"
 #include "ErrorText.h"
 #include "FileActions.h"
+#include "FileMove.h"
 #include "FormatText.h"
 #include "Log.h"
 #include "PanelLayout.h"
 #include "PathUtil.h"
 #include "UiThread.h"
 #include "Utf.h"
+#include "VirtualDrop.h"
 #include "shelf/Carry.h"
 
+#include <commctrl.h>
 #include <shellapi.h>
 #include <shlguid.h>
 #include <shlobj.h>
@@ -40,6 +43,7 @@ namespace sd
         constexpr UINT kMsgThumb = WM_APP + 1;       // lParam: ThumbResult*, owned by the receiver
         constexpr UINT kMsgCheck = WM_APP + 2;       // lParam: CheckResult*
         constexpr UINT kMsgClipboard = WM_APP + 3;   // lParam: ClipboardJob*
+        constexpr UINT kMsgKeep = WM_APP + 4;        // lParam: KeepJob*
         constexpr UINT_PTR kTimerFrame = 1;
         constexpr UINT_PTR kTimerFold = 2;
         constexpr UINT_PTR kTimerCheck = 3;
@@ -59,20 +63,24 @@ namespace sd
         // Segoe Fluent Icons / MDL2 Assets.
         constexpr wchar_t kGlyphPin = 0xE718;
         constexpr wchar_t kGlyphUnpin = 0xE77A;
-        constexpr wchar_t kGlyphClear = 0xE74D;    // Delete
         constexpr wchar_t kGlyphReveal = 0xE838;   // FolderOpen
         constexpr wchar_t kGlyphRemove = 0xE711;   // Cancel
+        constexpr wchar_t kGlyphClose = 0xE8BB;    // ChromeClose
+        constexpr wchar_t kGlyphDrop = 0xE896;     // Download
         constexpr wchar_t kGlyphFile = 0xE8A5;     // Document
         constexpr wchar_t kGlyphFolder = 0xE8B7;   // Folder
 
-        enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear };
+        enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear, kMenuClose };
+
+        // The header buttons Tab moves through, left to right (Clear all only while there are files).
+        constexpr Part kHeaderButtons[] = { Part::Pin, Part::Clear, Part::Close };
 
         // The shelf's colours, from the same palette as the wheel and the top panel. Unlike the top
         // panel (a dark island in both themes) the shelf is a window you work in, so it follows the
         // light or dark app theme.
         struct Colors
         {
-            D2D1_COLOR_F surface, line, text, dim, hover, button, accent, onAccent, danger, shadow;
+            D2D1_COLOR_F surface, line, text, dim, hover, button, accent, danger, onDanger, shadow;
         };
         Colors ColorsFor(const Palette& p, Style style)
         {
@@ -89,8 +97,8 @@ namespace sd
             c.hover = p.dark ? white(0.07f) : black(0.05f);
             c.button = p.dark ? white(0.10f) : black(0.06f);
             c.accent = p.accent;
-            c.onAccent = p.textOnAccent;
             c.danger = p.dark ? p.error : D2D1::ColorF(0xC42B1C, 1.f);
+            c.onDanger = p.dark ? D2D1::ColorF(accent::kTextOnDark, 1.f) : white(1.f);   // the light red takes dark text
             c.shadow = p.shadow;
             return c;
         }
@@ -100,75 +108,6 @@ namespace sd
         {
             return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
         }
-
-        // OLE drop target for the shelf. Files dragged over it are added on drop; our own drag out is
-        // never taken back. Copy only, like the wheel: MOVE would make the source delete the file.
-        class ShelfDropTarget final : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropTarget>
-        {
-        public:
-            ShelfDropTarget(HWND hwnd, Shelf* shelf) : m_hwnd(hwnd), m_shelf(shelf)
-            {
-                CoCreateInstance(CLSID_DragDropHelper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_helper));   // optional
-            }
-
-            STDMETHODIMP DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect) override
-            {
-                POINT p{ pt.x, pt.y };
-                m_accepting = m_shelf->OnDragEnter(ReadDroppedFiles(data));
-                *effect = m_accepting ? SafeEffect(*effect) : DROPEFFECT_NONE;
-                if (m_accepting && *effect != DROPEFFECT_NONE)
-                {
-                    m_data = data;
-                    SetDropDescription(data, DROPIMAGE_COPY, L"Add to the Float shelf");
-                }
-                if (m_helper)
-                    m_helper->DragEnter(m_hwnd, data, &p, *effect);
-                return S_OK;
-            }
-            STDMETHODIMP DragOver(DWORD, POINTL pt, DWORD* effect) override
-            {
-                POINT p{ pt.x, pt.y };
-                *effect = m_accepting ? SafeEffect(*effect) : DROPEFFECT_NONE;
-                if (m_helper)
-                    m_helper->DragOver(&p, *effect);
-                return S_OK;
-            }
-            STDMETHODIMP DragLeave() override
-            {
-                if (m_helper)
-                    m_helper->DragLeave();
-                if (m_data)
-                    SetDropDescription(m_data.Get(), DROPIMAGE_INVALID);
-                m_data.Reset();
-                if (m_accepting)
-                    m_shelf->OnDragLeave();
-                m_accepting = false;
-                return S_OK;
-            }
-            STDMETHODIMP Drop(IDataObject* data, DWORD, POINTL pt, DWORD* effect) override
-            {
-                POINT p{ pt.x, pt.y };
-                const bool accepting = m_accepting;
-                m_accepting = false;
-                *effect = accepting ? SafeEffect(*effect) : DROPEFFECT_NONE;
-                if (m_helper)
-                    m_helper->Drop(data, &p, *effect);
-                m_data.Reset();
-                // Adding only lists the paths and asks for thumbnails, so the source is not kept waiting.
-                if (accepting && *effect != DROPEFFECT_NONE)
-                    m_shelf->OnDrop(ReadDroppedFiles(data));
-                else if (accepting)
-                    m_shelf->OnDragLeave();
-                return S_OK;
-            }
-
-        private:
-            HWND m_hwnd;
-            Shelf* m_shelf;   // outlives the registration (RevokeDragDrop in ~Shelf)
-            bool m_accepting = false;
-            ComPtr<IDataObject> m_data;
-            ComPtr<IDropTargetHelper> m_helper;
-        };
     }
 
     struct Shelf::ThumbResult
@@ -190,6 +129,15 @@ namespace sd
         DWORD sequence = 0;   // the clipboard as we left it; anything newer wins
         shelf::ClipboardImage image;
         bool ok = false;
+    };
+
+    // Files dragged out of a browser or a mail app onto the shelf, saved in the drag's drop folder and
+    // waiting to be kept somewhere lasting (the drop folder goes with `drop`).
+    struct Shelf::KeepJob
+    {
+        std::shared_ptr<VirtualDrop> drop;
+        std::vector<std::wstring> saved;
+        std::wstring error;
     };
 
     Shelf::Shelf(HINSTANCE instance, std::wstring storePath) : m_instance(instance), m_storePath(std::move(storePath))
@@ -219,11 +167,26 @@ namespace sd
         }
         m_worker = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);   // shell thumbnails want an STA
 
-        m_dropTarget = Microsoft::WRL::Make<ShelfDropTarget>(m_hwnd.get(), this);
+        // The app's drop target, as the wheel has: CF_HDROP and a browser's or mail app's virtual files.
+        m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), static_cast<IDropSink*>(this), MakeDragImageHelper());
         if (const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get()); SUCCEEDED(hr))
             m_registered = true;
         else
             log::Warn(L"shelf: RegisterDragDrop failed ({}); files reach it only through the wheel", HexCode(hr));
+
+        // The header buttons' names, as tooltips (the text is asked for when one shows: TTN_GETDISPINFO).
+        m_tips = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT,
+                                 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, m_hwnd.get(), nullptr, m_instance, nullptr);
+        if (m_tips)
+            for (const Part part : kHeaderButtons)
+            {
+                TTTOOLINFOW tool{ sizeof(tool) };
+                tool.uFlags = TTF_SUBCLASS;   // it watches the shelf's mouse messages itself
+                tool.hwnd = m_hwnd.get();
+                tool.uId = static_cast<UINT_PTR>(part);
+                tool.lpszText = LPSTR_TEXTCALLBACKW;
+                SendMessageW(m_tips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+            }
 
         SetInstantFileAction("file.float", [this](const std::vector<std::wstring>& files, HWND) {
             Add(files);
@@ -259,10 +222,12 @@ namespace sd
         for (const auto& path : saved.items)
             m_items.push_back(Item{ path, FileName(path) });
         m_selection.Resize(m_items.size());
-        log::Info(L"shelf: {} item(s) restored", m_items.size());
-        if (m_items.empty())
+        m_shown = shelf::Visibility(saved.shown);
+        log::Info(L"shelf: {} item(s) restored, {}", m_items.size(), m_shown.On() ? L"on" : L"switched off");
+        if (!m_shown.On())
             return;
-        // Back where it was; a pinned shelf comes back folded so it doesn't cover anything at login.
+        // Back where it was, empty or not; a pinned shelf comes back folded so it doesn't cover
+        // anything at login.
         m_open = m_edge == Edge::None ? 1.f : 0.f;
         m_wantOpen = m_edge == Edge::None;
         Show(false);
@@ -275,6 +240,7 @@ namespace sd
         for (const auto& item : m_items)
             saved.items.push_back(item.path);
         saved.edge = m_edge;
+        saved.shown = m_shown.On();
         if (m_placed)
         {
             saved.x = static_cast<int>(std::lround(m_x));
@@ -290,7 +256,7 @@ namespace sd
         std::vector<std::wstring> paths;
         for (const auto& item : m_items)
             paths.push_back(item.path);
-        const size_t fresh = shelf::AddToTop(paths, files);
+        const size_t fresh = m_shown.Put(paths, files);   // also switches a closed shelf back on
         // Rebuild in the new order, keeping the thumbnails of items that were already here.
         std::vector<Item> items;
         for (const auto& path : paths)
@@ -309,11 +275,20 @@ namespace sd
         RequestThumbnails();
     }
 
-    void Shelf::Reveal()
+    void Shelf::SwitchOn(bool on)
     {
         if (!m_hwnd)
             return;
-        log::Info(L"shelf: shown from the tray ({} item(s))", m_items.size());
+        const bool changed = m_shown.Switch(on);
+        log::Info(L"shelf: switched {} ({} item(s))", on ? L"on" : L"off", m_items.size());
+        if (changed)
+            Save();
+        if (!on)
+        {
+            m_keyPart = Part::None;
+            Hide();
+            return;
+        }
         Show(false);
         WantOpen(true);
         if (m_edge != Edge::None)
@@ -342,11 +317,10 @@ namespace sd
         m_focus = std::min(m_focus, m_items.empty() ? 0 : m_items.size() - 1);
         m_scrollTarget = std::min(m_scrollTarget, shelf::MaxScroll(m_metrics, m_items.size()));
         m_hover = {};
+        if (m_items.empty() && m_keyPart == Part::Clear)
+            m_keyPart = Part::Pin;   // Clear goes with the last file
         Save();
-        if (m_items.empty())
-            Hide();
-        else
-            Animate();
+        Animate();   // an empty shelf stays: it is where files can be dropped
     }
 
     void Shelf::Clear()
@@ -355,8 +329,11 @@ namespace sd
         m_items.clear();
         m_selection = shelf::Selection();
         m_hover = {};
+        if (m_keyPart == Part::Clear)
+            m_keyPart = Part::Pin;
+        m_scrollTarget = 0.f;
         Save();
-        Hide();
+        Animate();   // stays on screen, empty, ready for a drop
     }
 
     void Shelf::RequestThumbnails()
@@ -493,14 +470,20 @@ namespace sd
 
     // ---- Drop target -----------------------------------------------------------------------------
 
-    bool Shelf::OnDragEnter(const std::vector<std::wstring>& files)
+    bool Shelf::OnDragEnter(const std::vector<std::wstring>& files, POINT)
     {
         if (m_draggingOut || files.empty())
-            return false;
+            return false;   // our own drag out is never taken back
         m_dropHover = true;
         KillTimer(m_hwnd.get(), kTimerFold);
         WantOpen(true);
+        Animate();
         return true;
+    }
+
+    DWORD Shelf::OnDragOver(POINT, DWORD allowed)
+    {
+        return SafeEffect(allowed);   // copy, like the wheel: MOVE would make the source delete the file
     }
 
     void Shelf::OnDragLeave()
@@ -510,10 +493,53 @@ namespace sd
         Animate();
     }
 
-    void Shelf::OnDrop(const std::vector<std::wstring>& files)
+    void Shelf::OnDrop(const std::vector<std::wstring>& files, POINT)
     {
         m_dropHover = false;
+        // Dragged out of a browser or a mail app: saved now, while the source still holds them, and
+        // kept a moment later, after the drop (a folder may have to be picked; the source is waiting).
+        if (auto dragged = files.empty() ? nullptr : VirtualDrop::Find(files.front()))
+        {
+            auto job = std::make_unique<KeepJob>();
+            job->saved = dragged->Save({}, job->error);
+            job->drop = std::move(dragged);
+            PostOwned(m_hwnd.get(), kMsgKeep, std::move(job));
+            Animate();
+            return;
+        }
+        // Adding only lists the paths and asks for thumbnails, so the source is not kept waiting.
         Add(files);
+    }
+
+    void Shelf::OnKeep(std::unique_ptr<KeepJob> job)
+    {
+        // Kept where files dragged out of apps go (Settings: the Desktop, Downloads, or asked each time).
+        std::vector<std::wstring> kept;
+        std::wstring error = job->error;
+        if (!job->saved.empty())
+        {
+            std::wstring folder = job->drop->OutputFolder();
+            if (job->drop->AsksFolder() && !PickDestinationFolder(m_hwnd.get(), job->saved.size(), folder, L"Save"))
+            {
+                log::Info(L"shelf: no folder picked for the dropped file(s); nothing kept");
+                return;
+            }
+            kept = KeepVirtualFiles(job->saved, folder, error);
+        }
+        if (kept.empty())
+        {
+            ShowNote(L"The dropped file could not be saved");
+            log::Warn(L"shelf: dropped file(s) not kept: {}", error);
+            return;
+        }
+        Add(kept);
+    }
+
+    void Shelf::ShowNote(std::wstring note)
+    {
+        m_note = std::move(note);
+        m_noteUntil = GetTickCount64() + kNoteMs;
+        Animate();
     }
 
     // ---- Showing, hiding, folding -------------------------------------------------------------
@@ -818,10 +844,9 @@ namespace sd
         switch (hit.part)
         {
         case Part::Pin:
-            TogglePin();
-            break;
         case Part::Clear:
-            Clear();
+        case Part::Close:
+            Press(hit.part);
             break;
         case Part::Remove:
             RemoveAt({ hit.index });
@@ -832,6 +857,7 @@ namespace sd
         case Part::Item:
             m_selection.Click(hit.index, (keys & MK_CONTROL) != 0, (keys & MK_SHIFT) != 0);
             m_focus = hit.index;
+            m_keyPart = Part::None;
             Animate();
             break;
         case Part::None:
@@ -897,6 +923,33 @@ namespace sd
         Animate();
     }
 
+    void Shelf::Press(Part part)
+    {
+        switch (part)
+        {
+        case Part::Pin: TogglePin(); break;
+        case Part::Clear: Clear(); break;
+        case Part::Close: SwitchOn(false); break;   // as unticking "Show Float shelf" in the tray
+        default: break;
+        }
+    }
+
+    void Shelf::MoveButtonFocus(bool back)
+    {
+        // The stops in Tab order: the list (when there is one), then the header buttons.
+        std::vector<Part> stops;
+        if (!m_items.empty())
+            stops.push_back(Part::None);
+        for (const Part part : kHeaderButtons)
+            if (part != Part::Clear || !m_items.empty())
+                stops.push_back(part);
+        const auto at = std::find(stops.begin(), stops.end(), m_keyPart);
+        const size_t i = at == stops.end() ? 0 : static_cast<size_t>(at - stops.begin());
+        const size_t n = stops.size();
+        m_keyPart = at == stops.end() ? stops.front() : stops[(i + (back ? n - 1 : 1)) % n];
+        Animate();
+    }
+
     void Shelf::TogglePin()
     {
         const Box before = Expanded();
@@ -931,14 +984,16 @@ namespace sd
 
     void Shelf::OnContextMenu(POINT pt, bool fromKeyboard)
     {
-        if (Folded() || m_items.empty())
+        if (Folded())
             return;
         std::vector<size_t> targets;
-        Hit hit = fromKeyboard ? Hit{ Part::Item, m_focus } : HitAt(pt);
+        Hit hit = !fromKeyboard ? HitAt(pt) : m_items.empty() || m_keyPart != Part::None ? Hit{} : Hit{ Part::Item, m_focus };
         if (fromKeyboard)
         {
-            for (const auto& r : shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll).rows)
-                if (r.index == m_focus)
+            const auto layout = shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll);
+            pt = POINT{ static_cast<LONG>(layout.title.left), static_cast<LONG>(layout.header.bottom) };
+            for (const auto& r : layout.rows)
+                if (hit.part == Part::Item && r.index == m_focus)
                     pt = POINT{ static_cast<LONG>(r.name.left), static_cast<LONG>(r.row.bottom) };
         }
         if (hit.part == Part::Item || hit.part == Part::Reveal || hit.part == Part::Remove)
@@ -963,7 +1018,9 @@ namespace sd
             AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         }
         AppendMenuW(menu.get(), MF_STRING, kMenuPin, m_edge == Edge::None ? L"&Pin to the nearest edge" : L"Un&pin");
-        AppendMenuW(menu.get(), MF_STRING, kMenuClear, L"C&lear the shelf");
+        AppendMenuW(menu.get(), MF_STRING | (m_items.empty() ? MF_GRAYED : 0), kMenuClear, L"C&lear all");
+        AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu.get(), MF_STRING, kMenuClose, L"Cl&ose the shelf");
 
         m_menu = true;
         SetForegroundWindow(m_hwnd.get());   // so the menu closes when you click elsewhere
@@ -973,14 +1030,11 @@ namespace sd
         {
         case kMenuOpen: Open(targets); break;
         case kMenuReveal: shelf::ShowInFolder(PathsOf(targets)); break;
-        case kMenuCopy:
-            m_note = Copy(PathsOf(targets));
-            m_noteUntil = GetTickCount64() + kNoteMs;
-            Animate();
-            break;
+        case kMenuCopy: ShowNote(Copy(PathsOf(targets))); break;
         case kMenuRemove: RemoveAt(targets); break;
         case kMenuPin: TogglePin(); break;
         case kMenuClear: Clear(); break;
+        case kMenuClose: SwitchOn(false); return;
         default: break;
         }
         POINT cursor{};
@@ -1013,10 +1067,26 @@ namespace sd
 
     void Shelf::OnKey(UINT vk)
     {
-        if (m_items.empty())
-            return;
         WantOpen(true);
         const bool ctrl = GetKeyState(VK_CONTROL) < 0, shift = GetKeyState(VK_SHIFT) < 0;
+        if (vk == VK_TAB)
+        {
+            MoveButtonFocus(shift);
+            return;
+        }
+        if (m_keyPart != Part::None && (vk == VK_RETURN || vk == VK_SPACE))
+        {
+            Press(m_keyPart);
+            return;
+        }
+        if (m_items.empty())
+        {
+            if (vk == VK_ESCAPE && m_edge != Edge::None)
+                WantOpen(false);
+            return;
+        }
+        if (vk == VK_UP || vk == VK_DOWN || vk == VK_HOME || vk == VK_END)
+            m_keyPart = Part::None;   // back in the list
         const auto chosen = [&] { return m_selection.Count() ? m_selection.Indices() : std::vector<size_t>{ m_focus }; };
         switch (vk)
         {
@@ -1043,11 +1113,7 @@ namespace sd
             break;
         case 'C':
             if (ctrl)
-            {
-                m_note = Copy(PathsOf(m_selection.HandleSet()));
-                m_noteUntil = GetTickCount64() + kNoteMs;
-                Animate();
-            }
+                ShowNote(Copy(PathsOf(m_selection.HandleSet())));
             break;
         default:
             break;
@@ -1124,14 +1190,34 @@ namespace sd
         case WM_KEYDOWN:
             OnKey(static_cast<UINT>(wParam));
             return 0;
+        case WM_CLOSE:
+            SwitchOn(false);   // Alt+F4 closes it like its × (DefWindowProc would destroy the window)
+            return 0;
+        case WM_NOTIFY:
+        {
+            const auto* header = reinterpret_cast<const NMHDR*>(lParam);
+            if (header->hwndFrom != m_tips || header->code != TTN_GETDISPINFOW)
+                return DefWindowProcW(hwnd, msg, wParam, lParam);
+            auto* info = reinterpret_cast<NMTTDISPINFOW*>(lParam);
+            switch (static_cast<Part>(header->idFrom))
+            {
+            case Part::Pin: info->lpszText = const_cast<wchar_t*>(m_edge == Edge::None ? L"Pin to the nearest edge" : L"Unpin"); break;
+            case Part::Clear: info->lpszText = const_cast<wchar_t*>(L"Take everything off the shelf (the files stay where they are)"); break;
+            case Part::Close: info->lpszText = const_cast<wchar_t*>(L"Close the shelf (the tray icon brings it back)"); break;
+            default: break;
+            }
+            return 0;
+        }
         case WM_SETCURSOR:
         {
             POINT cursor{};
             GetCursorPos(&cursor);
             const Hit hit = HitAt(cursor);
             const auto* id = hit.part == Part::Header ? IDC_SIZEALL
-                             : hit.part == Part::Pin || hit.part == Part::Clear || hit.part == Part::Reveal || hit.part == Part::Remove ? IDC_HAND
-                                                                                                                                      : IDC_ARROW;
+                             : hit.part == Part::Pin || hit.part == Part::Clear || hit.part == Part::Close || hit.part == Part::Reveal ||
+                                       hit.part == Part::Remove
+                                   ? IDC_HAND
+                                   : IDC_ARROW;
             SetCursor(LoadCursorW(nullptr, id));
             return TRUE;
         }
@@ -1164,6 +1250,9 @@ namespace sd
             return 0;
         case kMsgCheck:
             OnCheck(std::unique_ptr<CheckResult>(reinterpret_cast<CheckResult*>(lParam)));
+            return 0;
+        case kMsgKeep:
+            OnKeep(std::unique_ptr<KeepJob>(reinterpret_cast<KeepJob*>(lParam)));
             return 0;
         case kMsgClipboard:
         {
@@ -1218,7 +1307,19 @@ namespace sd
         if (hover)
             m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(box.left + r, box.top + r), r, r),
                               Brush(danger ? colors.danger : colors.button, (danger ? 0.9f : 1.f) * alpha).Get());
-        Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onAccent : colors.dim, alpha);
+        Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onDanger : colors.dim, alpha);
+    }
+
+    void Shelf::PillButton(const Box& box, const std::wstring& text, bool hover, bool danger, float alpha)
+    {
+        // RoundButton's look with a label: always shaded so it reads as a button, red under the mouse
+        // for a danger one.
+        const auto colors = ColorsFor(m_palette, m_appearance.style);
+        const float r = box.Height() / 2.f;
+        const bool alarm = hover && danger;
+        m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), r, r),
+                                   Brush(alarm ? colors.danger : hover ? colors.hover : colors.button, (alarm ? 0.9f : 1.f) * alpha).Get());
+        Text(text, m_countFont.Get(), box, alarm ? colors.onDanger : colors.text, alpha);
     }
 
     void Shelf::DrawThumb(Item& item, const Box& box, float alpha)
@@ -1260,21 +1361,32 @@ namespace sd
         const float s = m_scale;
         const size_t n = m_items.size();
 
-        // Header: "Float" and the count, then Pin and Clear.
+        // Header: "Float" and the count ("3 files"), then Pin, Clear all and Close.
         const float tw = TextWidth(L"Float", m_titleFont.Get());
         Text(L"Float", m_titleFont.Get(), l.title, c.text, alpha);
-        const auto count = std::to_wstring(n);
+        const size_t folders = static_cast<size_t>(std::count_if(m_items.begin(), m_items.end(), [](const Item& i) { return i.folder; }));
+        const auto count = shelf::CountText(n - folders, folders);
         const float cw = std::max(TextWidth(count, m_countFont.Get()) + 12.f * s, 20.f * s);
         const float cy = (l.header.top + l.header.bottom) / 2.f;
         const Box badge{ l.title.left + tw + 8.f * s, cy - 9.f * s, l.title.left + tw + 8.f * s + cw, cy + 9.f * s };
-        if (badge.right < l.title.right)
+        if (n > 0 && badge.right < l.title.right)
         {
             m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(badge.left, badge.top, badge.right, badge.bottom), 9.f * s, 9.f * s),
                                        Brush(c.button, alpha).Get());
             Text(count, m_countFont.Get(), badge, c.dim, alpha);
         }
         RoundButton(l.pin, m_edge == Edge::None ? kGlyphPin : kGlyphUnpin, m_hover.part == Part::Pin, false, alpha);
-        RoundButton(l.clear, kGlyphClear, m_hover.part == Part::Clear, true, alpha);
+        if (n > 0)
+            PillButton(l.clear, L"Clear all", m_hover.part == Part::Clear, true, alpha);
+        RoundButton(l.close, kGlyphClose, m_hover.part == Part::Close, false, alpha);
+        if (m_active && m_keyPart != Part::None)
+        {
+            // The keyboard's button: a ring just outside it.
+            const Box b = (m_keyPart == Part::Pin ? l.pin : m_keyPart == Part::Clear ? l.clear : l.close).Inflated(2.f * s);
+            const float r = b.Height() / 2.f;
+            m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(b.left, b.top, b.right, b.bottom), r, r), Brush(c.text, 0.8f * alpha).Get(),
+                                       std::max(1.f, std::round(1.5f * s)));
+        }
         m_rt->DrawLine(D2D1::Point2F(l.panel.left + m_metrics.inset, l.header.bottom - 0.5f), D2D1::Point2F(l.panel.right - m_metrics.inset, l.header.bottom - 0.5f),
                        Brush(c.line, alpha).Get(), 1.f);
 
@@ -1294,7 +1406,7 @@ namespace sd
             }
             else if (hovered)
                 m_rt->FillRoundedRectangle(rowRect, Brush(c.hover, alpha).Get());
-            if (m_active && r.index == m_focus && !selected)
+            if (m_active && m_keyPart == Part::None && r.index == m_focus && !selected)
                 m_rt->DrawRoundedRectangle(rowRect, Brush(c.dim, 0.6f * alpha).Get(), 1.f);
             DrawThumb(item, r.thumb, alpha);
             Text(item.name, m_nameFont.Get(), r.name, c.text, alpha);
@@ -1305,8 +1417,6 @@ namespace sd
                 RoundButton(r.remove, kGlyphRemove, m_hover.part == Part::Remove, true, alpha);
             }
         }
-        if (n == 0)
-            Text(L"Drop files here to keep them", m_detailFont.Get(), l.list, c.dim, alpha);
         // Scroll position, when there is more than fits.
         if (const float max = shelf::MaxScroll(m_metrics, n); max > 0.f)
         {
@@ -1318,6 +1428,12 @@ namespace sd
                                        Brush(c.dim, 0.5f * alpha).Get());
         }
         m_rt->PopAxisAlignedClip();
+
+        if (n == 0)
+        {
+            DrawDropZone(l.drop, alpha);   // no footer: nothing to drag out yet
+            return;
+        }
 
         // The handle at the bottom: drag it to carry all (or the selected) items out at once.
         const bool footerHover = m_hover.part == Part::Footer;
@@ -1344,19 +1460,51 @@ namespace sd
         const size_t selected = m_selection.Count();
         const auto label = !m_note.empty() ? m_note
                            : selected > 0  ? std::format(L"Drag {} selected into an app", selected)
-                           : n == 0        ? std::wstring(L"Nothing on the shelf yet")
                            : n == 1        ? std::wstring(L"Drag it into an app")
                                            : std::format(L"Drag all {} into an app", n);
         const float lx = f.left + 10.f * s + t + static_cast<float>(stack > 0 ? stack - 1 : 0) * 4.f * s + 12.f * s;
         Text(label, m_footerFont.Get(), Box{ lx, f.top, f.right - 12.f * s, f.bottom }, c.text, alpha);
     }
 
+    void Shelf::DrawDropZone(const Box& box, float alpha)
+    {
+        // An empty shelf: a dashed outline saying where files go, filled while a drag is over it.
+        const auto c = ColorsFor(m_palette, m_appearance.style);
+        const float s = m_scale;
+        if (!m_dashes)
+        {
+            const float dashes[] = { 4.f, 3.f };   // in stroke widths, so they scale with it
+            m_d2d->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT,
+                                                                 D2D1_LINE_JOIN_ROUND, 10.f, D2D1_DASH_STYLE_CUSTOM),
+                                     dashes, 2, &m_dashes);
+        }
+        const float w = std::max(1.f, std::round(1.f * s));
+        const float r = 10.f * s;
+        const auto outline = D2D1::RoundedRect(D2D1::RectF(box.left + w / 2.f, box.top + w / 2.f, box.right - w / 2.f, box.bottom - w / 2.f), r, r);
+        if (m_dropHover)
+            m_rt->FillRoundedRectangle(outline, Brush(c.accent, 0.12f * alpha).Get());
+        m_rt->DrawRoundedRectangle(outline, Brush(m_dropHover ? c.accent : c.dim, (m_dropHover ? 0.9f : 0.5f) * alpha).Get(), w, m_dashes.Get());
+
+        // Icon and line, centred together; a note ("could not be saved") takes the line's place.
+        const std::wstring line = m_note.empty() ? std::wstring(L"Drop files here") : m_note;
+        const float iw = 16.f * s, gap = 6.f * s;
+        const float tw = std::min(TextWidth(line, m_nameFont.Get()), box.Width() - iw - gap - 20.f * s);
+        const float x = std::round((box.left + box.right - iw - gap - tw) / 2.f);
+        Glyph(kGlyphDrop, m_iconFont.Get(), Box{ x, box.top, x + iw, box.bottom }, m_dropHover ? c.accent : c.dim, alpha);
+        Text(line, m_nameFont.Get(), Box{ x + iw + gap, box.top, x + iw + gap + tw, box.bottom }, m_dropHover ? c.text : c.dim, alpha);
+    }
+
     void Shelf::DrawTab(const Box& tab, float alpha)
     {
-        if (alpha <= 0.f || m_items.empty())
+        if (alpha <= 0.f)
             return;
         const auto c = ColorsFor(m_palette, m_appearance.style);
         const float s = m_scale;
+        if (m_items.empty())
+        {
+            Glyph(kGlyphPin, m_iconFont.Get(), tab, c.dim, alpha);   // the Float icon: an empty shelf, here to drop on
+            return;
+        }
         const bool vertical = m_edge == Edge::Left || m_edge == Edge::Right;
         const float cx = (tab.left + tab.right) / 2.f, cy = (tab.top + tab.bottom) / 2.f;
         const float t = 16.f * s, gap = 13.f * s;
@@ -1420,6 +1568,8 @@ namespace sd
         // Content fades in once the panel has mostly unfolded; the tab's fades out first.
         const float contentAlpha = EaseOutCubic(std::clamp((m_open - 0.55f) / 0.45f, 0.f, 1.f));
         const float tabAlpha = std::clamp(1.f - m_open * 2.5f, 0.f, 1.f);
+        const auto layout = shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll);
+        PlaceTips(contentAlpha > 0.f && !Folded() && !m_hiding ? &layout : nullptr);
         if (contentAlpha > 0.f)
         {
             ComPtr<ID2D1RoundedRectangleGeometry> clip;
@@ -1428,7 +1578,7 @@ namespace sd
             // The mask is in the same (screen) coordinates as the drawing; the world transform applies to both.
             if (clipped)
                 m_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip.Get()), layer.Get());
-            DrawPanel(shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll), contentAlpha);
+            DrawPanel(layout, contentAlpha);
             if (m_dropHover)
                 m_rt->FillRoundedRectangle(rounded, Brush(c.accent, 0.08f).Get());
             if (clipped)
@@ -1441,5 +1591,26 @@ namespace sd
 
         m_canvas->End(m_hwnd.get(), m_origin, EaseOutCubic(m_presence));
         m_rt = nullptr;
+    }
+
+    void Shelf::PlaceTips(const shelf::Layout* layout)
+    {
+        if (!m_tips)
+            return;
+        for (const Part part : kHeaderButtons)
+        {
+            TTTOOLINFOW tool{ sizeof(tool) };
+            tool.hwnd = m_hwnd.get();
+            tool.uId = static_cast<UINT_PTR>(part);
+            if (layout)
+            {
+                // Window (client) pixels: the layout is in screen pixels and the window starts at m_origin.
+                const Box& b = part == Part::Pin ? layout->pin : part == Part::Clear ? layout->clear : layout->close;
+                if (b.Width() > 0.f)
+                    tool.rect = RECT{ static_cast<LONG>(b.left) - m_origin.x, static_cast<LONG>(b.top) - m_origin.y,
+                                      static_cast<LONG>(std::ceil(b.right)) - m_origin.x, static_cast<LONG>(std::ceil(b.bottom)) - m_origin.y };
+            }
+            SendMessageW(m_tips, TTM_NEWTOOLRECTW, 0, reinterpret_cast<LPARAM>(&tool));
+        }
     }
 }

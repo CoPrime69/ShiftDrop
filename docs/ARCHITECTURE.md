@@ -72,6 +72,7 @@ folder:
 | `main.cpp` | `wWinMain`, single instance, the `App` class: gesture state, wheels, batches, tray, command line |
 | `MouseHook` | The `WH_MOUSE_LL` hook |
 | `Overlay`, `Canvas`, `Theme` | The wheel window and how it is drawn |
+| `Accent` | The accent colour (Settings › Accent colour): the presets, their light and dark tones, and the one colour every window draws with (unit-tested) |
 | `DropTarget`, `DropDescription`, `VirtualDrop` | The OLE drop target, the drag picture and its badge, files dragged out of browsers and mail |
 | `Island`, `PanelLayout` | The top panel, and its size and layout (unit-tested) |
 | `Accessibility` | The wheel and the top panel for screen readers (UI Automation) |
@@ -148,6 +149,8 @@ over two seconds, which is what a silently removed hook looks like.
 ## The drop target
 
 [DropTarget.h](../src/DropTarget.h) is the window's `IDropTarget`. It reads `CF_HDROP` for real files.
+The Float shelf registers the same class with itself as the sink, so files dropped on it (from
+Explorer, or virtual files from a browser, kept with `KeepVirtualFiles`) are read the same way.
 
 Over a slice it always answers `DROPEFFECT_COPY`, or `LINK` when the source doesn't offer copy, and
 never `MOVE`. Explorer treats Shift-drag as "move", and with `MOVE` the source would delete the
@@ -224,7 +227,8 @@ selected), dragged straight into another app, pinned to the Float shelf or copie
 click-through except while it shows a result, and it is never a drop target.
 
 Both windows follow the Windows light or dark theme (or the Settings override), use the accent
-colour, honour "Animation effects" being off, and are visible to screen readers through UI
+colour ([Accent.h](../src/Accent.h): the user's Windows accent colour by default, ShiftDrop's teal or another preset, or a colour of
+your own, each in a tone that reads in light and dark), honour "Animation effects" being off, and are visible to screen readers through UI
 Automation ([Accessibility.h](../src/Accessibility.h)).
 
 ## Keyboard and click mode
@@ -470,7 +474,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 | `settings.ini` | All settings (below) |
 | `history.db` | Run history for undo |
 | `recipes\*.json` | Your own recipes; `web-ready.json` is written as an example the first time |
-| `shelf.json` | What is on the Float shelf |
+| `shelf.json` | What is on the Float shelf, where it is, and whether it is switched on |
 | `logs\shiftdrop-YYYYMMDD.log` | One log file per day |
 | `dropped\` | Temporary copies of files dragged out of browsers and mail apps |
 | `libreoffice\` | A private LibreOffice profile for the Office bridge, if LibreOffice is used |
@@ -481,7 +485,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 |---|---|
 | `[Gesture]` | `Convert`, `Tools`, `Reduce`, `Files`: the key that opens each section (`Shift`, `Ctrl`, `Alt` or `None`; never the Win key). Only Shift by default |
 | `[Keyboard]` | `ExplorerHotkey`, for example `Ctrl+Shift+Space` |
-| `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size). An older `HideCursor` key is ignored and removed |
+| `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size), `Accent` (tide, blue, purple, pink, red, orange, green, graphite, custom, windows; default windows (the user's Windows accent colour), and anything else reads as windows; Settings › Accent colour), `AccentCustom` (the colour of your own as `#RRGGBB`, kept while a preset is chosen). An older `HideCursor` key is ignored and removed |
 | `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`) |
 | `[Output]` | `Naming` (output name style), `VirtualFiles` (desktop, downloads, ask) |
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |

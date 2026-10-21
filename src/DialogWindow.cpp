@@ -3,10 +3,20 @@
 #include "resource.h"
 
 #include <commctrl.h>
+#include <commdlg.h>
 #include <uxtheme.h>
+#include <wrl/client.h>
 
 namespace sd
 {
+    struct DialogWindow::Kit
+    {
+        Microsoft::WRL::ComPtr<ID2D1Factory> d2d;
+        Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target;   // bound to each control's DC in turn
+        UINT dpi = 0;                                          // the target's
+        ControlKit kit;
+    };
+
     DialogWindow::DialogWindow(HINSTANCE instance, const Frame& frame) : m_instance(instance), m_frame(frame) {}
 
     DialogWindow::~DialogWindow()
@@ -82,6 +92,8 @@ namespace sd
         theme::ApplyDarkCaption(m_hwnd, m_colors.dark);
         m_background.reset(CreateSolidBrush(m_colors.background));
         m_field.reset(CreateSolidBrush(m_colors.field));
+        if (m_kit)
+            m_kit->kit.SetPalette(theme::EditorColors());
         OnThemeChanged();
         InvalidateRect(m_hwnd, nullptr, TRUE);
     }
@@ -106,6 +118,66 @@ namespace sd
         std::wstring text(static_cast<size_t>(GetWindowTextLengthW(control)) + 1, L'\0');
         text.resize(static_cast<size_t>(GetWindowTextW(control, text.data(), static_cast<int>(text.size()))));
         return text;
+    }
+
+    LRESULT DialogWindow::CustomDraw(const NMCUSTOMDRAW& draw, const KitPaint& paint)
+    {
+        if (draw.dwDrawStage != CDDS_PREPAINT)
+            return CDRF_DODEFAULT;
+        if (!m_kit)
+        {
+            m_kit = std::make_unique<Kit>();
+            D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_kit->d2d.GetAddressOf());
+            m_kit->kit.SetPalette(theme::EditorColors());
+        }
+        auto& k = *m_kit;
+        if (k.target && k.dpi != m_dpi)
+        {
+            k.kit.SetTarget(nullptr);
+            k.target.Reset();
+        }
+        if (!k.target)
+        {
+            // In DIPs at the window's DPI; opaque, so text gets ClearType like the standard controls'.
+            const auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                                                            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
+                                                            static_cast<float>(m_dpi), static_cast<float>(m_dpi));
+            if (!k.d2d || FAILED(k.d2d->CreateDCRenderTarget(&props, &k.target)))
+                return CDRF_DODEFAULT;
+            k.dpi = m_dpi;
+            k.kit.SetTarget(k.target.Get());
+        }
+        if (FAILED(k.target->BindDC(draw.hdc, &draw.rc)))
+            return CDRF_DODEFAULT;
+        const UINT state = draw.uItemState;
+        const bool cues = !(SendMessageW(draw.hdr.hwndFrom, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS);
+        const ControlKit::ControlState s{ !(state & CDIS_DISABLED), (state & CDIS_HOT) != 0, (state & CDIS_SELECTED) != 0, (state & CDIS_FOCUS) && cues };
+        const float scale = static_cast<float>(m_dpi) / 96.f;
+        k.target->BeginDraw();
+        k.target->SetTransform(D2D1::Matrix3x2F::Identity());
+        k.target->Clear(D2D1::ColorF(GetRValue(m_colors.background) / 255.f, GetGValue(m_colors.background) / 255.f, GetBValue(m_colors.background) / 255.f));
+        paint(k.kit, D2D1::RectF(0, 0, static_cast<float>(draw.rc.right - draw.rc.left) / scale, static_cast<float>(draw.rc.bottom - draw.rc.top) / scale), s);
+        if (k.target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
+        {
+            k.kit.SetTarget(nullptr);
+            k.target.Reset();
+            InvalidateRect(draw.hdr.hwndFrom, nullptr, FALSE);
+        }
+        return CDRF_SKIPDEFAULT;
+    }
+
+    bool PickColour(HWND owner, uint32_t& rgb)
+    {
+        static COLORREF custom[16]{};
+        CHOOSECOLORW cc{ sizeof(cc) };
+        cc.hwndOwner = owner;
+        cc.rgbResult = RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        cc.lpCustColors = custom;
+        cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+        if (!ChooseColorW(&cc))
+            return false;
+        rgb = (static_cast<uint32_t>(GetRValue(cc.rgbResult)) << 16) | (static_cast<uint32_t>(GetGValue(cc.rgbResult)) << 8) | GetBValue(cc.rgbResult);
+        return true;
     }
 
     bool DialogWindow::PreTranslate(MSG& msg)
