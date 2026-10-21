@@ -306,6 +306,22 @@ namespace sd::photo
         return tool == Tool::Annotate || recipe.steps[0].params.value("ask", true);
     }
 
+    std::map<std::wstring, Picture> LoadInsertedPictures(const Annotations& marks)
+    {
+        std::map<std::wstring, Picture> images;
+        for (const auto& m : marks.Items())
+            if (m.kind == Mark::Image && !images.contains(m.image))
+            {
+                auto r = std::make_shared<Raster>();
+                std::wstring e;
+                if (SUCCEEDED(canvas::LoadRaster(m.image, *r, e)))
+                    images[m.image] = Picture::Of(std::move(r));
+                else
+                    log::Warn(L"photo: the inserted picture {} could not be opened: {}", m.image, e);
+            }
+        return images;
+    }
+
     ItemResult PhotoEngine::Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const
     {
         StagedOutput out(m_services.history, runId, source);
@@ -343,18 +359,7 @@ namespace sd::photo
         case Tool::Annotate:
         {
             what = L"annotate";
-            std::map<std::wstring, Picture> images;
-            for (const auto& m : marks.Items())
-                if (m.kind == Mark::Image && !images.contains(m.image))
-                {
-                    auto r = std::make_shared<Raster>();
-                    std::wstring e;
-                    if (SUCCEEDED(canvas::LoadRaster(m.image, *r, e)))
-                        images[m.image] = Picture::Of(std::move(r));
-                    else
-                        log::Warn(L"photo: the inserted picture {} could not be opened: {}", m.image, e);
-                }
-            hr = RenderAnnotated(image, marks, images, result, error, &info);
+            hr = RenderAnnotated(image, marks, LoadInsertedPictures(marks), result, error, &info);
             break;
         }
         case Tool::Background:

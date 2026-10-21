@@ -61,7 +61,7 @@ A drop goes through these steps:
 - **`shiftdrop_winrt`**, an object library with the Windows Runtime parts (PDF rendering, OCR, the
   share sheet, face detection, toasts). Each file installs itself into a hook in the core when it is
   linked, so the core and its tests build and run without it.
-- **`shiftdrop_pdf_ui`**, the PDF Merge and Organize windows.
+- **`shiftdrop_pdf_ui`**, the PDF Merge window and the page view (Organize, Merge's More…, Edit).
 - **`ShiftDrop.exe`** and **`ShiftDropWorker.exe`**, plus **`shiftdrop_tests`**.
 
 In `src/`, the files at the top level are the core and the gesture UI. Each feature has its own
@@ -86,7 +86,7 @@ folder:
 | `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
 | `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
-| `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText`, `UiThread.h` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times, bringing a window to the front |
+| `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times |
 | `keyboard/` | Arrow keys and Enter on the wheel, the Explorer-selection hotkey, the right-click entry, wheel layout |
 | `preview/` | The predicted-output card |
 | `inspect/` | The metadata inspector |

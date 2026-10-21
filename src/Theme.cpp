@@ -2,10 +2,12 @@
 
 #include <dwmapi.h>
 #include <shellscalingapi.h>
+#include <shobjidl.h>
 #include <wil/resource.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 using Microsoft::WRL::ComPtr;
 
@@ -147,6 +149,16 @@ namespace sd::theme
         return p;
     }
 
+    DialogColors Dialog(int lightBackground)
+    {
+        DialogColors c;
+        c.dark = Current(Style::Solid).dark;
+        c.background = c.dark ? RGB(32, 32, 32) : GetSysColor(lightBackground);
+        c.text = c.dark ? RGB(240, 240, 240) : GetSysColor(COLOR_WINDOWTEXT);
+        c.field = c.dark ? RGB(45, 45, 45) : GetSysColor(COLOR_WINDOW);
+        return c;
+    }
+
     float ScaleFor(HMONITOR monitor, WheelSize size)
     {
         UINT dpiX = 96, dpiY = 96;
@@ -214,6 +226,57 @@ namespace sd::theme
         const auto props = D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
         rt->CreateBitmap(D2D1::SizeU(pixels.w, pixels.h), pixels.px.data(), pixels.w * 4, &props, &bitmap);
         return bitmap;
+    }
+
+    Pixels ShellThumbnail(const std::wstring& path, UINT px)
+    {
+        Pixels out;
+        ComPtr<IShellItemImageFactory> factory;
+        HBITMAP raw = nullptr;
+        const SIZE size{ static_cast<LONG>(px), static_cast<LONG>(px) };
+        if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&factory))) ||
+            FAILED(factory->GetImage(size, SIIGBF_RESIZETOFIT, &raw)) || !raw)
+            return out;
+        wil::unique_hbitmap bitmap(raw);
+        BITMAP info{};
+        if (!GetObjectW(bitmap.get(), sizeof(info), &info) || info.bmWidth <= 0 || info.bmHeight == 0)
+            return out;
+        const UINT w = static_cast<UINT>(info.bmWidth), h = static_cast<UINT>(std::abs(info.bmHeight));
+        BITMAPINFO bi{};
+        bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+        bi.bmiHeader.biWidth = static_cast<LONG>(w);
+        bi.bmiHeader.biHeight = -static_cast<LONG>(h);   // top-down, whatever the source is
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        out.px.resize(static_cast<size_t>(w) * h);
+        wil::unique_hdc dc(CreateCompatibleDC(nullptr));
+        if (!dc || GetDIBits(dc.get(), bitmap.get(), 0, h, out.px.data(), &bi, DIB_RGB_COLORS) != static_cast<int>(h))
+            return Pixels{};
+        // Photos come back with alpha 0 everywhere (no alpha at all): make them opaque. Pictures with
+        // alpha may or may not be premultiplied: a colour above its alpha means straight alpha, which
+        // is premultiplied here, so Direct2D always gets premultiplied pixels.
+        bool anyAlpha = false, straight = false;
+        for (const uint32_t p : out.px)
+        {
+            const uint32_t a = p >> 24;
+            anyAlpha |= a != 0;
+            straight |= ((p >> 16) & 0xFF) > a || ((p >> 8) & 0xFF) > a || (p & 0xFF) > a;
+        }
+        for (auto& p : out.px)
+        {
+            if (!anyAlpha)
+                p |= 0xFF000000u;
+            else if (straight)
+            {
+                const uint32_t a = p >> 24;
+                const auto mul = [a](uint32_t c) { return (c * a + 127) / 255; };
+                p = (a << 24) | (mul((p >> 16) & 0xFF) << 16) | (mul((p >> 8) & 0xFF) << 8) | mul(p & 0xFF);
+            }
+        }
+        out.w = w;
+        out.h = h;
+        return out;
     }
 
     std::wstring TextFamily(IDWriteFactory* dwrite)

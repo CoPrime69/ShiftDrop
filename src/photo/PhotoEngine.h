@@ -32,6 +32,10 @@ namespace sd::photo
     HRESULT RenderCollage(const std::vector<Picture>& pictures, const CollageParams& p, canvas::Raster& out, std::wstring& error,
                           RenderInfo* info = nullptr);
 
+    // The pictures an Annotate mark places on top (Mark::Image), loaded for a full-size render; one
+    // that can't be opened is logged and left out.
+    std::map<std::wstring, Picture> LoadInsertedPictures(const Annotations& marks);
+
     // For tests and the module: the actions and the built-in recipes.
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();

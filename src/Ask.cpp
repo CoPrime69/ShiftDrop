@@ -108,9 +108,23 @@ namespace sd::ask
             return S_OK;
         }
 
-        int ShowChoice(Request& r)
+        // TaskDialogIndirect is only in Common Controls 6, which the app's manifest selects: looked up
+        // once at run time, as a static import would stop the test runner (no manifest) from loading.
+        using TaskDialogFn = HRESULT(WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
+        TaskDialogFn TaskDialog()
         {
-            const Question& q = r.question;
+            static const auto fn = [] {
+                const HMODULE comctl = LoadLibraryW(L"comctl32.dll");
+                return comctl ? reinterpret_cast<TaskDialogFn>(reinterpret_cast<void*>(GetProcAddress(comctl, "TaskDialogIndirect"))) : nullptr;
+            }();
+            return fn;
+        }
+
+        // Shows `q` as command links and Cancel; returns the id picked, or kCancel. With an `owner` it
+        // opens over that window; without one it has its own taskbar button (a job's question may come
+        // while the user is elsewhere) and `callback` places it.
+        int ShowChoice(const Question& q, HWND owner, PFTASKDIALOGCALLBACK callback, LONG_PTR data)
+        {
             std::vector<std::wstring> texts;
             for (const auto& c : q.choices)
                 texts.push_back(c.note.empty() ? c.label : c.label + L"\n" + c.note);
@@ -119,9 +133,9 @@ namespace sd::ask
                 buttons.push_back({ q.choices[i].id, texts[i].c_str() });
 
             TASKDIALOGCONFIG config{ sizeof(config) };
-            config.hwndParent = nullptr;   // its own taskbar button: the question may come while the user is elsewhere
+            config.hwndParent = owner;
             config.hInstance = GetModuleHandleW(nullptr);
-            config.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+            config.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | (owner ? TDF_POSITION_RELATIVE_TO_WINDOW : 0);
             config.dwCommonButtons = TDCBF_CANCEL_BUTTON;
             config.pszWindowTitle = q.title.c_str();
             config.pszMainInstruction = q.heading.c_str();
@@ -129,16 +143,9 @@ namespace sd::ask
             config.cButtons = static_cast<UINT>(buttons.size());
             config.pButtons = buttons.data();
             config.nDefaultButton = q.choices.empty() ? IDCANCEL : q.choices.front().id;
-            config.pfCallback = &ChoiceCallback;
-            config.lpCallbackData = reinterpret_cast<LONG_PTR>(&r);
-            // Looked up at run time, as the Normalize chooser does: TaskDialogIndirect is only in
-            // Common Controls 6, which the app's manifest selects; a static import would stop the test
-            // runner (no manifest) from loading.
-            using TaskDialogFn = HRESULT(WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
-            static const auto taskDialog = [] {
-                const HMODULE comctl = LoadLibraryW(L"comctl32.dll");
-                return comctl ? reinterpret_cast<TaskDialogFn>(reinterpret_cast<void*>(GetProcAddress(comctl, "TaskDialogIndirect"))) : nullptr;
-            }();
+            config.pfCallback = callback;
+            config.lpCallbackData = data;
+            const auto taskDialog = TaskDialog();
             int picked = kCancel;
             if (!taskDialog || FAILED(taskDialog(&config, &picked, nullptr, nullptr)))
             {
@@ -301,7 +308,7 @@ namespace sd::ask
                         continue;
                 }
                 g_current = r;
-                const int answer = r->password ? ShowPassword(*r) : ShowChoice(*r);
+                const int answer = r->password ? ShowPassword(*r) : ShowChoice(r->question, nullptr, &ChoiceCallback, reinterpret_cast<LONG_PTR>(r.get()));
                 g_current.reset();
                 Finish(*r, answer);
             }
@@ -381,6 +388,18 @@ namespace sd::ask
         std::scoped_lock lock(r->mutex);
         log::Info(L"ask: answer {}", r->answer);
         return r->answer;
+    }
+
+    int ChooseNow(HWND owner, const Question& question)
+    {
+        ChooseFn answer;
+        switch (RouteNow(&answer, nullptr))
+        {
+        case Route::Unattended: return question.unattended;
+        case Route::Answers: return answer(question);
+        case Route::Ui: break;
+        }
+        return ShowChoice(question, owner, nullptr, 0);
     }
 
     bool Password(const PasswordRequest& request, Secret& password, std::stop_token stop)

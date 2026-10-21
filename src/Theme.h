@@ -30,6 +30,18 @@ namespace sd::theme
     // follows it: the wheel, the top panel, the shelf, Settings and the editors. UI thread.
     void SetChoice(ThemeChoice choice);
 
+    // The GDI colours of the windows built from standard controls (Settings, History, Rename, the
+    // inspector), light or dark like everything else that asks Current(). `lightBackground` is the
+    // system colour (COLOR_WINDOW, COLOR_BTNFACE) the window has in light mode.
+    struct DialogColors
+    {
+        bool dark = false;
+        COLORREF background = 0;   // the window behind the controls
+        COLORREF text = 0;
+        COLORREF field = 0;        // edit boxes, drop-down lists and list views
+    };
+    DialogColors Dialog(int lightBackground = COLOR_WINDOW);
+
     // Pixels per DIP for a monitor: its DPI scale times the size preset. Auto also follows the
     // monitor's height in DIPs, so a 1440p screen gets a larger wheel than a 1080p one at the same
     // DPI (within limits, so it never gets silly on huge or tiny screens).
@@ -48,6 +60,9 @@ namespace sd::theme
     // style; kept in memory only. Must be called before our window covers that area.
     Pixels CaptureBlurred(const RECT& rect, int step);
     Microsoft::WRL::ComPtr<ID2D1Bitmap> ToBitmap(ID2D1RenderTarget* rt, const Pixels& pixels);
+    // The shell's thumbnail of a file (Explorer's cache, so usually instant), or its icon, at most
+    // `px` pixels on its longer side. Empty when the shell has none. Worker threads with COM, too.
+    Pixels ShellThumbnail(const std::wstring& path, UINT px);
 
     // Windows 11 has Segoe UI Variable and Segoe Fluent Icons; Windows 10 has Segoe UI and Segoe
     // MDL2 Assets, with the same icon code points.

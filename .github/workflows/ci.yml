@@ -548,6 +548,6 @@ jobs:
           if ($text -match '(?i)cl[a]ude|anthr[o]pic') { throw 'The release notes mention a name they must not; nothing was published.' }
           $text | Set-Content build/release-notes.md -Encoding utf8
           Write-Host $text
-          gh release create "v$version" @files --repo $env:REPO --target $env:GITHUB_SHA --title "ShiftDrop $version" --notes-file build/release-notes.md
+          gh release create "v$version" @files --repo $env:REPO --target $env:GITHUB_SHA --title "ShiftDrop $version" --notes-file build/release-notes.md --latest
           if ($LASTEXITCODE) { exit 1 }
           "Published [v$version](https://github.com/$env:REPO/releases/tag/v$version)" >> $env:GITHUB_STEP_SUMMARY

@@ -335,7 +335,7 @@ TEST(Sandbox, JobKillsTheWorkerWhenClosed)
 TEST(Sandbox, WorkerExtractsInsideTheAppContainer)
 {
     TempDir dir;
-    sandbox::SetWorkerPath(ThisExe());
+    UseTestWorker();
     const auto source = dir / L"in.txt";
     WriteText(source, "hello from the sandbox");
     const auto zip = dir / L"in.zip";

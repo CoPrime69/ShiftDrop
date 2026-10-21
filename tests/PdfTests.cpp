@@ -1,15 +1,19 @@
 #include "PathUtil.h"
 #include "PdfTestUtil.h"
 #include "PipelineRunner.h"
+#include "canvas/Covers.h"
 #include "pdf/ImagePdf.h"
+#include "pdf/PageEdits.h"
 #include "pdf/PageRenderer.h"
 #include "pdf/PagePlan.h"
 #include "pdf/PdfCompress.h"
 #include "pdf/PdfContent.h"
 #include "pdf/PdfDoc.h"
 #include "pdf/PdfText.h"
+#include "pdf/ScrollList.h"
 #include "pdf/TextLayout.h"
 #include "pdf/Wic.h"
+#include "redact/RedactTool.h"
 
 #include <qpdf/QPDFPageDocumentHelper.hh>
 
@@ -402,6 +406,368 @@ TEST(PdfPages, OrganizeUsesThePlanFromTheEditor)
 
     organize.steps[0].params["plan"] = PlanToJson({ { 0, 7, 0 } });
     EXPECT_FALSE(runner.RunBatch(organize, 0, { a }, {}).ok);
+}
+
+// ---- The page view: Merge's More..., Edit PDF ---------------------------------------------------
+
+namespace
+{
+    // Everything QPDF finds in a PDF, objects and decoded streams, for "is this text anywhere in it".
+    std::string AllContent(const std::wstring& path)
+    {
+        auto pdf = Open(path);
+        std::string all;
+        if (!pdf)
+            return all;
+        for (auto& obj : pdf->getAllObjects())
+        {
+            if (obj.isStream())
+            {
+                all += obj.getDict().unparse();
+                try
+                {
+                    auto data = obj.getStreamData(qpdf_dl_all);
+                    all.append(reinterpret_cast<const char*>(data->getBuffer()), data->getSize());
+                }
+                catch (const std::exception&)
+                {
+                    auto raw = obj.getRawStreamData();
+                    all.append(reinterpret_cast<const char*>(raw->getBuffer()), raw->getSize());
+                }
+            }
+            else
+                all += obj.unparse();
+            all += "\n";
+        }
+        return all;
+    }
+
+    std::string ContentsOf(QPDFPageObjectHelper& page)
+    {
+        auto data = page.getObjectHandle().getKey("/Contents").getStreamData(qpdf_dl_all);
+        return std::string(reinterpret_cast<const char*>(data->getBuffer()), data->getSize());
+    }
+
+    // Three Letter pages saying SECRETONE, SECRETTWO and SECRETTHREE. Page 2 also has a bookmark
+    // pointing at it, a filled-in form field and a tag with alternate text quoting it.
+    std::wstring SecretsPdf(const TempDir& dir, const std::wstring& name)
+    {
+        const auto path = dir / name;
+        PdfWriter w(path);
+        const int catalog = w.NewObject(), pages = w.NewObject(), font = w.NewObject();
+        const int outlines = w.NewObject(), bookmark = w.NewObject(), field = w.NewObject(), tags = w.NewObject();
+        w.Object(font, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+        const char* words[] = { "SECRETONE", "SECRETTWO", "SECRETTHREE" };
+        std::string kids;
+        int second = 0;
+        for (int i = 0; i < 3; ++i)
+        {
+            const int c = w.NewObject(), page = w.NewObject();
+            w.Stream(c, "", std::format("BT /F1 24 Tf 72 700 Td ({}) Tj ET", words[i]));
+            w.Object(page, std::format("<< /Type /Page /Parent {} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {} 0 R >> >> /Contents {} 0 R{} >>",
+                                       pages, font, c, i == 1 ? std::format(" /Annots [{} 0 R] /StructParents 0", field) : std::string()));
+            kids += std::format(" {} 0 R", page);
+            if (i == 1)
+                second = page;
+        }
+        w.Object(field, std::format("<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (SECRETFIELD) /Rect [72 600 300 630] /P {} 0 R >>", second));
+        w.Object(outlines, std::format("<< /Type /Outlines /First {0} 0 R /Last {0} 0 R /Count 1 >>", bookmark));
+        w.Object(bookmark, std::format("<< /Title (Chapter) /Parent {} 0 R /Dest [{} 0 R /Fit] >>", outlines, second));
+        w.Object(tags, std::format("<< /Type /StructTreeRoot /K << /S /P /Pg {} 0 R /Alt (SECRETALT) >> >>", second));
+        w.Object(pages, std::format("<< /Type /Pages /Kids [{} ] /Count 3 >>", kids));
+        w.Object(catalog, std::format("<< /Type /Catalog /Pages {} 0 R /Outlines {} 0 R /AcroForm << /Fields [{} 0 R] >> /StructTreeRoot {} 0 R "
+                                      "/MarkInfo << /Marked true >> >>",
+                                      pages, outlines, field, tags));
+        EXPECT_TRUE(w.Finish(catalog, 0));
+        return path;
+    }
+
+    // A redacted copy of a Letter page: a picture with a black box over (100, 100, 200 x 50) px,
+    // made by the same Redact the page view uses, wrapped as the plan's one-page PDF.
+    std::wstring RedactedPage(const TempDir& dir, const std::wstring& name)
+    {
+        const auto picture = dir / (name + L" page.png"), redacted = dir / (name + L".png"), page = dir / (name + L".pdf");
+        EXPECT_HRESULT_SUCCEEDED(EncodeImageFile(Pattern(306, 396), picture, false, 0, 36));
+        bool changed = false;
+        std::wstring error;
+        const auto params = redact::CoversToJson({ picture }, { { { { 100, 100, 200, 50 }, canvas::CoverKind::Solid, 0x000000 } } });
+        EXPECT_TRUE(RenderPageEdit(PageTool::Redact, params, picture, redacted, changed, error)) << Narrow(error);
+        EXPECT_TRUE(changed);
+        EXPECT_TRUE(WritePicturePage(redacted, 2.0, page, error)) << Narrow(error);
+        return page;
+    }
+}
+
+TEST(PagePlan, AllPagesInListOrder)
+{
+    EXPECT_EQ(AllPages({ 2, 1 }, { 1, 0 }), (PagePlan{ { 1, 0, 0 }, { 0, 0, 0 }, { 0, 1, 0 } }));
+    EXPECT_EQ(AllPages({ 2, 1 }, { 1, 5 }), (PagePlan{ { 1, 0, 0 } }));   // unknown files are skipped
+}
+
+TEST(PagePlan, ReorderAcrossFilesDeleteRotateAndRevert)
+{
+    // A has 2 pages, B 3. Move B's first page to the front, turn it, leave out A's second page.
+    PagePlan plan = AllPages({ 2, 3 }, { 0, 1 });
+    auto moved = MoveItems(plan, { 2 }, 0);
+    EXPECT_EQ(moved, (std::vector<size_t>{ 0 }));
+    RotatePages(plan, moved, 90);
+    RemoveItems(plan, { 2 });
+    EXPECT_EQ(plan, (PagePlan{ { 1, 0, 90 }, { 0, 0, 0 }, { 1, 1, 0 }, { 1, 2, 0 } }));
+    EXPECT_FALSE(FilesStayTogether(plan));
+    EXPECT_EQ(PagesKept(plan, 0), 1u);
+    EXPECT_EQ(PagesKept(plan, 1), 3u);
+
+    // An edited page keeps its place and turn; Revert gives back the original.
+    plan[2].edited = L"C:\\edits\\edit 1-1.pdf";
+    EXPECT_EQ(EditedPages(plan), 1u);
+    PagePlan back;
+    std::string error;
+    ASSERT_TRUE(PlanFromJson(PlanToJson(plan), back, error)) << error;
+    EXPECT_EQ(back, plan);
+    EXPECT_EQ(PlanToJson(plan)[2].size(), 4u);
+    EXPECT_EQ(PlanToJson(plan)[1].size(), 3u);
+    EXPECT_FALSE(PlanFromJson(nlohmann::json::parse(R"([[0, 1, 0, ""]])"), back, error));
+    EXPECT_FALSE(PlanFromJson(nlohmann::json::parse(R"([[0, 1, 0, 7]])"), back, error));
+    RevertPages(plan, { 2, 9 });
+    EXPECT_TRUE(plan[2].edited.empty());
+    EXPECT_EQ(EditedPages(plan), 0u);
+}
+
+TEST(PagePlan, BackToTheListKeepsOrRegroupsTheEdits)
+{
+    // A (file 0) 2 pages, B (file 1) 2 pages; A's second page turned and B's first edited.
+    PagePlan plan = AllPages({ 2, 2 }, { 0, 1 });
+    plan[1].rotation = 180;
+    plan[2].edited = L"x.pdf";
+    bool regrouped = true;
+
+    // The same list: nothing changes.
+    EXPECT_EQ(PlanForFileOrder(plan, { 0, 1 }, { 0, 1 }, &regrouped), plan);
+    EXPECT_FALSE(regrouped);
+
+    // Files swapped: each file's pages follow it, with their turns and edits.
+    auto swapped = PlanForFileOrder(plan, { 0, 1 }, { 1, 0 }, &regrouped);
+    EXPECT_EQ(swapped, (PagePlan{ { 1, 0, 0, L"x.pdf" }, { 1, 1, 0 }, { 0, 0, 0 }, { 0, 1, 180 } }));
+    EXPECT_FALSE(regrouped);
+
+    // A file left out of the list: its pages go, the rest keep their order.
+    EXPECT_EQ(PlanForFileOrder(plan, { 0, 1 }, { 1 }, &regrouped), (PagePlan{ { 1, 0, 0, L"x.pdf" }, { 1, 1, 0 } }));
+    EXPECT_FALSE(regrouped);
+
+    // Pages mixed across files, then the files swapped: each goes back to its own file (and the
+    // window is told, so it can say so).
+    PagePlan mixed{ { 0, 0, 0 }, { 1, 0, 0, L"x.pdf" }, { 0, 1, 180 }, { 1, 1, 0 } };
+    EXPECT_EQ(PlanForFileOrder(mixed, { 0, 1 }, { 1, 0 }, &regrouped), (PagePlan{ { 1, 0, 0, L"x.pdf" }, { 1, 1, 0 }, { 0, 0, 0 }, { 0, 1, 180 } }));
+    EXPECT_TRUE(regrouped);
+
+    // To the engine: file indices counted in list order.
+    EXPECT_EQ(InListOrder(swapped, { 1, 0 }), (PagePlan{ { 0, 0, 0, L"x.pdf" }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 180 } }));
+    EXPECT_EQ(InListOrder(swapped, { 1 }), (PagePlan{ { 0, 0, 0, L"x.pdf" }, { 0, 1, 0 } }));
+}
+
+TEST(ScrollList, ListFindsRowsAndGaps)
+{
+    // Merge's file list: one column of 40-DIP rows in a 100-DIP viewport.
+    ScrollList list{ 0, 300, 40, 1 };
+    EXPECT_EQ(list.ItemAt(10, 45, 5), 1);
+    EXPECT_EQ(list.ItemAt(10, 210, 5), -1);   // past the last row
+    EXPECT_EQ(list.InsertAt(10, 15, 5), 0u);  // the nearest gap
+    EXPECT_EQ(list.InsertAt(10, 25, 5), 1u);
+    EXPECT_EQ(list.InsertAt(10, 999, 5), 5u);
+    list.Reveal(4, 5, 100);                   // the last row shown whole
+    EXPECT_FLOAT_EQ(list.offset, 100);
+    EXPECT_EQ(list.ItemAt(10, 5, 5), 2);
+    list.Wheel(120, 2, 5, 100);               // a notch up: two rows
+    EXPECT_FLOAT_EQ(list.offset, 20);
+    list.Wheel(-1200, 2, 5, 100);
+    EXPECT_FLOAT_EQ(list.offset, 100);        // never past the end
+    EXPECT_TRUE(list.EdgeScroll(5, 100, 5));
+    EXPECT_FLOAT_EQ(list.offset, 88);
+    EXPECT_FALSE(list.EdgeScroll(50, 100, 5));
+    EXPECT_EQ(list.Visible(5, 100), (std::pair<size_t, size_t>{ 2, 5 }));
+}
+
+TEST(ScrollList, GridFindsCellsAndGapsInARow)
+{
+    // The page view: 3 columns of 100 x 120 DIPs, 7 pages.
+    ScrollList grid{ 0, 100, 120, 3 };
+    EXPECT_EQ(grid.Rows(7), 3u);
+    EXPECT_EQ(grid.ItemAt(150, 130, 7), 4);
+    EXPECT_EQ(grid.ItemAt(150, 250, 7), -1);   // row 3 has only page 7
+    EXPECT_EQ(grid.ItemAt(310, 10, 7), -1);    // right of the last column
+    EXPECT_EQ(grid.InsertAt(140, 130, 7), 4u); // nearest gap in the second row: before page 5
+    EXPECT_EQ(grid.InsertAt(290, 130, 7), 6u); // at the row's end
+    EXPECT_EQ(grid.InsertAt(290, 250, 7), 7u); // never past the end
+    grid.Reveal(6, 7, 200);
+    EXPECT_FLOAT_EQ(grid.offset, 160);
+    EXPECT_EQ(grid.Visible(7, 200), (std::pair<size_t, size_t>{ 3, 7 }));
+}
+
+TEST(ScrollList, DragStartsPastTheThreshold)
+{
+    DragGesture drag;
+    EXPECT_FALSE(drag.Move(50, 50, 4));   // not pressed
+    drag.Press(10, 10);
+    EXPECT_FALSE(drag.Move(13, 12, 4));
+    EXPECT_TRUE(drag.Move(10, 15, 4));    // once
+    EXPECT_FALSE(drag.Move(10, 30, 4));
+    EXPECT_TRUE(drag.dragging);
+    drag.Reset();
+    EXPECT_FALSE(drag.pressed || drag.dragging);
+}
+
+TEST(PdfPages, MergeFollowsAPagePlanAcrossFiles)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    const auto a = ImagesPdf(dir, L"a.pdf", 2, 100, 50);   // pages 100 and 110 pt wide
+    const auto b = ImagesPdf(dir, L"b.pdf", 3, 200, 80);   // 200, 210, 220
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    Recipe merge = recipes.Get("pdf-merge");
+    // b's last page first and turned, then a's second, then b's first upside down; the rest left out.
+    merge.steps[0].params["plan"] = PlanToJson({ { 1, 2, 90 }, { 0, 1, 0 }, { 1, 0, 180 } });
+    const auto result = runner.RunBatch(merge, 0, { a, b }, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    EXPECT_EQ(FileName(result.output), L"a (merged).pdf");
+    EXPECT_EQ(result.message, L"Merged 2 PDFs into 3 pages");
+    auto pdf = Open(result.output);
+    auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+    ASSERT_EQ(pages.size(), 3u);
+    EXPECT_EQ(Box(pages[0])[2], 220);
+    EXPECT_EQ(pages[0].getAttribute("/Rotate", false).getIntValue(), 90);
+    EXPECT_EQ(Box(pages[1])[2], 110);
+    EXPECT_EQ(Box(pages[2])[2], 200);
+    EXPECT_EQ(pages[2].getAttribute("/Rotate", false).getIntValue(), 180);
+}
+
+TEST(PdfPages, EditedPagesLandInPlaceAndRedactionRemovesTheText)
+{
+    TempDir dir;
+    const auto a = SecretsPdf(dir, L"a.pdf");
+    const auto edited = RedactedPage(dir, L"edit");
+    {
+        // The redaction is in the picture's pixels: black where the box went, untouched elsewhere.
+        Bitmap redacted;
+        std::wstring error;
+        ASSERT_TRUE(DecodeImageFile(PictureOf(edited), redacted, error)) << Narrow(error);
+        const uint8_t* inside = &redacted.bgra[(120u * redacted.width + 150u) * 4];
+        EXPECT_EQ(inside[0] + inside[1] + inside[2], 0);
+        const Bitmap original = Pattern(306, 396);
+        EXPECT_TRUE(std::equal(original.bgra.begin(), original.bgra.begin() + 4 * 50, redacted.bgra.begin()));
+    }
+
+    const auto out = dir / L"out.pdf";
+    std::wstring error;
+    ASSERT_TRUE(AssemblePages({ a }, { { 0, 0, 0 }, { 0, 1, 90, edited }, { 0, 2, 0 } }, out, {}, {}, error)) << Narrow(error);
+    {
+        auto pdf = Open(out);
+        auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+        ASSERT_EQ(pages.size(), 3u);
+        EXPECT_NE(ContentsOf(pages[0]).find("SECRETONE"), std::string::npos);
+        EXPECT_NE(ContentsOf(pages[2]).find("SECRETTHREE"), std::string::npos);
+        // The edited page sits second, the original's size, turned as the plan says, a picture only.
+        EXPECT_EQ(Box(pages[1])[2], 612);
+        EXPECT_EQ(Box(pages[1])[3], 792);
+        EXPECT_EQ(pages[1].getAttribute("/Rotate", false).getIntValue(), 90);
+        EXPECT_EQ(pages[1].getImages().size(), 1u);
+        EXPECT_FALSE(pages[1].getObjectHandle().hasKey("/Annots"));
+    }
+    // Nothing of the original second page is left anywhere in the file: not its text, not its form
+    // field's value (the bookmark still points at the emptied page), not its tag's alternate text.
+    const auto content = AllContent(out);
+    EXPECT_NE(content.find("SECRETONE"), std::string::npos);
+    EXPECT_EQ(content.find("SECRETTWO"), std::string::npos);
+    EXPECT_EQ(content.find("SECRETFIELD"), std::string::npos);
+    EXPECT_EQ(content.find("SECRETALT"), std::string::npos);
+
+    // Reverted (no edited copy): the page is the original again, text and all.
+    const auto reverted = dir / L"reverted.pdf";
+    ASSERT_TRUE(AssemblePages({ a }, { { 0, 0, 0 }, { 0, 1, 90 }, { 0, 2, 0 } }, reverted, {}, {}, error)) << Narrow(error);
+    EXPECT_NE(AllContent(reverted).find("SECRETTWO"), std::string::npos);
+
+    // A page left out is emptied too, so its text can't ride along with the bookmark.
+    const auto without = dir / L"without.pdf";
+    ASSERT_TRUE(AssemblePages({ a }, { { 0, 2, 0 }, { 0, 0, 0 } }, without, {}, {}, error)) << Narrow(error);
+    const auto rest = AllContent(without);
+    EXPECT_EQ(rest.find("SECRETTWO"), std::string::npos);
+    EXPECT_EQ(rest.find("SECRETFIELD"), std::string::npos);
+    EXPECT_NE(rest.find("SECRETTHREE"), std::string::npos);
+
+    // An edited page whose file is gone is an error, not a silent original.
+    EXPECT_FALSE(AssemblePages({ a }, { { 0, 1, 0, dir / L"gone.pdf" } }, dir / L"gone out.pdf", {}, {}, error));
+}
+
+TEST(PdfPages, EditSliceSavesOneAndMergesSeveral)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    const auto a = SecretsPdf(dir, L"report.pdf");
+    const auto b = ImagesPdf(dir, L"extra.pdf", 2, 100, 50);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    Recipe edit = recipes.Get("pdf-edit");
+    EXPECT_TRUE(runner.Applies(edit, a));
+    EXPECT_FALSE(runner.Applies(edit, dir / L"x.png"));
+
+    // One PDF: "(edited)", the edited page in place.
+    const auto page = RedactedPage(dir, L"edit");
+    edit.steps[0].params["plan"] = PlanToJson({ { 0, 1, 0, page }, { 0, 0, 0 } });
+    auto result = runner.RunBatch(edit, 0, { a }, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    EXPECT_EQ(FileName(result.output), L"report (edited).pdf");
+    EXPECT_EQ(result.message, L"Saved 2 pages, 1 edited");
+    {
+        auto pdf = Open(result.output);
+        auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+        ASSERT_EQ(pages.size(), 2u);
+        EXPECT_EQ(pages[0].getImages().size(), 1u);
+        EXPECT_NE(ContentsOf(pages[1]).find("SECRETONE"), std::string::npos);
+    }
+    EXPECT_EQ(AllContent(result.output).find("SECRETTWO"), std::string::npos);
+
+    // Several: merged, named after the first, in the plan's order.
+    edit.steps[0].params["plan"] = PlanToJson({ { 1, 2, 0 }, { 0, 1, 0 } });   // report's page 3, then extra's page 2
+    result = runner.RunBatch(edit, 0, { b, a }, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    EXPECT_EQ(FileName(result.output), L"extra (merged).pdf");
+    auto pdf = Open(result.output);
+    auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+    ASSERT_EQ(pages.size(), 2u);
+    EXPECT_NE(ContentsOf(pages[0]).find("SECRETTHREE"), std::string::npos);
+    EXPECT_EQ(Box(pages[1])[2], 110);
+
+    // Without a plan (the window was not used): every page as it is.
+    edit.steps[0].params.erase("plan");
+    result = runner.RunBatch(edit, 0, { a }, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    EXPECT_EQ(Open(result.output)->getAllPages().size(), 3u);
+}
+
+TEST(PdfPages, EditedPagesFolderGoesAfterTheExport)
+{
+    EXPECT_EQ(PageTools().size(), 3u);
+    const auto folder = NewEditFolder();
+    ASSERT_FALSE(folder.empty());
+    EXPECT_TRUE(std::filesystem::is_directory(folder));
+    TempDir dir;
+    const auto a = ImagesPdf(dir, L"a.pdf", 2, 100, 50);
+    const auto page = (std::filesystem::path(folder) / L"edit 1-1.pdf").wstring();
+    ImagesPdf(dir, L"one.pdf", 1, 300, 40);
+    std::filesystem::copy_file(dir / L"one.pdf", page);
+
+    Recipes recipes(dir);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    Recipe edit = recipes.Get("pdf-edit");
+    edit.steps[0].params["plan"] = PlanToJson({ { 0, 0, 0, page }, { 0, 1, 0 } });
+    const auto result = runner.RunBatch(edit, 0, { a }, {});
+    ASSERT_TRUE(result.ok) << Narrow(result.error);
+    auto pdf = Open(result.output);
+    auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+    EXPECT_EQ(Box(pages[0])[2], 300);
+    EXPECT_FALSE(std::filesystem::exists(folder));   // read once, then removed
+
+    // Only folders the page view made are ever removed.
+    RemoveEditFolder(dir.path().wstring());
+    EXPECT_TRUE(std::filesystem::exists(a));
 }
 
 // ---- Compress -----------------------------------------------------------------------------------

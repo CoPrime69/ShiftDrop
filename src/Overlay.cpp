@@ -3,6 +3,7 @@
 #include "DropDescription.h"
 #include "ErrorText.h"
 #include "Log.h"
+#include "PanelLayout.h"
 
 #include <windowsx.h>
 
@@ -59,32 +60,19 @@ namespace sd
 
     bool Overlay::Create()
     {
-        WNDCLASSEXW wc{ sizeof(wc) };
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = m_instance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        wc.lpszClassName = kClassName;
-        RegisterClassExW(&wc);
-
         // WS_EX_NOACTIVATE + WM_MOUSEACTIVATE=MA_NOACTIVATE: showing or touching the wheel never takes
         // focus from the app you are dragging out of. WS_EX_TOOLWINDOW keeps it off the taskbar/Alt+Tab.
-        m_hwnd.reset(CreateWindowExW(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-                                     kClassName, SD_NAME, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, m_instance, this));
+        m_hwnd.reset(CreatePanel(m_instance, kClassName, WndProc, WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, SD_NAME, this));
         if (!m_hwnd)
         {
             log::Error(L"overlay: CreateWindowExW failed ({})", GetLastError());
             return false;
         }
-        if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.ReleaseAndGetAddressOf())) ||
-            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                       reinterpret_cast<IUnknown**>(m_dwrite.ReleaseAndGetAddressOf()))))
+        if (!InitGraphics())
         {
             log::Error(L"overlay: Direct2D/DirectWrite unavailable");
             return false;
         }
-        m_canvas = std::make_unique<Canvas>(m_d2d.Get());
-        m_textFamily = TextFamily(m_dwrite.Get());
-        m_iconFamily = IconFamily(m_dwrite.Get());
         m_a11y = std::make_unique<a11y::WheelElement>(m_hwnd.get(), static_cast<a11y::WheelView&>(*this));
 
         // With the shell's drag-image helper, the dragged item's picture (Explorer's icon or thumbnail
@@ -285,8 +273,7 @@ namespace sd
     {
         if (!m_hwnd)
             return;
-        KillTimer(m_hwnd.get(), kTimerFrame);
-        m_animating = false;
+        m_frames.Stop(m_hwnd.get(), kTimerFrame);
         // A previous wheel may still be fading out (click-through); this one must take drops again.
         SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) & ~WS_EX_TRANSPARENT);
         if (m_mode == Mode::Closing)
@@ -356,9 +343,8 @@ namespace sd
     {
         if (!m_hwnd)
             return;
-        KillTimer(m_hwnd.get(), kTimerFrame);
+        m_frames.Stop(m_hwnd.get(), kTimerFrame);
         KillTimer(m_hwnd.get(), kTimerMore);
-        m_animating = false;
         if (m_mode != Mode::Hidden)
             ShowWindow(m_hwnd.get(), SW_HIDE);
         SetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE, GetWindowLongPtrW(m_hwnd.get(), GWL_EXSTYLE) & ~WS_EX_TRANSPARENT);
@@ -526,8 +512,7 @@ namespace sd
 
     // ---- Animation -------------------------------------------------------------------------------
 
-    // Starts the frame timer if it is not running. 10 ms rounds up to the system timer tick
-    // (~15.6 ms), so animations run at about 64 frames a second and stop once everything settles.
+    // Starts the frame timer if it is not running; it stops once everything settles.
     void Overlay::Animate()
     {
         if (!m_hwnd)
@@ -541,39 +526,21 @@ namespace sd
             Render();
             return;
         }
-        if (!m_animating)
-        {
-            m_animating = true;
-            m_lastFrame = GetTickCount64();
-            SetTimer(m_hwnd.get(), kTimerFrame, 10, nullptr);
-        }
+        m_frames.Start(m_hwnd.get(), kTimerFrame);
         Render();
     }
 
     void Overlay::OnFrame()
     {
-        const ULONGLONG now = GetTickCount64();
-        const float dt = static_cast<float>(std::min<ULONGLONG>(now - m_lastFrame, 50));
-        m_lastFrame = now;
+        const float dt = m_frames.Tick(GetTickCount64());
 
         if (m_mode == Mode::Wheel || m_mode == Mode::Closing)
             m_openT = std::min(1.f, m_openT + dt / kOpenMs);
         m_switchT = std::min(1.f, m_switchT + dt / kSwitchMs);
-        const float k = 1.f - std::exp(-dt / kHotTauMs);
         for (size_t i = 0; i < m_hotT.size(); ++i)
-        {
-            const float target = static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f;
-            m_hotT[i] += (target - m_hotT[i]) * k;
-            if (std::abs(target - m_hotT[i]) < 0.004f)
-                m_hotT[i] = target;
-        }
-        const float whyTarget = m_hot == m_why && Explains(m_hot) ? 1.f : 0.f;
-        m_whyT += (whyTarget - m_whyT) * k;
-        if (std::abs(whyTarget - m_whyT) < 0.004f)
-            m_whyT = whyTarget;
-        m_away += (m_awayTarget - m_away) * (1.f - std::exp(-dt / kAwayTauMs));
-        if (std::abs(m_awayTarget - m_away) < 0.004f)
-            m_away = m_awayTarget;
+            panel::Approach(m_hotT[i], static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f, dt, kHotTauMs, 0.004f);
+        panel::Approach(m_whyT, m_hot == m_why && Explains(m_hot) ? 1.f : 0.f, dt, kHotTauMs, 0.004f);
+        panel::Approach(m_away, m_awayTarget, dt, kAwayTauMs, 0.004f);
         if (m_mode == Mode::Closing)
         {
             m_closeT = std::min(1.f, m_closeT + dt / kCloseMs);
@@ -587,17 +554,13 @@ namespace sd
                 // Faded out, but the drag is still on: an invisible disc keeps catching the drop
                 // until OLE says the drag is over (DragLeave or Drop).
                 Render();
-                KillTimer(m_hwnd.get(), kTimerFrame);
-                m_animating = false;
+                m_frames.Stop(m_hwnd.get(), kTimerFrame);
                 return;
             }
         }
         Render();
         if (Settled())
-        {
-            KillTimer(m_hwnd.get(), kTimerFrame);
-            m_animating = false;
-        }
+            m_frames.Stop(m_hwnd.get(), kTimerFrame);
     }
 
     bool Overlay::Settled() const
@@ -973,51 +936,22 @@ namespace sd
 
     // ---- Drawing resources -----------------------------------------------------------------------
 
-    ComPtr<IDWriteTextFormat> Overlay::MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight) const
-    {
-        ComPtr<IDWriteTextFormat> format;
-        if (FAILED(m_dwrite->CreateTextFormat(family.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                              dip * m_scale, L"", &format)))
-            return nullptr;
-        format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        // Labels that do not fit end in "…" rather than being cut mid-letter.
-        DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-        ComPtr<IDWriteInlineObject> ellipsis;
-        if (SUCCEEDED(m_dwrite->CreateEllipsisTrimmingSign(format.Get(), &ellipsis)))
-            format->SetTrimming(&trimming, ellipsis.Get());
-        return format;
-    }
-
     bool Overlay::EnsureTextFormats()
     {
         if (m_labelFont && m_fontScale == m_scale)
             return true;
         m_fontScale = m_scale;
-        m_labelFont = MakeFormat(m_textFamily, 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-        m_formatFont = MakeFormat(m_textFamily, 18.f, DWRITE_FONT_WEIGHT_BOLD);
-        m_iconFont = MakeFormat(m_iconFamily, 22.f, DWRITE_FONT_WEIGHT_NORMAL);
-        m_countFont = MakeFormat(m_textFamily, 19.f, DWRITE_FONT_WEIGHT_BOLD);
-        m_ringFont = MakeFormat(m_textFamily, 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-        m_detailFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        // Centred: every label sits in the middle of its tile or the wheel's centre.
+        constexpr auto C = DWRITE_TEXT_ALIGNMENT_CENTER;
+        m_labelFont = MakeFormat(m_textFamily, 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        m_formatFont = MakeFormat(m_textFamily, 18.f, DWRITE_FONT_WEIGHT_BOLD, C);
+        m_iconFont = MakeFormat(m_iconFamily, 22.f, DWRITE_FONT_WEIGHT_NORMAL, C);
+        m_countFont = MakeFormat(m_textFamily, 19.f, DWRITE_FONT_WEIGHT_BOLD, C);
+        m_ringFont = MakeFormat(m_textFamily, 10.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        m_detailFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
         if (m_detailFont)
             m_detailFont->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
         return m_labelFont && m_formatFont && m_iconFont && m_countFont && m_ringFont && m_detailFont;
-    }
-
-    ComPtr<ID2D1SolidColorBrush> Overlay::Brush(const D2D1_COLOR_F& color, float alpha)
-    {
-        ComPtr<ID2D1SolidColorBrush> brush;
-        m_rt->CreateSolidColorBrush(WithAlpha(color, alpha), &brush);
-        return brush;
-    }
-
-    void Overlay::Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color, float alpha)
-    {
-        if (text.empty() || !format || alpha <= 0.f)
-            return;
-        m_rt->DrawText(text.c_str(), static_cast<UINT32>(text.size()), format, rect, Brush(color, alpha).Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 
     D2D1_POINT_2F Overlay::Polar(float radius, float degrees) const

@@ -72,7 +72,7 @@ namespace sd::pdf
         }
     }
 
-    bool EditorWindow::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip)
+    bool EditorWindow::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show)
     {
         static const bool registered = [] {
             WNDCLASSEXW wc{ sizeof(wc) };
@@ -106,8 +106,11 @@ namespace sd::pdf
         const int h = std::min<int>(r.bottom - r.top, work.bottom - work.top);
         SetWindowPos(m_hwnd, nullptr, work.left + (work.right - work.left - w) / 2, work.top + (work.bottom - work.top - h) / 2, w, h,
                      SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(m_hwnd, SW_SHOWNORMAL);
-        SetForegroundWindow(m_hwnd);   // we are answering the user's drop
+        if (show)
+        {
+            ShowWindow(m_hwnd, SW_SHOWNORMAL);
+            SetForegroundWindow(m_hwnd);   // we are answering the user's drop
+        }
         return true;
     }
 
@@ -204,6 +207,8 @@ namespace sd::pdf
         for (size_t i = 0; i < m_buttons.size(); ++i)
         {
             const auto& b = m_buttons[i];
+            if (!b.visible)
+                continue;
             const bool hot = b.enabled && static_cast<int>(i) == m_hot;
             const bool pressed = hot && static_cast<int>(i) == m_pressed;
             D2D1_COLOR_F fill = b.primary ? c.accent : c.surface;
@@ -244,7 +249,7 @@ namespace sd::pdf
         for (size_t i = 0; i < m_buttons.size(); ++i)
         {
             const auto& r = m_buttons[i].rect;
-            if (p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom)
+            if (m_buttons[i].visible && p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom)
                 return static_cast<int>(i);
         }
         return -1;

@@ -17,6 +17,9 @@ namespace sd::canvas
         std::unique_ptr<ICanvasTool> tool;
         // Called once on the UI thread with the tool's Params() when the user applies (never on Cancel).
         std::function<void(nlohmann::json params)> apply;
+        // Optional: called once on the UI thread when the window has gone, after `apply` when it was
+        // applied (a caller that disabled its own window while this one was open enables it here).
+        std::function<void()> closed;
     };
 
     using EditorWindowFactory = bool (*)(EditorRequest request);

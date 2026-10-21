@@ -8,6 +8,7 @@
 #include <shlobj.h>
 #include <wrl/implements.h>
 
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <numeric>
@@ -312,6 +313,35 @@ TEST(Panel, NoHintNoNames)
 }
 
 // ---- settings.ini [Appearance] without HideCursor ------------------------------------------------
+
+TEST(Panel, ApproachEasesAndLands)
+{
+    // One time constant closes about 63% of the gap, whatever the frame rate.
+    float v = 0.f;
+    panel::Approach(v, 1.f, 60.f, 60.f, 0.002f);
+    EXPECT_NEAR(v, 1.f - std::exp(-1.f), 1e-6f);
+    float stepped = 0.f;
+    for (int i = 0; i < 4; ++i)
+        panel::Approach(stepped, 1.f, 15.f, 60.f, 0.002f);
+    EXPECT_NEAR(stepped, v, 1e-5f) << "four 15 ms frames go as far as one 60 ms frame";
+    // Downward too, and it lands exactly once within the snap distance (so the frame timer can stop).
+    float h = 300.f;
+    int frames = 0;
+    while (h != 120.f && frames < 1000)
+    {
+        panel::Approach(h, 120.f, 16.f, 60.f, 0.3f);
+        ++frames;
+        EXPECT_GE(h, 120.f);
+    }
+    EXPECT_EQ(h, 120.f);
+    EXPECT_LT(frames, 40);
+    // Nothing moves in no time, and a value at its target stays there.
+    float still = 5.f;
+    panel::Approach(still, 9.f, 0.f, 60.f, 0.f);
+    EXPECT_EQ(still, 5.f);
+    panel::Approach(still, 5.f, 16.f, 60.f, 0.f);
+    EXPECT_EQ(still, 5.f);
+}
 
 TEST(Panel, AppearanceHasNoHideCursorSetting)
 {

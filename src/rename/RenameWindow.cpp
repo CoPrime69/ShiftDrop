@@ -2,14 +2,9 @@
 #include "Brand.h"
 #include "Log.h"
 #include "PathUtil.h"
-#include "Strings.h"
-#include "Theme.h"
-#include "resource.h"
 
 #include <commctrl.h>
-#include <dwmapi.h>
 #include <shlwapi.h>
-#include <uxtheme.h>
 
 #include <algorithm>
 #include <format>
@@ -22,7 +17,6 @@ namespace sd
         constexpr int kIdPattern = 100, kIdFind = 101, kIdReplace = 102, kIdStart = 103, kIdMatchCase = 104, kIdList = 105;
 
         // Sizes in DIPs, scaled by the window's DPI in Layout().
-        constexpr int kWidth = 640, kHeight = 540, kMinWidth = 420, kMinHeight = 380;
         constexpr int kMargin = 14, kGap = 8, kLabelW = 104, kRowH = 26, kRowGap = 6, kHintH = 20;
         constexpr int kButtonW = 110, kButtonH = 30, kStartW = 80;
 
@@ -43,9 +37,10 @@ namespace sd
         }
     }
 
-    RenameWindow::RenameWindow(HINSTANCE instance) : m_instance(instance) {}
-
-    RenameWindow::~RenameWindow() = default;
+    RenameWindow::RenameWindow(HINSTANCE instance)
+        : DialogWindow(instance, { .className = kClass, .width = 640, .height = 540, .minWidth = 420, .minHeight = 380 })
+    {
+    }
 
     void RenameWindow::Show(std::vector<std::wstring> files, Confirm onConfirm)
     {
@@ -62,28 +57,8 @@ namespace sd
 
         if (!m_hwnd)
         {
-            static const bool registered = [this] {
-                WNDCLASSEXW wc{ sizeof(wc) };
-                wc.lpfnWndProc = WndProc;
-                wc.hInstance = m_instance;
-                wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-                wc.hIcon = LoadIconW(m_instance, MAKEINTRESOURCEW(IDI_APPICON));
-                wc.lpszClassName = kClass;
-                return RegisterClassExW(&wc) != 0;
-            }();
-            if (!registered)
+            if (!Create(L"" SD_NAME))
                 return;
-            // WS_EX_CONTROLPARENT lets IsDialogMessage move focus with Tab between our child controls.
-            m_hwnd.reset(CreateWindowExW(WS_EX_CONTROLPARENT, kClass, L"" SD_NAME, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                                         kWidth, kHeight, nullptr, nullptr, m_instance, this));
-            if (!m_hwnd)
-                return;
-            CreateChildren();
-            const UINT dpi = GetDpiForWindow(m_hwnd.get());
-            RECT r{ 0, 0, MulDiv(kWidth, static_cast<int>(dpi), 96), MulDiv(kHeight, static_cast<int>(dpi), 96) };
-            AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_CONTROLPARENT, dpi);
-            SetWindowPos(m_hwnd.get(), nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-            ApplyDpi(dpi);
             m_filling = true;
             SetWindowTextW(m_pattern, L"{name}");
             SetWindowTextW(m_start, L"1");
@@ -93,35 +68,25 @@ namespace sd
         // needs no retyping, and the list shows what it does before anything happens.
         const auto title = m_items.size() == 1 ? std::format(L"Rename {} – " SD_NAME, FileName(m_items[0].path))
                                                : std::format(L"Rename {} items – " SD_NAME, m_items.size());
-        SetWindowTextW(m_hwnd.get(), title.c_str());
-        ApplyTheme();
+        SetWindowTextW(m_hwnd, title.c_str());
         Update();
-        ShowWindow(m_hwnd.get(), IsIconic(m_hwnd.get()) ? SW_RESTORE : SW_SHOWNORMAL);
-        SetForegroundWindow(m_hwnd.get());   // allowed: the user just dropped on the slice
-        SetFocus(m_pattern);
+        Present(m_pattern);   // allowed in front: the user just dropped on the slice
         SendMessageW(m_pattern, EM_SETSEL, 0, -1);
         log::Info(L"rename: window for {} item(s)", m_items.size());
     }
 
     void RenameWindow::CreateChildren()
     {
-        const HWND parent = m_hwnd.get();
-        const auto id = [](int value) { return reinterpret_cast<HMENU>(static_cast<INT_PTR>(value)); };
         // Each label is created just before its control: screen readers name a control after the
         // static text in front of it, and Tab visits the controls in this order.
-        const auto label = [&](const wchar_t* text) {
-            return CreateWindowExW(0, WC_STATICW, text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE, 0, 0, 0, 0, parent, nullptr,
-                                   m_instance, nullptr);
-        };
+        const auto label = [&](const wchar_t* text) { return Control(WC_STATICW, text, SS_LEFT | SS_CENTERIMAGE); };
         const auto edit = [&](int controlId, DWORD style = 0) {
-            return CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | style, 0, 0, 0, 0,
-                                   parent, id(controlId), m_instance, nullptr);
+            return Control(WC_EDITW, L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL | style, controlId);
         };
         m_patternLabel = label(L"&New name");
         m_pattern = edit(kIdPattern);
         SendMessageW(m_pattern, EM_LIMITTEXT, 255, 0);
-        m_fields = CreateWindowExW(0, WC_STATICW, kFieldsHint, WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, 0, 0, 0,
-                                   parent, nullptr, m_instance, nullptr);
+        m_fields = Control(WC_STATICW, kFieldsHint, SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS);
         m_findLabel = label(L"&Find");
         m_find = edit(kIdFind);
         m_replaceLabel = label(L"Re&place with");
@@ -129,12 +94,9 @@ namespace sd
         m_startLabel = label(L"&Start {n} at");
         m_start = edit(kIdStart, ES_NUMBER);
         SendMessageW(m_start, EM_LIMITTEXT, 6, 0);
-        m_matchCase = CreateWindowExW(0, WC_BUTTONW, L"Find &matches case", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0, 0, 0, 0,
-                                      parent, id(kIdMatchCase), m_instance, nullptr);
-        m_list = CreateWindowExW(0, WC_LISTVIEWW, L"",
-                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_OWNERDATA | LVS_SINGLESEL |
-                                     LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
-                                 0, 0, 0, 0, parent, id(kIdList), m_instance, nullptr);
+        m_matchCase = Control(WC_BUTTONW, L"Find &matches case", WS_TABSTOP | BS_AUTOCHECKBOX, kIdMatchCase);
+        m_list = Control(WC_LISTVIEWW, L"", WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_OWNERDATA | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
+                         kIdList);
         ListView_SetExtendedListViewStyle(m_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
         const wchar_t* titles[] = { L"Name now", L"New name", L"Note" };
         for (int i = 0; i < 3; ++i)
@@ -145,58 +107,32 @@ namespace sd
             col.iSubItem = i;
             ListView_InsertColumn(m_list, i, &col);
         }
-        m_status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS | SS_CENTERIMAGE, 0, 0, 0, 0,
-                                   parent, nullptr, m_instance, nullptr);
-        const auto button = [&](const wchar_t* text, int controlId, DWORD style) {
-            return CreateWindowExW(0, WC_BUTTONW, text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | style, 0, 0, 0, 0, parent, id(controlId),
-                                   m_instance, nullptr);
-        };
+        m_status = Control(WC_STATICW, L"", SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS | SS_CENTERIMAGE);
         // IDOK and IDCANCEL: IsDialogMessage turns Enter and Esc into them.
-        m_rename = button(L"&Rename", IDOK, BS_DEFPUSHBUTTON);
-        m_cancel = button(L"Cancel", IDCANCEL, BS_PUSHBUTTON);
+        m_rename = Control(WC_BUTTONW, L"&Rename", WS_TABSTOP | BS_DEFPUSHBUTTON, IDOK);
+        m_cancel = Control(WC_BUTTONW, L"Cancel", WS_TABSTOP | BS_PUSHBUTTON, IDCANCEL);
     }
 
-    void RenameWindow::ApplyDpi(UINT dpi)
+    void RenameWindow::OnThemeChanged()
     {
-        m_dpi = dpi;
-        NONCLIENTMETRICSW metrics{ sizeof(metrics) };
-        if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi))
-            m_font.reset(CreateFontIndirectW(&metrics.lfMessageFont));
-        for (HWND child : { m_patternLabel, m_pattern, m_fields, m_findLabel, m_find, m_replaceLabel, m_replace, m_startLabel, m_start,
-                            m_matchCase, m_list, m_status, m_rename, m_cancel })
-            SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(m_font.get()), TRUE);
-        Layout();
+        m_problemColour = m_colors.dark ? RGB(255, 153, 164) : RGB(196, 43, 28);
+        ThemeList(m_list, L"Explorer");
+        SetTheme({ m_matchCase, m_rename, m_cancel }, L"DarkMode_Explorer", L"Explorer");
+        SetTheme({ m_pattern, m_find, m_replace, m_start }, L"DarkMode_CFD");
     }
 
-    void RenameWindow::ApplyTheme()
+    COLORREF RenameWindow::StaticTextColor(HWND control) const
     {
-        // The same light or dark as Settings (theme::Current follows Windows or the override).
-        m_dark = theme::Current(Style::Solid).dark;
-        const BOOL dark = m_dark;
-        DwmSetWindowAttribute(m_hwnd.get(), 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-        const COLORREF back = m_dark ? RGB(32, 32, 32) : GetSysColor(COLOR_WINDOW);
-        m_textColour = m_dark ? RGB(240, 240, 240) : GetSysColor(COLOR_WINDOWTEXT);
-        m_fieldColour = m_dark ? RGB(45, 45, 45) : GetSysColor(COLOR_WINDOW);
-        m_problemColour = m_dark ? RGB(255, 153, 164) : RGB(196, 43, 28);
-        m_background.reset(CreateSolidBrush(back));
-        m_field.reset(CreateSolidBrush(m_fieldColour));
-        for (HWND child : { m_list, m_matchCase, m_rename, m_cancel })
-            SetWindowTheme(child, m_dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
-        for (HWND child : { m_pattern, m_find, m_replace, m_start })
-            SetWindowTheme(child, m_dark ? L"DarkMode_CFD" : nullptr, nullptr);
-        SetWindowTheme(ListView_GetHeader(m_list), m_dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
-        ListView_SetBkColor(m_list, m_fieldColour);
-        ListView_SetTextBkColor(m_list, m_fieldColour);
-        ListView_SetTextColor(m_list, m_textColour);
-        InvalidateRect(m_hwnd.get(), nullptr, TRUE);
+        if (control == m_status && (!m_plan.error.empty() || m_plan.problems > 0))
+            return m_problemColour;
+        return control == m_fields ? GetSysColor(COLOR_GRAYTEXT) : m_colors.text;
     }
 
     void RenameWindow::Layout()
     {
         RECT rc{};
-        GetClientRect(m_hwnd.get(), &rc);
-        const auto px = [this](int dip) { return MulDiv(dip, static_cast<int>(m_dpi), 96); };
-        const int margin = px(kMargin), gap = px(kGap), lw = px(kLabelW), rh = px(kRowH), rowGap = px(kRowGap);
+        GetClientRect(m_hwnd, &rc);
+        const int margin = Px(kMargin), gap = Px(kGap), lw = Px(kLabelW), rh = Px(kRowH), rowGap = Px(kRowGap);
         const int fieldX = margin + lw, fieldW = std::max(0, static_cast<int>(rc.right) - margin - fieldX);
         int y = margin;
         const auto row = [&](HWND labelHwnd, HWND control) {
@@ -205,19 +141,19 @@ namespace sd
             y += rh + rowGap;
         };
         row(m_patternLabel, m_pattern);
-        MoveWindow(m_fields, fieldX, y - rowGap / 2, fieldW, px(kHintH), TRUE);
-        y += px(kHintH) + rowGap;
+        MoveWindow(m_fields, fieldX, y - rowGap / 2, fieldW, Px(kHintH), TRUE);
+        y += Px(kHintH) + rowGap;
         row(m_findLabel, m_find);
         row(m_replaceLabel, m_replace);
         MoveWindow(m_startLabel, margin, y, lw - gap, rh, TRUE);
-        MoveWindow(m_start, fieldX, y, px(kStartW), rh, TRUE);
-        MoveWindow(m_matchCase, fieldX + px(kStartW) + 2 * gap, y, std::max(0, fieldW - px(kStartW) - 2 * gap), rh, TRUE);
+        MoveWindow(m_start, fieldX, y, Px(kStartW), rh, TRUE);
+        MoveWindow(m_matchCase, fieldX + Px(kStartW) + 2 * gap, y, std::max(0, fieldW - Px(kStartW) - 2 * gap), rh, TRUE);
         y += rh + gap;
 
-        const int bw = px(kButtonW), bh = px(kButtonH), buttonsY = rc.bottom - margin - bh;
+        const int bw = Px(kButtonW), bh = Px(kButtonH), buttonsY = rc.bottom - margin - bh;
         const int listW = rc.right - 2 * margin;
         MoveWindow(m_list, margin, y, listW, std::max(0, buttonsY - gap - y), TRUE);
-        const int inner = std::max(0, listW - GetSystemMetricsForDpi(SM_CXVSCROLL, m_dpi) - px(4));
+        const int inner = std::max(0, listW - GetSystemMetricsForDpi(SM_CXVSCROLL, m_dpi) - Px(4));
         ListView_SetColumnWidth(m_list, 0, inner * 36 / 100);
         ListView_SetColumnWidth(m_list, 1, inner * 36 / 100);
         ListView_SetColumnWidth(m_list, 2, inner - 2 * (inner * 36 / 100));
@@ -287,7 +223,7 @@ namespace sd
 
     void RenameWindow::Close()
     {
-        ShowWindow(m_hwnd.get(), SW_HIDE);   // kept for next time; destroyed with the app
+        ShowWindow(m_hwnd, SW_HIDE);   // kept for next time; destroyed with the app
         m_items.clear();
         m_plan = {};
         m_onConfirm = nullptr;
@@ -323,83 +259,17 @@ namespace sd
             if (draw->nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
             {
                 const auto row = static_cast<size_t>(draw->nmcd.dwItemSpec);
-                draw->clrText = row < m_plan.items.size() && !m_plan.items[row].problem.empty() ? m_problemColour : m_textColour;
+                draw->clrText = row < m_plan.items.size() && !m_plan.items[row].problem.empty() ? m_problemColour : m_colors.text;
                 return CDRF_NEWFONT;
             }
         }
         return 0;
     }
 
-    bool RenameWindow::PreTranslate(MSG& msg)
-    {
-        if (!m_hwnd || (msg.hwnd != m_hwnd.get() && !IsChild(m_hwnd.get(), msg.hwnd)))
-            return false;
-        return IsDialogMessageW(m_hwnd.get(), &msg) != FALSE;
-    }
-
-    LRESULT CALLBACK RenameWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-    {
-        if (msg == WM_NCCREATE)
-        {
-            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-        }
-        auto* self = reinterpret_cast<RenameWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (!self || !self->m_hwnd || self->m_hwnd.get() != hwnd)
-            return DefWindowProcW(hwnd, msg, wParam, lParam);   // messages before CreateWindowExW returns
-        return self->Handle(msg, wParam, lParam);
-    }
-
     LRESULT RenameWindow::Handle(UINT msg, WPARAM wParam, LPARAM lParam)
     {
         switch (msg)
         {
-        case WM_SIZE:
-            Layout();
-            return 0;
-        case WM_GETMINMAXINFO:
-        {
-            auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
-            info->ptMinTrackSize = { MulDiv(kMinWidth, static_cast<int>(m_dpi), 96), MulDiv(kMinHeight, static_cast<int>(m_dpi), 96) };
-            return 0;
-        }
-        case WM_DPICHANGED:
-        {
-            const auto* r = reinterpret_cast<const RECT*>(lParam);
-            SetWindowPos(m_hwnd.get(), nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
-            ApplyDpi(HIWORD(wParam));
-            return 0;
-        }
-        case WM_SETTINGCHANGE:
-            if (lParam && EqualsNoCase(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet"))
-                ApplyTheme();
-            break;
-        case WM_ERASEBKGND:
-        {
-            RECT rc{};
-            GetClientRect(m_hwnd.get(), &rc);
-            FillRect(reinterpret_cast<HDC>(wParam), &rc, m_background.get());
-            return 1;
-        }
-        case WM_CTLCOLORSTATIC:
-        case WM_CTLCOLORBTN:
-        {
-            const HDC dc = reinterpret_cast<HDC>(wParam);
-            const HWND control = reinterpret_cast<HWND>(lParam);
-            const bool problem = control == m_status && (!m_plan.error.empty() || m_plan.problems > 0);
-            SetTextColor(dc, problem ? m_problemColour : control == m_fields ? GetSysColor(COLOR_GRAYTEXT) : m_textColour);
-            SetBkMode(dc, TRANSPARENT);
-            return reinterpret_cast<LRESULT>(m_background.get());
-        }
-        case WM_CTLCOLOREDIT:
-            if (m_dark)
-            {
-                const HDC dc = reinterpret_cast<HDC>(wParam);
-                SetTextColor(dc, m_textColour);
-                SetBkColor(dc, m_fieldColour);
-                return reinterpret_cast<LRESULT>(m_field.get());
-            }
-            break;
         case WM_COMMAND:
             switch (LOWORD(wParam))
             {
@@ -435,6 +305,6 @@ namespace sd
         default:
             break;
         }
-        return DefWindowProcW(m_hwnd.get(), msg, wParam, lParam);
+        return DialogWindow::Handle(msg, wParam, lParam);
     }
 }

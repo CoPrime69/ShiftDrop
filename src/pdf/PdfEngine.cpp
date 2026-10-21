@@ -1,5 +1,5 @@
-// The PDF engine: PDF -> JPG/PNG/TXT/Markdown, Images -> PDF, Merge PDFs, Organize PDF Pages and
-// Compress PDF. Every output goes through StagedOutput, so it is named "name (suffix).ext", never
+// The PDF engine: PDF -> JPG/PNG/TXT/Markdown, Images -> PDF, Merge PDFs, Organize PDF Pages, Edit
+// PDF and Compress PDF. Every output goes through StagedOutput, so it is named "name (suffix).ext", never
 // overwrites anything and can be undone.
 #include "ErrorText.h"
 #include "FileIo.h"
@@ -10,6 +10,7 @@
 #include "Utf.h"
 #include "formats/Frames.h"
 #include "pdf/ImagePdf.h"
+#include "pdf/PageEdits.h"
 #include "pdf/PageRenderer.h"
 #include "pdf/PdfCompress.h"
 #include "pdf/PdfDoc.h"
@@ -23,6 +24,9 @@
 #include <filesystem>
 #include <format>
 #include <mutex>
+#include <set>
+
+#include <wil/resource.h>
 
 namespace sd::pdf
 {
@@ -80,27 +84,33 @@ namespace sd::pdf
             bool IsBatch(const Recipe& recipe) const override
             {
                 const auto& a = ActionOf(recipe);
-                return a == "pdf.from_images" || a == "pdf.merge" || a == "pdf.organize";
+                return a == "pdf.from_images" || a == "pdf.merge" || a == "pdf.organize" || a == "pdf.edit";
             }
 
             bool NeedsEditor(const Recipe& recipe) const override
             {
                 const auto& a = ActionOf(recipe);
-                return a == "pdf.merge" || a == "pdf.organize";
+                return a == "pdf.merge" || a == "pdf.organize" || a == "pdf.edit";
             }
 
             void OpenEditor(HWND owner, const Recipe& recipe, const std::vector<std::wstring>& files,
                             std::function<void(Recipe, std::vector<std::wstring>)> done) const override
             {
-                if (ActionOf(recipe) == "pdf.merge")
+                const auto& action = ActionOf(recipe);
+                if (action == "pdf.merge" || action == "pdf.edit")
                 {
                     // One PDF has nothing to merge with: run at once so the panel says so.
-                    if (files.size() < 2 || !Editors().merge)
+                    if ((action == "pdf.merge" && files.size() < 2) || !Editors().merge)
                     {
                         done(recipe, files);
                         return;
                     }
-                    Editors().merge(owner, files, [recipe, done](std::vector<std::wstring> ordered) { done(recipe, std::move(ordered)); });
+                    Editors().merge(owner, files, action == "pdf.edit", [recipe, done](std::vector<std::wstring> ordered, PagePlan plan) {
+                        Recipe adjusted = recipe;
+                        if (!plan.empty())
+                            adjusted.steps.front().params["plan"] = PlanToJson(plan);
+                        done(std::move(adjusted), std::move(ordered));
+                    });
                     return;
                 }
                 if (!Editors().organize)
@@ -147,7 +157,7 @@ namespace sd::pdf
                     const auto& a = ActionOf(recipe);
                     if (a == "pdf.from_images")
                         return FromImages(recipe, runId, sources, stop, progress);
-                    if (a == "pdf.merge" || a == "pdf.organize")
+                    if (a == "pdf.merge" || a == "pdf.organize" || a == "pdf.edit")
                         return Assemble(recipe, runId, sources, stop, progress);
                 }
                 catch (const std::exception& e)
@@ -364,8 +374,9 @@ namespace sd::pdf
             ItemResult Assemble(const Recipe& recipe, int64_t runId, const std::vector<std::wstring>& sources, std::stop_token stop,
                                 const ProgressFn& progress) const
             {
-                const bool merge = ActionOf(recipe) == "pdf.merge";
-                if (merge && sources.size() < 2)
+                // Edit PDF with several files merges them too, and names the result the same way.
+                const bool merge = ActionOf(recipe) == "pdf.merge" || (ActionOf(recipe) == "pdf.edit" && sources.size() > 1);
+                if (ActionOf(recipe) == "pdf.merge" && sources.size() < 2)
                     return RecordFailure(m_history, runId, sources.front(), L"drop two or more PDFs to merge them");
                 for (const auto& s : sources)
                 {
@@ -379,12 +390,22 @@ namespace sd::pdf
                     return RecordFailure(m_history, runId, sources.front(), error);
                 PagePlan plan = AllPages(counts);
                 const auto& params = recipe.steps.front().params;
-                if (!merge && params.contains("plan"))
+                if (params.contains("plan"))
                 {
                     std::string problem;
                     if (!PlanFromJson(params["plan"], plan, problem))
                         return RecordFailure(m_history, runId, sources.front(), Widen(problem));
                 }
+                // The page view's edited pages are read once, here; their folder goes afterwards,
+                // whatever happens (RemoveEditFolder only touches folders the page view made).
+                const auto removeEdits = wil::scope_exit([&] {
+                    std::set<std::wstring> folders;
+                    for (const auto& r : plan)
+                        if (!r.edited.empty())
+                            folders.insert(std::filesystem::path(r.edited).parent_path().wstring());
+                    for (const auto& folder : folders)
+                        RemoveEditFolder(folder);
+                });
                 std::string problem;
                 if (!CheckPlan(plan, counts, problem))
                     return RecordFailure(m_history, runId, sources.front(), Widen(problem));
@@ -394,10 +415,13 @@ namespace sd::pdf
                     return out.Fail(out.Error());
                 if (!AssemblePages(sources, plan, out.Path(), stop, progress, error))
                     return out.Fail(error, error == kCancelled);
-                auto result = out.Commit(recipe.suffix, L".pdf");
+                const size_t edited = EditedPages(plan);
+                auto result = out.Commit(merge && ActionOf(recipe) == "pdf.edit" ? std::wstring(L"merged") : recipe.suffix, L".pdf");
                 if (result.ok)
                     result.message = merge ? std::format(L"Merged {} PDFs into {}", sources.size(), Pages(plan.size()))
                                            : std::format(L"Saved {}", Pages(plan.size()));
+                if (result.ok && edited > 0)
+                    result.message += std::format(L", {} edited", edited);
                 return result;
             }
 

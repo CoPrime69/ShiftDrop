@@ -151,6 +151,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] **Show files** (or double-click a row): Explorer opens with the outputs selected
 - [ ] Esc closes the history window; Tab moves between the list and the buttons
 - [ ] Drag the history window to a monitor with another scaling: text and buttons stay crisp and correctly sized
+- [ ] Windows in dark mode: the history window is dark like Settings (title bar, list, its header and buttons); switch Windows to light while it is open and it turns light at once, with its grey face as before
 
 ### I. Start with Windows, recipes, recovery
 - [ ] First start: tray menu shows **Start with Windows** ticked; `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` lists `ShiftDrop` pointing at this exe with `--autostart`
@@ -237,10 +238,14 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drag three photos (one PNG with transparency) with **Shift** and drop on **PDF**: one `… (converted).pdf` with the pages in Explorer's order, each the photo's size; the sideways phone photo stands upright; the transparent PNG shows on white
 - [ ] Drag two PDFs, open **Tools**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
 - [ ] Drop one PDF on **Merge**: the panel says to drop two or more
+- [ ] In Merge, **More…** (left of Cancel) shows every page of both PDFs, numbered in the final order, each with its file's colour tag (the list's rows carry the same tags). Drag a page of the second PDF in among the first's; Ctrl/Shift+click several, **Alt+arrows** move them, **R** turns, **Delete** leaves out. The preview on the right shows the selected page with Previous / Next and "k of N"; double-click a page to view it large. **Merge and export** writes `first (merged).pdf` exactly as shown; Undo in the panel takes it back
+- [ ] In that view, right-click a page (or **Edit page** above the preview) > **Redact…**: the page opens in the Redact editor; box a line and apply: the page gets a pencil mark and the box. Annotate, Crop and Light and colour work the same way; **Revert** brings back the original. In the exported PDF, Ctrl+F in Edge finds none of the redacted text; the source PDFs are unchanged
+- [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
+- [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
 - [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
 - [ ] Hover a dimmed slice (for example HEIC on a PC without the HEIF extension): the wheel's centre says why it can't be used, and fades back when you move off
 - [ ] Drop two PDFs on **Organize**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
-- [ ] Organize and Merge follow the Windows light/dark setting, and look right at 150% scaling
+- [ ] Organize, Merge (and its pages) and Edit follow the Windows light/dark setting, and look right at 150% scaling
 - [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
 - [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
 - [ ] Drop the scanned PDF (or `page.jpg`) on **Searchable**: `… (searchable).pdf` looks exactly like the scan; in Edge, Ctrl+F finds a word and selecting text highlights it over the picture; copied text pastes correctly. `report.pdf` on Searchable is skipped ("already searchable")
@@ -327,6 +332,7 @@ Inspector
 - [ ] Drop three files (photo, video, song) on Inspect: one window with three tabs; the video tab lists Media, Video track 1, Audio track 1, chapters and tags
 - [ ] Move the window to a monitor with another scale: text and layout stay crisp and fit
 - [ ] Esc closes the window; Ctrl+F jumps to the search box
+- [ ] Windows in dark mode: the inspector is dark (title bar, search box, list and its group headings readable); switching Windows to light while it is open turns it light
 
 ### Q. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
