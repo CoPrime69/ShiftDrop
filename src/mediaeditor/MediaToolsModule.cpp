@@ -65,7 +65,11 @@ namespace sd
                 return true;
             }
 
-            JobLane Lane(const Recipe&) const override { return JobLane::Media; }
+            // The audio tools only touch sound (one core each), except the visualizer, which encodes video.
+            JobLane Lane(const Recipe& recipe) const override
+            {
+                return IsVideoAction(recipe) || recipe.steps[0].action == "audio.visualizer" ? JobLane::Media : JobLane::Audio;
+            }
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {

@@ -64,9 +64,9 @@ transpose hflip vflip rotate crop
 # Named by the app: conversions, Compress, GIF, the video tools (trim, crop, speed, join, redact) and
 # the audio tools (normalize, visualizer, trim, channels, bleep, silence finding).
 setsar fps split palettegen paletteuse setpts atempo pad anullsrc concat gblur overlay drawbox
-loudnorm color showwaves sine volume amix pan silencedetect
-# Test inputs (tests/*.cpp make their clips with these) and the speed benchmark's measurements.
-testsrc testsrc2 nullsrc geq noise ebur128
+ebur128 loudnorm color showwaves sine volume amix pan silencedetect
+# Test inputs (tests/*.cpp and the speed benchmark make their clips with these).
+testsrc testsrc2 nullsrc geq noise
 
 [parsers]
 *
