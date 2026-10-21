@@ -348,7 +348,7 @@ TEST(FfmpegComponents, TestClipsCanBeMade)
     ASSERT_FALSE(c.empty());
     const auto testsDir = ComponentsFile().parent_path().parent_path() / "tests";
     ASSERT_TRUE(std::filesystem::is_directory(testsDir)) << testsDir.string();
-    const std::wregex graph(LR"(L"(?:-i|-af|-vf|-filter_complex)", (?:std::format\()?L"([^"]*)")");
+    const std::wregex graph(LR"re(L"(?:-i|-af|-vf|-filter_complex)", (?:std::format\()?L"([^"]*)")re");
     std::set<std::string> filters;
     for (const auto& e : std::filesystem::directory_iterator(testsDir))
     {
