@@ -135,7 +135,7 @@ namespace sd::photo
         HazeModel haze;
         if (a.dehaze != 0)
             haze = AnalyseHaze(in);
-        std::wstring device = L"CPU";
+        std::wstring device = L"CPU", note;
         bool done = false;
         if (allowGpu && gpu::Device::Get())
         {
@@ -151,9 +151,13 @@ namespace sd::photo
             {
                 done = true;
                 device = graph.failed ? std::wstring(L"CPU") : gpuDevice;
+                note = graph.why;
             }
             else
+            {
                 log::Warn(L"photo: the GPU render failed ({}); using the CPU", error);
+                note = error;
+            }
         }
         if (!done)
         {
@@ -162,7 +166,7 @@ namespace sd::photo
             error.clear();
         }
         if (info)
-            *info = { device, Since(start) };
+            *info = { device, Since(start), note };
         return S_OK;
     }
 
