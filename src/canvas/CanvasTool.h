@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+struct ID2D1DeviceContext;   // Direct2D; only IPreview's implementations (src/photo) include its header
+
 // The image canvas's plug-in interface. The editor window (EditorWindow, Direct2D) owns the image,
 // zoom, pan, the side panel, Apply/Cancel and undo; a tool (Crop, Redact, later Edit Photos,
 // Annotate, Add a Background, Collage) is a small class that draws an overlay, answers the pointer
@@ -154,6 +156,13 @@ namespace sd::canvas
         virtual std::shared_ptr<const Raster> Picture() const = 0;
         virtual size_t FileIndex() const = 0;
         virtual void ShowFile(size_t index) = 0;
+        // The Open dialog for one picture (Annotate's inserted images, a background picture). False
+        // when cancelled or when there is no window (tests).
+        virtual bool PickImage(std::wstring& path)
+        {
+            (void)path;
+            return false;
+        }
     };
 
     // A pre-pass a tool can ask for before its window appears (Share-safe looks for personal details
@@ -164,6 +173,22 @@ namespace sd::canvas
         // Runs on a worker; `progress` takes 0..1. Returns true when the editor should open, false
         // to apply at once with the tool's Params().
         std::function<bool(std::stop_token, const std::function<void(double)>& progress)> run;
+    };
+
+    // A tool that shows its result instead of the plain picture (the photo tools: an edited photo,
+    // a picture on a background, a collage). The window renders it into a bitmap whenever Revision()
+    // or the zoom changes and shows that bitmap, so panning and the overlay stay cheap. Tool
+    // coordinates are the result's pixels; the view fits Size() instead of the picture.
+    class IPreview
+    {
+    public:
+        virtual ~IPreview() = default;
+        virtual SizeD Size() const = 0;
+        virtual uint64_t Revision() const = 0;
+        // Draws the result at `scale` result pixels per tool unit into `dc` (UI thread; its target is
+        // set and cleared, transform identity, 96 DPI). `device` changes when the window's Direct2D
+        // device is made again, so cached bitmaps must be too. False draws the plain picture instead.
+        virtual bool Render(ID2D1DeviceContext* dc, double scale, unsigned device) = 0;
     };
 
     class ICanvasTool
@@ -192,6 +217,12 @@ namespace sd::canvas
         virtual Response Hover(const Pointer&) { return {}; }
         // Keys the window doesn't use itself (it keeps Enter, Esc, Ctrl+Z/Y, zoom and space).
         virtual Response Key(unsigned vk, bool shift, bool ctrl) = 0;
+        // While true (a text annotation being typed), typed characters go to Char() and every key but
+        // Ctrl+Z / Ctrl+Y / zoom goes to Key() first, Enter and Esc included.
+        virtual bool TextInput() const { return false; }
+        virtual Response Char(wchar_t) { return {}; }
+        // Non-null for tools that draw their own result (IPreview above).
+        virtual IPreview* Preview() { return nullptr; }
 
         virtual void BuildPanel(std::vector<Control>& out) const = 0;
         virtual Response OnControl(const ControlEvent& e) = 0;

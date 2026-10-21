@@ -46,6 +46,12 @@ namespace sd
         return e->RunBatch(recipe, runId, sources, stop, progress);
     }
 
+    bool PipelineRunner::AppliesToDrop(const Recipe& recipe, size_t fileCount) const
+    {
+        const auto* e = EngineFor(recipe);
+        return !e || e->AppliesToDrop(recipe, fileCount);
+    }
+
     bool PipelineRunner::Applies(const Recipe& recipe, const std::wstring& path) const
     {
         if (const auto* e = EngineFor(recipe))
