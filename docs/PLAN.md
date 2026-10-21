@@ -568,7 +568,7 @@ question 1).
 3. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 4. Opening the wheel on files selected in Explorer: Ctrl+Shift+Space (current) or a lone Shift tap? Prakhar decides after trying the app, before the launch video and website.
 5. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
-6. M5: AVIF output is quality 60 at aom speed 8 (about 0.3 s for a 12 MP photo). Fine, or should Convert offer a "smaller, slower" AVIF (speed 6, about 4x the time for about 8% less)?
+6. M5: AVIF output is quality 60 at aom speed 8 (about 0.3 s for a 12 MP photo). Fine, or should Convert offer a "smaller, slower" AVIF (speed 6, about 3.5x the time for about 8% less)?
 7. M5: a HEIC through Resize or Rotate comes out as JPG, because Windows' HEIC encoder is optional and slow. Keep that, or write HEIC when the encoder is there?
 8. M5: SVGs with no size of their own come out 1024 px on the long side. Is 1024 right, or should it be 2048 (sharper on 4K screens, about 4x the pixels)?
 9. M5: a converted animated GIF that becomes a folder of frames can hold hundreds of files. Should there be a limit, or a question first above, say, 100 frames?
