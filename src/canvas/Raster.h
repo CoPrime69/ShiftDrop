@@ -27,15 +27,16 @@ namespace sd::canvas
     };
 
     // Decodes the first frame of `path` with its EXIF orientation applied, as the user sees it: WIC
-    // for everything Windows decodes, libwebp for WebP. `maxEdge` > 0 scales it down (high-quality)
+    // for everything Windows decodes, libwebp for WebP, the format hooks (ImageHooks.h) for AVIF and
+    // SVG. `maxEdge` > 0 scales it down (high-quality)
     // so its longer side is at most that, for previews. Needs COM on the calling thread.
     HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge = 0);
 
-    // The format an edited copy of a file is written in: the source's own (JPEG, PNG, WebP, TIFF,
-    // BMP); JPEG for camera formats Windows can read but we don't write (HEIC, AVIF, JXR, raw);
-    // PNG for the rest (GIF, ICO...).
+    // The format an edited copy of a file is written in: the source's own (JPEG, PNG, WebP, AVIF,
+    // TIFF, BMP); JPEG for camera formats Windows can read but we don't always write (HEIC, JXR, raw);
+    // PNG for the rest (GIF, ICO, SVG...).
     const ImageFormatInfo& EditedFormatFor(const std::wstring& lowerExtension);
-    // JPEG 92, WebP 90; ignored by lossless formats.
+    // JPEG 92, WebP 90, AVIF 80; ignored by lossless formats.
     int EditedQuality(const ImageFormatInfo& format);
 
     // Encodes into a brand-new container that holds only the pixels, the resolution and the colour
