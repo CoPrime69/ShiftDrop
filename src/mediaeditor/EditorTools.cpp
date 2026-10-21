@@ -2,6 +2,7 @@
 // the picture do under the mouse and keys, how a choice sounds while playing, and the parameters
 // handed back to the engine.
 #include "mediaeditor/EditorWindow.h"
+#include "FileMove.h"
 #include "FormatText.h"
 #include "Log.h"
 #include "Media.h"
@@ -11,9 +12,7 @@
 #include "audiotools/AudioTools.h"
 #include "videotools/VideoTools.h"
 
-#include <shobjidl.h>
 #include <wincodec.h>
-#include <wil/resource.h>
 
 #include <algorithm>
 #include <cmath>
@@ -132,46 +131,6 @@ namespace sd::mediatools
                 return false;
             out = v;
             return true;
-        }
-
-        // Files from the open dialog: one, or several when `many`. Empty when cancelled.
-        std::vector<std::wstring> PickFiles(HWND owner, const wchar_t* title, const wchar_t* kind, const std::wstring& patterns, bool many)
-        {
-            std::vector<std::wstring> paths;
-            ComPtr<IFileOpenDialog> dialog;
-            if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
-                return paths;
-            const COMDLG_FILTERSPEC types[] = { { kind, patterns.c_str() } };
-            dialog->SetFileTypes(1, types);
-            dialog->SetTitle(title);
-            DWORD options = 0;
-            dialog->GetOptions(&options);
-            dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | (many ? FOS_ALLOWMULTISELECT : 0));
-            if (FAILED(dialog->Show(owner)))
-                return paths;
-            const auto add = [&](IShellItem* item) {
-                wil::unique_cotaskmem_string path;
-                if (item && SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-                    paths.emplace_back(path.get());
-            };
-            if (!many)
-            {
-                ComPtr<IShellItem> item;
-                if (SUCCEEDED(dialog->GetResult(&item)))
-                    add(item.Get());
-                return paths;
-            }
-            ComPtr<IShellItemArray> items;
-            DWORD count = 0;
-            if (FAILED(dialog->GetResults(&items)) || FAILED(items->GetCount(&count)))
-                return paths;
-            for (DWORD i = 0; i < count; ++i)
-            {
-                ComPtr<IShellItem> item;
-                if (SUCCEEDED(items->GetItemAt(i, &item)))
-                    add(item.Get());
-            }
-            return paths;
         }
 
         // A picture for the visualizer's preview, flattened onto black, at most `maxSide` across.
@@ -1758,9 +1717,9 @@ namespace sd::mediatools
 
     void EditorWindow::ChoosePicture()
     {
-        const auto paths = PickFiles(Hwnd(), L"Picture for the video", L"Pictures", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.tif;*.tiff", false);
-        if (paths.empty())
-            return;
+        std::vector<std::wstring> paths;
+        if (!PickFiles(Hwnd(), L"Picture for the video", L"Pictures", L"*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.tif;*.tiff", paths))
+            return;   // of several chosen, the first is the picture
         Frame picture;
         if (!LoadPicture(paths.front(), 1600, picture))
         {
@@ -1774,8 +1733,8 @@ namespace sd::mediatools
 
     void EditorWindow::AddClips()
     {
-        const auto paths = PickFiles(Hwnd(), L"Videos to add", L"Videos", MediaFilePatterns(MediaKind::Video), true);
-        if (paths.empty() || !m_loader)
+        std::vector<std::wstring> paths;
+        if (!m_loader || !PickFiles(Hwnd(), L"Videos to add", L"Videos", MediaFilePatterns(MediaKind::Video), paths))
             return;
         for (const auto& path : paths)
         {
