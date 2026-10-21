@@ -168,10 +168,16 @@ namespace sd::canvas
         public:
             explicit CanvasWindow(EditorRequest request)
                 : m_files(std::move(request.files)), m_tool(std::move(request.tool)), m_apply(std::move(request.apply)),
-                  m_alive(std::make_shared<std::atomic<bool>>(true))
+                  m_closed(std::move(request.closed)), m_alive(std::make_shared<std::atomic<bool>>(true))
             {
                 DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.GetAddressOf()));
                 m_tool->Attach(this);
+            }
+
+            ~CanvasWindow() override
+            {
+                if (auto closed = std::move(m_closed))
+                    closed();   // closed without applying
             }
 
             bool Open()
@@ -1229,10 +1235,13 @@ namespace sd::canvas
                     return;
                 }
                 auto apply = std::move(m_apply);
+                auto closed = std::move(m_closed);
                 auto params = m_tool->Params();
                 Close();   // deletes this
                 if (apply)
                     apply(std::move(params));
+                if (closed)
+                    closed();
             }
 
             void OnClosing() override
@@ -1294,10 +1303,13 @@ namespace sd::canvas
                     {
                         // Nothing to review: apply straight away (the scrub still runs).
                         auto apply = std::move(m_apply);
+                        auto closed = std::move(m_closed);
                         auto params = m_tool->Params();
                         Close();   // deletes this
                         if (apply)
                             apply(std::move(params));
+                        if (closed)
+                            closed();
                     }
                     return true;
                 case WM_TIMER:
@@ -1728,6 +1740,7 @@ namespace sd::canvas
             std::vector<std::wstring> m_files;
             std::shared_ptr<ICanvasTool> m_tool;
             std::function<void(nlohmann::json)> m_apply;
+            std::function<void()> m_closed;   // still set when the window closes without applying
             std::shared_ptr<std::atomic<bool>> m_alive;
             std::stop_source m_stop;
             ComPtr<IDWriteFactory> m_dwrite;

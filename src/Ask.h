@@ -42,6 +42,10 @@ namespace sd::ask
     // cancels or `stop` is requested.
     int Choose(const Question& question, std::stop_token stop);
 
+    // From the UI thread: shows `question` at once, as Choose does, and returns the answer. For a
+    // window's own question, such as "Close without saving?".
+    int ChooseNow(const Question& question);
+
     struct PasswordRequest
     {
         std::wstring title;    // the window title

@@ -32,7 +32,7 @@ TEST(Recipe, BuiltInsAndExampleLoadWithoutErrors)
     for (const auto& r : recipes.store.All())
         ++(r.ring == "convert" ? convert : r.ring == "tools" ? tools : r.ring == "reduce" ? reduce : files);
     EXPECT_EQ(convert, 52u);  // PNG, JPG, WebP, AVIF, HEIC, TIFF, BMP + Web + 15 video/audio formats + 5 PDF + 6 documents, 5 spreadsheets, 3 subtitles, 3 office bridge + 7 archive
-    EXPECT_EQ(tools, 38u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect + 6 PDF/OCR + 7 video and 5 audio tools + Crop, Redact, Share-safe + Edit, Annotate, Background, Collage
+    EXPECT_EQ(tools, 39u);    // 6 quick edits + 2 image and 4 media compress presets + Inspect + 7 PDF/OCR + 7 video and 5 audio tools + Crop, Redact, Share-safe + Edit, Annotate, Background, Collage
     EXPECT_EQ(reduce, 24u);   // 90% to 20% smaller, for pictures, video and audio, and PDFs
     EXPECT_EQ(files, 10u);    // Copy, Move to…, Copy path, Terminal, Duplicate, Float, Share, Remove metadata, Zip, Rename…
     EXPECT_TRUE(recipes.Get("move").IsFileAction());

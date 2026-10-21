@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-// The frame shared by the PDF editor windows (Merge, Organize): an ordinary resizable top-level
+// The frame shared by the PDF editor windows (Merge, the page view): an ordinary resizable top-level
 // window drawn with Direct2D in DIPs, following the Windows light/dark setting and accent colour,
 // with push buttons drawn and hit-tested here. Modeless: each window owns itself and deletes itself
 // when it is closed. UI thread only.
@@ -24,9 +24,9 @@ namespace sd::pdf
         EditorWindow();
         virtual ~EditorWindow();
 
-        // Creates and shows the window, sized in DIPs for the monitor under the cursor. On failure
-        // the caller still owns the object.
-        bool Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip);
+        // Creates the window (and shows it, unless `show` is false), sized in DIPs for the monitor
+        // under the cursor. On failure the caller still owns the object.
+        bool Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show = true);
         void Close();   // destroys the window, then the object
 
         struct Colors
@@ -43,6 +43,7 @@ namespace sd::pdf
             bool enabled = true;
             D2D1_RECT_F rect{};        // DIPs, set by the subclass's layout
             std::function<void()> action;
+            bool visible = true;       // hidden buttons are neither drawn nor clicked
         };
 
         // ---- For subclasses ----------------------------------------------------------------------
@@ -65,6 +66,7 @@ namespace sd::pdf
         IDWriteTextFormat* TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL,
                                       DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING);
         IDWriteTextFormat* IconFormat(float sizeDip);
+        IDWriteFactory* DWrite() const { return m_dwrite.Get(); }
         void DrawText(std::wstring_view text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color);
 
         std::vector<Button> m_buttons;

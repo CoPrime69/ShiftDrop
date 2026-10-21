@@ -113,6 +113,7 @@ add_library(shiftdrop_core STATIC
   src/sharesafe/ShareSafeEngine.cpp
   # PDF module: plain C++ and QPDF; the WinRT and UI parts are in the libraries below
   src/pdf/ImagePdf.cpp
+  src/pdf/PageEdits.cpp
   src/pdf/PageRenderer.cpp
   src/pdf/PagePlan.cpp
   src/pdf/PdfCompress.cpp

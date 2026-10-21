@@ -362,6 +362,16 @@ namespace sd::ask
         }
     }
 
+    int ChooseNow(const Question& question)
+    {
+        ChooseFn answer;
+        if (RouteNow(&answer, nullptr) == Route::Answers)
+            return answer(question);
+        Request r;   // on the UI thread: shown here and now
+        r.question = question;
+        return ShowChoice(r);
+    }
+
     int Choose(const Question& question, std::stop_token stop)
     {
         if (stop.stop_requested())

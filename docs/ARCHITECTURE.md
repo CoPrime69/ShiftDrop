@@ -61,7 +61,7 @@ A drop goes through these steps:
 - **`shiftdrop_winrt`**, an object library with the Windows Runtime parts (PDF rendering, OCR, the
   share sheet, face detection, toasts). Each file installs itself into a hook in the core when it is
   linked, so the core and its tests build and run without it.
-- **`shiftdrop_pdf_ui`**, the PDF Merge and Organize windows.
+- **`shiftdrop_pdf_ui`**, the PDF Merge window and the page view (Organize, Merge's More…, Edit).
 - **`ShiftDrop.exe`** and **`ShiftDropWorker.exe`**, plus **`shiftdrop_tests`**.
 
 In `src/`, the files at the top level are the core and the gesture UI. Each feature has its own
