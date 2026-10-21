@@ -1,4 +1,6 @@
 #pragma once
+#include "Settings.h"
+
 #include <windows.h>
 
 // Global low-level mouse hook (WH_MOUSE_LL).
@@ -17,8 +19,8 @@
 // No allocation, no locks, no I/O inside the callback.
 namespace sd::hook
 {
-    // keys: up to three trigger VKs (0 = unused). DragArm's wParam says which one was pressed.
-    bool Install(HWND notify, const UINT (&keys)[3]);
+    // keys: one trigger VK per wheel section (0 = unused). DragArm's wParam says which one was pressed.
+    bool Install(HWND notify, const UINT (&keys)[kRingCount]);
     void Uninstall();
     bool Reinstall();          // used by the watchdog when the hook appears to have been dropped
     bool IsInstalled();

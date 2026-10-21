@@ -1,4 +1,4 @@
-// ShiftDrop: drag a file, hold a wheel key (Shift, Ctrl or Alt by default), drop it on a wheel slice.
+// ShiftDrop: drag a file, press Shift, scroll to the section you want, drop it on a wheel slice.
 //
 // Threads:
 //   UI thread    hidden main window, tray icon, overlay, WH_MOUSE_LL hook, OLE drop target, history
@@ -34,6 +34,7 @@
 #include "keyboard/ShellVerb.h"
 #include "keyboard/WheelRequest.h"
 #include "preview/PreviewCard.h"
+#include "preview/Prediction.h"
 #include "shelf/ShelfWindow.h"
 
 #include <windows.h>
@@ -253,8 +254,8 @@ namespace sd
 
             std::vector<WheelRing> rings;
 #if !SHIFTDROP_M0
-            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), Folder.
-            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE8B7 };
+            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), BackToWindow (arrows in), Folder.
+            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE73F, 0xE8B7 };
             for (int i = 0; i < kRingCount; ++i)
                 rings.push_back(WheelRing{ RingTitle(static_cast<Ring>(i)), m_settings.keys[i] ? m_settings.keyNames[i] : L"",
                                            kRingIcons[i], static_cast<Ring>(i) == Ring::Convert });
@@ -264,7 +265,7 @@ namespace sd
             if (!m_island->Create())
                 return false;
             m_island->SetAppearance(m_appearance);
-            // The Float shelf: the Alt wheel's Float slice, and where finished results can be carried.
+            // The Float shelf: the File actions wheel's Float slice, and where finished results can be carried.
             m_shelf = std::make_unique<Shelf>(m_instance, log::AppDataFolder() + L"\\shelf.json");
             if (!m_shelf->Create())
                 log::Error(L"shelf: unavailable; the Float slice and carrying results are off");
@@ -311,7 +312,8 @@ namespace sd
             else if (!m_startWheel.empty())
                 m_keyboard->Queue(m_startWheel);
 
-            const UINT keys[kRingCount] = { m_settings.keys[0], m_settings.keys[1], m_settings.keys[2] };
+            UINT keys[kRingCount]{};
+            std::copy(m_settings.keys.begin(), m_settings.keys.end(), keys);
             if (!hook::Install(m_hwnd.get(), keys))
             {
                 log::Error(L"hook: SetWindowsHookExW(WH_MOUSE_LL) failed ({})", GetLastError());
@@ -342,7 +344,7 @@ namespace sd
             else if (!m_autostart && m_startWheel.empty())
             {
                 // Started at login: stay quiet in the tray. Started by hand: say it is ready.
-                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file and hold {}.", kBuild, KeyHelp()));
+                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file, press {}, and scroll for more sections.", kBuild, KeyHelp()));
             }
             log::Info(L"ready ({}, {})", kBuild, KeyHelp());
             return true;
@@ -364,13 +366,14 @@ namespace sd
     private:
         static std::wstring RecipesFolder() { return log::AppDataFolder() + L"\\recipes"; }
 
-        // "Shift (Convert), Ctrl (Tools) or Alt (File actions)", skipping wheels that are turned off.
+        // "Shift" by default; a wheel given its own key in settings.ini is named after it, as in
+        // "Shift or Ctrl (Tools)".
         std::wstring KeyHelp() const
         {
             std::vector<std::wstring> parts;
             for (int i = 0; i < kRingCount; ++i)
                 if (m_settings.keys[i])
-                    parts.push_back(std::format(L"{} ({})", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i))));
+                    parts.push_back(i == 0 ? m_settings.keyNames[i] : std::format(L"{} ({})", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i))));
             std::wstring text;
             for (size_t i = 0; i < parts.size(); ++i)
                 text += (i == 0 ? L"" : i + 1 == parts.size() ? L" or " : L", ") + parts[i];
@@ -380,9 +383,8 @@ namespace sd
         std::wstring IdleTip() const
         {
             std::wstring tip = SD_NAME;
-            for (int i = 0; i < kRingCount; ++i)
-                if (m_settings.keys[i])
-                    tip += std::format(L"\n{} = {}", m_settings.keyNames[i], RingTitle(static_cast<Ring>(i)));
+            tip += std::format(L"\nDrag a file, press {}", KeyHelp());
+            tip += L"\nScroll to switch sections";
             return tip;   // Tray truncates to 127 characters
         }
 
@@ -689,6 +691,20 @@ namespace sd
                 forAll.insert(forAll.end(), forAny.begin(), forAny.end());
             const auto& shown = forAll.empty() ? onRing : forAll;
 
+            // Reduce size: the centre shows how big the files are now.
+            uint64_t totalBytes = 0;
+            if (ring == Ring::Reduce)
+            {
+                for (const auto& f : files)
+                {
+                    WIN32_FILE_ATTRIBUTE_DATA data{};
+                    if (GetFileAttributesExW(f.c_str(), GetFileExInfoStandard, &data) && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                        totalBytes += (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                }
+                if (totalBytes > 0)
+                    content.centerText = preview::SizeText(totalBytes);
+            }
+
             std::wstring firstReason;
             bool anyEnabled = false;
             for (const Recipe* recipe : shown)
@@ -714,6 +730,16 @@ namespace sd
                 if (!all && !reason.empty())
                     log::Info(L"wheel: '{}' dimmed: {}", recipe->label, reason);
                 content.slices.push_back(WheelSlice{ recipe->label, Widen(recipe->id), all && anyToDo, look.icon, look.mirror, std::move(detail) });
+                if (ring == Ring::Reduce && totalBytes > 0)
+                {
+                    // Hovered, the centre shows the size it comes out at over the size it has now.
+                    const int percent = ReducePercent(*recipe);
+                    if (percent > 0)
+                    {
+                        content.slices.back().headline = L"\u2248 " + preview::SizeText(totalBytes * static_cast<uint64_t>(percent) / 100);
+                        content.slices.back().detail = L"was " + preview::SizeText(totalBytes);
+                    }
+                }
                 anyEnabled |= all && anyToDo;
             }
             if (!anyEnabled && !firstReason.empty())
@@ -725,6 +751,15 @@ namespace sd
             }
 #endif
             return content;
+        }
+
+        // A Reduce size recipe's target, as a percentage of the source's size (10 for "90% smaller").
+        static int ReducePercent(const Recipe& recipe)
+        {
+            for (const auto& step : recipe.steps)
+                if (const int percent = step.params.value("percent", 0); percent > 0)
+                    return percent;
+            return 0;
         }
 
         // The wheel's centre when none of its slices can take the dragged files.

@@ -126,9 +126,9 @@ namespace sd
         if (doc.contains("ring"))
         {
             const std::string ring = doc["ring"].is_string() ? doc["ring"].get<std::string>() : "";
-            if (ring != "convert" && ring != "tools" && ring != "files")
+            if (ring != "convert" && ring != "tools" && ring != "reduce" && ring != "files")
             {
-                error = "ring: must be \"convert\", \"tools\" or \"files\"";
+                error = "ring: must be \"convert\", \"tools\", \"reduce\" or \"files\"";
                 return false;
             }
             r.ring = ring;

@@ -21,7 +21,7 @@ namespace sd
         std::string id;
         std::wstring label;          // slice text
         std::wstring description;
-        std::string ring = "convert";   // which wheel shows it: "convert" (Shift), "tools" (Ctrl), "files" (Alt)
+        std::string ring = "convert";   // which section shows it: "convert", "tools", "reduce" or "files"
         std::wstring suffix = L"converted";   // output "name (suffix).ext"
         wchar_t icon = 0;            // optional Segoe Fluent Icons glyph for the slice ("icon": "E7AD")
         std::vector<RecipeStep> steps;
