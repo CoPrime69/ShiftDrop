@@ -114,6 +114,7 @@ namespace sd::photo
         std::wstring Title() const override { return L"Annotate Photos"; }
         std::wstring ApplyLabel() const override { return m_files.size() > 1 ? L"Save all" : L"Save"; }
         bool PerFile() const override { return true; }
+        void ImageReady(size_t index, int width, int height) override;
         canvas::SizeD Size() const override { return { double(m_width), double(m_height) }; }
         bool Render(ID2D1DeviceContext* dc, double scale, unsigned device) override;
 
@@ -195,6 +196,7 @@ namespace sd::photo
         void SetBackgroundImage(const std::wstring& path, Picture picture);
 
     protected:
+        void PictureReady(size_t) override;
         void DeviceChanged() override { m_cache = {}; }
 
     private:
