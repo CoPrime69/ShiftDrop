@@ -31,7 +31,8 @@ namespace sd
     enum class JobLane
     {
         Pool,    // the parallel MTA pool (CPU work: images, PDF pages)
-        Media,   // the single media worker (anything that runs ffmpeg)
+        Media,   // the single media worker (anything that runs ffmpeg on video: one run uses every core)
+        Audio,   // ffmpeg on sound only: one run uses one core, so several files run at once
         Shell,   // the STA shell thread (IFileOperation, shell COM objects)
     };
 

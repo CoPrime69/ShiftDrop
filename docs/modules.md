@@ -33,7 +33,7 @@ in one place, so features can be built side by side without touching each other.
   AppContainer, no capabilities, kill-on-close job) and let the app write the files, as
   `src/archive` does.
 - **ffmpeg:** through `EngineServices::ffmpeg` (`FfmpegEngine::Run`, `Probe`), always with
-  `FfmpegArgs` (local files only), on `JobLane::Media`.
+  `FfmpegArgs` (local files only), on `JobLane::Media` (video) or `JobLane::Audio` (sound only).
 - **Rules that hold everywhere:** offline (no network calls), no ML models, no API keys, no GPL or
   AGPL code linked in or bundled, never overwrite a file, never use the Win key.
 
@@ -44,3 +44,27 @@ Keep these edits to a few lines, so parallel work merges cleanly:
 `vcpkg.json` (new dependencies), `docs/PLAN.md` (decision rows, appended), `docs/TESTING.md` (a new
 section), `README.md` (one line in the wheel table). Changes to core files (`main.cpp`, `Overlay`,
 `Island`, `PipelineRunner`) are kept to what the module cannot do without, and described in the PR.
+
+## Speed
+
+Conversions should feel instant on any PC, with or without a graphics card. What keeps them quick:
+
+- **Lanes** (`Lane` in [src/Engine.h](../src/Engine.h)): `Pool` and `Audio` have one worker per
+  logical processor but one (at most 8, `JobQueue::PoolThreads`), so a batch of photos or songs
+  runs side by side. `Media` runs one video at a time, since one ffmpeg run already uses every
+  core. `Shell` is the single STA thread. Pick the lane by what the work keeps busy.
+- **Images:** a JPEG that is shrunk anyway is decoded at 1/2, 1/4 or 1/8 size in WIC (never below
+  the final size, so the result is the same size), an opaque picture goes to the encoder as 24-bit
+  BGR (no alpha to add or flatten), and libwebp gets a second thread.
+- **PDF pages and pictures:** `pdf::ForEachParallel` ([src/pdf/Parallel.h](../src/pdf/Parallel.h))
+  encodes pages (PDF to images) and pictures (Compress) on several threads; reading and writing the
+  PDF itself stays on one.
+- **ffmpeg:** copy streams whenever the target container takes them, read a file once where one
+  pass is enough (Normalize measures with `ebur128` and applies one plain gain when the peaks allow
+  it), and never pass `-hwaccel` without a GPU encoder.
+- **Archives:** a ZIP stores photos, video, music and other archives as they are (Deflate gains a
+  percent or two on them, at a second per 30 MB).
+- **Measure it:** `SHIFTDROP_BENCH=1 shiftdrop_tests --gtest_filter=Bench.*` times every main
+  conversion on generated files and prints a table ([tests/BenchTests.cpp](../tests/BenchTests.cpp)).
+  In CI, label a pull request `bench` (or "Run workflow") and the table lands on the run's summary
+  page. Run it before and after a change that could make something slower.

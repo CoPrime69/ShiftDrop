@@ -61,19 +61,28 @@ namespace sd
     {
         std::call_once(m_probeOnce, [this] {
             // A GPU encoder is listed whenever ffmpeg was built with it, but only works with that
-            // vendor's GPU and driver, so each one is tried on a few black frames.
-            for (const auto candidate : { H264Encoder::Nvenc, H264Encoder::Qsv, H264Encoder::Amf, H264Encoder::MediaFoundation })
+            // vendor's GPU and driver, so each one is tried on a few black frames. The tries run at
+            // the same time (on a PC without that GPU most fail at once) and the best that worked wins.
+            constexpr H264Encoder candidates[] = { H264Encoder::Nvenc, H264Encoder::Qsv, H264Encoder::Amf, H264Encoder::MediaFoundation };
+            std::atomic<bool> works[std::size(candidates)]{};
             {
-                const std::vector<std::wstring> args{ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"color=c=black:s=320x240:r=30:d=0.3",
-                                                      L"-c:v", EncoderName(candidate), L"-pix_fmt", candidate == H264Encoder::Nvenc ? L"yuv420p" : L"nv12",
-                                                      L"-f", L"null", L"-" };
-                std::stop_source never;
-                if (Run(args, nullptr, never.get_token()).ok)
+                std::vector<std::jthread> tries;
+                for (size_t i = 0; i < std::size(candidates); ++i)
+                    tries.emplace_back([&, i] {
+                        const auto candidate = candidates[i];
+                        const std::vector<std::wstring> args{ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"color=c=black:s=320x240:r=30:d=0.3",
+                                                              L"-c:v", EncoderName(candidate), L"-pix_fmt", candidate == H264Encoder::Nvenc ? L"yuv420p" : L"nv12",
+                                                              L"-f", L"null", L"-" };
+                        std::stop_source never;
+                        works[i] = Run(args, nullptr, never.get_token()).ok;
+                    });
+            }   // joins every try
+            for (size_t i = 0; i < std::size(candidates); ++i)
+                if (works[i])
                 {
-                    m_h264 = candidate;
+                    m_h264 = candidates[i];
                     break;
                 }
-            }
             log::Info(L"ffmpeg: H.264 encoder {}", EncoderName(m_h264));
         });
         return m_h264;
