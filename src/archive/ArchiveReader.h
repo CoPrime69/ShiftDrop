@@ -20,6 +20,10 @@ namespace sd::archive
     // This is the code that parses untrusted bytes, so it normally runs in the sandboxed worker
     // (ArchiveSource.h). `tick` gets the archive bytes consumed so far and returns false to stop.
     //
-    // Encrypted archives stop with Status::Password before any of their data is read.
-    Result ReadArchive(HANDLE input, const ReadOptions& options, IEntrySink& sink, const std::function<bool(uint64_t consumed)>& tick);
+    // An encrypted entry asks `password` (once per archive when every entry has the same one, again
+    // after a wrong one) and stops with Status::Password when it says no. Without `password`, or for
+    // an encryption libarchive can't undo here (7z, RAR, AES without a crypto library), encrypted
+    // archives stop with Status::Password before that entry's data is read.
+    Result ReadArchive(HANDLE input, const ReadOptions& options, IEntrySink& sink, const std::function<bool(uint64_t consumed)>& tick,
+                       const PasswordFn& password = {});
 }

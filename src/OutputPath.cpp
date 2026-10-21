@@ -48,6 +48,15 @@ namespace sd
 
     std::wstring OutputName(OutputNaming naming, std::wstring_view stem, std::wstring_view suffix, int n, std::wstring_view extension)
     {
+        if (suffix.empty())
+        {
+            // A name of its own ("Archive.zip"): numbered when taken, in the style's own way.
+            if (n <= 1)
+                return std::format(L"{}{}", stem, extension);
+            if (naming == OutputNaming::Dash || naming == OutputNaming::Underscore)
+                return std::format(L"{}{}{}{}", stem, naming == OutputNaming::Dash ? L'-' : L'_', n, extension);
+            return std::format(L"{} ({}){}", stem, n, extension);
+        }
         switch (naming)
         {
         case OutputNaming::Dash:

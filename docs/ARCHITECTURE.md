@@ -84,6 +84,7 @@ folder:
 | `JobQueue` | The worker threads |
 | `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to… |
 | `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
+| `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
 | `keyboard/` | Arrow keys and Enter on the wheel, the Explorer-selection hotkey, the right-click entry, wheel layout |
 | `preview/` | The predicted-output card |
@@ -269,6 +270,14 @@ Some tools need the user first: a trim range, a crop box, a page order. Their en
 from `NeedsEditor` and opens its own window on the UI thread. When the user confirms, the recipe
 goes back into the queue with their choices in its parameters.
 
+Other questions only come up once a job is running: an archive turns out to be encrypted, a
+spreadsheet bound for PDF has more than 20,000 rows, a GIF bound for a folder of pictures has more
+than 100 frames. The worker asks through [Ask.h](../src/Ask.h): the question is posted to the UI
+thread and shown there (a TaskDialog with command links, or a small password box) while the worker
+waits. The UI thread never waits for a worker, questions are shown one at a time, and the job's stop
+token closes an open question as Cancel, so nothing can deadlock. With no one to ask (the tests), a
+job does what it did before the question existed.
+
 ## Writing outputs
 
 Two rules: never overwrite anything, and never leave a half-written file under a real name, even if
@@ -373,6 +382,13 @@ its own process ([sandbox/Sandbox.h](../src/sandbox/Sandbox.h)).
 - **It gets handles, not paths.** ShiftDrop opens the archive read-only and passes that handle and a
   pipe. The worker streams entries back over the pipe; ShiftDrop checks every frame (sizes, names,
   counts), checks every entry name again, and creates every file itself through `StagedOutput`.
+- **Passwords.** When an entry is encrypted, the worker asks over the same pipe (it goes both ways: a
+  named pipe with a random name, connected before the worker starts). ShiftDrop shows the password
+  box, and the answer goes back in one frame, held in a buffer that is wiped as soon as it is sent
+  (`Secret`). It is never logged or written anywhere. A wrong password asks again; Cancel stops the
+  job. libarchive decrypts ZIP's own ZipCrypto (and WinZip AES when it is built with a crypto
+  library, which vcpkg's default here is not); encrypted 7z and RAR say they can't be opened without
+  asking.
 - **Entry checks** ([archive/Entries.h](../src/archive/Entries.h)): names with `..`, absolute paths,
   device names (`CON`, `NUL`…) or invalid characters are refused; links are skipped.
 - **Bomb limits**: 64 GiB uncompressed in total, 1,000,000 entries, and after the first 1 GiB no more

@@ -53,6 +53,7 @@ add_link_options($<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 # actions. The app and the tests both link it.
 add_library(shiftdrop_core STATIC
   src/Action.cpp
+  src/Ask.cpp       # questions a running job asks (a password, print every row?) on the UI thread
   src/Ffmpeg.cpp
   src/FileActions.cpp
   src/FileMove.cpp
@@ -309,6 +310,7 @@ if(SHIFTDROP_TESTS)
   add_executable(shiftdrop_tests
     tests/TestMain.cpp
     tests/OutputPathTests.cpp
+    tests/AskTests.cpp
     tests/RecipeTests.cpp
     tests/HistoryTests.cpp
     tests/PipelineTests.cpp

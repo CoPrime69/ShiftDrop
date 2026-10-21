@@ -1,4 +1,5 @@
 #include "sheets/SheetsModule.h"
+#include "Ask.h"
 #include "docs/Bytes.h"
 #include "docs/PdfPrint.h"
 #include "OutputPath.h"
@@ -46,6 +47,33 @@ namespace sd::sheets
                 }
             }
             return docs::WriteFileBytes(path, bytes, &error);
+        }
+
+        enum RowsAnswer
+        {
+            kAllRows = 1,
+            kFirstRows = 2,
+        };
+
+        // A PDF of a very long sheet takes a while and runs to thousands of pages: ask first.
+        int AskRows(const std::wstring& source, const Workbook& book, std::stop_token stop)
+        {
+            size_t total = 0, cut = 0;
+            for (const auto& s : book.sheets)
+            {
+                total += s.rows.size();
+                cut += s.rows.size() > kPdfRowLimit;
+            }
+            const auto left = RowsLeftOut(book);
+            ask::Question q;
+            q.title = L"Spreadsheet to PDF";
+            q.heading = std::format(L"{} has {} rows", std::filesystem::path(source).filename().wstring(), ask::Thousands(total));
+            q.text = L"Printing every row can take a while and makes a long PDF.";
+            q.choices = { { kAllRows, L"Print all rows", std::format(L"All {} rows", ask::Thousands(total)) },
+                          { kFirstRows, std::format(L"Print the first {} rows{}", ask::Thousands(kPdfRowLimit), cut > 1 ? L" of each sheet" : L""),
+                            std::format(L"A note on the last page says {} {} left out", ask::Thousands(left), left == 1 ? L"row was" : L"rows were") } };
+            q.unattended = kFirstRows;   // what it did before it asked
+            return ask::Choose(q, stop);
         }
 
         class SheetsEngine final : public IEngine
@@ -104,6 +132,19 @@ namespace sd::sheets
                 if (progress)
                     progress(0.3);
 
+                size_t maxRows = kPdfRowLimit;
+                if (target == "pdf" && RowsLeftOut(book) > 0)
+                {
+                    const int answer = AskRows(source, book, stop);
+                    if (answer != kAllRows && answer != kFirstRows)
+                    {
+                        StagedOutput out(m_history, runId, source);
+                        return out.Fail(L"cancelled, nothing was printed", true);
+                    }
+                    if (answer == kAllRows)
+                        maxRows = SIZE_MAX;
+                }
+
                 // Several sheets to CSV/TSV: one file per sheet in a folder.
                 const bool text = target == "csv" || target == "tsv";
                 std::vector<const Sheet*> sheets;
@@ -150,7 +191,7 @@ namespace sd::sheets
                 }
                 else if (target == "pdf")
                 {
-                    const auto doc = WorkbookToDocument(book);
+                    const auto doc = WorkbookToDocument(book, maxRows);
                     size_t cols = 0;
                     for (const auto* s : sheets)
                         cols = std::max(cols, s->Columns());
@@ -264,6 +305,14 @@ namespace sd::sheets
         return ok;
     }
 
+    size_t RowsLeftOut(const Workbook& book, size_t maxRows)
+    {
+        size_t left = 0;
+        for (const auto& s : book.sheets)
+            left += s.rows.size() > maxRows ? s.rows.size() - maxRows : 0;
+        return left;
+    }
+
     docs::Document WorkbookToDocument(const Workbook& book, size_t maxRows)
     {
         docs::Document doc;
@@ -295,13 +344,21 @@ namespace sd::sheets
                 t.rows.push_back(std::move(row));
             }
             doc.blocks.push_back(std::move(t));
-            if (s.rows.size() > maxRows)
-            {
-                docs::Block note;
-                note.spans.push_back(docs::Span{ std::format("First {} of {} rows.", maxRows, s.rows.size()) });
-                note.spans.back().italic = true;
-                doc.blocks.push_back(std::move(note));
-            }
+        }
+        // One note after everything, so it is on the last page.
+        if (const size_t left = RowsLeftOut(book, maxRows); left > 0)
+        {
+            std::vector<const Sheet*> cut;
+            for (const auto& s : book.sheets)
+                if (s.rows.size() > maxRows)
+                    cut.push_back(&s);
+            const std::wstring which = cut.size() > 1 ? std::wstring(L"each sheet") : withData > 1 ? std::format(L"\u201c{}\u201d", Widen(cut.front()->name))
+                                                                                                : std::wstring(L"the sheet");
+            docs::Block note;
+            note.spans.push_back(docs::Span{ Narrow(std::format(L"{} {} left out: only the first {} rows of {} are printed.", ask::Thousands(left),
+                                                                left == 1 ? L"row was" : L"rows were", ask::Thousands(maxRows), which)) });
+            note.spans.back().italic = true;
+            doc.blocks.push_back(std::move(note));
         }
         return doc;
     }

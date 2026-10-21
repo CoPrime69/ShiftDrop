@@ -1,6 +1,9 @@
 #pragma once
+#include "Secret.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,6 +51,11 @@ namespace sd::archive
         bool ok() const { return status == Status::Ok; }
     };
     inline Result Fail(Status status, std::wstring message) { return Result{ status, std::move(message) }; }
+
+    // Asked for the password when an archive turns out to be encrypted (and again, with `wrong`,
+    // when the last one didn't work). True with the password in `password`; false: there is none
+    // (the user cancelled), and the read stops with Status::Password.
+    using PasswordFn = std::function<bool(bool wrong, Secret& password)>;
 
     class IEntrySink
     {
