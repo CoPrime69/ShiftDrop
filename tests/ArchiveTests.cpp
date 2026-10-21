@@ -1,3 +1,4 @@
+#include "Ask.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -41,8 +42,10 @@ namespace
     };
 
     // Writes an archive with exactly the names given, the way a malicious tool would: libarchive's
-    // writer does not clean names, only extraction should.
-    void WriteCrafted(const std::wstring& path, const char* format, const std::vector<Crafted>& entries, bool store = false)
+    // writer does not clean names, only extraction should. A ZIP with a `password` is encrypted with
+    // ZipCrypto (the password's UTF-8 bytes, as 7-Zip writes them).
+    void WriteCrafted(const std::wstring& path, const char* format, const std::vector<Crafted>& entries, bool store = false,
+                      const char* password = nullptr)
     {
         struct archive* a = archive_write_new();
         if (std::string_view(format) == "zip")
@@ -50,6 +53,11 @@ namespace
             archive_write_set_format_zip(a);
             if (store)
                 archive_write_set_format_option(a, "zip", "compression", "store");
+            if (password)
+            {
+                ASSERT_EQ(archive_write_set_format_option(a, "zip", "encryption", "traditional"), ARCHIVE_OK) << archive_error_string(a);
+                ASSERT_EQ(archive_write_set_passphrase(a, password), ARCHIVE_OK) << archive_error_string(a);
+            }
         }
         else
             archive_write_set_format_pax_restricted(a);
@@ -103,6 +111,40 @@ namespace
         put16(out, static_cast<uint16_t>(entries.size())); put32(out, static_cast<uint32_t>(central.size())); put32(out, at); put16(out, 0);
         return out;
     }
+
+    // Does ZipCrypto's one-byte check let `password` through for the first entry of `zip`? A wrong
+    // password passes it once in 256 (the data then fails to decrypt), so the tests pick one that
+    // the check rejects. The cipher is the one in the PKWARE APPNOTE (section 6.1).
+    bool PassesZipCryptoCheck(const std::string& zip, std::string_view password)
+    {
+        const auto u16 = [&](size_t at) { return static_cast<uint16_t>(static_cast<uint8_t>(zip[at]) | static_cast<uint8_t>(zip[at + 1]) << 8); };
+        const uint8_t check = static_cast<uint8_t>(zip[(u16(6) & 8) ? 11 : 17]);   // time or CRC, high byte
+        const size_t header = 30 + size_t{ u16(26) } + u16(28);
+        uint32_t keys[3] = { 305419896u, 591751049u, 878082192u };
+        const auto crc = [](uint32_t c, uint8_t b) { return static_cast<uint32_t>(crc32(c ^ 0xffffffffu, &b, 1) ^ 0xffffffffu); };
+        const auto update = [&](uint8_t c) {
+            keys[0] = crc(keys[0], c);
+            keys[1] = (keys[1] + (keys[0] & 0xff)) * 134775813u + 1;
+            keys[2] = crc(keys[2], static_cast<uint8_t>(keys[1] >> 24));
+        };
+        for (const char c : password)
+            update(static_cast<uint8_t>(c));
+        uint8_t last = 0;
+        for (size_t i = 0; i < 12; ++i)
+        {
+            const uint32_t t = keys[2] | 2;
+            last = static_cast<uint8_t>(zip[header + i]) ^ static_cast<uint8_t>((t * (t ^ 1)) >> 8);
+            update(last);
+        }
+        return last == check;
+    }
+
+    // Answers the questions of src/Ask.h for one test.
+    struct Answers
+    {
+        Answers(ask::ChooseFn choose, ask::PasswordFn password) { ask::SetAnswers(std::move(choose), std::move(password)); }
+        ~Answers() { ask::SetAnswers({}, {}); }
+    };
 
     // CreateFileW rather than std::ofstream, which some C++ libraries open with a narrow name.
     void WriteBytes(const std::wstring& path, const void* data, size_t size)
@@ -373,7 +415,7 @@ TEST_F(ArchiveTest, ZipNamesAreUtf8WithTheFlagSet)
     EXPECT_NE(bytes.find(Narrow(kUnicode)), std::string::npos) << "the name is stored as UTF-8";
 }
 
-TEST_F(ArchiveTest, SeveralItemsAreNamedAfterTheirFolder)
+TEST_F(ArchiveTest, SeveralItemsMakeArchiveZip)
 {
     const auto folder = dir / L"Holiday";
     std::filesystem::create_directories(folder + L"\\inner");
@@ -382,14 +424,30 @@ TEST_F(ArchiveTest, SeveralItemsAreNamedAfterTheirFolder)
     WriteText(folder + L"\\inner\\c.txt", "c");
     const auto packed = Batch("archive-zip", { folder + L"\\a.txt", folder + L"\\b.txt", folder + L"\\inner" });
     ASSERT_TRUE(packed.ok) << Narrow(packed.error);
-    EXPECT_EQ(packed.output, folder + L"\\Holiday (zipped).zip");
+    EXPECT_EQ(packed.output, folder + L"\\Archive.zip");
     const auto again = Batch("archive-zip", { folder + L"\\a.txt", folder + L"\\b.txt" });
-    EXPECT_EQ(again.output, folder + L"\\Holiday (zipped 2).zip") << "never overwrites";
+    EXPECT_EQ(again.output, folder + L"\\Archive (2).zip") << "never overwrites";
 
     const auto unpacked = Run("archive-extract", packed.output);
     ASSERT_TRUE(unpacked.ok) << Narrow(unpacked.error);
     const std::map<std::wstring, std::string> expected{ { L"a.txt", "a" }, { L"b.txt", "b" }, { L"inner/", "" }, { L"inner/c.txt", "c" } };
     EXPECT_EQ(Tree(unpacked.output), expected);
+
+    // Items from two folders: "Archive" too, next to the first; the other formats as well.
+    const auto other = dir / L"Work";
+    std::filesystem::create_directories(other);
+    WriteText(other + L"\\d.txt", "d");
+    const auto mixed = Batch("archive-folder-7z", { folder + L"\\inner", other });
+    ASSERT_TRUE(mixed.ok) << Narrow(mixed.error);
+    EXPECT_EQ(mixed.output, folder + L"\\Archive.7z");
+
+    // One folder keeps its name, one file its own.
+    const auto one = Batch("archive-zip", { other });
+    ASSERT_TRUE(one.ok) << Narrow(one.error);
+    EXPECT_EQ(one.output, dir / L"Work (zipped).zip");
+    const auto file = Batch("archive-zip", { folder + L"\\a.txt" });
+    ASSERT_TRUE(file.ok) << Narrow(file.error);
+    EXPECT_EQ(file.output, folder + L"\\a (zipped).zip");
 }
 
 TEST_F(ArchiveTest, ConvertsBetweenFormats)
@@ -520,14 +578,147 @@ TEST_F(ArchiveTest, OemNamesWithoutTheUtf8Flag)
     EXPECT_EQ(Tree(r.output), expected);
 }
 
-TEST_F(ArchiveTest, PasswordProtectedZipIsRefused)
+TEST_F(ArchiveTest, PasswordProtectedZipAsksForThePassword)
 {
     const auto zip = dir / L"secret.zip";
-    WriteText(zip, HandMadeZip({ { "secret.txt", std::string(40, '\x5a'), 0x0001 } }));
+    const std::string big(300000, 'b');
+    WriteCrafted(zip, "zip", { { "docs/a.txt", "alpha" }, { "b.txt", big } }, false, "s3cret");
+    std::wstring wrong;
+    for (const auto* candidate : { L"wrong", L"wrong 2", L"wrong 3" })
+        if (!PassesZipCryptoCheck(ReadAll(zip), Narrow(candidate)))
+        {
+            wrong = candidate;
+            break;
+        }
+    ASSERT_FALSE(wrong.empty());
+
+    // A wrong password, then the right one: asked twice (the second time told it was wrong), and not
+    // again for the second entry.
+    std::vector<ask::PasswordRequest> asked;
+    std::vector<std::wstring> typed{ wrong, L"s3cret" };
+    Answers answers(nullptr, [&](const ask::PasswordRequest& r, Secret& password) {
+        asked.push_back(r);
+        return password.Assign(typed.at(std::min(asked.size(), typed.size()) - 1));
+    });
     const auto r = Run("archive-extract", zip);
+    ASSERT_TRUE(r.ok) << Narrow(r.error);
+    const std::map<std::wstring, std::string> expected{ { L"b.txt", big }, { L"docs/", "" }, { L"docs/a.txt", "alpha" } };
+    EXPECT_EQ(Tree(r.output), expected);
+    ASSERT_EQ(asked.size(), 2u);
+    EXPECT_FALSE(asked[0].wrong);
+    EXPECT_TRUE(asked[1].wrong);
+    EXPECT_EQ(asked[0].file, L"secret.zip");
+    EXPECT_EQ(asked[0].title, L"Extract");
+
+    // Convert asks the same way, and the result opens without a password.
+    asked.clear();
+    typed = { L"s3cret" };
+    const auto converted = Run("archive-to-7z", zip);
+    ASSERT_TRUE(converted.ok) << Narrow(converted.error);
+    EXPECT_EQ(asked.size(), 1u);
+    asked.clear();
+    const auto back = Run("archive-extract", converted.output);
+    ASSERT_TRUE(back.ok) << Narrow(back.error);
+    EXPECT_EQ(Tree(back.output), expected);
+    EXPECT_TRUE(asked.empty());
+}
+
+TEST_F(ArchiveTest, NonAsciiPasswordsWork)
+{
+    // Accents: the archive holds the UTF-8 bytes, the box gives UTF-16; each common encoding is tried.
+    const auto zip = dir / L"umlaut.zip";
+    WriteCrafted(zip, "zip", { { "x.txt", "x" } }, false, "p\xc3\xa4ssw\xc3\xb6rd");
+    Answers answers(nullptr, [](const ask::PasswordRequest&, Secret& password) { return password.Assign(L"p\u00e4ssw\u00f6rd"); });
+    const auto r = Run("archive-extract", zip);
+    ASSERT_TRUE(r.ok) << Narrow(r.error);
+    EXPECT_EQ(ReadAll(r.output + L"\\x.txt"), "x");
+}
+
+TEST_F(ArchiveTest, CancellingThePasswordBoxStopsCleanly)
+{
+    const auto zip = dir / L"secret.zip";
+    WriteCrafted(zip, "zip", { { "a.txt", "alpha" }, { "b.txt", "beta" } }, false, "s3cret");
+    int asked = 0;
+    Answers answers(nullptr, [&](const ask::PasswordRequest&, Secret&) {
+        ++asked;
+        return false;
+    });
+    for (const char* id : { "archive-extract", "archive-to-7z" })
+    {
+        const auto r = Run(id, zip);
+        EXPECT_FALSE(r.ok) << id;
+        EXPECT_TRUE(r.skipped) << id << ": cancelled by the user, not a failure";
+        EXPECT_NE(r.error.find(L"no password given"), std::wstring::npos) << id << ": " << Narrow(r.error);
+        EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u) << id;
+    }
+    EXPECT_EQ(asked, 2);
+    EXPECT_FALSE(std::filesystem::exists(dir / L"secret (extracted)"));
+    EXPECT_FALSE(std::filesystem::exists(dir / L"secret (converted).7z"));
+
+    // With no one to ask (no UI, no answers), the same.
+    ask::SetAnswers({}, {});
+    const auto r = Run("archive-extract", zip);
+    EXPECT_TRUE(r.skipped);
+    EXPECT_NE(r.error.find(L"no password given"), std::wstring::npos) << Narrow(r.error);
+}
+
+TEST_F(ArchiveTest, PasswordsThatCantHelpAreNotAskedFor)
+{
+    int asked = 0;
+    Answers answers(nullptr, [&](const ask::PasswordRequest&, Secret& password) {
+        ++asked;
+        return password.Assign(L"anything");
+    });
+
+    // An encrypted RAR: libarchive can't decrypt RAR, so no question, just the reason.
+    const auto rar = dir / L"locked.rar";
+    WriteBytes(rar, kRarEncrypted, sizeof(kRarEncrypted));
+    const auto r = Run("archive-extract", rar);
     EXPECT_FALSE(r.ok);
-    EXPECT_NE(r.error.find(L"password-protected"), std::wstring::npos) << Narrow(r.error);
+    EXPECT_NE(r.error.find(L"password-protected RAR"), std::wstring::npos) << Narrow(r.error);
+
+    // A WinZip AES entry (method 99 with its 0x9901 extra field): asked for only where libarchive
+    // has a crypto library to decrypt it.
+    std::string aes;
+    const auto put16 = [](std::string& s, uint16_t v) { s += static_cast<char>(v & 0xFF); s += static_cast<char>(v >> 8); };
+    const auto put32 = [&](std::string& s, uint32_t v) { put16(s, static_cast<uint16_t>(v & 0xFFFF)); put16(s, static_cast<uint16_t>(v >> 16)); };
+    const std::string name = "a.txt", extra = std::string("\x01\x99\x07\x00\x02\x00" "AE\x03\x00\x00", 11);
+    const std::string data(16 + 2 + 5 + 10, '\x5a');   // salt, check, 5 bytes, authentication code
+    std::string central;
+    put32(aes, 0x04034b50); put16(aes, 51); put16(aes, 1); put16(aes, 99); put16(aes, 0); put16(aes, 0x21);
+    put32(aes, 0); put32(aes, static_cast<uint32_t>(data.size())); put32(aes, 5); put16(aes, static_cast<uint16_t>(name.size()));
+    put16(aes, static_cast<uint16_t>(extra.size()));
+    aes += name + extra + data;
+    put32(central, 0x02014b50); put16(central, 51); put16(central, 51); put16(central, 1); put16(central, 99); put16(central, 0);
+    put16(central, 0x21); put32(central, 0); put32(central, static_cast<uint32_t>(data.size())); put32(central, 5);
+    put16(central, static_cast<uint16_t>(name.size())); put16(central, static_cast<uint16_t>(extra.size())); put16(central, 0);
+    put16(central, 0); put16(central, 0); put32(central, 0); put32(central, 0);
+    central += name + extra;
+    const auto at = static_cast<uint32_t>(aes.size());
+    aes += central;
+    put32(aes, 0x06054b50); put16(aes, 0); put16(aes, 0); put16(aes, 1); put16(aes, 1); put32(aes, static_cast<uint32_t>(central.size()));
+    put32(aes, at); put16(aes, 0);
+    const auto zip = dir / L"aes.zip";
+    WriteText(zip, aes);
+
+    const bool canDecrypt = [] {
+        struct archive* w = archive_write_new();
+        archive_write_set_format_zip(w);
+        const bool ok = archive_write_set_format_option(w, "zip", "encryption", "aes256") == ARCHIVE_OK;
+        archive_write_free(w);
+        return ok;
+    }();
+    asked = 0;
+    const auto z = Run("archive-extract", zip);
+    EXPECT_FALSE(z.ok) << "the data is not really encrypted";
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
+    if (canDecrypt)
+        EXPECT_EQ(asked, 1);
+    else
+    {
+        EXPECT_EQ(asked, 0);
+        EXPECT_NE(z.error.find(L"AES"), std::wstring::npos) << Narrow(z.error);
+    }
 }
 
 TEST_F(ArchiveTest, DamagedArchiveFailsCleanly)
@@ -640,5 +831,14 @@ TEST_F(ArchiveTest, SlicesApplyToTheRightFiles)
     EXPECT_FALSE(runner.EngineFor(recipes.Get("archive-extract"))->IsBatch(recipes.Get("archive-extract")));
     EXPECT_TRUE(runner.IsNoOp(recipes.Get("archive-to-zip"), zip));
     EXPECT_FALSE(runner.IsNoOp(recipes.Get("archive-to-7z"), zip));
+}
+
+TEST_F(ArchiveTest, RepackingAZipAsZipIsSkipped)
+{
+    const auto zip = dir / L"a.zip";
+    WriteCrafted(zip, "zip", { { "x.txt", "x" } });
+    const auto result = Run("archive-to-zip", zip);
+    EXPECT_TRUE(result.skipped);
+    EXPECT_EQ(result.error, L"already ZIP");
 }
 

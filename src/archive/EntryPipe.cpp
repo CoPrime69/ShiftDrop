@@ -89,6 +89,21 @@ namespace sd::archive
         {
             return Fail(Status::Worker, L"the archive worker sent malformed data");
         }
+
+        // The answer to a 'K' frame, built in one buffer that is wiped as soon as it is written.
+        bool SendPassword(HANDLE pipe, const Secret& password)
+        {
+            const auto count = static_cast<uint32_t>(password.size());
+            const auto length = static_cast<uint32_t>(sizeof(count) + count * sizeof(wchar_t));
+            BasicSecret<char, 5 + sizeof(uint32_t) + kMaxPasswordChars * sizeof(wchar_t)> frame;
+            char* p = frame.Buffer();
+            p[0] = 'K';
+            std::memcpy(p + 1, &length, sizeof(length));
+            std::memcpy(p + 5, &count, sizeof(count));
+            std::memcpy(p + 9, password.c_str(), count * sizeof(wchar_t));
+            frame.SetSize(5 + length);
+            return WriteAll(pipe, frame.c_str(), frame.size());
+        }
     }
 
     bool PipeWriter::Frame(char type, const void* payload, size_t size)
@@ -144,7 +159,31 @@ namespace sd::archive
         return Frame('X', p.data(), p.size());
     }
 
-    Result PumpPipe(HANDLE pipe, IEntrySink& sink, const std::function<void(uint64_t)>& progress)
+    bool PipeWriter::AskPassword(bool wrong, Secret& password)
+    {
+        password.Clear();
+        const uint8_t flag = wrong ? 1 : 0;
+        if (!Frame('K', &flag, sizeof(flag)))
+            return false;
+        char header[5];
+        uint32_t length = 0, count = 0;
+        if (!ReadAll(m_pipe, header, sizeof(header)) || header[0] != 'K')
+            return false;
+        std::memcpy(&length, header + 1, sizeof(length));
+        if (length < sizeof(count) || !ReadAll(m_pipe, &count, sizeof(count)) || count > kMaxPasswordChars ||
+            length != sizeof(count) + count * sizeof(wchar_t))
+            return false;
+        // Read straight into the secret's own buffer.
+        if (count > 0 && !ReadAll(m_pipe, password.Buffer(), count * sizeof(wchar_t)))
+        {
+            password.Clear();
+            return false;
+        }
+        password.SetSize(count);
+        return count > 0;
+    }
+
+    Result PumpPipe(HANDLE pipe, IEntrySink& sink, const std::function<void(uint64_t)>& progress, const PasswordFn& password)
     {
         std::vector<char> payload;
         bool inEntry = false, fileEntry = false;
@@ -199,6 +238,18 @@ namespace sd::archive
                     return Malformed();
                 if (progress)
                     progress(consumed);
+                break;
+            }
+            case 'K':
+            {
+                uint8_t wrong = 0;
+                if (!in.Get(wrong) || wrong > 1 || !in.AtEnd())
+                    return Malformed();
+                Secret typed;
+                if (!password || !password(wrong != 0, typed))
+                    typed.Clear();
+                if (!SendPassword(pipe, typed))
+                    return Fail(Status::Worker, L"the archive worker stopped while it waited for the password");
                 break;
             }
             case 'X':

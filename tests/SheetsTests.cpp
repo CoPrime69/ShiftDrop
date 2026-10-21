@@ -1,3 +1,4 @@
+#include "Ask.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -17,6 +18,13 @@ using namespace sd::test;
 
 namespace
 {
+    // Answers the questions of src/Ask.h for one test.
+    struct ScopedAnswers
+    {
+        explicit ScopedAnswers(ask::ChooseFn choose) { ask::SetAnswers(std::move(choose), {}); }
+        ~ScopedAnswers() { ask::SetAnswers({}, {}); }
+    };
+
     Cell DateCell(double serial) { return Cell{ CellType::Date, serial, {} }; }
 
     // The workbook every round trip uses: text that needs escaping, numbers, a date, a date-time,
@@ -385,7 +393,8 @@ TEST(Sheets, SafeNames)
 TEST(Sheets, WorkbookAsDocumentForPdf)
 {
     const auto doc = WorkbookToDocument(SampleBook(), 3);
-    // Two sheets: a heading and a table each, plus a note for the cut-off first sheet.
+    // Two sheets: a heading and a table each, then one note at the very end (the last page) for the
+    // cut-off first sheet.
     ASSERT_EQ(doc.blocks.size(), 5u);
     EXPECT_EQ(doc.blocks[0].kind, docs::BlockKind::Heading);
     EXPECT_EQ(doc.blocks[1].kind, docs::BlockKind::Table);
@@ -393,7 +402,72 @@ TEST(Sheets, WorkbookAsDocumentForPdf)
     EXPECT_EQ(doc.blocks[1].rows.size(), 3u);
     EXPECT_EQ(doc.blocks[1].rows[0].size(), 4u);   // padded to the widest row
     EXPECT_EQ(docs::PlainText(doc.blocks[1].rows[1][2].spans), "2023-03-15");
-    EXPECT_EQ(doc.blocks[2].kind, docs::BlockKind::Paragraph);
+    EXPECT_EQ(doc.blocks[2].kind, docs::BlockKind::Heading);
+    EXPECT_EQ(doc.blocks[4].kind, docs::BlockKind::Paragraph);
+    EXPECT_EQ(docs::PlainText(doc.blocks[4].spans), "2 rows were left out: only the first 3 rows of \xE2\x80\x9C" "Data & more\xE2\x80\x9D are printed.");
+
+    // Every row: no note.
+    const auto all = WorkbookToDocument(SampleBook(), SIZE_MAX);
+    ASSERT_EQ(all.blocks.size(), 4u);
+    EXPECT_EQ(all.blocks[1].rows.size(), 5u);
+}
+
+TEST(Sheets, RowsLeftOutOfAPdf)
+{
+    Workbook book;
+    Sheet& a = book.sheets.emplace_back();
+    a.name = "A";
+    a.Set(kPdfRowLimit + 9, 0, Cell::Num(1));   // 20,010 rows
+    Sheet& b = book.sheets.emplace_back();
+    b.name = "B";
+    b.Set(kPdfRowLimit - 1, 0, Cell::Num(1));   // exactly 20,000: all printed
+    EXPECT_EQ(RowsLeftOut(book), 10u);
+    b.Set(kPdfRowLimit + 4, 0, Cell::Num(1));
+    EXPECT_EQ(RowsLeftOut(book), 15u);
+    const auto doc = WorkbookToDocument(book);
+    EXPECT_EQ(docs::PlainText(doc.blocks.back().spans), "15 rows were left out: only the first 20,000 rows of each sheet are printed.");
+    EXPECT_EQ(RowsLeftOut(SampleBook()), 0u);
+}
+
+TEST(Sheets, ALongSheetAsksBeforeItIsPrinted)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    std::string csv = "n\n";
+    for (int i = 0; i < 20000; ++i)
+        csv += std::to_string(i) + "\n";
+    const auto source = dir / L"long.csv";   // 20,001 rows with the header
+    WriteText(source, csv);
+
+    std::vector<ask::Question> asked;
+    ScopedAnswers answers([&](const ask::Question& q) {
+        asked.push_back(q);
+        return ask::kCancel;
+    });
+    // Straight to the engine: the question comes before any printing, so no PDF printer is needed
+    // (PipelineRunner::Run would first check that there is one).
+    const auto& recipe = recipes.Get("sheets-to-pdf");
+    const auto r = runner.EngineFor(recipe)->Run(recipe, 0, source, {}, {});
+    EXPECT_FALSE(r.ok);
+    EXPECT_TRUE(r.skipped) << "Cancel stops it, and it is not a failure";
+    EXPECT_NE(r.error.find(L"nothing was printed"), std::wstring::npos) << Narrow(r.error);
+    EXPECT_EQ(CountFiles(dir, L".pdf"), 0u);
+    EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
+    ASSERT_EQ(asked.size(), 1u);
+    EXPECT_EQ(asked[0].title, L"Spreadsheet to PDF");
+    EXPECT_EQ(asked[0].heading, L"long.csv has 20,001 rows");
+    ASSERT_EQ(asked[0].choices.size(), 2u);
+    EXPECT_EQ(asked[0].choices[0].label, L"Print all rows");
+    EXPECT_EQ(asked[0].choices[1].label, L"Print the first 20,000 rows");
+    EXPECT_EQ(asked[0].choices[1].note, L"A note on the last page says 1 row was left out");
+    EXPECT_EQ(asked[0].unattended, asked[0].choices[1].id) << "with no one to ask, the first 20,000 as before";
+
+    // Other formats never ask: a CSV to XLSX keeps every row.
+    asked.clear();
+    const auto xlsx = runner.Run(recipes.Get("sheets-to-xlsx"), 0, source, {});
+    ASSERT_TRUE(xlsx.ok) << Narrow(xlsx.error);
+    EXPECT_TRUE(asked.empty());
 }
 
 TEST(Sheets, EngineConversions)

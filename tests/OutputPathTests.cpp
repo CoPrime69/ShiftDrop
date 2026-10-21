@@ -81,6 +81,12 @@ TEST(OutputPath, EveryNamingStyle)
     // A suffix with a space takes the style's separator; a folder output has no extension.
     EXPECT_EQ(OutputName(OutputNaming::Dash, L"song", L"no metadata", 1, L".mp3"), L"song-no-metadata.mp3");
     EXPECT_EQ(OutputName(OutputNaming::Underscore, L"clip", L"frames", 1, L""), L"clip_frames");
+    // No suffix (a zip of several items): the name alone, then numbered in the style's way.
+    EXPECT_EQ(OutputName(OutputNaming::Parentheses, L"Archive", L"", 1, L".zip"), L"Archive.zip");
+    EXPECT_EQ(OutputName(OutputNaming::Parentheses, L"Archive", L"", 2, L".zip"), L"Archive (2).zip");
+    EXPECT_EQ(OutputName(OutputNaming::Dash, L"Archive", L"", 3, L".zip"), L"Archive-3.zip");
+    EXPECT_EQ(OutputName(OutputNaming::Underscore, L"Archive", L"", 2, L".7z"), L"Archive_2.7z");
+    EXPECT_EQ(OutputName(OutputNaming::Subfolder, L"Archive", L"", 2, L".zip"), L"Archive (2).zip");
     // The current style is the default one until Settings changes it.
     EXPECT_EQ(CurrentOutputNaming(), OutputNaming::Parentheses);
     EXPECT_EQ(OutputName(L"photo", L"edited", 1, L".jpg"), L"photo (edited).jpg");

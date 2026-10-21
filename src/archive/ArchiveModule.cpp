@@ -2,6 +2,7 @@
 #include "archive/ArchiveSource.h"
 #include "archive/ArchiveWriter.h"
 #include "archive/Sinks.h"
+#include "Ask.h"
 #include "Log.h"
 
 #include <windows.h>
@@ -150,21 +151,23 @@ namespace sd::archive
                     if (GetFileAttributesW(s.c_str()) == INVALID_FILE_ATTRIBUTES)
                         return ItemResult{ false, false, {}, std::format(L"{} is gone", std::filesystem::path(s).filename().wstring()), 0, {} };
 
-                // One item: named after it ("Photos (zipped).zip", "report (zipped).zip"). Several:
-                // after the folder they are in, written there ("Holiday (zipped).zip").
+                // One item: named after it ("Photos (zipped).zip", "report (zipped).zip"). Several
+                // (loose files, or items from more than one folder): "Archive.zip", in the first one's
+                // folder, numbered when the name is taken ("Archive (2).zip").
                 const std::filesystem::path first(sources.front());
+                const bool single = sources.size() == 1;
                 OutputPlace place;
                 std::wstring historySource = sources.front();
-                if (sources.size() == 1)
+                if (single)
                     place.stem = IsFolder(sources.front()) ? first.filename().wstring() : first.stem().wstring();
                 else
                 {
                     historySource = first.parent_path().wstring();
                     place.folder = historySource;
-                    place.stem = first.parent_path().filename().wstring();
+                    place.stem = kSeveralItems;
                 }
                 if (place.stem.empty())
-                    place.stem = L"Archive";   // a drive's root has no name
+                    place.stem = kSeveralItems;   // a drive's root has no name
                 StagedOutput out(m_history, runId, historySource, false, place);
                 if (!out.Ready())
                     return out.Fail(out.Error());
@@ -173,10 +176,26 @@ namespace sd::archive
                     return out.Fail(L"cancelled", true);
                 if (!r.ok())
                     return out.Fail(UserMessage(r));
-                return out.Commit(recipe.suffix, format->extension);
+                return out.Commit(single ? std::wstring_view(recipe.suffix) : std::wstring_view(), format->extension);
             }
 
         private:
+            static constexpr const wchar_t* kSeveralItems = L"Archive";
+
+            // The password box for `source`, when the worker finds it encrypted (src/Ask.h). The
+            // password goes from the box to the worker and is wiped (Secret) as soon as it is sent.
+            // `declined` is set when the user cancels it, and then it is never shown again for this job
+            // (whatever the worker asks).
+            static PasswordFn AskPassword(const std::wstring& source, const wchar_t* title, std::stop_token stop, bool& declined)
+            {
+                return [name = std::filesystem::path(source).filename().wstring(), title, stop, &declined](bool wrong, Secret& password) {
+                    if (!declined && ask::Password(ask::PasswordRequest{ title, name, wrong }, password, stop))
+                        return true;
+                    declined = true;
+                    return false;
+                };
+            }
+
             static const WriteFormatInfo* FormatOf(const Recipe& recipe)
             {
                 const auto& params = recipe.steps[0].params;
@@ -184,10 +203,12 @@ namespace sd::archive
             }
 
             ItemResult Finish(StagedOutput& out, const Result& r, std::stop_token stop, std::wstring_view suffix, std::wstring_view extension,
-                              std::wstring message = {}) const
+                              std::wstring message = {}, const wchar_t* declined = nullptr) const
             {
                 if (r.status == Status::Cancelled || stop.stop_requested())
                     return out.Fail(L"cancelled", true);
+                if (declined && r.status == Status::Password)
+                    return out.Fail(declined, true);   // the user cancelled the password box
                 if (!r.ok())
                     return out.Fail(UserMessage(r));
                 auto result = out.Commit(suffix, extension);
@@ -210,7 +231,7 @@ namespace sd::archive
                         return out.Fail(out.Error());
                     FileSink file(out.Path());
                     GuardSink guard(file, limits, FileSize(source), inner.wstring());
-                    const Result r = ReadEntries(source, kind, limits, guard, stop, progress, &mode);
+                    const Result r = ReadEntries(source, kind, limits, guard, stop, progress, &mode);   // one compressed file: never encrypted
                     file.End();   // closes the output if a failure left it open, so it can be deleted
                     log::Info(L"archive: extract {} ({}): {}", source, ModeText(mode), r.ok() ? L"ok" : r.message);
                     return Finish(out, r, stop, recipe.suffix, inner.extension().wstring());
@@ -224,7 +245,8 @@ namespace sd::archive
                 ExtractSink sink(out.Path(), [&](uint64_t bytes) { return guardPtr ? guardPtr->Charge(bytes) : Result{}; });
                 GuardSink guard(sink, limits, FileSize(source));
                 guardPtr = &guard;
-                r = ReadEntries(source, kind, limits, guard, stop, progress, &mode);
+                bool declined = false;
+                r = ReadEntries(source, kind, limits, guard, stop, progress, &mode, AskPassword(source, L"Extract", stop, declined));
                 sink.End();   // closes a file left open by a failure mid-entry, so the staging folder can be removed
                 log::Info(L"archive: extract {} ({}): {} files, {} folders, {} links skipped: {}", source, ModeText(mode), guard.files, guard.folders,
                           guard.skippedLinks, r.ok() ? L"ok" : r.message);
@@ -238,7 +260,7 @@ namespace sd::archive
                 std::wstring message = Plural(guard.files, L"file", L"files");
                 if (guard.skippedLinks)
                     message += std::format(L", {} skipped", Plural(guard.skippedLinks, L"link", L"links"));
-                return Finish(out, r, stop, recipe.suffix, L"", L"Extracted " + message);
+                return Finish(out, r, stop, recipe.suffix, L"", L"Extracted " + message, declined ? L"no password given, so nothing was extracted" : nullptr);
             }
 
             ItemResult Convert(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const
@@ -251,6 +273,7 @@ namespace sd::archive
                     return out.Fail(out.Error());
                 ReadMode mode = ReadMode::InProcess;
                 Result r;
+                bool declined = false;
                 {
                     // The writer must be closed before the staging file is renamed or deleted.
                     ArchiveWriter writer;
@@ -259,13 +282,13 @@ namespace sd::archive
                     {
                         WriteSink sink(writer, format->format, std::filesystem::path(out.Path()).parent_path().wstring());
                         GuardSink guard(sink, limits, FileSize(source), IsRaw(kind) ? ArchiveStem(source) : std::wstring());
-                        r = ReadEntries(source, kind, limits, guard, stop, progress, &mode);
+                        r = ReadEntries(source, kind, limits, guard, stop, progress, &mode, AskPassword(source, L"Convert archive", stop, declined));
                     }
                     if (r.ok())
                         r = writer.Close();
                 }
                 log::Info(L"archive: convert {} to {} ({}): {}", source, format->label, ModeText(mode), r.ok() ? L"ok" : r.message);
-                return Finish(out, r, stop, recipe.suffix, format->extension);
+                return Finish(out, r, stop, recipe.suffix, format->extension, {}, declined ? L"no password given, so nothing was converted" : nullptr);
             }
 
             static uint64_t FileSize(const std::wstring& path)

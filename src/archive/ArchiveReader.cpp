@@ -68,15 +68,118 @@ namespace sd::archive
                    Mentions(archive_error_string(a), { "passphrase", "encrypt", "password", "decrypt" });
         }
 
-        Result PasswordRefusal()
+        // Whether libarchive, as built here, can decrypt WinZip AES: its ZIP writer accepts AES only
+        // with a crypto library behind it, and the reader then has one too.
+        bool CanDecryptAes()
         {
-            return Fail(Status::Password, L"this archive is password-protected; protected archives can't be opened yet");
+            static const bool can = [] {
+                std::unique_ptr<struct archive, decltype(&archive_write_free)> w(archive_write_new(), &archive_write_free);
+                return w && archive_write_set_format_zip(w.get()) == ARCHIVE_OK &&
+                       archive_write_set_format_option(w.get(), "zip", "encryption", "aes256") == ARCHIVE_OK;
+            }();
+            return can;
         }
 
-        Result ArchiveError(struct archive* a, const wchar_t* what)
+        // Why an encrypted archive can't be opened even with its password, or empty when it can:
+        // libarchive decrypts ZIP's own ZipCrypto, and WinZip AES when it has a crypto library, but
+        // not 7z or RAR encryption.
+        std::wstring CantDecrypt(struct archive* a)
         {
+            switch (archive_format(a) & ARCHIVE_FORMAT_BASE_MASK)
+            {
+            case ARCHIVE_FORMAT_ZIP:
+                if (Mentions(archive_format_name(a), { "(aes)" }) && !CanDecryptAes())
+                    return L"this ZIP is protected with AES encryption, which can't be opened yet";
+                if (Mentions(archive_error_string(a), { "encrypted file is unsupported", "encryption format", "encryption algorithm", "encryption flag",
+                                                        "lack of crypto" }))
+                    return L"this ZIP uses an encryption that can't be opened";
+                return {};
+            case ARCHIVE_FORMAT_7ZIP: return L"password-protected 7z archives can't be opened yet";
+            case ARCHIVE_FORMAT_RAR:
+            case ARCHIVE_FORMAT_RAR_V5: return L"password-protected RAR archives can't be opened yet";
+            default: return L"this archive is password-protected; protected archives can't be opened yet";
+            }
+        }
+
+        // libarchive's passphrase callback: each password the user types, in each encoding it may
+        // have been stored in, then the user again (told the last one was wrong).
+        class Passwords
+        {
+        public:
+            explicit Passwords(const PasswordFn& ask) : m_ask(ask) {}
+
+            static const char* Callback(struct archive*, void* self) { return static_cast<Passwords*>(self)->Next(); }
+
+            int asked = 0;          // passwords the user gave
+            bool refused = false;   // the user cancelled
+
+        private:
+            const char* Next()
+            {
+                if (m_next < m_forms.size())
+                    return m_forms[m_next++].c_str();
+                m_forms.clear();   // wipes every form of the one that failed (libarchive keeps its own copies until it is freed, and wipes them then)
+                m_next = 0;
+                if (refused || !m_ask)
+                    return nullptr;
+                Secret typed;
+                if (!m_ask(asked > 0, typed) || typed.empty())
+                {
+                    refused = true;
+                    return nullptr;
+                }
+                ++asked;
+                Encode(typed.View());
+                return m_forms.empty() ? Next() : m_forms[m_next++].c_str();
+            }
+
+            // ZIP stores no charset for its password: WinZip AES and 7-Zip use UTF-8, older tools the
+            // ANSI or OEM code page. Each distinct form is tried; for a plain ASCII password that is one.
+            void Encode(std::wstring_view password)
+            {
+                for (const UINT codePage : { static_cast<UINT>(CP_UTF8), static_cast<UINT>(CP_ACP), static_cast<UINT>(CP_OEMCP) })
+                {
+                    SecretBytes form;
+                    BOOL lossy = FALSE;
+                    const int n = WideCharToMultiByte(codePage, codePage == CP_UTF8 ? WC_ERR_INVALID_CHARS : WC_NO_BEST_FIT_CHARS, password.data(),
+                                                      static_cast<int>(password.size()), form.Buffer(), static_cast<int>(SecretBytes::kCapacity),
+                                                      nullptr, codePage == CP_UTF8 ? nullptr : &lossy);
+                    if (n <= 0 || lossy)
+                        continue;
+                    form.SetSize(static_cast<size_t>(n));
+                    bool seen = false;
+                    for (const auto& f : m_forms)
+                        seen = seen || f.View() == form.View();
+                    if (!seen)
+                        m_forms.push_back(std::move(form));
+                }
+            }
+
+            const PasswordFn& m_ask;
+            std::vector<SecretBytes> m_forms;
+            size_t m_next = 0;
+        };
+
+        Result PasswordRefusal(struct archive* a)
+        {
+            const auto why = CantDecrypt(a);
+            return Fail(Status::Password, why.empty() ? L"this archive is password-protected; protected archives can't be opened yet" : why);
+        }
+
+        Result ArchiveError(struct archive* a, const wchar_t* what, const Passwords* passwords = nullptr)
+        {
+            if (passwords && passwords->refused)
+                return Fail(Status::Password, L"no password was given");
+            if (passwords && passwords->asked > 0)
+            {
+                if (const auto why = CantDecrypt(a); !why.empty())
+                    return Fail(Status::Password, why);
+                // A wrong ZipCrypto password passes its one-byte check once in 256 tries; the data
+                // then fails to inflate or its CRC is wrong.
+                return Fail(Status::Corrupt, L"the password is wrong, or the archive is damaged");
+            }
             if (IsPasswordError(a))
-                return PasswordRefusal();
+                return PasswordRefusal(a);
             const char* text = archive_error_string(a);
             std::wstring detail;
             if (text)
@@ -101,7 +204,8 @@ namespace sd::archive
         }
     }
 
-    Result ReadArchive(HANDLE input, const ReadOptions& options, IEntrySink& sink, const std::function<bool(uint64_t)>& tick)
+    Result ReadArchive(HANDLE input, const ReadOptions& options, IEntrySink& sink, const std::function<bool(uint64_t)>& tick,
+                       const PasswordFn& password)
     {
         std::unique_ptr<struct archive, decltype(&archive_read_free)> owner(archive_read_new(), &archive_read_free);
         struct archive* a = owner.get();
@@ -127,6 +231,11 @@ namespace sd::archive
         const auto charset = std::format("CP{}", GetOEMCP());
         archive_read_set_format_option(a, "zip", "hdrcharset", charset.c_str());
 
+        // Before the archive is opened: libarchive asks for a password only when an entry needs one.
+        Passwords passwords(password);
+        if (password)
+            archive_read_set_passphrase_callback(a, &passwords, &Passwords::Callback);
+
         Client client{ input };
         archive_read_set_seek_callback(a, &SeekCallback);
         if (archive_read_open2(a, &client, nullptr, &ReadCallback, &SkipCallback, nullptr) != ARCHIVE_OK)
@@ -150,9 +259,11 @@ namespace sd::archive
             if (r == ARCHIVE_EOF)
                 break;
             if (r < ARCHIVE_WARN)   // ARCHIVE_WARN: e.g. a name in an unknown charset; the entry is still usable
-                return ArchiveError(a, L"damaged archive");
-            if (archive_entry_is_encrypted(e))
-                return PasswordRefusal();
+                return ArchiveError(a, L"damaged archive", &passwords);
+            // An encrypted entry: libarchive calls Passwords when it reads the data, if it can
+            // decrypt this kind at all; otherwise stop before asking for a password that can't help.
+            if (archive_entry_is_encrypted(e) && (!password || !CantDecrypt(a).empty()))
+                return PasswordRefusal(a);
             if (++entries > options.limits.maxEntries)
                 return Fail(Status::Limit, std::format(L"it has more than {} entries", options.limits.maxEntries));
 
@@ -186,7 +297,7 @@ namespace sd::archive
                     if (n == 0)
                         break;
                     if (n < 0)
-                        return ArchiveError(a, L"damaged entry");
+                        return ArchiveError(a, L"damaged entry", &passwords);
                     total += static_cast<uint64_t>(n);
                     if (auto res = overLimit(); !res.ok())
                         return res;

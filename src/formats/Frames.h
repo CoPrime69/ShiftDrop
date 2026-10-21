@@ -36,6 +36,12 @@ namespace sd::formats
     };
     FramesOutput FramesOutputFor(const std::wstring& lowerSourceExtension, std::string_view formatId);
 
+    // A GIF with more frames than this asks first, before it becomes a folder of pictures: all of
+    // them, every Nth (FrameStep), or none.
+    constexpr uint32_t kAskAboveFrames = 100;
+    // The N of "every Nth frame" that leaves at most kAskAboveFrames of `count` (2 at least).
+    uint32_t FrameStep(uint32_t count);
+
     // Runs a single-encode recipe (Convert wheel) on a multi-frame `source`, written through
     // StagedOutput and recorded in history like every other output.
     ItemResult ConvertFrames(const Recipe& recipe, const ImageFormatInfo& format, HistoryStore* history, int64_t runId,

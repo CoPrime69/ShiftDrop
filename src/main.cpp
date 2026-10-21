@@ -11,6 +11,7 @@
 //   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
 //   office worker one STA thread for Word, Excel and PowerPoint exports, so moves never wait on them
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
+#include "Ask.h"
 #include "Brand.h"
 #include "DropTarget.h"
 #include "FileActions.h"
@@ -291,6 +292,7 @@ namespace sd
             if (!m_hwnd)
                 return false;
             m_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+            ask::InstallUi();   // jobs' questions (an archive's password...) are shown on this thread
 
             m_recipes.Load(m_registry, RecipesFolder());
             m_codecs = std::make_shared<const ImageCodecs>();
@@ -528,6 +530,7 @@ namespace sd
                 log::Info(L"shutting down");
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
+                ask::UninstallUi();    // an open question closes as Cancel; its job stops with the rest
                 // Stops and joins every lane (results still in flight are freed, see PostBatch): kills a
                 // running ffmpeg, cancels an office export, waits for a move in progress.
                 m_lanes.reset();

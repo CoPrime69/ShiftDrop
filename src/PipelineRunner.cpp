@@ -174,8 +174,10 @@ namespace sd
         else if (IsNoOp(recipe, source))
         {
             result.skipped = true;
+            // Engine recipes (archives, PDF...) have no image output format; their own label names the target.
             const auto* media = recipe.MediaFormat();
-            result.error = std::format(L"already {}", media ? media->label : recipe.OutputFormatFor(LowerExtension(source))->label);
+            const auto* format = media ? nullptr : recipe.OutputFormatFor(LowerExtension(source));
+            result.error = std::format(L"already {}", media ? media->label : format ? format->label : recipe.label);
         }
         else if (!Accepts(recipe, source, &why))
         {
