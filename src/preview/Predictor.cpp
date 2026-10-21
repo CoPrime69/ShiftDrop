@@ -1,9 +1,11 @@
 #include "preview/Predictor.h"
+#include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
 #include "VirtualDrop.h"
+#include "formats/Frames.h"
 #include "inspect/MetadataReader.h"
 
 #include <windows.h>
@@ -67,6 +69,15 @@ namespace sd::preview
         // Size, EXIF orientation and the metadata worth naming, from the file's header (no pixels).
         bool ReadImageFacts(const std::wstring& path, Size2& upright, MetadataFacts& meta)
         {
+            // AVIF, SVG (src/formats): the hook reads the size from the header; outputs carry no metadata anyway.
+            if (const auto* hook = DecodeHookFor(LowerExtension(path)))
+            {
+                uint32_t w = 0, h = 0;
+                if (!hook->ReadSize(path, w, h))
+                    return false;
+                upright = Size2{ w, h };
+                return true;
+            }
             if (LowerExtension(path) == L".webp")
             {
                 wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr));
@@ -432,6 +443,19 @@ namespace sd::preview
             detail.push_back(MetadataLoss(facts->meta));
         }
         p.detail = Join(detail);
+        // An animated GIF or a multi-page TIFF converts every frame (formats/Frames.h): say so, and
+        // give no size, since the estimate below would be for one frame.
+        if (const uint32_t frames = recipe.IsSingleEncode() ? formats::FrameCount(first) : 1; frames > 1)
+        {
+            const auto* format = recipe.OutputFormatFor(ext);
+            const auto kind = formats::FramesOutputFor(ext, format ? format->id : "");
+            if (kind == formats::FramesOutput::Folder && files.size() == 1)
+                p.name = PredictOutputName(first, L"frames", L"");
+            if (kind == formats::FramesOutput::Animation)
+                p.format += L", animated";
+            p.detail = Join({ std::format(L"{} {}", frames, ext == L".gif" ? L"frames" : L"pages"), p.detail });
+            return p;
+        }
         if (partial)
         {
             Prediction quick = p;

@@ -24,6 +24,8 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
 find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+find_package(libavif CONFIG REQUIRED)   # AVIF: dav1d decodes, aom encodes (BSD-2-Clause)
+find_package(lunasvg CONFIG REQUIRED)   # SVG input (MIT)
 find_package(miniz CONFIG REQUIRED)    # ZIP containers: DOCX, XLSX, ODS, EPUB (MIT)
 find_package(pugixml CONFIG REQUIRED)  # XML of those containers (MIT)
 find_package(md4c CONFIG REQUIRED)     # Markdown parsing, CommonMark + GitHub tables (MIT)
@@ -167,6 +169,14 @@ add_library(shiftdrop_core STATIC
   src/sandbox/MediaSandbox.cpp
   src/sandbox/Sandbox.cpp
   src/sandbox/Worker.cpp
+  # Image formats beyond WIC (AVIF, SVG, HEIC through Windows' codec), plugged into ImagePipeline,
+  # and every frame of an animated GIF or multi-page TIFF
+  src/formats/Avif.cpp
+  src/formats/Formats.cpp
+  src/formats/Frames.cpp
+  src/formats/Heic.cpp
+  src/formats/Pixels.cpp
+  src/formats/Svg.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -176,8 +186,11 @@ target_link_libraries(shiftdrop_core PUBLIC
   unofficial::sqlite3::sqlite3
   nlohmann_json::nlohmann_json
   WebP::webp
+  WebP::libwebpmux   # animated WebP (a GIF converted to WebP stays animated)
   qpdf::libqpdf
   ZLIB::ZLIB
+  avif
+  lunasvg::lunasvg
   miniz::miniz
   pugixml::pugixml
   md4c::md4c
@@ -294,6 +307,8 @@ if(SHIFTDROP_TESTS)
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
     tests/VirtualDropTests.cpp
+    tests/FormatsTests.cpp
+    tests/FramesTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
