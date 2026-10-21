@@ -361,7 +361,56 @@ Remove metadata (File-actions wheel, **Alt**)
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
-### U. Photo tools: Edit, Annotate, Background, Collage (M8)
+### U. Documents, spreadsheets, subtitles, Office bridge (M11)
+Have ready: a Word document with headings, a bulleted and a numbered list, a table, a link and a
+picture (`report.docx`); a Markdown file (`notes.md`); an RTF saved from WordPad with a picture; an
+RTFD package from a Mac (a folder ending in `.rtfd`); an old `.pages` file; a text PDF; an Excel
+workbook with two sheets, a date column and numbers with leading zeros (`book.xlsx`); the same saved
+as Excel 97-2003 (`book.xls`); a CSV saved by European Excel (semicolons); an SRT and a VTT from
+YouTube; a PowerPoint deck. For the Office bridge you need Microsoft Office or LibreOffice installed.
+
+Documents
+- [ ] Drag `report.docx` and hold **Shift**: Convert shows PDF, Markdown, HTML, EPUB and TXT (no DOCX), plus **Exact PDF** when Word or LibreOffice is installed
+- [ ] Drop on **Markdown**: a folder `report (converted)` holds `report.md` and `images/`; the Markdown shows headings as `#`, lists, the table as a `|` table, the link, and the picture (open it in VS Code's preview)
+- [ ] Drop on **HTML**: the same folder layout; the page opens in Edge with the picture, the table and working links. With no pictures in the document you get a single `report (converted).html`
+- [ ] Drop on **EPUB**: `report (converted).epub` opens in an e-book app (Thorium, Calibre's viewer, or Edge's extension) with a table of contents; the picture shows
+- [ ] Drop on **TXT**: plain text, bullets as •, the table as tab-separated lines, links as "text (address)"
+- [ ] Drop on **PDF**: no print dialog appears; `report (converted).pdf` has A4 pages (Letter if Windows' region is the US), 2 cm margins, page numbers at the bottom, selectable text, the table's header row repeated when it runs onto a new page
+- [ ] Turn off "Microsoft Print to PDF" (Windows Features), restart ShiftDrop: the PDF slice is dimmed and the centre says the printer is missing. Turn it back on
+- [ ] Drop `notes.md` on **DOCX**: Word opens it with real headings (the navigation pane lists them), real lists and the table. On **HTML**: it looks like the Markdown preview
+- [ ] Drop the WordPad RTF on **DOCX**: bold, italic, the picture and the larger headings come through
+- [ ] Drop the `.rtfd` folder with **Shift**: the documents slices appear; **DOCX** includes its pictures
+- [ ] Drop the `.pages` file on **DOCX**: the text arrives (from its preview PDF); a newer `.pages` with no preview PDF says so in the panel
+- [ ] Drop the text PDF with **Shift**: besides M5's slices there are **DOCX**, **EPUB** and **HTML**; the DOCX has the text reflowed with headings and bullets
+
+Spreadsheets
+- [ ] Drag `book.xlsx` with **Shift**: ODS, CSV, TSV and PDF (no XLSX)
+- [ ] Drop on **CSV**: a folder `book (converted)` with one CSV per sheet; double-click one: Excel opens it with accents right, dates as 2024-01-31, leading zeros kept as text
+- [ ] Drop on **ODS**: LibreOffice Calc (or Excel) opens it with both sheets, the dates still dates, the numbers still numbers
+- [ ] Drop on **PDF**: each sheet is a table under its name, wide sheets come out landscape, the header row repeats on each page
+- [ ] Drop `book.xls` on **XLSX**: the values, dates and sheet names come through; a password-protected .xls says it is protected
+- [ ] Drop the semicolon CSV on **XLSX**: the columns are split right (not everything in column A)
+- [ ] A one-sheet workbook to CSV gives a single `… (converted).csv`, not a folder
+
+Subtitles
+- [ ] Drag an `.srt` with **Shift**: VTT and TXT. Drop on **VTT**: the file plays in a browser `<track>` or VLC with the right timing; italics survive
+- [ ] Drop the YouTube `.vtt` on **SRT**: VLC shows it; the styling and voice tags are gone, the text is right
+- [ ] Drop it on **TXT**: one line per subtitle, without the repeated lines of roll-up captions
+
+Office bridge (with Microsoft Office)
+- [ ] Drag the deck with **Shift**: **Exact PDF**, **PNG slides**, **JPG slides**. Drop on **Exact PDF**: the PDF looks exactly like the deck; PowerPoint never shows a window, and if PowerPoint was already open with your own deck, it stays open with your deck untouched
+- [ ] Drop on **PNG slides**: a folder `deck (converted)` with `Slide 01.png`, `Slide 02.png`, … at 1920 pixels wide
+- [ ] Drop `report.docx` and `book.xlsx` on **Exact PDF**: the PDFs match Word's and Excel's own PDF export; Task Manager shows no WINWORD.EXE or EXCEL.EXE left afterwards
+- [ ] Drop a password-protected DOCX on **Exact PDF**: it fails with a message instead of a hidden password prompt
+- [ ] Start an Exact PDF of a large deck and press × in the top panel: it stops, nothing is left next to the deck, and PowerPoint (if we started it) is gone from Task Manager
+
+Office bridge (LibreOffice only, no Microsoft Office)
+- [ ] The deck shows **Exact PDF** but not the slide pictures; the PDF comes out right, no LibreOffice window appears, and a LibreOffice window you already had open is not disturbed
+- [ ] With neither installed, no Office bridge slices appear at all
+
+- [ ] With Wi-Fi off, everything above works the same; Tray > History lists each job and Undo moves its output (or folder) to the Recycle Bin
+
+### V. Photo tools: Edit, Annotate, Background, Collage (M8)
 Have ready: a 12 MP phone photo (JPEG with camera, date and GPS), a hazy or foggy landscape, a noisy night shot, a screenshot (PNG), a PNG with transparency, and four photos of different shapes (portrait, landscape, square).
 
 Tools wheel
