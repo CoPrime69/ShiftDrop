@@ -1,4 +1,5 @@
 #include "canvas/Raster.h"
+#include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "OutputPath.h"
 
@@ -182,7 +183,16 @@ namespace sd::canvas
 
         ComPtr<IWICBitmapSource> pixels;
         ComPtr<IWICBitmapFrameDecode> frame;
-        if (LowerExtension(path) == L".webp")
+        if (const auto* hook = DecodeHookFor(LowerExtension(path)))   // AVIF, SVG (src/formats): decoded upright
+        {
+            std::wstring why;
+            if (const HRESULT hr = hook->Decode(factory.Get(), path, {}, pixels, why); FAILED(hr))
+            {
+                error = why.empty() ? std::format(L"decode: {}", HResultText(hr)) : L"decode: " + why;
+                return hr;
+            }
+        }
+        else if (LowerExtension(path) == L".webp")
         {
             std::vector<uint8_t> bytes;
             if (const HRESULT hr = ReadWholeFile(path, bytes); FAILED(hr))
@@ -244,7 +254,7 @@ namespace sd::canvas
 
     const ImageFormatInfo& EditedFormatFor(const std::wstring& ext)
     {
-        if (const auto* own = FormatOfExtension(ext))
+        if (const auto* own = FormatOfExtension(ext); own && !own->windowsCodec)   // HEIC: Windows' optional codec, so JPEG
             return *own;
         static const wchar_t* const kCamera[] = { L".heic", L".heif", L".hif", L".avif", L".jxr", L".wdp", L".hdp", L".jxl", L".dng",
                                                   L".cr2", L".cr3", L".nef", L".arw", L".orf", L".rw2", L".raf", L".srw", L".pef" };
@@ -257,13 +267,31 @@ namespace sd::canvas
     int EditedQuality(const ImageFormatInfo& format)
     {
         const std::string_view id(format.id);
-        return id == "jpg" ? 92 : id == "webp" ? 90 : 100;
+        return id == "jpg" ? 92 : id == "webp" ? 90 : id == "avif" ? 80 : 100;
     }
 
     HRESULT SaveRaster(const Raster& image, const ImageFormatInfo& format, int quality, IStream* out, std::wstring& error)
     {
         if (image.Empty() || image.px.size() < static_cast<size_t>(image.width) * image.height * 4)
             return Fail(error, L"encode", E_INVALIDARG);
+        if (const auto* hook = EncodeHookFor(format.id))   // AVIF (src/formats)
+        {
+            auto factory = Factory();
+            ComPtr<IWICBitmap> bitmap;
+            if (!factory)
+                return Fail(error, L"WIC", REGDB_E_CLASSNOTREG);
+            if (const HRESULT hr = factory->CreateBitmapFromMemory(image.width, image.height, GUID_WICPixelFormat32bppBGRA, image.width * 4,
+                                                                   static_cast<UINT>(image.px.size()), const_cast<BYTE*>(image.px.data()), &bitmap);
+                FAILED(hr))
+                return Fail(error, L"encode", hr);
+            std::wstring why;
+            if (const HRESULT hr = hook->Encode(factory.Get(), bitmap.Get(), quality, out, why); FAILED(hr))
+            {
+                error = why.empty() ? std::format(L"encode: {}", HResultText(hr)) : L"encode: " + why;
+                return hr;
+            }
+            return out->Commit(STGC_DEFAULT);
+        }
         if (std::string_view(format.id) == "webp")
         {
             uint8_t* encoded = nullptr;
