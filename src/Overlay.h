@@ -127,6 +127,8 @@ namespace sd
         void Cancel();                   // Esc in click mode, or a click outside
 
         void SetRing(int ring);          // another wheel's key was pressed
+        // The tray's Features menu turned sections on or off. Only while hidden (the tray menu is up).
+        void SetRings(std::vector<WheelRing> rings);
         void OnScroll(int wheelDelta);   // WM_MOUSEWHEEL delta (120 per notch; touchpads send less)
         // The mouse hook swallows wheel events while this is true, so the window under the cursor
         // does not scroll while the wheel is in use. Points into this object; valid until Destroy().

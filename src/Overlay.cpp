@@ -388,6 +388,14 @@ namespace sd
         BeginClose();
     }
 
+    void Overlay::SetRings(std::vector<WheelRing> rings)
+    {
+        if (IsVisible() || rings.empty())
+            return;
+        m_rings = std::move(rings);
+        m_ring = 0;
+    }
+
     void Overlay::SetRing(int ring)
     {
         if (!IsVisible() || ring < 0 || ring >= static_cast<int>(m_rings.size()) || ring == m_ring)
