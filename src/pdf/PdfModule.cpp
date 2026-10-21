@@ -36,7 +36,10 @@ namespace sd::pdf
             registry.Add(ActionDescriptor{ "pdf.organize", L"Organize PDF pages", StepKind::Engine, {} });
             registry.Add(ActionDescriptor{ "pdf.compress", L"Compress PDF", StepKind::Engine,
                                            { ParamSpec{ "dpi", ParamType::Int, 36, 600, {}, 150 },
-                                             ParamSpec{ "quality", ParamType::Int, 10, 100, {}, 70 } } });
+                                             ParamSpec{ "quality", ParamType::Int, 10, 100, {}, 70 },
+                                             // A target, as a percentage of the source's size: dpi and
+                                             // quality step down until it fits (Reduce size)
+                                             ParamSpec{ "percent", ParamType::Int, 0, 99, {}, 0 } } });
             registry.Add(ActionDescriptor{ "ocr.copy_text", L"Copy text", StepKind::Engine, {} });
             registry.Add(ActionDescriptor{ "ocr.searchable_pdf", L"Searchable PDF", StepKind::Engine, {} });
             registry.Add(ActionDescriptor{ "share.files", L"Share", StepKind::Engine, {} });
@@ -70,6 +73,15 @@ namespace sd::pdf
     "steps": [ { "action": "ocr.copy_text" } ] },
   { "id": "ocr-searchable-pdf", "label": "Searchable", "description": "PDF with selectable, searchable text", "ring": "tools", "suffix": "searchable", "icon": "E721",
     "steps": [ { "action": "ocr.searchable_pdf" } ] },
+
+  { "id": "reduce-pdf-90", "label": "\u221290%", "description": "90% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 10 } } ] },
+  { "id": "reduce-pdf-80", "label": "\u221280%", "description": "80% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 20 } } ] },
+  { "id": "reduce-pdf-70", "label": "\u221270%", "description": "70% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 30 } } ] },
+  { "id": "reduce-pdf-60", "label": "\u221260%", "description": "60% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 40 } } ] },
+  { "id": "reduce-pdf-50", "label": "\u221250%", "description": "50% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 50 } } ] },
+  { "id": "reduce-pdf-40", "label": "\u221240%", "description": "40% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 60 } } ] },
+  { "id": "reduce-pdf-30", "label": "\u221230%", "description": "30% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 70 } } ] },
+  { "id": "reduce-pdf-20", "label": "\u221220%", "description": "20% smaller, as far as it goes", "ring": "reduce", "suffix": "reduced", "steps": [ { "action": "pdf.compress", "params": { "percent": 80 } } ] },
 
   { "id": "share", "label": "Share", "description": "Nearby sharing, Phone Link, mail, apps", "ring": "files", "icon": "E72D",
     "steps": [ { "action": "share.files" } ] }
