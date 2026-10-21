@@ -131,6 +131,25 @@ namespace sd
             return turn == WICBitmapTransformRotate90 || turn == WICBitmapTransformRotate270;
         }
 
+        // Wraps src in a flip-rotator. Anything but a mirror left to right reads the source out of
+        // order (a column per output row when it turns), and a decoder or scaler streams: asked for
+        // rows out of order it starts over each time (minutes for a 12 MP JPEG on Windows). So the
+        // picture is decoded into memory first, once, as src/canvas/Raster.cpp does.
+        HRESULT FlipRotate(IWICImagingFactory* factory, IWICBitmapSource* src, WICBitmapTransformOptions t, ComPtr<IWICBitmapSource>& out)
+        {
+            ComPtr<IWICBitmapSource> source = src;
+            if (ComPtr<IWICBitmap> bitmap; t != WICBitmapTransformFlipHorizontal && FAILED(src->QueryInterface(IID_PPV_ARGS(&bitmap))))
+            {
+                RETURN_IF_FAILED(factory->CreateBitmapFromSource(src, WICBitmapCacheOnLoad, &bitmap));
+                source = bitmap;
+            }
+            ComPtr<IWICBitmapFlipRotator> rotator;
+            RETURN_IF_FAILED(factory->CreateBitmapFlipRotator(&rotator));
+            RETURN_IF_FAILED(rotator->Initialize(source.Get(), t));
+            out = rotator;
+            return S_OK;
+        }
+
         // The size an image.resize or image.scale step makes of a w x h picture; false when it leaves
         // the size alone (neither ever enlarges).
         bool ShrunkSize(const RecipeStep& step, UINT w, UINT h, UINT& nw, UINT& nh)
@@ -679,9 +698,8 @@ namespace sd
                 pixels = smaller;
         if (orientation != WICBitmapTransformRotate0)
         {
-            ComPtr<IWICBitmapFlipRotator> rotator;
-            if (SUCCEEDED(factory->CreateBitmapFlipRotator(&rotator)) && SUCCEEDED(rotator->Initialize(pixels.Get(), orientation)))
-                pixels = rotator;
+            if (ComPtr<IWICBitmapSource> upright; SUCCEEDED(FlipRotate(factory.Get(), pixels.Get(), orientation, upright)))
+                pixels = upright;
         }
 
         // 3. Transforms. Each wraps the previous source; nothing is decoded until the encoder pulls pixels.
@@ -718,12 +736,8 @@ namespace sd
                 }
                 if (Turns(t))
                     std::swap(w, h);
-                ComPtr<IWICBitmapFlipRotator> rotator;
-                if (const HRESULT hr = factory->CreateBitmapFlipRotator(&rotator); FAILED(hr))
+                if (const HRESULT hr = FlipRotate(factory.Get(), pixels.Get(), t, pixels); FAILED(hr))
                     return fail(hr, L"rotate");
-                if (const HRESULT hr = rotator->Initialize(pixels.Get(), t); FAILED(hr))
-                    return fail(hr, L"rotate");
-                pixels = rotator;
             }
             // image.strip_metadata: outputs never carry source metadata in this version (pixels are
             // re-encoded into a fresh container), so the step only documents intent. Share-safe (M6)
