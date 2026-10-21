@@ -7,6 +7,8 @@
 namespace sd
 {
     // UTF-8 <-> UTF-16. JSON, SQLite and the log use UTF-8; every Win32 call uses UTF-16.
+    // Neither direction fails: an invalid UTF-8 sequence, or an unpaired surrogate in a file name,
+    // comes out as U+FFFD.
     inline std::wstring Widen(std::string_view s)
     {
         if (s.empty())

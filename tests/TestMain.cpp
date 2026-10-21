@@ -8,8 +8,9 @@ namespace sd::test
     int RunWorkerIfAsked();   // SandboxTests.cpp: the sandbox tests start this exe as their worker
 }
 
-// CTest starts this exe once per test, several at a time (CI's test preset runs four), so a test must
-// not share a file or folder with another: TempDir (TestUtil.h) names its folder after the process.
+// CTest starts this exe once per test, several at a time (CI runs four at once on each of its three
+// test runners), so a test must not share a file or folder with another: TempDir (TestUtil.h) names
+// its folder after the process.
 int main(int argc, char** argv)
 {
     if (const int code = sd::test::RunWorkerIfAsked(); code >= 0)

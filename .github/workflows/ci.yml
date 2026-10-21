@@ -13,17 +13,104 @@ on:
         description: Run the speed benchmark (tests/BenchTests.cpp) and add its table to the summary
         type: boolean
         default: true
+      reuse:
+        description: Reuse a passed pull-request run of this exact tree instead of building (what a push to main does)
+        type: boolean
+        default: false
+  # cache.yml: after a push to main, builds once more on main so the compiler cache that pull requests
+  # read stays current. That call builds only; it runs no tests and makes no installer.
+  workflow_call:
+    inputs:
+      cache-only:
+        type: boolean
+        default: false
 
 permissions:
-  contents: write   # only the tag-triggered "Publish release" step writes (it creates the release)
+  contents: read
 
 jobs:
+  # A push to main is normally a pull request's head, fast-forwarded once its run passed. That run
+  # already built and tested this exact tree, so its installer and exe are taken over instead of
+  # building again. A push no passed pull-request run covers (and every tag) builds in full.
+  reuse:
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.cache-only) || (github.event_name == 'workflow_dispatch' && inputs.reuse) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run-id: ${{ steps.find.outputs.run-id }}
+    steps:
+      # Pull-request runs mark the tree they tested with an artifact named tested-tree-<tree>.
+      - name: Find a passed pull-request run of this tree
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tree=$(gh api "repos/$REPO/commits/$GITHUB_SHA" --jq .commit.tree.sha) || exit 0
+          for id in $(gh api "repos/$REPO/actions/artifacts?name=tested-tree-$tree&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id' || true); do
+            run=$(gh api "repos/$REPO/actions/runs/$id" --jq '[.conclusion, .event, .path, .head_repository.full_name, .html_url] | @tsv' || true)
+            IFS=$'\t' read -r conclusion event path head url <<< "$run"
+            [ "$conclusion" = success ] && [ "$event" = pull_request ] && [ "${path%%@*}" = .github/workflows/ci.yml ] && [ "$head" = "$REPO" ] || continue
+            # And every job that builds or tests passed in it (not skipped).
+            passed=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.conclusion == "success") | .name]' || echo '[]')
+            missing=$(jq -n --argjson p "$passed" '["build", "installer", "placeholder", "tests (1 of 3)", "tests (2 of 3)", "tests (3 of 3)"] - $p | length')
+            if [ "$missing" = 0 ]; then
+              echo "run-id=$id" >> "$GITHUB_OUTPUT"
+              echo "Tree $tree was built and tested by $url: reusing its installer and exe, nothing is built again." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "No passed pull-request run of tree $tree: building in full." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/download-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        with:
+          pattern: ShiftDrop-*
+          run-id: ${{ steps.find.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: reused
+
+      - uses: actions/upload-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        with:
+          name: ShiftDrop-Setup-${{ github.sha }}
+          path: reused/ShiftDrop-Setup-*/*.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        with:
+          name: ShiftDrop-${{ github.sha }}
+          path: reused/ShiftDrop-[0-9a-f]*/ShiftDrop.exe
+          if-no-files-found: error
+
+      # Our ffmpeg build and its source tarball, for the release (absent when that run used BtbN's).
+      - uses: actions/download-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        continue-on-error: true
+        with:
+          pattern: ffmpeg-custom-*
+          run-id: ${{ steps.find.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: reused-ffmpeg
+          merge-multiple: true
+
+      - uses: actions/upload-artifact@v4
+        if: steps.find.outputs.run-id != ''
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: reused-ffmpeg
+          if-no-files-found: ignore
+
   # ShiftDrop's own small LGPL ffmpeg.exe (scripts/build-ffmpeg.sh): only the codecs, formats and
   # filters the app uses (scripts/ffmpeg-components.txt), cross-compiled with MinGW-w64. Cached on the
   # script and the list, so it is only rebuilt when one of them changes. Setting the repository
   # variable SHIFTDROP_FFMPEG to "btbn" skips it, and the build job ships the pinned BtbN build.
   ffmpeg:
-    if: vars.SHIFTDROP_FFMPEG != 'btbn'
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && vars.SHIFTDROP_FFMPEG != 'btbn' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -54,14 +141,158 @@ jobs:
           path: build/ffmpeg-custom
           if-no-files-found: error
 
-  # The app and its installer. The unit tests run beside it in the "tests" job, and the placeholder
-  # build in the "placeholder" job: the three Windows jobs share one compiler cache, so the libraries
-  # they all link are compiled once and come out of the cache for the others.
+  # Compiles everything once (the app, the worker and the tests). It needs no ffmpeg.exe: the jobs
+  # that run something get it themselves. The test shards and the installer job start beside it and
+  # take its binaries as soon as each artifact is uploaded (scripts/wait-for-artifact.ps1).
   build:
-    needs: ffmpeg
-    # Also when the ffmpeg job was skipped (SHIFTDROP_FFMPEG=btbn): get-ffmpeg.ps1 then falls back.
-    if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/configure
+        with:
+          save-caches: 'true'
+
+      # ShiftDrop.exe, and ShiftDropWorker.exe with it, first: the installer job waits for them (and
+      # for vcpkg's copyright files, for the third-party notices).
+      - name: Build the app
+        run: cmake --build --preset ci --target ShiftDrop
+
+      - name: Offline check (no networking imports)
+        if: ${{ !inputs.cache-only }}
+        shell: pwsh
+        run: |
+          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
+          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.cache-only }}
+        with:
+          name: app-bundle
+          path: |
+            build/ci/ShiftDrop.exe
+            build/ci/ShiftDropWorker.exe
+            build/vcpkg_installed/x64-windows-static/share/*/copyright
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 3
+
+      - name: Build the tests
+        run: cmake --build --preset ci
+
+      # The test exe and CTest's files for it (the shards run it from build/ci).
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.cache-only }}
+        with:
+          name: tests-bundle
+          path: |
+            build/ci/shiftdrop_tests.exe
+            build/ci/CTestTestfile.cmake
+            build/ci/shiftdrop_tests*_include.cmake
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 3
+
+      # Lets a later push to main of this same tree reuse this run (the "reuse" job above).
+      - name: Mark the tested tree
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $tree = git rev-parse 'HEAD^{tree}'
+          "SD_TREE=$tree" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force build/marker | Out-Null
+          "tree $tree, commit $env:GITHUB_SHA, run $env:GITHUB_RUN_ID" | Set-Content build/marker/tested-tree.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: tested-tree-${{ env.SD_TREE }}
+          path: build/marker/tested-tree.txt
+
+  # The unit tests in three shards on three runners: CTest's -I start,end,stride gives each shard
+  # every third test, so together they run each test exactly once (each shard checks that first).
+  # Every test still runs in its own process (TempDir names its folder after the process), four at a
+  # time on each runner.
+  tests:
+    needs: [reuse, ffmpeg]
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && needs.ffmpeg.result != 'failure' && !inputs.cache-only }}
+    name: tests (${{ matrix.shard }} of 3)
+    runs-on: windows-2022
+    permissions:
+      actions: read   # scripts/wait-for-artifact.ps1
+      contents: read
+    strategy:
+      fail-fast: false   # every shard reports its own results
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # The same ffmpeg.exe the installer ships, for the media tests.
+      SHIFTDROP_FFMPEG: ${{ github.workspace }}\build\engines\ffmpeg.exe
+    steps:
+      # Some tests read the sources (FfmpegComponentsTests scans tests/ and src/).
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        if: needs.ffmpeg.result != 'success'
+        with:
+          path: build/downloads
+          key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
+
+      - uses: actions/download-artifact@v4
+        if: needs.ffmpeg.result == 'success'
+        with:
+          name: ffmpeg-custom-${{ github.sha }}
+          path: build/ffmpeg-custom
+
+      - name: Get ffmpeg
+        shell: pwsh
+        run: ./scripts/get-ffmpeg.ps1
+
+      # Each test's time from the last run, so ctest starts the slowest ones first.
+      - uses: actions/cache@v4
+        with:
+          path: build/ci/Testing/Temporary/CTestCostData.txt
+          key: ctest-costs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ctest-costs-${{ matrix.shard }}-
+
+      - name: Wait for the test exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/wait-for-artifact.ps1 -Name tests-bundle -Job build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tests-bundle
+          path: build/ci
+
+      - name: Unit tests, shard ${{ matrix.shard }} of 3
+        shell: pwsh
+        run: |
+          function Count([string[]]$extra) {
+            $out = ctest --test-dir build/ci -N @extra
+            if ($LASTEXITCODE) { throw "ctest -N failed: $out" }
+            [int](($out | Select-String 'Total Tests: (\d+)').Matches[0].Groups[1].Value)
+          }
+          $total = Count @()
+          $counts = 1..3 | ForEach-Object { Count @('-I', "$_,$total,3") }
+          if (($counts | Measure-Object -Sum).Sum -ne $total) { throw "The shards cover $($counts -join ' + ') tests, not all $total" }
+          ctest --test-dir build/ci -I "${{ matrix.shard }},$total,3" -j 4 --output-on-failure
+          $code = $LASTEXITCODE
+          $result = if ($code) { 'FAILED' } else { 'passed' }
+          "Shard ${{ matrix.shard }} of 3: $($counts[${{ matrix.shard }} - 1]) of the $total tests, $result" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          exit $code
+
+  # Builds the installer from the build job's exes (as soon as they are uploaded) with the same
+  # ffmpeg.exe, runs the installer smoke test and uploads the installer and the exe.
+  installer:
+    needs: [reuse, ffmpeg]
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && needs.ffmpeg.result != 'failure' && !inputs.cache-only }}
+    runs-on: windows-2022
+    permissions:
+      actions: read   # scripts/wait-for-artifact.ps1
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +310,6 @@ jobs:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
-      # Before Configure: CMake copies engines/ffmpeg.exe next to the exe.
       # Our own build when the ffmpeg job made one, else the pinned BtbN build.
       - name: Get ffmpeg
         shell: pwsh
@@ -91,26 +321,27 @@ jobs:
         shell: pwsh
         run: ./scripts/check-ffmpeg.ps1 -Exe build/engines/ffmpeg.exe
 
-      - uses: ./.github/actions/configure
-        with:
-          options: -DSHIFTDROP_TESTS=OFF
-
-      # ShiftDrop.exe, and ShiftDropWorker.exe with it.
-      - name: Build
-        run: cmake --build --preset ci --target ShiftDrop
-
-      - name: Offline check (no networking imports)
+      - name: Wait for the app
         shell: pwsh
-        run: |
-          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
-          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/wait-for-artifact.ps1 -Name app-bundle -Job build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-bundle
+          path: build
+
+      # From the copyright files vcpkg installed (the build job sent them along) and ffmpeg's.
+      - name: Third-party notices
+        shell: pwsh
+        run: ./scripts/make-notices.ps1 -Installed build/vcpkg_installed/x64-windows-static
 
       # Inno Setup ships on the windows-2022 image; install it only if a future image drops it.
       - name: Build the installer
         shell: pwsh
         run: |
           $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
-          ./scripts/make-notices.ps1 -Installed build/vcpkg_installed/x64-windows-static
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
           & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" installer/ShiftDrop.iss
@@ -122,7 +353,6 @@ jobs:
           }
           $lines | ForEach-Object { Write-Host $_ }
           $lines | Add-Content $env:GITHUB_STEP_SUMMARY
-          "SD_VERSION=$version" >> $env:GITHUB_ENV
           "SD_SETUP=build/installer/ShiftDrop-Setup-$version.exe" >> $env:GITHUB_ENV
 
       - name: Installer smoke test
@@ -146,19 +376,21 @@ jobs:
           name: ShiftDrop-${{ github.sha }}
           path: build/ci/ShiftDrop.exe
 
-  tests:
-    needs: ffmpeg
-    if: ${{ !cancelled() && needs.ffmpeg.result != 'failure' }}
+  # The speed benchmark and the timing steps print numbers for a person to read, so they run on tags,
+  # manual runs and pull requests labelled "bench", not on every push.
+  timings:
+    needs: [ffmpeg, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench')) }}
     runs-on: windows-2022
-    env:
-      # The timing steps (photo tools, our ffmpeg vs BtbN) print numbers for a person to read, so
-      # they run on tags, manual runs and pull requests labelled "bench", not on every push.
-      SD_TIMINGS: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench') }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: tests-bundle
+          path: build/ci
+
       - uses: actions/cache@v4
-        if: needs.ffmpeg.result != 'success' || env.SD_TIMINGS == 'true'
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
@@ -169,34 +401,12 @@ jobs:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
-      # Before Configure: CMake hands engines/ffmpeg.exe to the tests. The same ffmpeg.exe as the
-      # build job ships.
       - name: Get ffmpeg
         shell: pwsh
         run: ./scripts/get-ffmpeg.ps1
 
-      - uses: ./.github/actions/configure
-        with:
-          save-caches: 'true'
-
-      - name: Build the tests
-        run: cmake --build --preset ci --target shiftdrop_tests
-
-      # Each test's time from the last run, so ctest starts the slowest ones first.
-      - uses: actions/cache@v4
-        with:
-          path: build/ci/Testing/Temporary/CTestCostData.txt
-          key: ctest-costs-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: ctest-costs-
-
-      # In parallel (the test preset sets the job count): each test runs in its own process, with its
-      # own temporary folder (tests/TestUtil.h names it after the process).
-      - name: Unit tests
-        run: ctest --preset ci
-
-      # The speed benchmark (Bench.*, skipped in the unit tests above) only runs when asked: "Run
-      # workflow" with "bench" ticked, or a pull request labelled "bench". Its table goes into the
-      # run's summary page.
+      # The speed benchmark (Bench.*, skipped in the unit tests) only runs when asked: "Run workflow"
+      # with "bench" ticked, or a pull request labelled "bench". Its table goes into the run's summary.
       - name: Speed benchmark
         if: (github.event_name == 'workflow_dispatch' && inputs.bench) || contains(github.event.pull_request.labels.*.name, 'bench')
         shell: pwsh
@@ -211,20 +421,21 @@ jobs:
       # so this is WARP: a floor, not what a PC with a graphics card gets). The unit tests run the
       # same test on every push; this prints its numbers.
       - name: Photo timings
-        if: env.SD_TIMINGS == 'true'
         run: build\ci\shiftdrop_tests.exe --gtest_filter=PhotoTiming.*
 
       # Our ffmpeg.exe against the full BtbN build it replaces, with the app's own arguments.
       - name: ffmpeg timing (ours vs BtbN)
-        if: env.SD_TIMINGS == 'true' && needs.ffmpeg.result == 'success'
+        if: needs.ffmpeg.result == 'success'
         shell: pwsh
         run: |
           ./scripts/get-ffmpeg.ps1 -Btbn -Out build/engines-btbn
           ./scripts/time-ffmpeg.ps1 -New build/engines/ffmpeg.exe -NewName ours -Old build/engines-btbn/ffmpeg.exe -OldName BtbN
 
   # The placeholder gesture build (SHIFTDROP_M0, the x64-release-m0 preset's build) only changes the
-  # app's own sources, so it builds the app target alone.
+  # app's own sources, so it builds the app target alone, beside the build job.
   placeholder:
+    needs: reuse
+    if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -236,39 +447,98 @@ jobs:
       - name: Build the placeholder gesture build
         run: cmake --build --preset ci --target ShiftDrop
 
-  # A version tag (v0.2.0) publishes the installer as a GitHub Release, once the app, the tests and
-  # the placeholder build all passed.
+  # Publishes a GitHub Release for SD_VERSION (src/Brand.h) once it has passed everything above:
+  # on a push to main (the reused pull-request build or a full one) when there is no release
+  # v<SD_VERSION> yet, which also creates that tag, and on a pushed v* tag. A version that already
+  # has its release is left alone.
   release:
-    needs: [ffmpeg, build, tests, placeholder]
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.placeholder.result == 'success' }}
+    needs: [reuse, ffmpeg, build, tests, installer, placeholder]
+    if: ${{ !cancelled() && !inputs.cache-only && github.event_name == 'push' && ((needs.reuse.result == 'success' && needs.reuse.outputs.run-id != '') || (needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.installer.result == 'success' && needs.placeholder.result == 'success')) }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # creates the release and its tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Is there a release for this version?
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          if ("${{ github.ref_type }}" -eq 'tag' -and "${{ github.ref_name }}" -ne "v$version") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $version in src/Brand.h" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          gh release view "v$version" --repo $env:REPO --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            "Release v$version already exists: nothing to publish." | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+            "publish=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "publish=true" >> $env:GITHUB_OUTPUT
+          }
+          exit 0
+
       - uses: actions/download-artifact@v4
+        if: steps.version.outputs.publish == 'true'
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
           path: build/installer
 
+      # Absent when the build shipped the BtbN ffmpeg (SHIFTDROP_FFMPEG=btbn).
       - uses: actions/download-artifact@v4
-        if: needs.ffmpeg.result == 'success'
+        if: steps.version.outputs.publish == 'true'
+        continue-on-error: true
         with:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
 
+      # The notes are built from pull-request titles only: what was merged since the last release
+      # (every merged pull request for the first one).
       - name: Publish release
+        if: steps.version.outputs.publish == 'true'
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          $env:SD_VERSION = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
-          $env:SD_SETUP = "build/installer/ShiftDrop-Setup-$env:SD_VERSION.exe"
-          if ("${{ github.ref_name }}" -ne "v$env:SD_VERSION") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $env:SD_VERSION in src/Brand.h" }
-          if (-not (Test-Path $env:SD_SETUP)) { throw "$env:SD_SETUP is missing from the build job's artifact" }
+          $version = '${{ steps.version.outputs.version }}'
+          $setup = "build/installer/ShiftDrop-Setup-$version.exe"
+          if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts" }
           # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
-          $files = @($env:SD_SETUP)
+          $files = @($setup)
           if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
-            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
-            $files += "build/installer/ShiftDrop-$env:SD_VERSION-ffmpeg-sources.tar.xz"
+            Copy-Item build/ffmpeg-custom/ffmpeg-sources.tar.xz "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
+            $files += "build/installer/ShiftDrop-$version-ffmpeg-sources.tar.xz"
           }
-          gh release create "${{ github.ref_name }}" @files --title "ShiftDrop $env:SD_VERSION" --notes "Download ShiftDrop-Setup-$env:SD_VERSION.exe and run it. No admin rights or Visual Studio needed."
+          # SHA256SUMS.txt is in sha256sum's format, so `sha256sum -c SHA256SUMS.txt` checks a download.
+          $sums = @($files | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $(Split-Path $_ -Leaf)" })
+          [IO.File]::WriteAllText("$PWD/build/installer/SHA256SUMS.txt", ($sums -join "`n") + "`n")
+          $files += 'build/installer/SHA256SUMS.txt'
+          $setupHash = ($sums[0] -split ' ')[0]
+          $since = gh api "repos/$env:REPO/releases?per_page=1" --jq '.[0].created_at // empty'
+          $prs = @{}
+          foreach ($line in @(gh api --paginate "repos/$env:REPO/pulls?state=closed&base=main&per_page=100" --jq '.[] | select(.merged_at != null) | [.number, .merged_at, .title] | @tsv') +
+                            @(gh api "repos/$env:REPO/commits/$env:GITHUB_SHA/pulls" --jq '.[] | [.number, (.merged_at // "now"), .title] | @tsv')) {
+            if (-not $line) { continue }
+            $number, $merged, $title = $line -split "`t", 3
+            if ($since -and $merged -ne 'now' -and [datetime]$merged -le [datetime]$since) { continue }
+            $prs[[int]$number] = $title
+          }
+          $notes = @(
+            "Download **ShiftDrop-Setup-$version.exe** and run it. It installs for your Windows user only and needs no admin rights.",
+            '',
+            "## What's in this build",
+            ''
+          )
+          if ($prs.Count) { $notes += $prs.Keys | Sort-Object | ForEach-Object { "- $($prs[$_]) (#$_)" } } else { $notes += '- Maintenance changes' }
+          $notes += @(
+            '',
+            "The installer isn't code-signed yet, so Windows SmartScreen may warn the first time you run it (""Windows protected your PC""): choose **More info**, then **Run anyway**.",
+            '',
+            "SHA-256 of ShiftDrop-Setup-$version.exe: ``$setupHash``. SHA256SUMS.txt lists every file in this release."
+          )
+          $text = $notes -join "`n"
+          if ($text -match '(?i)cl[a]ude|anthr[o]pic') { throw 'The release notes mention a name they must not; nothing was published.' }
+          $text | Set-Content build/release-notes.md -Encoding utf8
+          Write-Host $text
+          gh release create "v$version" @files --repo $env:REPO --target $env:GITHUB_SHA --title "ShiftDrop $version" --notes-file build/release-notes.md
+          if ($LASTEXITCODE) { exit 1 }
+          "Published [v$version](https://github.com/$env:REPO/releases/tag/v$version)" >> $env:GITHUB_STEP_SUMMARY
