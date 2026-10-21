@@ -11,6 +11,8 @@ namespace sd
             { "png", L"PNG", L".png", L".png", true, false },
             { "jpg", L"JPG", L".jpg", L".jpg.jpeg.jpe.jfif", false, true },
             { "webp", L"WebP", L".webp", L".webp", true, true },
+            { "avif", L"AVIF", L".avif", L".avif", true, true },                      // libavif (src/formats)
+            { "heic", L"HEIC", L".heic", L".heic.heif.hif", false, true, true },      // Windows' HEIF codec, when installed
             { "tiff", L"TIFF", L".tiff", L".tif.tiff", true, false },
             { "bmp", L"BMP", L".bmp", L".bmp.dib", false, false },
         };
@@ -91,7 +93,7 @@ namespace sd
               ParamSpec{ "percent", ParamType::Int, 0, 99, {}, 0 },        // of the source's size
               ParamSpec{ "maxHeight", ParamType::Int, 0, 4320, {}, 1080 } } });   // 0 = keep
 
-        // The image counterpart: JPEG (WebP stays WebP), at `quality`, or at the best quality that fits
+        // The image counterpart: JPEG (WebP and AVIF stay themselves), at `quality`, or at the best quality that fits
         // maxKB / percent of the source, shrinking the picture only if even low quality is too big.
         m_actions.push_back(ActionDescriptor{
             "image.compress", L"Compress", StepKind::ImageEncode,
