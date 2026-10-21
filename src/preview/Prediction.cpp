@@ -279,7 +279,7 @@ namespace sd::preview
                 if (!q.empty())
                     bpp = 0.1 * std::pow(2.0, (23.0 - Number(q, 23)) / 6.0);
                 else if (vcodec == L"libvpx-vp9")
-                    bpp = 0.06 * std::pow(2.0, (32.0 - Number(After(args, L"-crf"), 32)) / 8.0);
+                    bpp = 0.07 * std::pow(2.0, (32.0 - Number(After(args, L"-crf"), 32)) / 8.0);   // realtime mode, speed 6
                 else if (vcodec == L"mpeg4")
                     bpp = 0.15 * 3.0 / std::max(1, Number(After(args, L"-q:v"), 3));
                 video = pixelsPerSecond * bpp;

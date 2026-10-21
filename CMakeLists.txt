@@ -330,6 +330,7 @@ if(SHIFTDROP_TESTS)
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
+    tests/BenchTests.cpp
     tests/FileActionsTests.cpp
     tests/RenameTests.cpp
     tests/ToastTests.cpp

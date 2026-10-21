@@ -12,11 +12,14 @@
 #include "pdf/PdfEditors.h"
 #include "pdf/PdfModule.h"
 #include "pdf/PdfText.h"
+#include "pdf/Parallel.h"
 #include "pdf/Wic.h"
 
+#include <atomic>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 
 namespace sd::pdf
 {
@@ -191,25 +194,49 @@ namespace sd::pdf
                     return out.Fail(out.Error());
                 const std::wstring stem = std::filesystem::path(source).stem().wstring();
                 const int digits = std::max(2, static_cast<int>(std::to_wstring(count).size()));
-                for (uint32_t i = 0; i < count; ++i)
-                {
-                    if (stop.stop_requested())
-                        return out.Fail(kCancelled, true);
-                    double w = 0, h = 0;
-                    if (!doc->PageSize(i, w, h))
-                        return out.Fail(std::format(L"page {}: cannot read its size", i + 1));
-                    uint32_t pw = 0, ph = 0;
-                    PixelSize(w, h, dpi, 16000, pw, ph);
+                // Windows' renderer draws one page at a time; encoding (the slow part of a PNG) runs on
+                // several threads, each taking the next page as soon as the renderer is free.
+                std::mutex renderer, failed;
+                std::wstring firstError;   // the lowest page's, under `failed`
+                uint32_t firstFailed = count;
+                std::atomic<uint32_t> finished{ 0 };
+                std::atomic<bool> anyFailed{ false };   // the other threads stop taking pages
+                ForEachParallel(count, [&](size_t index) {
+                    const auto i = static_cast<uint32_t>(index);
+                    const auto fail = [&](std::wstring why) {
+                        anyFailed = true;
+                        std::scoped_lock lock(failed);
+                        if (i < firstFailed)
+                        {
+                            firstFailed = i;
+                            firstError = std::format(L"page {}: {}", i + 1, why);
+                        }
+                    };
+                    if (stop.stop_requested() || anyFailed)
+                        return;
                     Bitmap page;
-                    if (!doc->Render(i, pw, ph, page, error))
-                        return out.Fail(std::format(L"page {}: {}", i + 1, error));
+                    uint32_t pw = 0, ph = 0;
+                    {
+                        std::scoped_lock lock(renderer);
+                        double w = 0, h = 0;
+                        if (!doc->PageSize(i, w, h))
+                            return fail(L"cannot read its size");
+                        PixelSize(w, h, dpi, 16000, pw, ph);
+                        std::wstring why;
+                        if (!doc->Render(i, pw, ph, page, why))
+                            return fail(why);
+                    }
                     const std::wstring path =
                         count == 1 ? out.Path() : std::format(L"{}\\{} page {:0{}}{}", out.Path(), stem, i + 1, digits, ext);
                     if (const HRESULT hr = EncodeImageFile(page, path, jpeg, quality, dpi); FAILED(hr))
-                        return out.Fail(std::format(L"page {}: {}", i + 1, HResultText(hr)));
+                        return fail(HResultText(hr));
                     if (progress)
-                        progress(static_cast<double>(i + 1) / count);
-                }
+                        progress(static_cast<double>(++finished) / count);
+                });
+                if (stop.stop_requested())
+                    return out.Fail(kCancelled, true);
+                if (firstFailed < count)
+                    return out.Fail(firstError);
                 auto result = count == 1 ? out.Commit(recipe.suffix, ext) : out.Commit(L"pages", L"");
                 if (result.ok && count > 1)
                     result.message = std::format(L"{} saved as {} images", Pages(count), jpeg ? L"JPG" : L"PNG");
