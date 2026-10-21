@@ -15,6 +15,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -85,6 +86,31 @@ namespace sd::pdf
             if (!e && entry.is_directory(e) && now - when > std::chrono::hours(24))
                 std::filesystem::remove_all(entry.path(), e);
         }
+    }
+
+    std::wstring EditFileStem(const std::wstring& folder, bool result, unsigned serial, size_t n)
+    {
+        return (std::filesystem::path(folder) / std::format(L"{} {}-{}", result ? L"edit" : L"page", serial, n)).wstring();
+    }
+
+    unsigned FreeEditSerial(const std::wstring& folder, unsigned after)
+    {
+        unsigned used = after;
+        std::error_code ec;
+        if (!folder.empty())
+            for (const auto& entry : std::filesystem::directory_iterator(folder, ec))
+            {
+                const std::wstring name = entry.path().filename().wstring();
+                if (!name.starts_with(L"page ") && !name.starts_with(L"edit "))
+                    continue;
+                unsigned serial = 0;
+                size_t i = 5;
+                for (; i < name.size() && i < 14 && name[i] >= L'0' && name[i] <= L'9'; ++i)
+                    serial = serial * 10 + static_cast<unsigned>(name[i] - L'0');
+                if (i > 5 && i < name.size() && name[i] == L'-')
+                    used = std::max(used, serial);
+            }
+        return used + 1;
     }
 
     std::unique_ptr<canvas::ICanvasTool> MakePageTool(PageTool tool, const std::vector<std::wstring>& pictures)

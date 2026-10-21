@@ -17,7 +17,13 @@
 
 #include <qpdf/QPDFPageDocumentHelper.hh>
 
+#include <chrono>
+#include <climits>
+#include <condition_variable>
 #include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <thread>
 
 using namespace sd;
 using namespace sd::pdf;
@@ -563,6 +569,255 @@ TEST(PagePlan, BackToTheListKeepsOrRegroupsTheEdits)
     // To the engine: file indices counted in list order.
     EXPECT_EQ(InListOrder(swapped, { 1, 0 }), (PagePlan{ { 0, 0, 0, L"x.pdf" }, { 0, 1, 0 }, { 1, 0, 0 }, { 1, 1, 180 } }));
     EXPECT_EQ(InListOrder(swapped, { 1 }), (PagePlan{ { 0, 0, 0, L"x.pdf" }, { 0, 1, 0 } }));
+}
+
+namespace
+{
+    // Pages of 612 x 792 points, each painted one grey (darker for later pages); "missing.pdf" can't
+    // be opened. Stands in for Windows.Data.Pdf so the page view's render queue runs anywhere.
+    class FakeRenderedPdf final : public IRenderedPdf
+    {
+    public:
+        uint32_t PageCount() const override { return 3; }
+        bool PageSize(uint32_t, double& widthPt, double& heightPt) const override
+        {
+            widthPt = 612;
+            heightPt = 792;
+            return true;
+        }
+        bool Render(uint32_t page, uint32_t widthPx, uint32_t heightPx, Bitmap& out, std::wstring&) const override
+        {
+            out.width = widthPx;
+            out.height = heightPx;
+            out.bgra.assign(static_cast<size_t>(widthPx) * heightPx * 4, static_cast<uint8_t>(200 - page * 40));
+            return true;
+        }
+    };
+
+    std::unique_ptr<IRenderedPdf> OpenFake(const std::wstring& path, std::wstring& error)
+    {
+        if (path == L"missing.pdf")
+        {
+            error = L"no such file";
+            return nullptr;
+        }
+        return std::make_unique<FakeRenderedPdf>();
+    }
+
+    // What a render queue hands over, from its worker.
+    struct Delivered
+    {
+        std::mutex mutex;
+        std::condition_variable arrived;
+        std::vector<RenderedPage> pages;
+
+        RenderQueue::Target Target(const std::shared_ptr<Delivered>& self)
+        {
+            return [self](std::unique_ptr<RenderedPage> page) {
+                {
+                    std::scoped_lock lock(self->mutex);
+                    self->pages.push_back(std::move(*page));
+                }
+                self->arrived.notify_all();
+                return true;
+            };
+        }
+        bool WaitFor(size_t count)
+        {
+            std::unique_lock lock(mutex);
+            return arrived.wait_for(lock, std::chrono::seconds(10), [&] { return pages.size() >= count; });
+        }
+        RenderedPage At(size_t i)
+        {
+            std::scoped_lock lock(mutex);
+            return pages.at(i);
+        }
+    };
+}
+
+TEST(PageRender, PicturesAreKeptPerFileAndEdit)
+{
+    const std::vector<std::wstring> files{ L"C:\\a.pdf", L"C:\\b.pdf" };
+    PageRef ref{ 1, 3, 90 };
+    // A page of a file: that file's page, whatever its turn (the view turns the picture).
+    EXPECT_EQ(KeyOf(ref, files), (PageKey{ L"C:\\b.pdf", 3 }));
+    EXPECT_EQ(KeyOf({ 1, 3, 0 }, files), KeyOf(ref, files));
+    EXPECT_NE(KeyOf({ 0, 3, 0 }, files), KeyOf(ref, files));
+    // Edited: its own one-page PDF, so the edit shows, not the original's picture.
+    ref.edited = L"C:\\edits\\edit 1-1.pdf";
+    EXPECT_EQ(KeyOf(ref, files), (PageKey{ L"C:\\edits\\edit 1-1.pdf", 0 }));
+    // Edited again: a new file and a new key, so the second edit is rendered too.
+    PageRef again = ref;
+    again.edited = L"C:\\edits\\edit 2-1.pdf";
+    EXPECT_NE(KeyOf(again, files), KeyOf(ref, files));
+    // Reverted: back to the original's key (and its picture, already rendered).
+    PagePlan plan{ again };
+    RevertPages(plan, { 0 });
+    EXPECT_EQ(KeyOf(plan[0], files), (PageKey{ L"C:\\b.pdf", 3 }));
+    // A file the plan does not know: nothing to render.
+    EXPECT_TRUE(KeyOf({ 5, 0, 0 }, files).path.empty());
+}
+
+TEST(PageRender, PreviewIsRenderedAtTheScreensPixels)
+{
+    const double letter = 612.0 / 792.0;
+    // A Letter page in a 400 x 600 DIP box: as wide as the box, at 100%, 150% and 200%.
+    EXPECT_EQ(PreviewSide(letter, 0, 400, 600, 1.0), 518u);   // 400 / letter = 517.6 DIPs tall
+    EXPECT_EQ(PreviewSide(letter, 0, 400, 600, 1.5), 776u);
+    EXPECT_EQ(PreviewSide(letter, 0, 400, 600, 2.0), 1035u);
+    // Turned a quarter: it lies on its side, as tall as the box is wide.
+    EXPECT_EQ(PreviewSide(letter, 90, 400, 600, 1.5), 600u);
+    EXPECT_EQ(PreviewSide(letter, 270, 400, 600, 1.5), 600u);
+    EXPECT_EQ(PreviewSide(letter, 180, 400, 600, 1.5), 776u);
+    // A wide box: as tall as the box.
+    EXPECT_EQ(PreviewSide(letter, 0, 1200, 500, 1.25), 625u);
+    // Never a sliver, never past what a bitmap can hold.
+    EXPECT_EQ(PreviewSide(letter, 0, 2, 2, 1.0), 64u);
+    EXPECT_EQ(PreviewSide(letter, 0, 4000, 6000, 3.0), 4096u);
+    EXPECT_EQ(PreviewSide(0, 0, 400, 400, 1.0), 400u);   // shape not known yet
+}
+
+TEST(PageRender, QueueWakesForEveryRequestAfterItWentIdle)
+{
+    auto delivered = std::make_shared<Delivered>();
+    {
+        RenderQueue queue(&OpenFake);
+        // Asked for before it has a target: nothing is drawn yet, and the preview goes first.
+        queue.Thumbnails({ { { L"a.pdf", 0 }, 136 }, { { L"a.pdf", 1 }, 136 } });
+        queue.Preview({ { L"a.pdf", 2 }, 700 });
+        queue.SetTarget(delivered->Target(delivered));
+        ASSERT_TRUE(delivered->WaitFor(3));
+        EXPECT_TRUE(delivered->At(0).job.preview);
+        EXPECT_EQ(delivered->At(0).job.key, (PageKey{ L"a.pdf", 2 }));
+        EXPECT_EQ(delivered->At(0).pixels.height, 700u);   // fitted in 700 pixels
+        EXPECT_EQ(delivered->At(0).pixels.width, 541u);
+        EXPECT_EQ(delivered->At(1).job.key.page, 0u);
+        EXPECT_EQ(delivered->At(1).pixels.height, 136u);
+        EXPECT_DOUBLE_EQ(delivered->At(2).widthPt, 612);
+
+        // Everything is drawn and the worker sleeps. A new page's preview (the user stepped to page
+        // 2) wakes it: it used to sleep on, leaving the thumbnail scaled up as the preview.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        queue.Preview({ { L"a.pdf", 1 }, 900 });
+        ASSERT_TRUE(delivered->WaitFor(4)) << "the preview asked for after the first pages was never drawn";
+        EXPECT_TRUE(delivered->At(3).job.preview);
+        EXPECT_EQ(delivered->At(3).job.key.page, 1u);
+        EXPECT_EQ(delivered->At(3).pixels.height, 900u);
+
+        // An edited page's thumbnail, asked for later still (after the edit was saved), is drawn too;
+        // a file that can't be opened comes back empty rather than never.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        queue.Thumbnails({ { { L"edit 1-1.pdf", 0 }, 136 }, { { L"missing.pdf", 0 }, 136 } });
+        ASSERT_TRUE(delivered->WaitFor(6)) << "the edited page's thumbnail was never drawn";
+        EXPECT_EQ(delivered->At(4).job.key.path, L"edit 1-1.pdf");
+        EXPECT_FALSE(delivered->At(4).pixels.Empty());
+        EXPECT_TRUE(delivered->At(5).pixels.Empty());
+
+        // What waits for the worker to let go of the files runs once it has.
+        queue.WhenDone([delivered] {
+            {
+                std::scoped_lock lock(delivered->mutex);
+                delivered->pages.push_back({});
+            }
+            delivered->arrived.notify_all();
+        });
+    }
+    EXPECT_TRUE(delivered->WaitFor(7));
+
+    // A queue that never started runs it at once when it goes.
+    bool ran = false;
+    {
+        RenderQueue idle(&OpenFake);
+        idle.WhenDone([&] { ran = true; });
+    }
+    EXPECT_TRUE(ran);
+}
+
+TEST(PageEdits, EachEditGetsFilesOfItsOwn)
+{
+    TempDir dir;
+    const std::wstring folder = dir.path().wstring();
+    EXPECT_EQ(EditFileStem(folder, false, 3, 1), dir / L"page 3-1");
+    EXPECT_EQ(EditFileStem(folder, true, 3, 2), dir / L"edit 3-2");
+    EXPECT_EQ(FreeEditSerial(folder, 0), 1u);
+    EXPECT_EQ(FreeEditSerial(folder, 4), 5u);
+    // A page view opened again on the folder (Back, then More...) counts past the edits in it.
+    for (const auto* name : { L"edit 1-1.png", L"edit 1-1.pdf", L"edit 3-2.pdf", L"page 2-1.png", L"notes 9-1.txt", L"edit x-1.pdf" })
+        std::ofstream(dir.path() / name) << "x";
+    EXPECT_EQ(FreeEditSerial(folder, 0), 4u);
+    EXPECT_EQ(FreeEditSerial(folder, 7), 8u);
+    EXPECT_EQ(FreeEditSerial(dir / L"gone", 2), 3u);
+}
+
+TEST(PageEdits, RedactionLandsOnThePageWhereItWasDrawn)
+{
+    // A Letter page as the page view hands it to the Redact editor: rendered at kEditDpi.
+    uint32_t pw = 0, ph = 0;
+    PixelSize(612, 792, kEditDpi, kEditMaxSide, pw, ph);
+    ASSERT_EQ(pw, 1700u);
+    ASSERT_EQ(ph, 2200u);
+    const double ppp = 612.0 / pw;   // points per picture pixel
+    TempDir dir;
+    const auto picture = dir / L"page 1-1.png", redacted = dir / L"edit 1-1.png", page = dir / L"edit 1-1.pdf";
+    const Bitmap original = Pattern(pw, ph);
+    ASSERT_HRESULT_SUCCEEDED(EncodeImageFile(original, picture, false, 0, 72.0 / ppp));
+
+    // One line boxed in the editor, in the picture's pixels (a drag leaves fractions).
+    const canvas::RectD drawn{ 150.4, 400.6, 900.2, 40.3 };
+    const auto params = redact::CoversToJson({ picture }, { { { drawn, canvas::CoverKind::Solid, 0x000000 } } });
+    bool changed = false;
+    std::wstring error;
+    ASSERT_TRUE(RenderPageEdit(PageTool::Redact, params, picture, redacted, changed, error)) << Narrow(error);
+    ASSERT_TRUE(changed);
+    ASSERT_TRUE(WritePicturePage(redacted, ppp, page, error)) << Narrow(error);
+
+    // The edited page is the original's size with the picture over all of it, its first row at the
+    // top: picture pixel (x, y) is the point (x * ppp, 792 - y * ppp).
+    auto pdf = Open(page);
+    ASSERT_TRUE(pdf);
+    auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
+    ASSERT_EQ(pages.size(), 1u);
+    const auto box = Box(pages[0]);
+    EXPECT_NEAR(box[2], 612, 0.01);
+    EXPECT_NEAR(box[3], 792, 0.01);
+    EXPECT_NE(ContentsOf(pages[0]).find("q 612 0 0 792 0 0 cm /Im0 Do Q"), std::string::npos);
+    auto image = FirstImage(pages[0]);
+    ASSERT_TRUE(image.isStream());
+    ASSERT_EQ(image.getDict().getKey("/Width").getIntValue(), 1700);
+    ASSERT_EQ(image.getDict().getKey("/Height").getIntValue(), 2200);
+    const auto data = image.getStreamData(qpdf_dl_generalized);
+    ASSERT_EQ(data->getSize(), size_t{ 1700 } * 2200 * 3);
+
+    // Black exactly over the drawn box (widened to whole pixels: 150..1050 x 400..440), every other
+    // pixel as it was: the box is no bigger than drawn and nothing else on the page changed.
+    int left = INT_MAX, top = INT_MAX, right = -1, bottom = -1;
+    size_t black = 0, changedOutside = 0;
+    const uint8_t* rgb = data->getBuffer();
+    for (uint32_t y = 0; y < ph; ++y)
+        for (uint32_t x = 0; x < pw; ++x)
+        {
+            const uint8_t* p = rgb + (static_cast<size_t>(y) * pw + x) * 3;
+            const uint8_t* o = &original.bgra[(static_cast<size_t>(y) * pw + x) * 4];
+            if (p[0] == 0 && p[1] == 0 && p[2] == 0)
+            {
+                ++black;
+                left = std::min<int>(left, x), top = std::min<int>(top, y);
+                right = std::max<int>(right, x), bottom = std::max<int>(bottom, y);
+            }
+            else if (p[0] != o[2] || p[1] != o[1] || p[2] != o[0])
+                ++changedOutside;
+        }
+    EXPECT_EQ(left, 150);
+    EXPECT_EQ(top, 400);
+    EXPECT_EQ(right, 1050);
+    EXPECT_EQ(bottom, 440);
+    EXPECT_EQ(black, size_t{ 901 } * 41);
+    EXPECT_EQ(changedOutside, 0u);
+    // In page space (points, y up) that is the drawn box times ppp, to within a pixel.
+    EXPECT_NEAR(left * ppp, drawn.x * ppp, ppp);
+    EXPECT_NEAR((right + 1) * ppp, drawn.Right() * ppp, ppp);
+    EXPECT_NEAR(792 - top * ppp, 792 - drawn.y * ppp, ppp);
+    EXPECT_NEAR(792 - (bottom + 1) * ppp, 792 - drawn.Bottom() * ppp, ppp);
 }
 
 TEST(ScrollList, ListFindsRowsAndGaps)
@@ -1352,4 +1607,62 @@ TEST(PdfRender, RunnerSavesEveryPageInAFolder)
     ASSERT_TRUE(ImageSize(result.output + L"\\deck page 02.png", w, h));
     EXPECT_EQ(w, 2550u);   // 8.5 in at 300 dpi
     EXPECT_EQ(h, 3300u);
+}
+
+TEST(PdfRender, AnEditedPageRendersWithItsRedactionWhereItWasDrawn)
+{
+    if (!RenderingAvailable())
+        GTEST_SKIP() << "Windows.Data.Pdf is not compiled into this build";
+    TempDir dir;
+    const auto source = dir / L"lines.pdf", picture = dir / L"page 1-1.png", redacted = dir / L"edit 1-1.png", page = dir / L"edit 1-1.pdf";
+    // Three black "lines of text" 12 pt tall, at 700, 628 and 556 pt from the bottom.
+    WriteTextPdf(source, { "0 0 0 rg 72 700 400 12 re f 72 628 400 12 re f 72 556 400 12 re f" });
+    RunMta([&] {
+        // The page view opens a page for editing as a picture rendered at kEditDpi.
+        std::wstring error;
+        auto doc = OpenForRendering(source, error);
+        ASSERT_TRUE(doc) << Narrow(error);
+        double w = 0, h = 0;
+        ASSERT_TRUE(doc->PageSize(0, w, h));
+        uint32_t pw = 0, ph = 0;
+        PixelSize(w, h, kEditDpi, kEditMaxSide, pw, ph);
+        Bitmap pixels;
+        ASSERT_TRUE(doc->Render(0, pw, ph, pixels, error)) << Narrow(error);
+        const double ppp = w / pw;
+        ASSERT_HRESULT_SUCCEEDED(EncodeImageFile(pixels, picture, false, 0, 72.0 / ppp));
+
+        // The middle line boxed in red in the editor (66..478 pt across, 622..646 pt up), in pixels.
+        const canvas::RectD drawn{ 66 / ppp, (792 - 646) / ppp, 412 / ppp, 24 / ppp };
+        const auto params = redact::CoversToJson({ picture }, { { { drawn, canvas::CoverKind::Solid, 0xFF0000 } } });
+        bool changed = false;
+        ASSERT_TRUE(RenderPageEdit(PageTool::Redact, params, picture, redacted, changed, error)) << Narrow(error);
+        ASSERT_TRUE(changed);
+        ASSERT_TRUE(WritePicturePage(redacted, ppp, page, error)) << Narrow(error);
+
+        // The edited page renders, as the page view's thumbnail and preview draw it: not blank.
+        auto edited = OpenForRendering(page, error);
+        ASSERT_TRUE(edited) << Narrow(error);
+        double ew = 0, eh = 0;
+        ASSERT_TRUE(edited->PageSize(0, ew, eh));
+        EXPECT_NEAR(ew, 612, 1);
+        EXPECT_NEAR(eh, 792, 1);
+        Bitmap shown;
+        ASSERT_TRUE(edited->Render(0, 612, 792, shown, error)) << Narrow(error);   // a pixel per point
+        ASSERT_EQ(shown.width, 612u);
+        const auto at = [&](int xPt, int yPt) { return &shown.bgra[(static_cast<size_t>(792 - yPt) * 612 + static_cast<size_t>(xPt)) * 4]; };
+        const auto red = [](const uint8_t* p) { return p[2] > 200 && p[1] < 60 && p[0] < 60; };
+        const auto black = [](const uint8_t* p) { return p[0] < 60 && p[1] < 60 && p[2] < 60; };
+        const auto white = [](const uint8_t* p) { return p[0] > 200 && p[1] > 200 && p[2] > 200; };
+        // The cover sits where it was drawn and is no bigger: the lines above and below stay, and the
+        // paper just outside it is white.
+        EXPECT_TRUE(red(at(272, 634)));
+        EXPECT_TRUE(red(at(70, 625)));
+        EXPECT_TRUE(red(at(474, 643)));
+        EXPECT_TRUE(black(at(272, 706)));
+        EXPECT_TRUE(black(at(272, 562)));
+        EXPECT_TRUE(white(at(272, 652)));
+        EXPECT_TRUE(white(at(272, 616)));
+        EXPECT_TRUE(white(at(60, 634)));
+        EXPECT_TRUE(white(at(484, 634)));
+    });
 }
