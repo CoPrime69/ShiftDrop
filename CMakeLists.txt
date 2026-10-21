@@ -180,7 +180,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   pugixml::pugixml
   md4c::md4c
   LibArchive::LibArchive
-  windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys comctl32
+  windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
   dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
 )
 
