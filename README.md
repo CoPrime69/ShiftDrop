@@ -34,8 +34,10 @@ Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOC
 run is in History, and any run can be undone. Long jobs show their progress in the top panel and
 can be cancelled there. It starts with Windows and lives in the tray.
 
-Video and audio go through a bundled, unmodified LGPL build of [FFmpeg](https://ffmpeg.org) that
-ShiftDrop runs as a separate process, restricted to local files (no network access).
+Video and audio go through a bundled LGPL build of [FFmpeg](https://ffmpeg.org) that ShiftDrop runs
+as a separate process, restricted to local files (no network access). CI builds it from unmodified
+FFmpeg sources with only the codecs, formats and filters the app uses (`scripts/build-ffmpeg.sh`,
+`scripts/ffmpeg-components.txt`), which keeps the installer small; its exact sources ship with each release.
 
 Documents, spreadsheets and subtitles are converted by ShiftDrop's own code (with miniz, pugixml and
 md4c); documents become PDFs through Windows' built-in "Microsoft Print to PDF". Nothing from
@@ -69,7 +71,7 @@ choose **More info**, then **Run anyway**.
 
 ```powershell
 # Developer PowerShell for VS 2022, with $env:VCPKG_ROOT set (see docs/TESTING.md)
-./scripts/get-ffmpeg.ps1      # once: pinned LGPL ffmpeg.exe into build\engines (SHA-256 checked)
+./scripts/get-ffmpeg.ps1      # once: LGPL ffmpeg.exe into build\engines (our build if in build\ffmpeg-custom, else the pinned BtbN one)
 cmake --preset x64-release
 cmake --build --preset x64-release
 ctest --preset x64-release
@@ -85,7 +87,8 @@ shiftdrop/
 ├─ vcpkg.json              wil, sqlite3, nlohmann-json, libwebp, qpdf, zlib, libarchive, gtest
 ├─ .github/workflows/ci.yml  build, unit tests, no-network imports check, installer + smoke test
 ├─ installer/ShiftDrop.iss  per-user Inno Setup installer
-├─ scripts/                get-ffmpeg, check-imports, make-notices, test-installer
+├─ scripts/                build-ffmpeg + ffmpeg-components, get-ffmpeg, check-ffmpeg, time-ffmpeg,
+│                          check-imports, make-notices, test-installer
 ├─ docs/                   PLAN, TESTING, recipes, adr/, research/
 ├─ tests/                  gtest unit tests
 └─ src/

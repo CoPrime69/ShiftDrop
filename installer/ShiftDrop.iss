@@ -52,7 +52,8 @@ SetupIconFile=..\src\ShiftDrop.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName}
 WizardStyle=modern
-Compression=lzma2/max
+; ultra64: the strongest LZMA2 setting (a 64 MB dictionary); the installer is built once per CI run.
+Compression=lzma2/ultra64
 SolidCompression=yes
 ; Fallback only: PrepareToInstall below asks a running copy to quit first. ShiftDrop has no visible
 ; top-level window for Restart Manager to close, so it is never restarted by Setup.
@@ -74,7 +75,8 @@ Name: "{localappdata}\{#AppName}"; Flags: uninsneveruninstall
 [Files]
 Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
-; Video and audio (scripts/get-ffmpeg.ps1): the LGPL ffmpeg.exe, unmodified, with its licence and source pointer.
+; Video and audio (scripts/get-ffmpeg.ps1): the LGPL ffmpeg.exe (our own build from unmodified FFmpeg
+; sources, scripts/build-ffmpeg.sh), with its licences and where its exact source is.
 Source: "{#EnginesDir}\ffmpeg.exe"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-LICENSE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion

@@ -1,0 +1,88 @@
+# What ShiftDrop's own ffmpeg.exe is built with (scripts/build-ffmpeg.sh), and what every bundled
+# ffmpeg.exe must have (scripts/check-ffmpeg.ps1 asks the exe; tests/FfmpegComponentsTests.cpp checks
+# that every codec, format and filter the argument builders name is listed here).
+#
+# Names are ffmpeg's own, as `ffmpeg -encoders` / `-decoders` / `-muxers` / `-demuxers` / `-filters`
+# print them (build-ffmpeg.sh maps the few that configure spells differently, such as the 3gp muxer,
+# configure's "tgp"). A name with * is a pattern over configure's --list-<section> (and is not checked
+# one by one). Lines starting with # are comments. Any change here rebuilds ffmpeg.exe in CI.
+
+[encoders]
+# H.264, best first (Media.cpp, EncoderName): the GPU encoders, Media Foundation, then OpenH264.
+h264_nvenc h264_qsv h264_amf h264_mf libopenh264
+# The other video formats: WebM (VP9), AVI (MPEG-4 Part 2), WMV, GIF; PNG frames and cover art; raw
+# BGRA frames for the editor's filmstrip.
+libvpx-vp9 mpeg4 wmv2 gif png rawvideo
+# Audio formats: M4A/MP4 (AAC), WebM/Opus, AVI/MP3, WMA, FLAC, OGG, WAV and AIFF.
+aac libopus libmp3lame wmav2 flac libvorbis pcm_s16le pcm_s16be
+# What the null muxer writes when no codec is named (measuring runs: loudnorm, silencedetect).
+wrapped_avframe
+
+[decoders]
+# Video: everything a dropped .mp4/.mov/.mkv/.webm/.avi/.wmv/.flv/.mpg/.ts/.3gp/.ogv/.mxf can hold
+# in practice, including camera, editing and screen-capture codecs.
+h264 hevc vvc vp8 vp9 av1 libdav1d
+mpeg1video mpeg2video mpeg4 msmpeg4v1 msmpeg4v2 msmpeg4 h261 h263 h263i h263p flv
+wmv1 wmv2 wmv3 wmv3image vc1 vc1image vp3 vp5 vp6 vp6a vp6f vp7 theora
+mjpeg mjpegb jpeg2000 jpegls prores dnxhd dvvideo cfhd hap hq_hqa hqx cllc aic dirac
+huffyuv ffvhuff ffv1 utvideo magicyuv lagarith rawvideo v210 v210x v308 v408 v410 r10k r210 yuv4 012v
+qtrle rpza smc svq1 svq3 cinepak msvideo1 msrle mszh zlib camtasia tscc2 zmbv fraps
+indeo2 indeo3 indeo4 indeo5 rv10 rv20 rv30 rv40 8bps qpeg vmnc g2m
+# Pictures: cover art, a picture for the audio visualizer, image streams inside video files.
+png apng gif bmp tiff webp targa ppm pgm pgmyuv pbm pam
+# Audio: everything in kAudioExtensions (Media.cpp) and the soundtracks of the video formats above.
+aac aac_fixed aac_latm ac3 ac3_fixed eac3 dca truehd mlp mp1 mp1float mp2 mp2float mp3 mp3float mp3adu mp3adufloat mp3on4 mp3on4float
+vorbis opus flac alac ape wavpack tta shorten tak mpc7 mpc8 als
+wmav1 wmav2 wmapro wmavoice wmalossless amrnb amrwb gsm gsm_ms qcelp evrc g723_1 g729 speex
+qdm2 qdmc mace3 mace6 nellymoser cook atrac1 atrac3 atrac3al atrac3plus atrac3plusal real_144 real_288 sipr
+pcm_* adpcm_* dsd_* s302m comfortnoise
+# Frames from -f lavfi (the H.264 encoder test, the test clips) arrive wrapped and are "decoded" by this.
+wrapped_avframe
+
+[muxers]
+# The containers the app writes (Media.cpp OutputArgs, mediaeditor MuxerFor/containers, the tools).
+mp4 mov ipod 3gp matroska webm avi asf mp3 wav flac ogg opus aiff mpegts mpeg gif
+# Frames as PNG, the split tool's parts, the editor's raw frames and PCM, and runs that write nothing.
+image2 segment rawvideo s16le null
+
+[demuxers]
+mov matroska avi asf flv live_flv mpeg mpegts mpegtsraw mpegvideo mxf ogg nut rm gxf dv ivf obu
+h264 hevc vvc m4v vc1 cavsvideo dirac
+mp3 aac loas ac3 eac3 dts dtshd truehd mlp wav w64 xwma flac aiff caf amr amrnb amrwb ape wv tta tak mpc mpc8 shn
+au voc dsf iff spdif
+# Pictures (the visualizer's still picture, PNG cover art) and the Join tool's concat list.
+image2 image_*_pipe gif concat
+# Test only: the inspector's test file gets its tags and chapters from an ffmetadata file.
+ffmetadata
+
+[filters]
+# Inserted by ffmpeg itself: format and sample-rate conversion, -ss/-t on filtered streams,
+# autorotation of phone video, cropping signalled in the file. (buffer and buffersink, the ends of
+# every filter graph, are always built in.)
+null anull format aformat scale aresample trim atrim
+transpose hflip vflip rotate crop
+# Named by the app: conversions, Compress, GIF, the video tools (trim, crop, speed, join, redact) and
+# the audio tools (normalize, visualizer, trim, channels, bleep, silence finding).
+setsar fps split palettegen paletteuse setpts atempo pad anullsrc concat gblur overlay drawbox
+ebur128 loudnorm color showwaves sine volume amix pan silencedetect
+# Test inputs (tests/*.cpp and the speed benchmark make their clips with these).
+testsrc testsrc2 nullsrc geq noise aevalsrc
+
+[parsers]
+*
+
+[bsfs]
+*
+
+[protocols]
+# Local files only: the input and output, the -progress pipe, and the media sandbox's handles.
+file pipe fd
+
+[indevs]
+# -f lavfi: the generated frames the H.264 encoder test runs on (Ffmpeg.cpp).
+lavfi
+
+[hwaccels]
+# GPU decoding (-hwaccel auto): DXVA2 and Direct3D 11 on every GPU, NVDEC on NVIDIA. (-hwaccel auto
+# tries DXVA2 first and D3D11 next, so D3D12 video, which MinGW-w64 11 has no headers for, is left out.)
+*_dxva2 *_d3d11va *_d3d11va2 *_nvdec
