@@ -16,13 +16,17 @@ namespace sd
         constexpr UINT_PTR kTimerHide = 1;            // a short gap between two slices does not blink the card
         constexpr UINT kHideDelayMs = 120;
 
-        // Card layout, DIPs.
-        constexpr float kWidthDip = 324.f;
-        constexpr float kHeightDip = 78.f;
-        constexpr float kGapDip = 10.f;      // from the wheel's edge
-        constexpr float kPadDip = 12.f;
-        constexpr float kThumbDip = 54.f;
-        constexpr float kCornerDip = 10.f;
+        // Card layout, DIPs, as the brand kit's App UI page draws it under the wheel: the file, then
+        // "WebP   1.2 MB · was 3.4 MB" over the output's name (and what changes, when something does).
+        constexpr float kWidthDip = 308.f;
+        constexpr float kHeightDip = 52.f;       // two lines
+        constexpr float kDetailDip = 14.f;       // the third line, when there is one
+        constexpr float kGapDip = 10.f;          // from the wheel's edge
+        constexpr float kPadDip = 13.f;
+        constexpr float kThumbWDip = 26.f, kThumbHDip = 32.f;
+        constexpr float kThumbGapDip = 9.7f;
+        constexpr float kCornerDip = 6.5f;
+        constexpr float kShadowDip = 14.f;       // room around the card for its shadow
         constexpr uint32_t kThumbPx = 128;   // asked of the shell; drawn smaller
 
         // The source's thumbnail for the card. Runs on the predictor's worker thread.
@@ -139,6 +143,7 @@ namespace sd
         if (!p || p->token != m_token || !m_shown)
             return;   // for a slice no longer highlighted
         m_current = std::move(*p);
+        Fit();   // a line on what changes makes it taller
         Render();
     }
 
@@ -147,20 +152,27 @@ namespace sd
     {
         m_scale = h.scale > 0.f ? h.scale : 1.f;
         m_palette = Current(m_appearance.style);
-        const LONG w = static_cast<LONG>(std::lround(kWidthDip * m_scale)), ht = static_cast<LONG>(std::lround(kHeightDip * m_scale));
-        m_size = SIZE{ w, ht };
+        const LONG w = static_cast<LONG>(std::lround(kWidthDip * m_scale));
+        const LONG ht = static_cast<LONG>(std::lround((kHeightDip + kDetailDip) * m_scale));   // the tallest it gets
         MONITORINFO mi{ sizeof(mi) };
         RECT work{ h.centre.x - 2000, h.centre.y - 2000, h.centre.x + 2000, h.centre.y + 2000 };
         if (h.monitor && GetMonitorInfoW(h.monitor, &mi))
             work = mi.rcWork;
         const LONG gap = static_cast<LONG>(std::lround(kGapDip * m_scale));
         const LONG reach = static_cast<LONG>(std::lround(h.radius));
-        LONG y = h.centre.y + reach + gap;
-        if (y + ht > work.bottom)
-            y = h.centre.y - reach - gap - ht;
-        y = std::clamp(y, work.top, std::max(work.top, work.bottom - ht));
-        const LONG x = std::clamp(h.centre.x - w / 2, work.left, std::max(work.left, work.right - w));
-        m_origin = POINT{ x, y };
+        m_above = h.centre.y + reach + gap + ht > work.bottom;
+        m_edgeY = m_above ? std::max(work.top + ht, h.centre.y - reach - gap) : std::min(h.centre.y + reach + gap, work.bottom - ht);
+        m_left = std::clamp(h.centre.x - w / 2, work.left, std::max(work.left, work.right - w));
+        Fit();
+    }
+
+    void PreviewCard::Fit()
+    {
+        const LONG pad = static_cast<LONG>(std::lround(kShadowDip * m_scale));
+        const LONG w = static_cast<LONG>(std::lround(kWidthDip * m_scale));
+        const LONG ht = static_cast<LONG>(std::lround((kHeightDip + (m_current.detail.empty() ? 0.f : kDetailDip)) * m_scale));
+        m_size = SIZE{ w + 2 * pad, ht + 2 * pad };
+        m_origin = POINT{ m_left - pad, (m_above ? m_edgeY - ht : m_edgeY) - pad };
     }
 
     bool PreviewCard::EnsureFormats()
@@ -169,9 +181,9 @@ namespace sd
             return true;
         m_fontScale = m_scale;
         constexpr auto L = DWRITE_TEXT_ALIGNMENT_LEADING, R = DWRITE_TEXT_ALIGNMENT_TRAILING;
-        m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
-        m_sizeFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, R);
-        m_lineFont = MakeFormat(m_textFamily, 12.f, DWRITE_FONT_WEIGHT_NORMAL, L);
+        m_titleFont = MakeFormat(m_textFamily, 12.25f, DWRITE_FONT_WEIGHT_BOLD, L);
+        m_sizeFont = MakeFormat(m_textFamily, 12.25f, DWRITE_FONT_WEIGHT_NORMAL, R);
+        m_lineFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_smallFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_NORMAL, L);
         return m_titleFont && m_sizeFont && m_lineFont && m_smallFont;
     }
@@ -184,16 +196,26 @@ namespace sd
         if (!m_rt)
             return;
         const float s = m_scale;
-        const float w = static_cast<float>(m_size.cx), h = static_cast<float>(m_size.cy);
+        const float pad0 = std::round(kShadowDip * s);
+        const float w = static_cast<float>(m_size.cx) - 2.f * pad0, h = static_cast<float>(m_size.cy) - 2.f * pad0;
         const auto& pal = m_palette;
-        const auto panel = Brush(pal.panel), line = Brush(pal.panelLine), dim = Brush(pal.panelTextDim, 0.25f);
-        const auto card = D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), kCornerDip * s, kCornerDip * s);
-        m_rt->FillRoundedRectangle(card, panel.Get());
-        m_rt->DrawRoundedRectangle(card, line.Get(), 1.f);
+        m_rt->SetTransform(D2D1::Matrix3x2F::Translation(pad0, pad0));
+        // A soft shadow (a few growing, fading copies, as the top panel), then the card.
+        const float radius = kCornerDip * s;
+        for (int k = 5; k >= 1; --k)
+        {
+            const float g = 2.2f * s * static_cast<float>(k);
+            m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(-g, -g + 5.f * s, w + g, h + g + 5.f * s), radius + g, radius + g),
+                                       Brush(pal.shadow, 0.04f).Get());
+        }
+        const auto card = D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), radius, radius);
+        m_rt->FillRoundedRectangle(card, Brush(pal.panel).Get());
+        m_rt->DrawRoundedRectangle(card, Brush(pal.panelLine).Get(), 1.f);
 
-        // Thumbnail, through the recipe's rotate / flip so it looks like the result.
-        const float pad = kPadDip * s, box = kThumbDip * s;
-        const auto boxRect = D2D1::RectF(pad, (h - box) / 2.f, pad + box, (h + box) / 2.f);
+        // The source's thumbnail, through the recipe's rotate / flip so it looks like the result; the
+        // brand's file mark until there is one (or for a file without a picture).
+        const float pad = kPadDip * s, bw = kThumbWDip * s, bh = kThumbHDip * s;
+        const auto boxRect = D2D1::RectF(pad, (h - bh) / 2.f, pad + bw, (h + bh) / 2.f);
         const auto& thumb = m_current.thumb;
         if (thumb && (thumb.get() != m_thumbFor || m_thumbGeneration != m_canvas->DeviceGeneration() || !m_thumbBitmap))
         {
@@ -206,32 +228,33 @@ namespace sd
             const auto& o = m_current.orientation;
             const float tw = static_cast<float>(thumb->w), th = static_cast<float>(thumb->h);
             // Fit what will be seen (sides swapped by a quarter turn) into the box.
-            const float k = std::min(box / (o.SwapsSides() ? th : tw), box / (o.SwapsSides() ? tw : th));
+            const float k = std::min(bw / (o.SwapsSides() ? th : tw), bh / (o.SwapsSides() ? tw : th));
             const D2D1_POINT_2F c{ (boxRect.left + boxRect.right) / 2.f, (boxRect.top + boxRect.bottom) / 2.f };
             const auto dest = D2D1::RectF(c.x - tw * k / 2.f, c.y - th * k / 2.f, c.x + tw * k / 2.f, c.y + th * k / 2.f);
             // x' = a x + b y, y' = c x + d y about the box centre.
             const D2D1::Matrix3x2F turn(static_cast<float>(o.a), static_cast<float>(o.c), static_cast<float>(o.b), static_cast<float>(o.d), 0.f, 0.f);
-            m_rt->SetTransform(D2D1::Matrix3x2F::Translation(-c.x, -c.y) * turn * D2D1::Matrix3x2F::Translation(c.x, c.y));
+            m_rt->SetTransform(D2D1::Matrix3x2F::Translation(-c.x, -c.y) * turn * D2D1::Matrix3x2F::Translation(c.x + pad0, c.y + pad0));
             m_rt->DrawBitmap(m_thumbBitmap.Get(), dest, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-            m_rt->SetTransform(D2D1::Matrix3x2F::Identity());
+            m_rt->SetTransform(D2D1::Matrix3x2F::Translation(pad0, pad0));
         }
         else
         {
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(boxRect, 6.f * s, 6.f * s), dim.Get());
+            DrawFileMark(boxRect, pal, false);
         }
 
-        // Text: "WebP   ~1.2 MB · was 3.4 MB" / the output name / what changes.
-        const float x0 = pad + box + 12.f * s, x1 = w - pad;
-        const float top = (h - box) / 2.f - 1.f * s;
+        // "WebP   1.2 MB · was 3.4 MB" / the output name / what changes.
+        const float x0 = pad + bw + kThumbGapDip * s, x1 = w - pad;
+        const float top = (h - (m_current.detail.empty() ? 34.f : 48.f) * s) / 2.f;
         const std::wstring format = m_current.format.empty() ? m_label : m_current.format;
-        std::wstring size = m_current.size.empty() ? std::wstring(m_current.final ? L"" : L"estimating…") : m_current.size;
+        std::wstring size = m_current.size.empty() ? std::wstring(m_current.final ? L"" : L"estimating\u2026") : m_current.size;
         if (!m_current.was.empty() && !m_current.size.empty())
-            size += L"  ·  " + m_current.was;
+            size += L" \u00b7 " + m_current.was;
         const float sizeWidth = (x1 - x0) * 0.62f;
-        Text(format, m_titleFont.Get(), D2D1::RectF(x0, top, x1 - sizeWidth - 6.f * s, top + 20.f * s), pal.panelText);
-        Text(size, m_sizeFont.Get(), D2D1::RectF(x1 - sizeWidth, top, x1, top + 20.f * s), m_current.size.empty() ? pal.panelTextDim : pal.panelText);
-        Text(m_current.name, m_lineFont.Get(), D2D1::RectF(x0, top + 20.f * s, x1, top + 38.f * s), pal.panelText);
-        Text(m_current.detail, m_smallFont.Get(), D2D1::RectF(x0, top + 38.f * s, x1, top + 55.f * s), pal.panelTextDim);
+        Text(format, m_titleFont.Get(), D2D1::RectF(x0, top, x1 - sizeWidth - 6.f * s, top + 18.f * s), pal.panelText);
+        Text(size, m_sizeFont.Get(), D2D1::RectF(x1 - sizeWidth, top, x1, top + 18.f * s), pal.panelTextDim);
+        Text(m_current.name, m_lineFont.Get(), D2D1::RectF(x0, top + 18.f * s, x1, top + 34.f * s), pal.panelText);
+        Text(m_current.detail, m_smallFont.Get(), D2D1::RectF(x0, top + 34.f * s, x1, top + 48.f * s), pal.panelTextDim);
+        m_rt->SetTransform(D2D1::Matrix3x2F::Identity());
 
         m_canvas->End(m_hwnd.get(), m_origin, 1.f);
         m_rt = nullptr;

@@ -75,6 +75,23 @@ TEST(Toast, XmlHasTheButtons)
     EXPECT_NE(none.find(L"a.png: &lt;unreadable&gt;"), std::wstring::npos);
 }
 
+TEST(Toast, AFailedToastOnlyDismisses)
+{
+    Content content{ L"Couldn\u2019t convert scan-07.png", L"The file is damaged or isn\u2019t really a PNG.", {} };
+    content.failed = true;
+    const auto xml = BuildXml(content);
+    EXPECT_NE(xml.find(L"<action content=\"Dismiss\" arguments=\"dismiss\" activationType=\"system\"/>"), std::wstring::npos) << xml;
+    EXPECT_EQ(xml.find(L"content=\"Open"), std::wstring::npos);
+}
+
+TEST(Toast, SummaryNamesTheFirstOutputAndWhere)
+{
+    EXPECT_EQ(Summary({ L"photo (converted).webp", L"b.webp", L"c.webp" }, L"next to the originals"),
+              L"photo (converted).webp and 2 more, next to the originals.");
+    EXPECT_EQ(Summary({ L"a.png" }, L"to Downloads"), L"a.png, to Downloads.");
+    EXPECT_EQ(Summary({}, L"anywhere"), L"");
+}
+
 TEST(Toast, WhenABatchGetsAToast)
 {
     using namespace std::chrono_literals;

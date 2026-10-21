@@ -43,18 +43,34 @@ namespace sd
 
         constexpr wchar_t kGlyphCheck = 0xE73E;     // CheckMark
         constexpr wchar_t kGlyphWarning = 0xE7BA;   // Warning
-        constexpr wchar_t kGlyphError = 0xE711;     // Cancel
-        constexpr wchar_t kGlyphOpen = 0xE8A7;      // OpenInNewWindow
+        constexpr wchar_t kGlyphError = 0xE783;     // Error (a circled !)
         constexpr wchar_t kGlyphClose = 0xE8BB;     // ChromeClose (the cancel ×)
-        constexpr float kCancelDip = 26.f;          // the × button's diameter
 
-        // Carry (a result with output files).
+        // The pills' insides, as the brand kit's App UI page draws them (DIPs; the content box is
+        // kInsetDip inside the pill). The pill is 48 high for progress, 44 for a result.
+        constexpr float kProgressHeightDip = 48.f;
+        constexpr float kResultHeightDip = 44.f;
+        constexpr float kLeadDip = 9.f;             // content box to the spinner or the status icon
+        constexpr float kMarkDip = 17.f;            // the spinner and the status icon
+        constexpr float kMarkGapDip = 9.f;          // after them
+        constexpr float kTailDip = 4.f;             // the last text to the content box's end
+        constexpr float kCancelDip = 26.f;          // the × button's diameter
+        constexpr float kButtonEndDip = 2.7f;       // the last round button to the content box's end
+        constexpr float kBarDip = 2.3f;             // the progress bar, along the pill's bottom edge
+        constexpr float kBarBottomDip = 3.f;
+        constexpr float kFailLineDip = 1.5f;        // a failure's red outline
+
+        // Carry (a result with output files): a handle to drag the file out, then Float and Copy.
         constexpr ULONGLONG kCarryMs = 5000;        // a success that can be carried stays a little longer
-        constexpr float kActionDip = 28.f;          // Float and Copy buttons
-        constexpr float kActionGapDip = 6.f;
+        constexpr float kChipLeadDip = 2.7f;
+        constexpr float kChipWDip = 36.f, kChipHDip = 28.f;
+        constexpr float kChipGapDip = 7.6f;
+        constexpr float kActionDip = 26.f;          // Float and Copy buttons
+        constexpr float kActionGapDip = 7.6f;
         constexpr wchar_t kGlyphPin = 0xE718;       // Pin (Float shelf)
         constexpr wchar_t kGlyphCopy = 0xE8C8;      // Copy
-        constexpr const wchar_t* kHintDrag = L"Drag into any app, or click to show in Explorer";
+        constexpr const wchar_t* kHintShow = L"Click to show in folder";
+        constexpr const wchar_t* kHintDismiss = L"Click to dismiss";
         constexpr const wchar_t* kHintActions[2] = { L"Keep on the Float shelf", L"Copy to the clipboard" };
     }
 
@@ -358,13 +374,23 @@ namespace sd
         return -1;
     }
 
+    std::wstring Island::DragHint() const
+    {
+        return std::format(L"{} \u00b7 drag the {} out", kHintShow, m_actions.files > 1 ? L"files" : L"file");
+    }
+
     std::wstring Island::ResultLine() const
     {
         if (m_actionHover >= 0 && !m_actionDone[m_actionHover])
             return kHintActions[m_actionHover];
-        if (m_resultHover && m_actions.drag && !m_actionDone[0] && !m_actionDone[1])
-            return kHintDrag;
+        if (m_resultHover && m_outcome != Outcome::Failure && !m_actionDone[0] && !m_actionDone[1])
+            return m_actions.drag ? DragHint() : std::wstring(kHintShow);
         return m_subtitle;
+    }
+
+    bool Island::TwoLines() const
+    {
+        return !m_subtitle.empty() || m_actions.Any();
     }
 
     void Island::OnResultMouse(UINT msg, POINT pt)
@@ -432,7 +458,8 @@ namespace sd
                 }
                 break;
             }
-            if (m_onClick)
+            // A failure only goes away ("Click to dismiss"); anything else shows its files.
+            if (m_onClick && m_outcome != Outcome::Failure)
                 m_onClick();
             Retract();
             break;
@@ -542,8 +569,8 @@ namespace sd
         switch (m_state)
         {
         case State::Switcher: return std::round(panel::kSwitcherHeightDip * s);
-        case State::Progress: return std::round(56.f * s);
-        default: return std::round(m_subtitle.empty() ? 50.f * s : 60.f * s);
+        case State::Progress: return std::round(kProgressHeightDip * s);
+        default: return std::round(kResultHeightDip * s);
         }
     }
 
@@ -557,26 +584,36 @@ namespace sd
             w = FitSwitcher().width;
             break;
         case State::Progress:
-            w = 14.f * s + 26.f * s + 12.f * s + std::max(TextWidth(m_title, m_titleFont.Get()), 200.f * s) + 28.f * s +
-                TextWidth(std::format(L"{} of {}", m_total, m_total), m_subFont.Get()) + 14.f * s + 2.f * s;   // matches DrawProgress, +2 so it never trims
-            if (m_onCancel || m_cancelled)
-                w += kCancelDip * s + 10.f * s;
+            // As DrawProgress lays it out; the percentage measured at its widest so the pill keeps its size.
+            w = (kLeadDip + kMarkDip + kMarkGapDip) * s + TextWidth(m_title, m_titleFont.Get()) + kMarkGapDip * s +
+                std::max(TextWidth(L"\u00b7 100%", m_countFont.Get()), m_cancelled ? TextWidth(L"\u00b7 Cancelling\u2026", m_countFont.Get()) : 0.f);
+            w += m_onCancel || m_cancelled ? (4.6f + kCancelDip + kButtonEndDip) * s : kLeadDip * s;
             break;
         default:
         {
-            float text = std::max(TextWidth(m_title, m_titleFont.Get()), TextWidth(m_subtitle, m_subFont.Get()));
-            if (m_actions.Any())
+            // As DrawResult: the lead (the carry handle or the status icon), the text, the buttons.
+            const bool two = TwoLines();
+            const bool failed = m_outcome == Outcome::Failure;
+            float text = TextWidth(m_title, (two ? m_doneFont : m_titleFont).Get());
+            if (failed)
+                text += kMarkGapDip * s + TextWidth(kHintDismiss, m_hintFont.Get());
+            text = std::max(text, TextWidth(m_subtitle, m_subFont.Get()));
+            if (!failed)
             {
-                // Room for the hints too, so the panel does not jump when the mouse arrives.
-                text = std::max({ text, TextWidth(kHintDrag, m_subFont.Get()), TextWidth(kHintActions[0], m_subFont.Get()),
-                                  TextWidth(kHintActions[1], m_subFont.Get()) });
-                text += static_cast<float>(ActionCount()) * (kActionDip + kActionGapDip) * s;
+                // Room for the hints too, so the pill does not jump when the mouse arrives.
+                text = std::max(text, TextWidth(m_actions.drag ? DragHint() : std::wstring(kHintShow), m_subFont.Get()));
+                if (m_actions.Any())
+                    text = std::max({ text, TextWidth(kHintActions[0], m_subFont.Get()), TextWidth(kHintActions[1], m_subFont.Get()) });
             }
-            w = 14.f * s + 32.f * s + 12.f * s + text + 20.f * s + 20.f * s + 12.f * s;
+            w = (m_actions.drag ? (kChipLeadDip + kChipWDip + kChipGapDip) : (kLeadDip + kMarkDip + kMarkGapDip)) * s + text;
+            if (const size_t n = ActionCount())
+                w += 6.f * s + static_cast<float>(n) * kActionDip * s + static_cast<float>(n - 1) * kActionGapDip * s + kButtonEndDip * s;
+            else
+                w += kTailDip * s;
             break;
         }
         }
-        return std::min(std::round(w + 2.f * inset), m_maxContent);
+        return std::min(std::round(w + 2.f * inset + 2.f * m_scale), m_maxContent);   // +2 so text never trims
     }
 
     panel::Switcher Island::FitSwitcher() const
@@ -599,13 +636,18 @@ namespace sd
         m_tabFont = MakeFormat(m_textFamily, panel::kTabFontDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
         m_tabIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_NORMAL, C);
         m_hintFont = MakeFormat(m_textFamily, panel::kHintFontDip, DWRITE_FONT_WEIGHT_NORMAL, L);
-        m_titleFont = MakeFormat(m_textFamily, 14.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
-        m_subFont = MakeFormat(m_textFamily, 11.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
-        m_statusIconFont = MakeFormat(m_iconFamily, 15.f, DWRITE_FONT_WEIGHT_BOLD, C);
+        // The kit's sizes: a one-line pill's text as the section names; a two-line result a step
+        // smaller over a small line.
+        m_titleFont = MakeFormat(m_textFamily, panel::kTabFontDip, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
+        m_countFont = MakeFormat(m_textFamily, panel::kTabFontDip, DWRITE_FONT_WEIGHT_NORMAL, L);
+        m_doneFont = MakeFormat(m_textFamily, 12.25f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
+        m_subFont = MakeFormat(m_textFamily, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
+        m_statusIconFont = MakeFormat(m_iconFamily, 16.f, DWRITE_FONT_WEIGHT_NORMAL, C);
         m_cancelFont = MakeFormat(m_iconFamily, 9.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_actionFont = MakeFormat(m_iconFamily, 12.5f, DWRITE_FONT_WEIGHT_NORMAL, C);
+        m_actionFont = MakeFormat(m_iconFamily, 12.f, DWRITE_FONT_WEIGHT_NORMAL, C);
         (void)R;
-        return m_tabFont && m_tabIconFont && m_hintFont && m_titleFont && m_subFont && m_statusIconFont && m_cancelFont && m_actionFont;
+        return m_tabFont && m_tabIconFont && m_hintFont && m_titleFont && m_countFont && m_doneFont && m_subFont && m_statusIconFont && m_cancelFont &&
+               m_actionFont;
     }
 
     void Island::DrawSwitcher(const D2D1_RECT_F& box, float alpha)
@@ -655,12 +697,12 @@ namespace sd
 
     void Island::DrawProgress(const D2D1_RECT_F& box, float alpha)
     {
+        // "(spinner) Converting 3 files · 40%  (×)", the bar along the pill's bottom edge.
         const float s = m_scale;
         const float cy = (box.top + box.bottom) / 2.f;
-        // Spinner: an accent arc turning on a faint track.
-        const auto c = D2D1::Point2F(box.left + 14.f * s + 13.f * s, cy);
-        const float r = 10.f * s;
-        m_rt->DrawEllipse(D2D1::Ellipse(c, r, r), Brush(m_palette.keycap, alpha).Get(), 2.5f * s);
+        const auto c = D2D1::Point2F(box.left + (kLeadDip + kMarkDip / 2.f) * s, cy);
+        const float r = (kMarkDip / 2.f - 1.f) * s, stroke = 1.8f * s;
+        m_rt->DrawEllipse(D2D1::Ellipse(c, r, r), Brush(m_palette.track, alpha).Get(), stroke);
         ComPtr<ID2D1PathGeometry> arc;
         ComPtr<ID2D1GeometrySink> sink;
         if (SUCCEEDED(m_d2d->CreatePathGeometry(&arc)) && SUCCEEDED(arc->Open(&sink)))
@@ -670,46 +712,47 @@ namespace sd
                 return D2D1::Point2F(c.x + r * std::sin(rad), c.y - r * std::cos(rad));
             };
             sink->BeginFigure(at(m_spin), D2D1_FIGURE_BEGIN_HOLLOW);
-            sink->AddArc(D2D1::ArcSegment(at(m_spin + 100.f), D2D1::SizeF(r, r), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+            sink->AddArc(D2D1::ArcSegment(at(m_spin + 90.f), D2D1::SizeF(r, r), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
             sink->EndFigure(D2D1_FIGURE_END_OPEN);
             sink->Close();
             ComPtr<ID2D1StrokeStyle> round;
             m_d2d->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND), nullptr, 0, &round);
-            m_rt->DrawGeometry(arc.Get(), Brush(m_palette.panelAccent, alpha).Get(), 2.5f * s, round.Get());
+            m_rt->DrawGeometry(arc.Get(), Brush(m_palette.accentMark, alpha).Get(), stroke, round.Get());
         }
 
-        // The × sits at the right end; the text and the bar end before it.
-        auto right = box.right;
+        // The × at the right end, on a faint disc; red under the mouse.
+        float right = box.right - kLeadDip * s, barRight = box.right - kLeadDip * s;
         if (m_onCancel || m_cancelled)
         {
             const float d = kCancelDip * s;
-            const auto c2 = D2D1::Point2F(box.right - 6.f * s - d / 2.f, cy);
+            const auto c2 = D2D1::Point2F(box.right - kButtonEndDip * s - d / 2.f, cy);
             m_cancelRect = D2D1::RectF(c2.x - d / 2.f, c2.y - d / 2.f, c2.x + d / 2.f, c2.y + d / 2.f);
-            const float on = m_cancelHover ? 1.f : 0.f;
-            m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
-                              Brush(m_cancelHover ? m_palette.error : m_palette.keycap, (m_cancelHover ? 0.9f : 1.f) * alpha).Get());
+            m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f), Brush(m_cancelHover ? m_palette.error : m_palette.keycap, alpha).Get());
             const wchar_t x[2]{ kGlyphClose, 0 };
-            Text(x, m_cancelFont.Get(), m_cancelRect, Mix(m_palette.panelTextDim, m_palette.panelTextOnAccent, on), (m_cancelled ? 0.4f : 1.f) * alpha);
-            right = m_cancelRect.left - 4.f * s;
+            const auto ink = m_cancelHover ? Rgb(accent::TextOn(RgbOf(m_palette.error))) : m_palette.panelText;
+            Text(x, m_cancelFont.Get(), m_cancelRect, ink, (m_cancelled ? 0.4f : 1.f) * alpha);
+            right = m_cancelRect.left - 4.6f * s;
+            barRight = m_cancelRect.left - 8.f * s;
         }
 
-        const float tx = box.left + 14.f * s + 26.f * s + 12.f * s;
-        // "2 of 5" files; a single video or audio file shows its percentage instead.
-        const bool percent = m_fractional && m_total == 1;
-        const auto count = m_cancelled ? std::wstring(L"Cancelling\u2026")
-                           : percent  ? std::format(L"{}%", static_cast<int>(m_done * 100.0))
-                                      : std::format(L"{} of {}", static_cast<size_t>(m_done), m_total);
-        const float cw = std::max(TextWidth(std::format(L"{} of {}", m_total, m_total), m_subFont.Get()),
-                                  m_cancelled ? TextWidth(count, m_subFont.Get()) : 0.f);
-        Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 4.f * s, right - cw - 28.f * s, cy + 3.f * s), m_palette.panelText, alpha);
-        Text(count, m_subFont.Get(), D2D1::RectF(right - cw - 14.f * s, box.top + 4.f * s, right, cy + 3.f * s), m_palette.panelTextDim, alpha);
-        // Progress bar under the title.
-        const auto track = D2D1::RectF(tx, cy + 9.f * s, right - 14.f * s, cy + 13.f * s);
-        m_rt->FillRoundedRectangle(D2D1::RoundedRect(track, 2.f * s, 2.f * s), Brush(m_palette.keycap, alpha).Get());
+        // A single video or audio file moves within itself; a batch by the files done.
+        const auto count = m_cancelled ? std::wstring(L"\u00b7 Cancelling\u2026")
+                                       : std::format(L"\u00b7 {}%", m_total ? static_cast<int>(100.0 * m_done / static_cast<double>(m_total)) : 0);
+        const float tx = box.left + (kLeadDip + kMarkDip + kMarkGapDip) * s;
+        const float cw = TextWidth(count, m_countFont.Get());
+        const float titleRight = std::max(tx, std::min(tx + TextWidth(m_title, m_titleFont.Get()) + 1.f, right - cw - kMarkGapDip * s));
+        Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top, titleRight, box.bottom), m_palette.panelText, alpha);
+        Text(count, m_countFont.Get(), D2D1::RectF(titleRight + kMarkGapDip * s, box.top, right, box.bottom), m_palette.panelTextDim, alpha);
+
+        // The bar, thin, along the bottom of the pill (the box is kInsetDip inside it).
+        const float bottom = box.bottom + (kInsetDip - kBarBottomDip) * s;
+        const auto track = D2D1::RectF(box.left + kLeadDip * s, bottom - kBarDip * s, barRight, bottom);
+        const float br = kBarDip * s / 2.f;
+        m_rt->FillRoundedRectangle(D2D1::RoundedRect(track, br, br), Brush(m_palette.track, alpha).Get());
         if (m_bar > 0.f)
         {
             const auto fill = D2D1::RectF(track.left, track.top, track.left + (track.right - track.left) * m_bar, track.bottom);
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(fill, 2.f * s, 2.f * s), Brush(m_palette.panelAccent, alpha).Get());
+            m_rt->FillRoundedRectangle(D2D1::RoundedRect(fill, br, br), Brush(m_palette.accentMark, alpha).Get());
         }
     }
 
@@ -717,27 +760,44 @@ namespace sd
     {
         const float s = m_scale;
         const float cy = (box.top + box.bottom) / 2.f;
-        const auto& tone = m_outcome == Outcome::Success ? m_palette.ok : m_outcome == Outcome::Partial ? m_palette.warn : m_palette.error;
-        const wchar_t glyph = m_outcome == Outcome::Success ? kGlyphCheck : m_outcome == Outcome::Partial ? kGlyphWarning : kGlyphError;
-        // Status badge, popping in with the content.
-        const float pop = 0.7f + 0.3f * Spring(m_contentT);
-        const auto c = D2D1::Point2F(box.left + 14.f * s + 16.f * s, cy);
-        const float r = 15.f * s * pop;
-        m_rt->FillEllipse(D2D1::Ellipse(c, r, r), Brush(tone, 0.22f * alpha).Get());
-        const wchar_t g[2]{ glyph, 0 };
-        Text(g, m_statusIconFont.Get(), D2D1::RectF(c.x - r, c.y - r, c.x + r, c.y + r), tone, alpha);
+        const bool failed = m_outcome == Outcome::Failure;
+        float tx = 0.f;
+        if (m_actions.drag)
+        {
+            // The handle: grip dots and the file, on a faint chip; drag it (or the pill) into an app.
+            const auto chip = D2D1::RectF(box.left + kChipLeadDip * s, cy - kChipHDip * s / 2.f, box.left + (kChipLeadDip + kChipWDip) * s,
+                                          cy + kChipHDip * s / 2.f);
+            m_rt->FillRoundedRectangle(D2D1::RoundedRect(chip, 4.6f * s, 4.6f * s), Brush(m_palette.keycap, alpha).Get());
+            for (int col = 0; col < 2; ++col)
+                for (int row = -1; row <= 1; ++row)
+                    m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(chip.left + (6.f + 2.9f * static_cast<float>(col)) * s, cy + 2.9f * s * static_cast<float>(row)),
+                                                    0.95f * s, 0.95f * s),
+                                      Brush(m_palette.panelTextDim, alpha).Get());
+            DrawFileMark(D2D1::RectF(chip.left + 14.f * s, chip.top + 2.5f * s, chip.right - 2.5f * s, chip.bottom - 2.5f * s), m_palette, true, alpha);
+            tx = chip.right + kChipGapDip * s;
+        }
+        else
+        {
+            // The status icon, popping in with the content.
+            const auto& tone = m_outcome == Outcome::Success ? m_palette.ok : m_outcome == Outcome::Partial ? m_palette.warn : m_palette.error;
+            const wchar_t glyph = m_outcome == Outcome::Success ? kGlyphCheck : m_outcome == Outcome::Partial ? kGlyphWarning : kGlyphError;
+            const float pop = 0.7f + 0.3f * Spring(m_contentT);
+            const auto c = D2D1::Point2F(box.left + (kLeadDip + kMarkDip / 2.f) * s, cy);
+            const float r = kMarkDip / 2.f * s * pop + 2.f * s;
+            const wchar_t g[2]{ glyph, 0 };
+            Text(g, m_statusIconFont.Get(), D2D1::RectF(c.x - r, c.y - r, c.x + r, c.y + r), tone, alpha);
+            tx = box.left + (kLeadDip + kMarkDip + kMarkGapDip) * s;
+        }
 
-        const float tx = box.left + 14.f * s + 32.f * s + 12.f * s;
-        const float right = box.right - 20.f * s - 12.f * s;
-        // Float and Copy, just left of the "open" glyph.
-        float textRight = right;
+        // Float and Copy at the right end.
+        float textRight = box.right - kTailDip * s;
         if (const size_t n = ActionCount())
         {
             const float d = kActionDip * s, gap = kActionGapDip * s;
             const std::function<std::wstring()>* fns[2] = { &m_actions.toShelf, &m_actions.copy };
             const wchar_t glyphs[2] = { kGlyphPin, kGlyphCopy };
-            float x = right - static_cast<float>(n) * (d + gap);
-            textRight = x - 4.f * s;
+            float x = box.right - kButtonEndDip * s - static_cast<float>(n) * d - static_cast<float>(n - 1) * gap;
+            textRight = x - 6.f * s;
             for (size_t i = 0; i < n; ++i, x += d + gap)
             {
                 m_actionRects[i] = D2D1::RectF(x, cy - d / 2.f, x + d, cy + d / 2.f);
@@ -751,18 +811,22 @@ namespace sd
                 Text(g2, m_actionFont.Get(), m_actionRects[i], done ? m_palette.ok : hover ? m_palette.panelTextOnAccent : m_palette.panelText, alpha);
             }
         }
+
+        // The title, and a failure's "Click to dismiss" beside it; the line under it.
+        const bool two = TwoLines();
+        IDWriteTextFormat* titleFont = (two ? m_doneFont : m_titleFont).Get();
         const auto line = ResultLine();
-        if (line.empty())
+        const float top = two ? cy - 13.f * s : box.top, bottom = two ? cy + 1.5f * s : box.bottom;
+        float titleRight = textRight;
+        if (failed)
         {
-            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top, textRight, box.bottom), m_palette.panelText, alpha);
+            const float hw = TextWidth(kHintDismiss, m_hintFont.Get());
+            titleRight = std::max(tx, std::min(tx + TextWidth(m_title, titleFont) + 1.f, textRight - hw - kMarkGapDip * s));
+            Text(kHintDismiss, m_hintFont.Get(), D2D1::RectF(titleRight + kMarkGapDip * s, top, textRight, bottom), m_palette.panelTextDim, alpha);
         }
-        else
-        {
-            Text(m_title, m_titleFont.Get(), D2D1::RectF(tx, box.top + 6.f * s, textRight, cy + 2.f * s), m_palette.panelText, alpha);
-            Text(line, m_subFont.Get(), D2D1::RectF(tx, cy + 1.f * s, textRight, box.bottom - 6.f * s), m_palette.panelTextDim, alpha);
-        }
-        const wchar_t open[2]{ kGlyphOpen, 0 };
-        Text(open, m_tabIconFont.Get(), D2D1::RectF(right, box.top, box.right - 8.f * s, box.bottom), m_palette.panelTextDim, alpha);
+        Text(m_title, titleFont, D2D1::RectF(tx, top, titleRight, bottom), m_palette.panelText, alpha);
+        if (two)
+            Text(line, m_subFont.Get(), D2D1::RectF(tx, cy + 1.5f * s, textRight, cy + 13.f * s), m_palette.panelTextDim, alpha);
     }
 
     void Island::Render()
@@ -810,6 +874,13 @@ namespace sd
         m_rt->FillRoundedRectangle(pill, Brush(m_palette.panel).Get());
         m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(rect.left + 0.5f, rect.top + 0.5f, rect.right - 0.5f, rect.bottom - 0.5f), radius - 0.5f, radius - 0.5f),
                                    Brush(m_palette.panelLine).Get(), 1.f);
+        if (m_state == State::Result && m_outcome == Outcome::Failure)
+        {
+            // A failure is outlined in the error colour; it stays until clicked.
+            const float lw = kFailLineDip * s, e = lw / 2.f;
+            m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(rect.left + e, rect.top + e, rect.right - e, rect.bottom - e), radius - e, radius - e),
+                                       Brush(m_palette.error, EaseOutCubic(m_contentT)).Get(), lw);
+        }
 
         // Content is laid out for the target size and clipped to the morphing pill, so it never
         // reflows while the pill grows; it fades in after a state change.

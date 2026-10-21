@@ -97,6 +97,8 @@ namespace sd::theme
         D2D1_COLOR_F panelAccent, panelTextOnAccent;   // the accent on the top panel: the active section and the done mark
         D2D1_COLOR_F hover;                            // a hovered row or button on the panel or the shelf
         D2D1_COLOR_F ok, warn, error, info;            // status, readable on the panel
+        D2D1_COLOR_F track;                            // under a progress bar and a spinner's arc
+        D2D1_COLOR_F page, pageLine, pageMark;         // the brand's file mark: a page, its edge, the done corner (DrawFileMark)
     };
     // From the Windows light/dark app setting (or the Settings window's override) and the accent colour
     // (accent::Current(), Settings › Accent colour), read each time a wheel opens so a change applies

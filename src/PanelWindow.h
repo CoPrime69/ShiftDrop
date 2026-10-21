@@ -1,5 +1,6 @@
 #pragma once
 #include "Canvas.h"
+#include "Theme.h"
 
 #include <windows.h>
 #include <d2d1.h>
@@ -41,6 +42,10 @@ namespace sd
         // Between Canvas::Begin and End (m_rt set).
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> Brush(const D2D1_COLOR_F& color, float alpha = 1.f);
         void Text(const std::wstring& text, IDWriteTextFormat* format, const D2D1_RECT_F& rect, const D2D1_COLOR_F& color, float alpha = 1.f);
+        // The brand's file mark (a page with a rounded-off corner), as large as fits in `box`, centred;
+        // `done` adds the accent corner that says "made by ShiftDrop". For a file that has no picture
+        // of its own: the top panel's result, the result card, the shelf.
+        void DrawFileMark(const D2D1_RECT_F& box, const theme::Palette& palette, bool done, float alpha = 1.f);
 
         Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
         Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;

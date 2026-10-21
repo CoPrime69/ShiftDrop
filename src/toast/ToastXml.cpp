@@ -57,6 +57,14 @@ namespace sd::toast
         return a;
     }
 
+    std::wstring Summary(const std::vector<std::wstring>& names, std::wstring_view where)
+    {
+        if (names.empty())
+            return {};
+        const auto who = names.size() == 1 ? names[0] : std::format(L"{} and {} more", names[0], names.size() - 1);
+        return where.empty() ? who + L"." : std::format(L"{}, {}.", who, where);
+    }
+
     bool ShouldNotify(bool shownInPanel, std::chrono::milliseconds took, bool cancelled)
     {
         if (!shownInPanel)
@@ -99,14 +107,19 @@ namespace sd::toast
         if (!content.text.empty())
             xml += std::format(L"<text>{}</text>", EscapeXml(content.text));
         xml += L"</binding></visual>";
-        if (!content.outputs.empty())
+        if (content.failed)
+        {
+            // Windows' own dismiss: nothing to open.
+            xml += L"<actions><action content=\"Dismiss\" arguments=\"dismiss\" activationType=\"system\"/></actions>";
+        }
+        else if (!content.outputs.empty())
         {
             xml += L"<actions>";
-            xml += std::format(L"<action content=\"Open folder\" arguments=\"{}\" activationType=\"foreground\"/>",
-                               EscapeXml(Arguments(Verb::Reveal, content.outputs)));
             if (content.outputs.size() == 1)
                 xml += std::format(L"<action content=\"Open\" arguments=\"{}\" activationType=\"foreground\"/>",
                                    EscapeXml(Arguments(Verb::Open, content.outputs)));
+            xml += std::format(L"<action content=\"Open folder\" arguments=\"{}\" activationType=\"foreground\"/>",
+                               EscapeXml(Arguments(Verb::Reveal, content.outputs)));
             xml += L"</actions>";
         }
         xml += L"</toast>";

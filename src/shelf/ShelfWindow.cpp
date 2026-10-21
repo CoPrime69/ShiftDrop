@@ -66,8 +66,6 @@ namespace sd
         constexpr wchar_t kGlyphReveal = 0xE838;   // FolderOpen
         constexpr wchar_t kGlyphRemove = 0xE711;   // Cancel
         constexpr wchar_t kGlyphClose = 0xE8BB;    // ChromeClose
-        constexpr wchar_t kGlyphDrop = 0xE896;     // Download
-        constexpr wchar_t kGlyphFile = 0xE8A5;     // Document
         constexpr wchar_t kGlyphFolder = 0xE8B7;   // Folder
 
         enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear, kMenuClose };
@@ -418,10 +416,11 @@ namespace sd
 
     Island::ResultActions Shelf::CarryActions(std::vector<std::wstring> outputs)
     {
-        Island::ResultActions actions;
+        Island::ResultActions actions{};
         if (outputs.empty())
             return actions;
         const std::weak_ptr<bool> alive = m_alive;
+        actions.files = outputs.size();
         actions.drag = [alive, this, outputs] {
             if (!alive.expired())
                 shelf::DragOut(m_hwnd.get(), outputs);
@@ -587,6 +586,7 @@ namespace sd
             UseMonitor(MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST));
         }
         m_palette = Current(m_appearance.style);
+        m_kit.SetPalette(theme::EditorColors());
         m_motion = AnimationsOn();
         if (m_h <= 0.f)
             m_h = shelf::PanelHeight(m_metrics, m_items.size());
@@ -1277,10 +1277,19 @@ namespace sd
         m_nameFont = MakeFormat(m_textFamily, 12.5f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_detailFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_iconFont = MakeFormat(m_iconFamily, 13.f, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_smallIconFont = MakeFormat(m_iconFamily, 11.f, DWRITE_FONT_WEIGHT_NORMAL, C);
-        m_countFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, C);
+        m_countFont = MakeFormat(m_textFamily, 12.f, DWRITE_FONT_WEIGHT_NORMAL, L);
         m_footerFont = MakeFormat(m_textFamily, 12.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, L);
-        return m_titleFont && m_nameFont && m_detailFont && m_iconFont && m_smallIconFont && m_countFont && m_footerFont;
+        m_badgeFont = MakeFormat(m_textFamily, 11.f, DWRITE_FONT_WEIGHT_BOLD, C);
+        // The empty shelf's line, centred and wrapping (the one-line formats end in "...").
+        m_hintFont = MakeFormat(m_textFamily, 13.f, DWRITE_FONT_WEIGHT_NORMAL, C);
+        if (m_hintFont)
+        {
+            m_hintFont->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+            m_hintFont->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+            const DWRITE_TRIMMING none{ DWRITE_TRIMMING_GRANULARITY_NONE, 0, 0 };
+            m_hintFont->SetTrimming(&none, nullptr);
+        }
+        return m_titleFont && m_nameFont && m_detailFont && m_iconFont && m_countFont && m_footerFont && m_badgeFont && m_hintFont;
     }
 
     void Shelf::Text(const std::wstring& text, IDWriteTextFormat* format, const Box& box, const D2D1_COLOR_F& color, float alpha)
@@ -1295,26 +1304,29 @@ namespace sd
         Text(text, format, box, color, alpha);
     }
 
-    void Shelf::RoundButton(const Box& box, wchar_t glyph, bool hover, bool danger, float alpha)
+    ControlKit::ControlState Shelf::StateOf(Part part, bool focused) const
     {
-        const auto colors = ColorsFor(m_palette, m_appearance.style);
-        const float r = box.Width() / 2.f;
-        if (hover)
-            m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(box.left + r, box.top + r), r, r),
-                              Brush(danger ? colors.danger : colors.button, (danger ? 0.9f : 1.f) * alpha).Get());
-        Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onDanger : colors.dim, alpha);
+        const bool hot = m_hover.part == part;
+        return ControlKit::ControlState{ true, hot, hot && m_pressed && m_press.part == part, focused };
     }
 
-    void Shelf::PillButton(const Box& box, const std::wstring& text, bool hover, bool danger, float alpha)
+    void Shelf::IconButton(const Box& box, wchar_t glyph, ControlKit::ControlState state)
     {
-        // RoundButton's look with a label: always shaded so it reads as a button, red under the mouse
-        // for a danger one.
-        const auto colors = ColorsFor(m_palette, m_appearance.style);
-        const float r = box.Height() / 2.f;
-        const bool alarm = hover && danger;
-        m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), r, r),
-                                   Brush(alarm ? colors.danger : hover ? colors.hover : colors.button, (alarm ? 0.9f : 1.f) * alpha).Get());
-        Text(text, m_countFont.Get(), box, alarm ? colors.onDanger : colors.text, alpha);
+        // The kit draws in DIPs: scaled about the shelf's screen-pixel transform for the call.
+        D2D1::Matrix3x2F base;
+        m_rt->GetTransform(&base);
+        m_rt->SetTransform(D2D1::Matrix3x2F::Scale(m_scale, m_scale) * base);
+        m_kit.DrawIconButton(D2D1::RectF(box.left / m_scale, box.top / m_scale, box.right / m_scale, box.bottom / m_scale), glyph, false, state);
+        m_rt->SetTransform(base);
+    }
+
+    void Shelf::PushButton(const Box& box, const std::wstring& text, ControlKit::ControlState state)
+    {
+        D2D1::Matrix3x2F base;
+        m_rt->GetTransform(&base);
+        m_rt->SetTransform(D2D1::Matrix3x2F::Scale(m_scale, m_scale) * base);
+        m_kit.DrawButton(D2D1::RectF(box.left / m_scale, box.top / m_scale, box.right / m_scale, box.bottom / m_scale), text, 0, false, state);
+        m_rt->SetTransform(base);
     }
 
     void Shelf::DrawThumb(Item& item, const Box& box, float alpha)
@@ -1328,9 +1340,15 @@ namespace sd
         }
         if (!item.bitmap)
         {
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), radius, radius),
-                                       Brush(colors.button, alpha).Get());
-            Glyph(item.folder ? kGlyphFolder : kGlyphFile, m_iconFont.Get(), box, colors.dim, alpha);
+            // No picture of its own: a folder's icon, or the brand's file mark.
+            if (item.folder)
+            {
+                m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), radius, radius),
+                                           Brush(colors.button, alpha).Get());
+                Glyph(kGlyphFolder, m_iconFont.Get(), box, colors.dim, alpha);
+            }
+            else
+                DrawFileMark(D2D1::RectF(box.left, box.top, box.right, box.bottom), m_palette, false, alpha);
             return;
         }
         // Fit inside the square, keeping the picture's shape; a bitmap brush gives rounded corners
@@ -1356,38 +1374,30 @@ namespace sd
         const float s = m_scale;
         const size_t n = m_items.size();
 
-        // Header: "Float" and the count ("3 files"), then Pin, Clear all and Close.
-        const float tw = TextWidth(L"Float", m_titleFont.Get());
-        Text(L"Float", m_titleFont.Get(), l.title, c.text, alpha);
-        const size_t folders = static_cast<size_t>(std::count_if(m_items.begin(), m_items.end(), [](const Item& i) { return i.folder; }));
-        const auto count = shelf::CountText(n - folders, folders);
-        const float cw = std::max(TextWidth(count, m_countFont.Get()) + 12.f * s, 20.f * s);
+        // Header: the Float icon, "Float shelf" and the count ("3 files"), then Pin, Clear all and
+        // Close in the control kit's look (the keyboard's button with the kit's focus ring).
         const float cy = (l.header.top + l.header.bottom) / 2.f;
-        const Box badge{ l.title.left + tw + 8.f * s, cy - 9.f * s, l.title.left + tw + 8.f * s + cw, cy + 9.f * s };
-        if (n > 0 && badge.right < l.title.right)
-        {
-            m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(badge.left, badge.top, badge.right, badge.bottom), 9.f * s, 9.f * s),
-                                       Brush(c.button, alpha).Get());
-            Text(count, m_countFont.Get(), badge, c.dim, alpha);
-        }
-        RoundButton(l.pin, m_edge == Edge::None ? kGlyphPin : kGlyphUnpin, m_hover.part == Part::Pin, false, alpha);
+        const float ix = l.title.left - 4.f * s;
+        Glyph(kGlyphPin, m_iconFont.Get(), Box{ ix, cy - 9.f * s, ix + 16.f * s, cy + 9.f * s }, c.text, alpha);
+        const Box title{ ix + 24.f * s, l.title.top, l.title.right, l.title.bottom };
+        const std::wstring name = L"Float shelf";
+        const float tw = TextWidth(name, m_titleFont.Get());
+        Text(name, m_titleFont.Get(), title, c.text, alpha);
+        const size_t folders = static_cast<size_t>(std::count_if(m_items.begin(), m_items.end(), [](const Item& i) { return i.folder; }));
+        const Box count{ title.left + tw + 8.f * s, title.top, title.right, title.bottom };
+        if (count.Width() > 20.f * s)
+            Text(shelf::CountText(n - folders, folders), m_countFont.Get(), count, c.dim, alpha);
+        const auto focused = [&](Part part) { return m_active && m_keyPart == part; };
+        IconButton(l.pin, m_edge == Edge::None ? kGlyphPin : kGlyphUnpin, StateOf(Part::Pin, focused(Part::Pin)));
         if (n > 0)
-            PillButton(l.clear, L"Clear all", m_hover.part == Part::Clear, true, alpha);
-        RoundButton(l.close, kGlyphClose, m_hover.part == Part::Close, false, alpha);
-        if (m_active && m_keyPart != Part::None)
-        {
-            // The keyboard's button: a ring just outside it.
-            const Box b = (m_keyPart == Part::Pin ? l.pin : m_keyPart == Part::Clear ? l.clear : l.close).Inflated(2.f * s);
-            const float r = b.Height() / 2.f;
-            m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(b.left, b.top, b.right, b.bottom), r, r), Brush(c.text, 0.8f * alpha).Get(),
-                                       std::max(1.f, std::round(1.5f * s)));
-        }
+            PushButton(l.clear, L"Clear all", StateOf(Part::Clear, focused(Part::Clear)));
+        IconButton(l.close, kGlyphClose, StateOf(Part::Close, focused(Part::Close)));
         m_rt->DrawLine(D2D1::Point2F(l.panel.left + m_metrics.inset, l.header.bottom - 0.5f), D2D1::Point2F(l.panel.right - m_metrics.inset, l.header.bottom - 0.5f),
                        Brush(c.line, alpha).Get(), 1.f);
 
         // Rows, clipped to the list so scrolled rows slide under the header and footer.
         m_rt->PushAxisAlignedClip(D2D1::RectF(l.list.left, l.list.top, l.list.right, l.list.bottom), D2D1_ANTIALIAS_MODE_ALIASED);
-        const float rr = 8.f * s;
+        const float rr = 6.f * s;
         for (const auto& r : l.rows)
         {
             auto& item = m_items[r.index];
@@ -1396,8 +1406,11 @@ namespace sd
             const auto rowRect = D2D1::RoundedRect(D2D1::RectF(r.row.left, r.row.top + 1.f * s, r.row.right, r.row.bottom - 1.f * s), rr, rr);
             if (selected)
             {
-                m_rt->FillRoundedRectangle(rowRect, Brush(c.accent, 0.20f * alpha).Get());
-                m_rt->DrawRoundedRectangle(rowRect, Brush(c.accent, 0.55f * alpha).Get(), 1.f);
+                // The kit's selection: a light accent wash and a short accent bar on the left.
+                m_rt->FillRoundedRectangle(rowRect, Brush(c.accent, 0.12f * alpha).Get());
+                const float my = (r.row.top + r.row.bottom) / 2.f;
+                m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.row.left, my - 10.f * s, r.row.left + 3.f * s, my + 10.f * s), 1.5f * s, 1.5f * s),
+                                           Brush(c.accent, alpha).Get());
             }
             else if (hovered)
                 m_rt->FillRoundedRectangle(rowRect, Brush(c.hover, alpha).Get());
@@ -1408,8 +1421,8 @@ namespace sd
             Text(item.detail.empty() ? std::wstring(L"…") : item.detail, m_detailFont.Get(), r.detail, c.dim, alpha);
             if (hovered)
             {
-                RoundButton(r.reveal, kGlyphReveal, m_hover.part == Part::Reveal, false, alpha);
-                RoundButton(r.remove, kGlyphRemove, m_hover.part == Part::Remove, true, alpha);
+                IconButton(r.reveal, kGlyphReveal, StateOf(Part::Reveal, false));
+                IconButton(r.remove, kGlyphRemove, StateOf(Part::Remove, false));
             }
         }
         // Scroll position, when there is more than fits.
@@ -1473,20 +1486,21 @@ namespace sd
                                                                  D2D1_LINE_JOIN_ROUND, 10.f, D2D1_DASH_STYLE_CUSTOM),
                                      dashes, 2, &m_dashes);
         }
-        const float w = std::max(1.f, std::round(1.f * s));
-        const float r = 10.f * s;
+        const float w = std::max(1.f, std::round(1.5f * s));
+        const float r = 6.f * s;
         const auto outline = D2D1::RoundedRect(D2D1::RectF(box.left + w / 2.f, box.top + w / 2.f, box.right - w / 2.f, box.bottom - w / 2.f), r, r);
         if (m_dropHover)
             m_rt->FillRoundedRectangle(outline, Brush(c.accent, 0.12f * alpha).Get());
-        m_rt->DrawRoundedRectangle(outline, Brush(m_dropHover ? c.accent : c.dim, (m_dropHover ? 0.9f : 0.5f) * alpha).Get(), w, m_dashes.Get());
+        m_rt->DrawRoundedRectangle(outline, Brush(m_dropHover ? c.accent : m_palette.pageLine, alpha).Get(), w, m_dashes.Get());
 
-        // Icon and line, centred together; a note ("could not be saved") takes the line's place.
-        const std::wstring line = m_note.empty() ? std::wstring(L"Drop files here") : m_note;
-        const float iw = 16.f * s, gap = 6.f * s;
-        const float tw = std::min(TextWidth(line, m_nameFont.Get()), box.Width() - iw - gap - 20.f * s);
-        const float x = std::round((box.left + box.right - iw - gap - tw) / 2.f);
-        Glyph(kGlyphDrop, m_iconFont.Get(), Box{ x, box.top, x + iw, box.bottom }, m_dropHover ? c.accent : c.dim, alpha);
-        Text(line, m_nameFont.Get(), Box{ x + iw + gap, box.top, x + iw + gap + tw, box.bottom }, m_dropHover ? c.text : c.dim, alpha);
+        // A blank file over the line, centred together; a note ("could not be saved") takes the line's place.
+        const std::wstring line = m_note.empty() ? std::wstring(L"Drag files here to keep them for later.") : m_note;
+        const float fw = 38.f * s, fh = 47.f * s, gap = 12.f * s, lh = 36.f * s;
+        const float top = std::round((box.top + box.bottom - fh - gap - lh) / 2.f);
+        const float cx = (box.left + box.right) / 2.f;
+        DrawFileMark(D2D1::RectF(cx - fw / 2.f, top, cx + fw / 2.f, top + fh), m_palette, m_dropHover, 0.75f * alpha);
+        const float tw = std::min(180.f * s, box.Width() - 20.f * s);
+        Text(line, m_hintFont.Get(), Box{ cx - tw / 2.f, top + fh + gap, cx + tw / 2.f, top + fh + gap + lh }, m_dropHover ? c.text : c.dim, alpha);
     }
 
     void Shelf::DrawTab(const Box& tab, float alpha)
@@ -1502,14 +1516,18 @@ namespace sd
         }
         const bool vertical = m_edge == Edge::Left || m_edge == Edge::Right;
         const float cx = (tab.left + tab.right) / 2.f, cy = (tab.top + tab.bottom) / 2.f;
-        const float t = 16.f * s, gap = 13.f * s;
-        // The newest item's thumbnail and the count.
+        const float t = 18.f * s, gap = 14.f * s;
+        // The newest item's thumbnail and the count on an accent badge.
         const Box thumb = vertical ? Box{ cx - t / 2.f, cy - gap - t / 2.f, cx + t / 2.f, cy - gap + t / 2.f }
                                    : Box{ cx - gap - t / 2.f, cy - t / 2.f, cx - gap + t / 2.f, cy + t / 2.f };
-        const Box count = vertical ? Box{ tab.left, cy + gap - 9.f * s, tab.right, cy + gap + 9.f * s }
-                                   : Box{ cx + gap - 12.f * s, tab.top, cx + gap + 12.f * s, tab.bottom };
         DrawThumb(m_items.front(), thumb, alpha);
-        Text(std::to_wstring(m_items.size()), m_countFont.Get(), count, c.text, alpha);
+        const auto number = std::to_wstring(m_items.size());
+        const float bw = std::max(18.f * s, TextWidth(number, m_badgeFont.Get()) + 8.f * s), bh = 18.f * s;
+        const float bx = vertical ? cx : cx + gap, by = vertical ? cy + gap : cy;
+        const Box badge{ bx - bw / 2.f, by - bh / 2.f, bx + bw / 2.f, by + bh / 2.f };
+        m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(badge.left, badge.top, badge.right, badge.bottom), bh / 2.f, bh / 2.f),
+                                   Brush(m_palette.accent, alpha).Get());
+        Text(number, m_badgeFont.Get(), badge, m_palette.textOnAccent, alpha);
     }
 
     void Shelf::Render()
@@ -1527,6 +1545,8 @@ namespace sd
         m_rt = m_canvas->Begin(m_size);
         if (!m_rt)
             return;
+        m_kit.SetTarget(nullptr);   // brushes made again: the target may be new
+        m_kit.SetTarget(m_rt);
         // Draw in screen pixels; the transform moves them into the window.
         const auto base = D2D1::Matrix3x2F::Translation(-static_cast<float>(m_origin.x), -static_cast<float>(m_origin.y));
         m_rt->SetTransform(base);
@@ -1571,9 +1591,12 @@ namespace sd
             ComPtr<ID2D1Layer> layer;
             const bool clipped = SUCCEEDED(m_d2d->CreateRoundedRectangleGeometry(rounded, &clip)) && SUCCEEDED(m_rt->CreateLayer(&layer));
             // The mask is in the same (screen) coordinates as the drawing; the world transform applies to both.
+            // The layer fades the content in as a whole, the kit's buttons too.
             if (clipped)
-                m_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip.Get()), layer.Get());
-            DrawPanel(layout, contentAlpha);
+                m_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip.Get(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                                      D2D1::IdentityMatrix(), contentAlpha),
+                                layer.Get());
+            DrawPanel(layout, clipped ? 1.f : contentAlpha);
             if (m_dropHover)
                 m_rt->FillRoundedRectangle(rounded, Brush(c.accent, 0.08f).Get());
             if (clipped)
@@ -1585,6 +1608,7 @@ namespace sd
             m_rt->PopAxisAlignedClip();
 
         m_canvas->End(m_hwnd.get(), m_origin, EaseOutCubic(m_presence));
+        m_kit.SetTarget(nullptr);
         m_rt = nullptr;
     }
 

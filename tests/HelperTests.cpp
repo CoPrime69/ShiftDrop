@@ -224,6 +224,16 @@ TEST(TempPath, NamesAndFolders)
 
 // ---- FormatText.h --------------------------------------------------------------------------------
 
+TEST(FormatText, Durations)
+{
+    EXPECT_EQ(DurationText(0), L"1 s");
+    EXPECT_EQ(DurationText(38'000), L"38 s");
+    EXPECT_EQ(DurationText(252'000), L"4 min 12 s");
+    EXPECT_EQ(DurationText(120'000), L"2 min");
+    EXPECT_EQ(DurationText(3'900'000), L"1 h 5 min");
+    EXPECT_EQ(DurationText(7'200'000), L"2 h");
+}
+
 TEST(FormatText, Sizes)
 {
     EXPECT_EQ(SizeText(0), L"0 bytes");

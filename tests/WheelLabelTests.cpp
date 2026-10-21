@@ -320,8 +320,23 @@ TEST(WheelLabels, EveryWheelTheAppShowsFitsItsLabels)
                 const auto fits = FitLabels(layout, wheel.labels, measure);
                 for (size_t i = 0; i < fits.size(); ++i)
                     if (!fits[i].fits || fits[i].Text() != wheel.labels[i].text)
-                        problems.try_emplace(Narrow(wheel.labels[i].text), std::format("{} slot {} of {} ({}, {:.2f})", wheel.what, i, fits.size(),
-                                                                                       Narrow(family), scale));
+                    {
+                        // How wide a one-line label may be on that tile, for choosing a shorter one.
+                        float room = 0.f;
+                        for (float w = 10.f; w < 200.f; w += 1.f)
+                        {
+                            auto one = wheel.labels;
+                            one[i].text = L"x";
+                            if (!FitLabels(layout, one, [&](const std::wstring& t) { return t == L"x" ? w : measure(t); })[i].fits)
+                                break;
+                            room = w;
+                        }
+                        std::string widths;
+                        for (const auto& line : fits[i].lines)
+                            widths += std::format(" '{}' {:.0f}", Narrow(line), measure(line));
+                        problems.try_emplace(Narrow(wheel.labels[i].text), std::format("{} slot {} of {} ({}, {:.2f}); lines{}; a line may be {:.0f} DIPs there",
+                                                                                       wheel.what, i, fits.size(), Narrow(family), scale, widths, room));
+                    }
             }
         }
     std::string report;

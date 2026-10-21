@@ -41,4 +41,15 @@ namespace sd
         return padHours ? std::format(L"{:02}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000)
                         : std::format(L"{}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
     }
+
+    std::wstring DurationText(int64_t ms)
+    {
+        const int64_t seconds = std::max<int64_t>(1, (ms + 500) / 1000);
+        if (seconds < 60)
+            return std::format(L"{} s", seconds);
+        if (seconds < 3600)
+            return seconds % 60 ? std::format(L"{} min {} s", seconds / 60, seconds % 60) : std::format(L"{} min", seconds / 60);
+        const int64_t minutes = (seconds + 30) / 60;
+        return minutes % 60 ? std::format(L"{} h {} min", minutes / 60, minutes % 60) : std::format(L"{} h", minutes / 60);
+    }
 }

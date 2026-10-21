@@ -43,6 +43,7 @@ namespace sd
             std::function<void()> drag;              // the result was dragged: drag the outputs out (modal)
             std::function<std::wstring()> toShelf;   // the Float button; returns the line shown afterwards
             std::function<std::wstring()> copy;      // the Copy button; returns the line shown afterwards
+            size_t files;                            // how many outputs they carry ("drag the files out"); 0 in ResultActions{}
             bool Any() const { return drag || toShelf || copy; }
         };
 
@@ -89,6 +90,8 @@ namespace sd
         int ActionAt(POINT pt) const;                 // index into m_actionRects, or -1
         size_t ActionCount() const;
         std::wstring ResultLine() const;              // the subtitle, or a hint while hovered
+        bool TwoLines() const;                        // the result has a second line (or a hint for one)
+        std::wstring DragHint() const;
 
         bool EnsureTextFormats();
         void Render();
@@ -104,7 +107,8 @@ namespace sd
 
         wil::unique_hwnd m_hwnd;
         std::unique_ptr<a11y::TextElement> m_a11y;   // after m_hwnd: goes first
-        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_hintFont, m_titleFont, m_subFont, m_statusIconFont, m_cancelFont, m_actionFont;
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> m_tabFont, m_tabIconFont, m_hintFont, m_titleFont, m_countFont, m_doneFont, m_subFont, m_statusIconFont,
+            m_cancelFont, m_actionFont;
 
         // Layout, window pixels.
         HMONITOR m_monitor = nullptr;
