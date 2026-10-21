@@ -95,8 +95,8 @@ Share (the Windows share sheet), Remove metadata, and Zip (one ZIP of everything
    rights and nothing else to install. It adds a Start menu entry and can start ShiftDrop when you
    sign in.
 
-The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC".
-Choose **More info**, then **Run anyway**.
+The installer isn't code-signed yet (see the [code signing policy](#code-signing-policy)), so
+Windows SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
 
 ShiftDrop needs Windows 10 22H2 or Windows 11, 64-bit. To uninstall, use Settings > Apps. Your
 settings, recipes and history in `%LOCALAPPDATA%\ShiftDrop` are kept.
@@ -191,6 +191,23 @@ Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.m
 the rules the code keeps (offline, no GPL, never overwrite a file) and how a new feature plugs in.
 Please follow the [code of conduct](CODE_OF_CONDUCT.md), and report security problems privately as
 described in [SECURITY.md](SECURITY.md).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/). Signing is being set up; until it is live, releases
+are unsigned.
+
+Only release builds are signed. They are built from a tagged commit by this repository's GitHub
+Actions workflow, and each signing request is approved by hand.
+
+Team roles:
+
+- Committers and reviewers: [CoPrime69](https://github.com/CoPrime69)
+- Approvers: [CoPrime69](https://github.com/CoPrime69)
+
+Privacy: this program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it. See [Privacy](#privacy).
 
 ## Licence
 
