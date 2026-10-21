@@ -42,6 +42,7 @@
 #include "ocr/Ocr.h"
 #include "rename/RenameWindow.h"
 #include "shelf/ShelfWindow.h"
+#include "toast/Toasts.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -220,6 +221,23 @@ namespace sd
             }
             SHOpenFolderAndSelectItems(folderPidl.get(), static_cast<UINT>(children.size()), children.data(), 0);
         }
+
+        // A click on a finished batch's toast (Toasts.h): show the outputs, or open the one output.
+        // Paths that are gone by now (moved, undone) are left out; with none left, their folder opens.
+        void OnToastClick(const toast::Activation& click)
+        {
+            std::vector<std::wstring> present;
+            for (const auto& p : click.paths)
+                if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES)
+                    present.push_back(p);
+            if (click.verb == toast::Verb::Open && !present.empty())
+                ShellExecuteW(nullptr, nullptr, present.front().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            else if (!present.empty())
+                RevealInExplorer(present);
+            else if (const auto folder = std::filesystem::path(click.paths.front()).parent_path().wstring();
+                     GetFileAttributesW(folder.c_str()) != INVALID_FILE_ATTRIBUTES)
+                ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        }
     }
 
     class App
@@ -339,6 +357,8 @@ namespace sd
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
             m_tray.Add(m_hwnd.get(), m_icon.get(), IdleTip());
+            // Real toasts need the installer's Start menu shortcut; without it, balloons as before.
+            m_toasts = toast::Start(OnToastClick);
 
             // M4: the predicted-output card, the inspector window, keyboard picking and the wheel on
             // Explorer's selection. None of them is needed for the drag gesture, so a failure only logs.
@@ -501,6 +521,7 @@ namespace sd
                 m_preview.reset();     // joins the prediction worker
                 m_shelf.reset();       // revokes its drop target; OLE is still initialised
                 m_overlay.reset();
+                toast::Stop();
                 m_tray.Remove();
                 m_hwnd.release();   // the window is being destroyed by the system right now
                 PostQuitMessage(0);
@@ -1444,10 +1465,12 @@ namespace sd
             }
             else
             {
-                // A later job owns the panel; this one reports the old way.
+                // A later job owns the panel: this one says so in a toast (with Open folder and Open),
+                // or a balloon where toasts are not available.
                 if (ok > 0 && m_history)
                     details += L"Undo: tray menu > History";
-                m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
+                if (!m_toasts || !toast::Show(toast::Content{ title, details, outputs }))
+                    m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
             }
             log::Info(L"batch (run {}): {} ok, {} skipped, {} failed", batch->runId, ok, skipped, failed);
             if (m_historyWindow)
@@ -1539,6 +1562,7 @@ namespace sd
         bool m_digitDown[kDigitKeys]{};       // the same for the section number keys   // wheel keys' state at the last poll, to see fresh presses
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
+        bool m_toasts = false;               // toast::Start succeeded
         POINT m_watchdogPt{};
     };
 }
@@ -1597,9 +1621,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         {
             sd::startup::Disable();
             sd::shellverb::Unregister();
+            sd::toast::Unregister();
             sd::sandbox::RemoveProfile();   // the sandbox's AppContainer profile (S6)
         }
         return quit ? 0 : 1;
+    }
+    // A click on a toast after ShiftDrop quit: COM starts this exe to take it, and nothing else runs.
+    if (sd::HasArg(sd::toast::kActivatedArg) || sd::HasArg(L"-Embedding"))
+    {
+        if (FAILED(OleInitialize(nullptr)))
+            return 1;
+        auto oleUninit = wil::scope_exit([] { OleUninitialize(); });
+        sd::log::Init();
+        return sd::toast::ServeActivation(sd::OnToastClick);
     }
     // "--wheel <paths>" from Explorer's right-click entry: one process per selected item.
     auto wheelPaths = sd::wheelrequest::WheelPaths(sd::wheelrequest::CommandLineArgs());

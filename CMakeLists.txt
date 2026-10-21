@@ -70,6 +70,7 @@ add_library(shiftdrop_core STATIC
   src/Undo.cpp
   src/VirtualDrop.cpp
   src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern (M12)
+  src/toast/ToastXml.cpp         # what a finished batch's toast says (M12)
   # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -215,14 +216,15 @@ target_link_libraries(shiftdrop_core PUBLIC
   d2d1 d3d11 dxgi dxguid  # photo tools: Direct2D on the GPU (WARP without one); dxguid has the effect CLSIDs
 )
 
-# Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
-# share sheet, through C++/WinRT (Windows SDK headers). Object libraries, so each file's static
+# Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr, the
+# share sheet and toasts, through C++/WinRT (Windows SDK headers). Object libraries, so each file's static
 # initialiser that installs it into the core's hooks is always linked in.
 add_library(shiftdrop_winrt OBJECT
   src/pdf/WinPdfRenderer.cpp
   src/ocr/WinOcr.cpp
   src/share/WinShare.cpp
   src/redact/WinFaces.cpp
+  src/toast/WinToasts.cpp
 )
 target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
 target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
@@ -329,6 +331,7 @@ if(SHIFTDROP_TESTS)
     tests/PhotoTests.cpp
     tests/FileActionsTests.cpp
     tests/RenameTests.cpp
+    tests/ToastTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
