@@ -1,5 +1,6 @@
 #include "pdf/PdfCompress.h"
 #include "Log.h"
+#include "pdf/Parallel.h"
 #include "pdf/PdfDoc.h"
 #include "pdf/Wic.h"
 
@@ -46,8 +47,22 @@ namespace sd::pdf
                    f == "/ASCII85Decode" || f == "/A85" || f == "/ASCIIHexDecode" || f == "/AHx";
         }
 
-        // Re-encodes one image if that makes it meaningfully smaller. Returns true when replaced.
-        bool Recompress(QPDFObjectHandle image, const Placement* placement, const CompressOptions& options)
+        // One picture on its way to a smaller JPEG. Reading it from and writing it back to the PDF is
+        // QPDF's work and stays on one thread; the decode, scale and encode in between (the slow part)
+        // run on several pictures at once.
+        struct Job
+        {
+            QPDFObjectHandle image;
+            std::string dct;        // the JPEG as stored, decoded by Encode
+            Samples samples;        // or the pixels, already unpacked from a lossless filter
+            int channels = 0;
+            uint32_t w = 0, h = 0, tw = 0, th = 0;
+            uint64_t before = 0;    // bytes stored now
+            std::string jpeg;       // the new JPEG; empty when it should stay as it is
+        };
+
+        // Checks one image and takes what Encode needs out of the PDF. False when it is left alone.
+        bool Prepare(QPDFObjectHandle image, const Placement* placement, const CompressOptions& options, Job& job)
         {
             auto dict = image.getDict();
             if (dict.getKey("/ImageMask").isBool() && dict.getKey("/ImageMask").getBoolValue())
@@ -69,15 +84,15 @@ namespace sd::pdf
 
             const auto filters = Filters(dict.getKey("/Filter"));
             const auto length = dict.getKey("/Length");
-            const uint64_t before = length.isInteger() ? static_cast<uint64_t>(length.getIntValue()) : image.getRawStreamData()->getSize();
-
-            Samples samples;
+            job.image = image;
+            job.channels = channels;
+            job.w = w;
+            job.h = h;
+            job.before = length.isInteger() ? static_cast<uint64_t>(length.getIntValue()) : image.getRawStreamData()->getSize();
             if (filters.size() == 1 && (filters[0] == "/DCTDecode" || filters[0] == "/DCT"))
             {
                 const auto raw = image.getRawStreamData();
-                if (FAILED(DecodeJpeg(std::string(reinterpret_cast<const char*>(raw->getBuffer()), raw->getSize()), samples)) ||
-                    static_cast<int>(samples.channels) != channels || samples.width != w || samples.height != h)
-                    return false;
+                job.dct.assign(reinterpret_cast<const char*>(raw->getBuffer()), raw->getSize());
             }
             else
             {
@@ -86,25 +101,43 @@ namespace sd::pdf
                 const auto data = image.getStreamData(qpdf_dl_generalized);
                 if (data->getSize() != static_cast<size_t>(w) * h * channels)
                     return false;
-                samples.width = w;
-                samples.height = h;
-                samples.channels = static_cast<uint32_t>(channels);
-                samples.data.assign(data->getBuffer(), data->getBuffer() + data->getSize());
+                job.samples.width = w;
+                job.samples.height = h;
+                job.samples.channels = static_cast<uint32_t>(channels);
+                job.samples.data.assign(data->getBuffer(), data->getBuffer() + data->getSize());
             }
+            TargetSize(w, h, placement, options.dpi, job.tw, job.th);
+            return true;
+        }
 
-            uint32_t tw = w, th = h;
-            TargetSize(w, h, placement, options.dpi, tw, th);
-            if ((tw != w || th != h) && FAILED(ResizeSamples(samples, tw, th)))
-                return false;
+        // Decode, scale and encode: WIC only, so any number of these run at once. Leaves job.jpeg
+        // empty when the picture should stay as it is.
+        void Encode(Job& job, const CompressOptions& options)
+        {
+            if (!job.dct.empty() && (FAILED(DecodeJpeg(job.dct, job.samples)) || static_cast<int>(job.samples.channels) != job.channels ||
+                                     job.samples.width != job.w || job.samples.height != job.h))
+                return;
+            job.dct = {};
+            if ((job.tw != job.w || job.th != job.h) && FAILED(ResizeSamples(job.samples, job.tw, job.th)))
+                return;
             std::string jpeg;
-            if (FAILED(EncodeJpeg(samples, options.quality, jpeg)) || jpeg.empty())
-                return false;
-            if (static_cast<double>(jpeg.size()) > 0.9 * static_cast<double>(before))
-                return false;   // not worth a generation of JPEG loss
+            if (FAILED(EncodeJpeg(job.samples, options.quality, jpeg)) || jpeg.empty())
+                return;
+            if (static_cast<double>(jpeg.size()) > 0.9 * static_cast<double>(job.before))
+                return;   // not worth a generation of JPEG loss
+            job.jpeg = std::move(jpeg);
+            job.samples.data = {};
+        }
 
-            image.replaceStreamData(jpeg, QPDFObjectHandle::newName("/DCTDecode"), QPDFObjectHandle::newNull());
-            dict.replaceKey("/Width", QPDFObjectHandle::newInteger(samples.width));
-            dict.replaceKey("/Height", QPDFObjectHandle::newInteger(samples.height));
+        // Puts the new JPEG in the PDF. True when the image was replaced.
+        bool Apply(Job& job)
+        {
+            if (job.jpeg.empty())
+                return false;
+            auto dict = job.image.getDict();
+            job.image.replaceStreamData(job.jpeg, QPDFObjectHandle::newName("/DCTDecode"), QPDFObjectHandle::newNull());
+            dict.replaceKey("/Width", QPDFObjectHandle::newInteger(job.samples.width));
+            dict.replaceKey("/Height", QPDFObjectHandle::newInteger(job.samples.height));
             return true;
         }
     }
@@ -158,25 +191,45 @@ namespace sd::pdf
                     masks.insert(mask.getObjGen());
             std::erase_if(images, [&](QPDFObjectHandle& image) { return masks.count(image.getObjGen()) > 0; });
             stats.images = static_cast<int>(images.size());
-            for (size_t i = 0; i < images.size(); ++i)
+            // A few pictures at a time (as many as there are threads to encode them, so only that
+            // many are unpacked in memory at once): taken out, encoded side by side, put back.
+            const size_t chunk = std::max<size_t>(1, JobQueue::PoolThreads());
+            for (size_t first = 0; first < images.size(); first += chunk)
             {
                 if (stop.stop_requested())
                 {
                     error = kCancelled;
                     return false;
                 }
-                const auto it = placements.find(images[i].getObjGen());
-                try
+                std::vector<Job> jobs;
+                for (size_t i = first; i < std::min(images.size(), first + chunk); ++i)
                 {
-                    if (Recompress(images[i], it == placements.end() ? nullptr : &it->second, options))
-                        ++stats.recompressed;
+                    const auto it = placements.find(images[i].getObjGen());
+                    try
+                    {
+                        if (Job job; Prepare(images[i], it == placements.end() ? nullptr : &it->second, options, job))
+                            jobs.push_back(std::move(job));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::Warn(L"pdf compress: image {} left as it was: {}", images[i].getObjGen().getObj(), QpdfError(e));
+                    }
                 }
-                catch (const std::exception& e)
+                ForEachParallel(jobs.size(), [&](size_t i) { Encode(jobs[i], options); });
+                for (auto& job : jobs)
                 {
-                    log::Warn(L"pdf compress: image {} left as it was: {}", images[i].getObjGen().getObj(), QpdfError(e));
+                    try
+                    {
+                        if (Apply(job))
+                            ++stats.recompressed;
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::Warn(L"pdf compress: image {} left as it was: {}", job.image.getObjGen().getObj(), QpdfError(e));
+                    }
                 }
                 if (progress)
-                    progress(0.05 + 0.65 * static_cast<double>(i + 1) / static_cast<double>(images.size()));
+                    progress(0.05 + 0.65 * static_cast<double>(std::min(images.size(), first + chunk)) / static_cast<double>(images.size()));
             }
             return WritePdf(*pdf, out, WriteOptions{ true }, error, stop, [&](double f) {
                 if (progress)
