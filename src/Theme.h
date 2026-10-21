@@ -23,9 +23,12 @@ namespace sd::theme
         D2D1_COLOR_F panel, panelLine, panelText, panelTextDim, keycap;   // top panel
         D2D1_COLOR_F ok, warn, error;
     };
-    // From the Windows light/dark app setting and accent colour, read each time a wheel opens so a
-    // theme change applies without a restart.
+    // From the Windows light/dark app setting (or the Settings window's override) and accent colour,
+    // read each time a wheel opens so a theme change applies without a restart.
     Palette Current(Style style);
+    // Settings > Theme: follow Windows, or always light or dark. Every window that asks Current()
+    // follows it: the wheel, the top panel, the shelf, Settings and the editors. UI thread.
+    void SetChoice(ThemeChoice choice);
 
     // Pixels per DIP for a monitor: its DPI scale times the size preset. Auto also follows the
     // monitor's height in DIPs, so a 1440p screen gets a larger wheel than a 1080p one at the same

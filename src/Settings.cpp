@@ -162,4 +162,51 @@ namespace sd
     {
         WritePrivateProfileStringW(L"Output", L"VirtualFiles", kVirtualOutputs[static_cast<int>(choice)], SettingsPath().c_str());
     }
+
+    namespace
+    {
+        constexpr const wchar_t* kThemes[] = { L"system", L"light", L"dark" };
+        constexpr const wchar_t* kTerminals[] = { L"wt", L"powershell", L"cmd", L"custom" };
+        constexpr const wchar_t* kNamings[] = { L"parentheses", L"dash", L"underscore", L"subfolder" };
+
+        // The index of `value` in `names` (ignoring case), or `fallback` with a warning.
+        template <size_t N>
+        int Pick(const wchar_t* section, const wchar_t* key, const wchar_t* const (&names)[N], int fallback)
+        {
+            wchar_t value[32]{};
+            GetPrivateProfileStringW(section, key, names[fallback], value, ARRAYSIZE(value), SettingsPath().c_str());
+            for (size_t i = 0; i < N; ++i)
+                if (CompareStringOrdinal(value, -1, names[i], -1, TRUE) == CSTR_EQUAL)
+                    return static_cast<int>(i);
+            log::Warn(L"settings: [{}] {}='{}' is not known; using {}", section, key, value, names[fallback]);
+            return fallback;
+        }
+    }
+
+    Preferences LoadPreferences()
+    {
+        Preferences p;
+        p.theme = static_cast<ThemeChoice>(Pick(L"Appearance", L"Theme", kThemes, 0));
+        p.terminal = static_cast<TerminalChoice>(Pick(L"FileActions", L"Terminal", kTerminals, 0));
+        p.naming = static_cast<OutputNaming>(Pick(L"Output", L"Naming", kNamings, 0));
+        std::wstring command(2048, L'\0');
+        command.resize(GetPrivateProfileStringW(L"FileActions", L"TerminalCommand", L"", command.data(), static_cast<DWORD>(command.size()),
+                                                SettingsPath().c_str()));
+        p.terminalCommand = std::move(command);
+        return p;
+    }
+
+    void SavePreferences(const Preferences& p)
+    {
+        const auto path = SettingsPath();
+        WritePrivateProfileStringW(L"Appearance", L"Theme", kThemes[static_cast<int>(p.theme)], path.c_str());
+        WritePrivateProfileStringW(L"FileActions", L"Terminal", kTerminals[static_cast<int>(p.terminal)], path.c_str());
+        // A value enclosed in quotes loses them when read back ("C:\term.exe" -d "{folder}"), so such
+        // a command is stored inside another pair.
+        const auto& c = p.terminalCommand;
+        const bool enclosed = c.size() >= 2 && c.front() == c.back() && (c.front() == L'"' || c.front() == L'\'');
+        const auto command = enclosed ? L"\"" + c + L"\"" : c;
+        WritePrivateProfileStringW(L"FileActions", L"TerminalCommand", command.c_str(), path.c_str());
+        WritePrivateProfileStringW(L"Output", L"Naming", kNamings[static_cast<int>(p.naming)], path.c_str());
+    }
 }
