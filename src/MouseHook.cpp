@@ -13,7 +13,7 @@ namespace sd::hook
         struct State
         {
             HWND notify = nullptr;
-            UINT keys[3] = { VK_SHIFT, 0, 0 };
+            UINT keys[kRingCount] = { VK_SHIFT, 0, 0, 0 };
             int dragCx = 4, dragCy = 4;
             UINT downMsg = WM_LBUTTONDOWN, upMsg = WM_LBUTTONUP;
             bool down = false;
@@ -82,10 +82,10 @@ namespace sd::hook
         }
     }
 
-    bool Install(HWND notify, const UINT (&keys)[3])
+    bool Install(HWND notify, const UINT (&keys)[kRingCount])
     {
         s.notify = notify;
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < kRingCount; ++i)
             s.keys[i] = keys[i];
         // Start the watchdog's clock now; otherwise its first check sees "no events since boot".
         s.lastTime = GetTickCount();
