@@ -2,6 +2,8 @@
 
 #include <shlwapi.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cwctype>
 #include <filesystem>
 #include <format>
@@ -19,10 +21,52 @@ namespace sd
         return ext;
     }
 
+    namespace
+    {
+        std::atomic<OutputNaming> g_naming{ OutputNaming::Parentheses };
+
+        bool SameName(std::wstring_view a, std::wstring_view b)
+        {
+            return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
+        }
+    }
+
+    void SetOutputNaming(OutputNaming naming)
+    {
+        g_naming = naming;
+    }
+
+    OutputNaming CurrentOutputNaming()
+    {
+        return g_naming.load();
+    }
+
     std::wstring OutputName(std::wstring_view stem, std::wstring_view suffix, int n, std::wstring_view extension)
     {
-        return n <= 1 ? std::format(L"{} ({}){}", stem, suffix, extension)
-                      : std::format(L"{} ({} {}){}", stem, suffix, n, extension);
+        return OutputName(CurrentOutputNaming(), stem, suffix, n, extension);
+    }
+
+    std::wstring OutputName(OutputNaming naming, std::wstring_view stem, std::wstring_view suffix, int n, std::wstring_view extension)
+    {
+        switch (naming)
+        {
+        case OutputNaming::Dash:
+        case OutputNaming::Underscore:
+        {
+            const wchar_t sep = naming == OutputNaming::Dash ? L'-' : L'_';
+            std::wstring joined(suffix);
+            std::replace(joined.begin(), joined.end(), L' ', sep);
+            return n <= 1 ? std::format(L"{}{}{}{}", stem, sep, joined, extension)
+                          : std::format(L"{}{}{}{}{}{}", stem, sep, joined, sep, n, extension);
+        }
+        case OutputNaming::Subfolder:
+            // The folder says where it came from; a second output of the same name is numbered like
+            // Explorer numbers copies.
+            return n <= 1 ? std::format(L"{}{}", stem, extension) : std::format(L"{} ({}){}", stem, n, extension);
+        default:
+            return n <= 1 ? std::format(L"{} ({}){}", stem, suffix, extension)
+                          : std::format(L"{} ({} {}){}", stem, suffix, n, extension);
+        }
     }
 
     namespace
@@ -66,18 +110,45 @@ namespace sd
 
     std::wstring OutputFolder(const std::wstring& source)
     {
-        auto parent = std::filesystem::path(source).parent_path().wstring();
-        std::scoped_lock lock(g_redirectMutex);
-        for (const auto& r : g_redirects)
-            if (IsWithin(parent, r.folder))
-                return r.output;
-        return parent;
+        return OutputFolder(CurrentOutputNaming(), source);
+    }
+
+    std::wstring OutputFolder(OutputNaming naming, const std::wstring& source)
+    {
+        auto folder = std::filesystem::path(source).parent_path().wstring();
+        {
+            std::scoped_lock lock(g_redirectMutex);
+            for (const auto& r : g_redirects)
+                if (IsWithin(folder, r.folder))
+                {
+                    folder = r.output;
+                    break;
+                }
+        }
+        if (naming != OutputNaming::Subfolder || SameName(std::filesystem::path(folder).filename().wstring(), kOutputSubfolder))
+            return folder;
+        return (std::filesystem::path(folder) / kOutputSubfolder).wstring();
+    }
+
+    HRESULT MakeOutputFolder(const std::wstring& folder)
+    {
+        if (CreateDirectoryW(folder.c_str(), nullptr))
+            return S_OK;
+        const DWORD err = GetLastError();
+        if (err != ERROR_ALREADY_EXISTS)
+            return HRESULT_FROM_WIN32(err);
+        // A file of that name is in the way: it is never replaced.
+        const DWORD attributes = GetFileAttributesW(folder.c_str());
+        return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) ? S_OK : HRESULT_FROM_WIN32(ERROR_DIRECTORY);
     }
 
     HRESULT CreateStaging(const std::wstring& source, std::wstring& stagingPath, Microsoft::WRL::ComPtr<IStream>& stream)
     {
         const std::filesystem::path src(source);
         const std::filesystem::path folder(OutputFolder(source));
+        if (CurrentOutputNaming() == OutputNaming::Subfolder)
+            if (const HRESULT hr = MakeOutputFolder(folder.wstring()); FAILED(hr))
+                return hr;
         thread_local std::mt19937 rng{ std::random_device{}() };
         for (int attempt = 0; attempt < 16; ++attempt)
         {
@@ -102,7 +173,9 @@ namespace sd
     {
         const std::filesystem::path src(source);
         const auto stem = src.stem().wstring();
-        const std::filesystem::path folder(OutputFolder(source));
+        // The staging file's folder, not OutputFolder again: the rename must stay in one folder even
+        // if the naming style changed while the output was being written.
+        const auto folder = std::filesystem::path(stagingPath).parent_path();
         for (int n = 1; n < 1000; ++n)
         {
             const auto candidate = (folder / OutputName(stem, suffix, n, extension)).wstring();
