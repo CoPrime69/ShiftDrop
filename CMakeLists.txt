@@ -24,6 +24,10 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)   # PDF structure: merge, organize, compress, text layer (Apache-2.0)
 find_package(ZLIB REQUIRED)          # Flate streams of the PDFs we write
+find_package(miniz CONFIG REQUIRED)    # ZIP containers: DOCX, XLSX, ODS, EPUB (MIT)
+find_package(pugixml CONFIG REQUIRED)  # XML of those containers (MIT)
+find_package(md4c CONFIG REQUIRED)     # Markdown parsing, CommonMark + GitHub tables (MIT)
+find_package(LibArchive REQUIRED)    # ZIP, TAR, 7z, RAR (BSD-2); vcpkg's wrapper adds its static codecs
 # QPDF's exported link interface names its static dependencies by bare name (zlib's "zs"), so the
 # linker must be able to find them in vcpkg's lib folder.
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
@@ -113,6 +117,32 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
+  # Documents, spreadsheets, subtitles and the Office bridge (M11)
+  src/docs/Bytes.cpp
+  src/docs/DocModel.cpp
+  src/docs/DocsModule.cpp
+  src/docs/Docx.cpp
+  src/docs/Epub.cpp
+  src/docs/Html.cpp
+  src/docs/Markdown.cpp
+  src/docs/PageLayout.cpp
+  src/docs/Pages.cpp
+  src/docs/Paper.cpp
+  src/docs/PdfPrint.cpp
+  src/docs/PdfSource.cpp
+  src/docs/PlainText.cpp
+  src/docs/Rtf.cpp
+  src/docs/Zip.cpp
+  src/sheets/Ods.cpp
+  src/sheets/SheetsModule.cpp
+  src/sheets/Workbook.cpp
+  src/sheets/Xls.cpp
+  src/sheets/Xlsx.cpp
+  src/subtitles/Subtitles.cpp
+  src/subtitles/SubtitlesModule.cpp
+  src/officebridge/OfficeBridge.cpp
+  src/officebridge/OfficeCom.cpp
+  src/officebridge/OfficeModule.cpp
   # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
   src/mediaeditor/EditorApi.cpp
   src/mediaeditor/EditorLayout.cpp
@@ -124,6 +154,17 @@ add_library(shiftdrop_core STATIC
   src/videotools/VideoTools.cpp
   src/audiotools/AudioEngine.cpp
   src/audiotools/AudioTools.cpp
+  src/archive/ArchiveFormats.cpp
+  src/archive/ArchiveModule.cpp
+  src/archive/ArchiveReader.cpp
+  src/archive/ArchiveSource.cpp
+  src/archive/ArchiveWriter.cpp
+  src/archive/Entries.cpp
+  src/archive/EntryPipe.cpp
+  src/archive/Sinks.cpp
+  src/sandbox/MediaSandbox.cpp
+  src/sandbox/Sandbox.cpp
+  src/sandbox/Worker.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -135,7 +176,12 @@ target_link_libraries(shiftdrop_core PUBLIC
   WebP::webp
   qpdf::libqpdf
   ZLIB::ZLIB
+  miniz::miniz
+  pugixml::pugixml
+  md4c::md4c
+  LibArchive::LibArchive
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys comctl32
+  dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
@@ -190,6 +236,19 @@ target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32)
 
+# The sealed engine host (S6): parses archives inside an AppContainer with no capabilities. A
+# separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
+# lives in "engines" next to ffmpeg.exe; every build copies it there so the build folder runs like
+# an install.
+add_executable(ShiftDropWorker WIN32 src/sandbox/WorkerExe.cpp)
+target_compile_options(ShiftDropWorker PRIVATE ${SHIFTDROP_OPTIONS})
+target_link_libraries(ShiftDropWorker PRIVATE shiftdrop_core)
+add_dependencies(ShiftDrop ShiftDropWorker)
+add_custom_command(TARGET ShiftDropWorker POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShiftDropWorker>/engines"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ShiftDropWorker>" "$<TARGET_FILE_DIR:ShiftDropWorker>/engines/ShiftDropWorker.exe"
+  COMMENT "Copying ShiftDropWorker.exe into engines")
+
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
 # build folder runs like an install. Without it the app still builds and runs, with media disabled.
@@ -219,15 +278,22 @@ if(SHIFTDROP_TESTS)
     tests/ShelfTests.cpp
     tests/PdfTests.cpp
     tests/OcrTests.cpp
+    tests/DocsTests.cpp
+    tests/SheetsTests.cpp
+    tests/SubtitlesTests.cpp
+    tests/OfficeTests.cpp
     tests/VideoToolsTests.cpp
     tests/AudioToolsTests.cpp
     tests/CanvasTests.cpp
     tests/CropTests.cpp
     tests/RedactTests.cpp
     tests/ShareSafeTests.cpp
+    tests/ArchiveTests.cpp
+    tests/SandboxTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
-  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)
+  # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
+  target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest ws2_32)
   include(GoogleTest)
   # The MediaEngine tests run the real ffmpeg.exe when there is one; they are skipped otherwise.
   if(EXISTS "${SHIFTDROP_ENGINES_DIR}/ffmpeg.exe")

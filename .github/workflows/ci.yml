@@ -58,7 +58,9 @@ jobs:
 
       - name: Offline check (no networking imports)
         shell: pwsh
-        run: ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
+        run: |
+          ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
+          ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDropWorker.exe
 
       - name: Build the M0 placeholder too
         shell: pwsh
