@@ -183,7 +183,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   md4c::md4c
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
   dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
-  d2d1 d3d11 dxgi         # photo tools: Direct2D on the GPU (WARP without one)
+  d2d1 d3d11 dxgi dxguid  # photo tools: Direct2D on the GPU (WARP without one); dxguid has the effect CLSIDs
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
