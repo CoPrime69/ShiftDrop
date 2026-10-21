@@ -272,23 +272,30 @@ times two builds against each other with the app's own arguments:
 ## How CI fits together
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on every push to `main`, every pull
-request and every `v*` tag. It has three jobs:
+request and every `v*` tag. Its jobs:
 
 1. **ffmpeg** (Ubuntu): runs `build-ffmpeg.sh` and uploads the result as `ffmpeg-custom-<commit>`.
    It is cached on the script and the components list, so it only rebuilds when one of them changes.
    Setting the repository variable `SHIFTDROP_FFMPEG` to `btbn` skips it, and the build then ships
    the pinned BtbN build instead.
-2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures and builds with
-   the `ci` preset, runs the unit tests, runs the offline check, builds the installer, runs the
-   installer smoke test and uploads the installer and the exe.
-3. **placeholder** (Windows Server 2022, beside the other two): builds the placeholder gesture build
+2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures with the `ci`
+   preset, builds the app, runs the offline check, builds the installer, runs the installer smoke
+   test and uploads the installer and the exe.
+3. **tests** (Windows Server 2022, at the same time as build): builds the unit tests with the same
+   ffmpeg and runs them all, six at a time.
+4. **placeholder** (Windows Server 2022, at the same time): builds the placeholder gesture build
    (`SHIFTDROP_M0=ON`), the app target only.
+5. **release** (tags only): publishes the installer once the three jobs above passed.
 
-Every compile goes through sccache, which keeps the object files in the GitHub Actions cache, so a
-push that changes a few files only recompiles those. A pull request reads the cache that `main`'s
-runs wrote, plus its own. The installed vcpkg ports are cached as a folder, keyed on `vcpkg.json`,
-the triplet and the compiler version; when that cache is there, configure doesn't run vcpkg at all.
-Otherwise vcpkg installs them from its own binary cache, also kept between runs.
+The Windows jobs share their setup and configure steps through
+[.github/actions/configure](../.github/actions/configure/action.yml). Every compile goes through
+sccache, which keeps the object files in the GitHub Actions cache, so a push that changes a few
+files only recompiles those, and a library the three jobs all link is compiled once for all of
+them. A pull request reads the cache that `main`'s runs wrote, plus its own. The installed vcpkg
+ports are cached as a folder, keyed on `vcpkg.json`, the triplet and the compiler version; when that
+cache is there, configure doesn't run vcpkg at all. Otherwise vcpkg installs them from its own
+binary cache, also kept between runs. ctest keeps each test's time from the last run, so it starts
+the slowest tests first.
 
 The timing steps (the photo tools' 12 MP export times, and our ffmpeg against the BtbN build) run on
 tags, on runs started by hand and on pull requests labelled `bench`. The unit tests run the photo

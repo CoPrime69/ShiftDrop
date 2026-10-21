@@ -61,6 +61,8 @@ runs:
     - name: Configure
       shell: pwsh
       run: |
+        # Start sccache's server now, while CMake configures (it takes a few seconds to come up).
+        Start-Process -NoNewWindow sccache -ArgumentList '--start-server'
         $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
         $options = @(-split '${{ inputs.options }}' | Where-Object { $_ })
         if ('${{ steps.installed-rw.outputs.cache-hit || steps.installed-ro.outputs.cache-hit }}' -eq 'true') {

@@ -182,6 +182,13 @@ jobs:
       - name: Build the tests
         run: cmake --build --preset ci --target shiftdrop_tests
 
+      # Each test's time from the last run, so ctest starts the slowest ones first.
+      - uses: actions/cache@v4
+        with:
+          path: build/ci/Testing/Temporary/CTestCostData.txt
+          key: ctest-costs-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ctest-costs-
+
       # In parallel (the test preset sets the job count): each test runs in its own process, with its
       # own temporary folder (tests/TestUtil.h names it after the process).
       - name: Unit tests
