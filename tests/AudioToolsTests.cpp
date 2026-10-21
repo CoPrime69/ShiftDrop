@@ -106,18 +106,72 @@ TEST(AudioTools, ParsesLoudnormJson)
     EXPECT_DOUBLE_EQ(ParseLoudnorm(twice)->outputI, -16.02);
 }
 
+TEST(AudioTools, ParsesEbur128Summary)
+{
+    // What ebur128 prints at the end of a run (ffmpeg 8), after a log line of its own.
+    const std::vector<std::string> summary = {
+        "[Parsed_ebur128_0 @ 00007fffff373dc0] Summary:",
+        "",
+        "  Integrated loudness:",
+        "    I:         -10.9 LUFS",
+        "    Threshold: -20.9 LUFS",
+        "",
+        "  Loudness range:",
+        "    LRA:         0.5 LU",
+        "    Threshold: -30.9 LUFS",
+        "    LRA low:   -11.1 LUFS",
+        "    LRA high:  -10.6 LUFS",
+        "",
+        "  True peak:",
+        "    Peak:       -4.4 dBFS",
+        "[out#0/null @ 00007fffff36d040] video:0KiB audio:41344KiB subtitle:0KiB",
+    };
+    const auto l = ParseEbur128(summary);
+    ASSERT_TRUE(l.has_value());
+    EXPECT_DOUBLE_EQ(l->inputI, -10.9);
+    EXPECT_DOUBLE_EQ(l->inputThresh, -20.9);   // the integrated gate, not the range's
+    EXPECT_DOUBLE_EQ(l->inputLRA, 0.5);
+    EXPECT_DOUBLE_EQ(l->inputTP, -4.4);
+    EXPECT_FALSE(l->silent);
+    // Silence: ebur128's floor and a peak of -inf.
+    const auto silent = ParseEbur128({ "Summary:", "  Integrated loudness:", "    I:         -70.0 LUFS", "    Threshold:   0.0 LUFS",
+                                       "  True peak:", "    Peak:        -inf dBFS" });
+    ASSERT_TRUE(silent.has_value());
+    EXPECT_TRUE(silent->silent);
+    EXPECT_FALSE(ParseEbur128({ "Stream #0:0: Audio: mp3", "nothing here" }).has_value());
+    // Without a summary line the numbers of a frame log don't count.
+    EXPECT_FALSE(ParseEbur128({ "    I:         -10.9 LUFS" }).has_value());
+}
+
 TEST(AudioTools, NormalizeIsTwoPassAndLinear)
 {
     EXPECT_DOUBLE_EQ(TargetFor(-14).integrated, -14);
     EXPECT_DOUBLE_EQ(TargetFor(-14).truePeak, -1);
     EXPECT_DOUBLE_EQ(TargetFor(-23).range, 20);
     const auto t = TargetFor(-16);
-    EXPECT_EQ(MeasureFilter(t), L"loudnorm=I=-16:TP=-1:LRA=11:print_format=json");
+    // Pass 1 is ebur128 at the file's own rate, not loudnorm (which resamples to 192 kHz).
+    EXPECT_EQ(MeasureFilter(t), L"ebur128=peak=true:framelog=quiet");
     const auto measured = *ParseLoudnorm(kLoudnormLog);
-    // The measured LRA (18.06) is above the target range: widened so linear mode holds.
+    // +11.6 dB would put the -4.47 dBTP peaks over -1: loudnorm limits them. The measured LRA
+    // (18.06) is above the target range: widened so the dynamics are left alone.
+    EXPECT_FALSE(IsLinear(t, measured));
     EXPECT_EQ(ApplyFilter(t, measured),
               L"loudnorm=I=-16:TP=-1:LRA=18.2:measured_I=-27.61:measured_TP=-4.47:measured_LRA=18.06:measured_thresh=-39.2:offset=0.58:linear=true:print_format=json");
+    // When one gain keeps the peaks under -1 dBTP it is a plain volume change (loudnorm's linear mode).
+    Loudness loud;
+    loud.inputI = -9.3;
+    loud.inputTP = 0.4;
+    EXPECT_TRUE(IsLinear(t, loud));
+    EXPECT_EQ(ApplyFilter(t, loud), L"volume=-6.7dB");
+    Loudness quiet;
+    quiet.inputI = -23.25;
+    quiet.inputTP = -9.5;
+    EXPECT_TRUE(IsLinear(t, quiet));
+    EXPECT_EQ(ApplyFilter(t, quiet), L"volume=7.25dB");
+    quiet.inputTP = -7.9;   // +7.25 dB would reach -0.65 dBTP
+    EXPECT_FALSE(IsLinear(t, quiet));
     const auto pass1 = MeasureArgs(L"in.flac", t);
+    EXPECT_TRUE(Has(pass1, L"-af", L"ebur128=peak=true:framelog=quiet"));
     EXPECT_TRUE(Has(pass1, L"-f", L"null"));
     EXPECT_EQ(pass1.back(), L"-");
     const auto pass2 = NormalizeArgs(L"in.mp3", L".mp3", Song(), t, measured, L"out");
@@ -272,6 +326,10 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
     mono.steps[0].params["ask"] = false;
     EXPECT_FALSE(engine->NeedsEditor(mono));   // a one-click preset
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-bleep")));
+    // Sound-only tools run several files at once; the visualizer encodes video, one at a time.
+    for (const char* id : { "audio-normalize", "audio-trim", "audio-channels", "audio-bleep" })
+        EXPECT_EQ(runner.Lane(recipes.Get(id)), JobLane::Audio) << id;
+    EXPECT_EQ(runner.Lane(recipes.Get("audio-visualizer")), JobLane::Media);
     EXPECT_TRUE(engine->NeedsEditor(recipes.Get("audio-trim")));
     EXPECT_FALSE(engine->IsBatch(recipes.Get("audio-trim")));
 }
@@ -364,7 +422,7 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
     std::vector<std::string> log;
     std::stop_source never;
     Ffmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
-    const auto after = ParseLoudnorm(log);
+    const auto after = ParseEbur128(log);
     ASSERT_TRUE(after.has_value());
     EXPECT_NEAR(after->inputI, -16, 0.6);
     EXPECT_LE(after->inputTP, -0.9);
@@ -377,6 +435,34 @@ TEST(AudioToolsEngine, NormalizesToTheTargetLoudness)
     EXPECT_TRUE(again.error.ends_with(L" LUFS")) << Narrow(again.error);
     EXPECT_EQ(again.error.find(L"\u2192"), std::wstring::npos) << Narrow(again.error);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+}
+
+TEST(AudioToolsEngine, NormalizeLimitsPeaksOneGainWouldClip)
+{
+    if (!Ffmpeg()->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    Fixture f;
+    const auto talk = f.dir / L"talk with claps.wav";
+    // A quiet tone with a loud click every second: the gain to -16 LUFS would push the clicks far over
+    // -1 dBTP, so loudnorm limits them instead of one plain gain.
+    ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"aevalsrc=0.03*sin(2*PI*300*t)+0.9*lt(mod(t\\,1)\\,0.002):s=44100:d=8", L"-ac", L"2",
+                       L"-c:a", L"pcm_s16le", L"-f", L"wav", talk }));
+    std::vector<std::string> log;
+    std::stop_source never;
+    ASSERT_TRUE(Ffmpeg()->Run(MeasureArgs(talk, TargetFor(-16)), nullptr, never.get_token(), &log).ok);
+    const auto before = ParseEbur128(log);
+    ASSERT_TRUE(before.has_value());
+    EXPECT_FALSE(IsLinear(TargetFor(-16), *before));
+    const auto r = f.Run("audio-normalize", { { "ask", false }, { "target", -16 } }, talk);
+    ASSERT_TRUE(r.ok) << Narrow(r.error);
+    log.clear();
+    Ffmpeg()->Run(MeasureArgs(r.output, TargetFor(-16)), nullptr, never.get_token(), &log);
+    const auto after = ParseEbur128(log);
+    ASSERT_TRUE(after.has_value());
+    // Louder, with the clicks kept under the ceiling (one plain gain would have clipped them). On a
+    // clip this short and this spiky loudnorm's limiter stays a few LU short of the target.
+    EXPECT_GT(after->inputI, before->inputI + 3);
+    EXPECT_LE(after->inputTP, -0.5);
 }
 
 TEST(AudioToolsEngine, VisualizerMakesAVideo)

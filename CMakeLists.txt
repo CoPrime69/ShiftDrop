@@ -329,6 +329,7 @@ if(SHIFTDROP_TESTS)
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
+    tests/BenchTests.cpp
     tests/FfmpegComponentsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
