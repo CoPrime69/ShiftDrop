@@ -40,14 +40,14 @@ namespace sd::ocr
     // Installed by WinOcr.cpp at startup; all null where Windows OCR is not compiled in (MinGW tests).
     struct Hooks
     {
-        // The installed OCR languages, in Windows' order. Cheap, may be called on the UI thread.
-        std::vector<Language> (*languages)() = nullptr;
         // Is OCR usable on this PC? `why` explains a "no" (no OCR language installed...). Cheap, may be
         // called on the UI thread.
         bool (*available)(std::wstring* why) = nullptr;
         // Recognises text in `image` (any size; scaled down internally if Windows' limit is smaller,
         // boxes are given back in `image`'s pixels). Blocks: call it on a worker thread (MTA).
         bool (*recognize)(const pdf::Bitmap& image, Result& out, std::wstring& error) = nullptr;
+        // The installed OCR languages, in Windows' order. Cheap, may be called on the UI thread.
+        std::vector<Language> (*languages)() = nullptr;
     };
     Hooks& Platform();
 

@@ -344,6 +344,14 @@ namespace sd
                 m_grabIds.push_back(id);
             ++id;
         }
+        // 1, 2, 3... (with or without Shift) jump to that section, as during a drag.
+        for (UINT vk = '1'; vk <= '9'; ++vk)
+            for (const UINT mods : { 0u, static_cast<UINT>(MOD_SHIFT) })
+            {
+                if (RegisterHotKey(m_hwnd.get(), id, mods, vk))
+                    m_grabIds.push_back(id);
+                ++id;
+            }
     }
 
     void KeyboardController::ReleaseKeys()
@@ -373,7 +381,10 @@ namespace sd
         case VK_DOWN: m_overlay.Navigate(keynav::Key::Down); break;
         case VK_RETURN: m_overlay.Activate(); break;
         case VK_ESCAPE: m_overlay.Cancel(); break;
-        default: break;
+        default:
+            if (vk >= '1' && vk <= '9')
+                m_overlay.SetRing(static_cast<int>(vk - '1'));
+            break;
         }
         if (!m_overlay.InClickMode())
             ReleaseKeys();

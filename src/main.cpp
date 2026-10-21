@@ -577,6 +577,8 @@ namespace sd
             // dragged. Keys already down now must not count as "pressed again" to switch wheels.
             for (int i = 0; i < kRingCount; ++i)
                 m_keyDown[i] = IsDown(m_settings.keys[i]);
+            for (int d = 0; d < kDigitKeys; ++d)
+                m_digitDown[d] = IsDown('1' + d);
             m_overlay->ShowProbe(pt, ring);
         }
 
@@ -615,6 +617,15 @@ namespace sd
                 if (down && !m_keyDown[i] && SectionIndex(static_cast<Ring>(i)) >= 0)
                     m_overlay->SetRing(SectionIndex(static_cast<Ring>(i)));
                 m_keyDown[i] = down;
+            }
+            // Shift+1, Shift+2...: straight to that section, for anyone without a mouse wheel. The
+            // drag source's modal loop keeps the keystroke from reaching any window.
+            for (int d = 0; d < kDigitKeys; ++d)
+            {
+                const bool down = IsDown('1' + d);
+                if (down && !m_digitDown[d])
+                    m_overlay->SetRing(d);
+                m_digitDown[d] = down;
             }
         }
 
@@ -1277,7 +1288,9 @@ namespace sd
         std::unique_ptr<PreviewCard> m_preview;            // M4: after the overlay, which reports highlights to it
         std::unique_ptr<KeyboardController> m_keyboard;    // M4: drives the overlay
         std::vector<std::wstring> m_startWheel;            // --wheel paths this process was started with
-        bool m_keyDown[kRingCount]{};   // wheel keys' state at the last poll, to see fresh presses
+        bool m_keyDown[kRingCount]{};
+        static constexpr int kDigitKeys = 9;   // 1 to 9
+        bool m_digitDown[kDigitKeys]{};       // the same for the section number keys   // wheel keys' state at the last poll, to see fresh presses
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
         POINT m_watchdogPt{};
