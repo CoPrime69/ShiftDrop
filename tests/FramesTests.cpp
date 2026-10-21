@@ -1,3 +1,4 @@
+#include "Ask.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -19,6 +20,13 @@ using Microsoft::WRL::ComPtr;
 // Converting an animated GIF or a multi-page TIFF keeps every frame (src/formats/Frames.h).
 namespace
 {
+    // Answers the questions of src/Ask.h for one test.
+    struct ScopedAnswers
+    {
+        explicit ScopedAnswers(ask::ChooseFn choose) { ask::SetAnswers(std::move(choose), {}); }
+        ~ScopedAnswers() { ask::SetAnswers({}, {}); }
+    };
+
     struct Fixture
     {
         TempDir dir;
@@ -310,6 +318,85 @@ TEST(Frames, AnimatedGifToPngGivesAFramesFolder)
     EXPECT_TRUE(IsColour(Px(white, 3, 3), 255, 255, 255, 60))
         << int(Px(white, 3, 3)[0]) << "," << int(Px(white, 3, 3)[1]) << "," << int(Px(white, 3, 3)[2]);
     EXPECT_TRUE(std::filesystem::exists(result.output + L"\\anim frame 01.png"));
+}
+
+TEST(Frames, StepForEveryNthFrame)
+{
+    EXPECT_EQ(formats::FrameStep(101), 2u);
+    EXPECT_EQ(formats::FrameStep(200), 2u);
+    EXPECT_EQ(formats::FrameStep(201), 3u);
+    EXPECT_EQ(formats::FrameStep(250), 3u);
+    EXPECT_EQ(formats::FrameStep(1000), 10u);
+    EXPECT_EQ(formats::FrameStep(1001), 11u);
+}
+
+TEST(Frames, ALongGifAsksBeforeItBecomesAFolder)
+{
+    Fixture f;
+    // 250 frames of 2 x 2: red, green, blue, red...
+    std::vector<GifFrame> frames;
+    for (uint8_t i = 0; i < 250; ++i)
+        frames.push_back({ 0, 0, 2, 2, static_cast<uint8_t>(1 + i % 3), 1, 2 });
+    const auto gif = f.dir / L"long.gif";
+    WriteText(gif, MakeGif(2, 2, frames));
+    ASSERT_EQ(formats::FrameCount(gif), 250u);
+
+    std::vector<ask::Question> asked;
+    int answer = ask::kCancel;
+    ScopedAnswers answers([&](const ask::Question& q) {
+        asked.push_back(q);
+        return answer;
+    });
+    const auto names = [](const std::wstring& folder) {
+        std::vector<std::wstring> out;
+        for (const auto& e : std::filesystem::directory_iterator(folder))
+            out.push_back(e.path().filename().wstring());
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+
+    // Cancel: nothing is made.
+    const auto cancelled = f.Run("to-png", gif);
+    EXPECT_FALSE(cancelled.ok);
+    EXPECT_TRUE(cancelled.skipped) << Narrow(cancelled.error);
+    EXPECT_NE(cancelled.error.find(L"no frames were saved"), std::wstring::npos) << Narrow(cancelled.error);
+    EXPECT_FALSE(std::filesystem::exists(f.dir / L"long (frames)"));
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+    ASSERT_EQ(asked.size(), 1u);
+    const auto q = asked[0];
+    EXPECT_EQ(q.title, L"GIF to PNG");
+    EXPECT_EQ(q.heading, L"long.gif has 250 frames");
+    ASSERT_EQ(q.choices.size(), 2u);
+    EXPECT_EQ(q.choices[0].label, L"Save all 250 frames");
+    EXPECT_EQ(q.choices[1].label, L"Save every 3rd frame");
+    EXPECT_EQ(q.choices[1].note, L"84 files: frames 1, 4, 7 and so on");
+    EXPECT_EQ(q.unattended, q.choices[0].id) << "with no one to ask, every frame as before";
+
+    // Every 3rd: frames 1, 4, ... 250 under their own numbers.
+    answer = q.choices[1].id;
+    const auto some = f.Run("to-png", gif);
+    ASSERT_TRUE(some.ok) << Narrow(some.error);
+    const auto kept = names(some.output);
+    ASSERT_EQ(kept.size(), 84u);
+    EXPECT_EQ(kept.front(), L"long frame 001.png");
+    EXPECT_EQ(kept[1], L"long frame 004.png");
+    EXPECT_EQ(kept.back(), L"long frame 250.png");
+    formats::Image fourth;
+    ASSERT_TRUE(ReadPixels(some.output + L"\\long frame 004.png", fourth));
+    EXPECT_TRUE(IsColour(Px(fourth, 1, 1), 0, 0, 255)) << "frame 4 is red";
+    EXPECT_EQ(some.message, L"84 of 250 frames saved as PNG");
+
+    // All of them.
+    answer = q.choices[0].id;
+    const auto all = f.Run("to-png", gif);
+    ASSERT_TRUE(all.ok) << Narrow(all.error);
+    EXPECT_EQ(names(all.output).size(), 250u);
+
+    // Short GIFs, and long ones that stay one file (WebP, TIFF), never ask.
+    asked.clear();
+    ASSERT_TRUE(f.Run("to-png", WriteAnimatedGif(f.dir, L"short.gif")).ok);
+    ASSERT_TRUE(f.Run("to-tiff", gif).ok);
+    EXPECT_TRUE(asked.empty());
 }
 
 TEST(Frames, AnimatedGifToTiffGivesOneTiffWithEveryFrame)

@@ -1,4 +1,5 @@
 #include "formats/Frames.h"
+#include "Ask.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
@@ -313,6 +314,36 @@ namespace sd::formats
         return S_OK;
     }
 
+    uint32_t FrameStep(uint32_t count)
+    {
+        return std::max<uint32_t>(2, (count + kAskAboveFrames - 1) / kAskAboveFrames);
+    }
+
+    namespace
+    {
+        // A long GIF to a folder of pictures: hundreds of files. Returns the step (1 for every
+        // frame, N for every Nth) or 0 to cancel.
+        uint32_t AskFrames(const std::wstring& source, uint32_t count, const ImageFormatInfo& format, std::stop_token stop)
+        {
+            const uint32_t step = FrameStep(count);
+            const uint32_t kept = (count + step - 1) / step;
+            ask::Question q;
+            q.title = std::format(L"GIF to {}", format.label);
+            q.heading = std::format(L"{} has {} frames", std::filesystem::path(source).filename().wstring(), ask::Thousands(count));
+            q.text = std::format(L"Each frame becomes its own {} file in a new folder.", format.label);
+            q.choices = { { 1, std::format(L"Save all {} frames", ask::Thousands(count)), std::format(L"{} files", ask::Thousands(count)) },
+                          { 2, std::format(L"Save every {} frame", ask::Ordinal(step)),
+                            std::format(L"{} files: frames 1, {}, {} and so on", ask::Thousands(kept), 1 + step, 1 + 2 * step) } };
+            q.unattended = 1;   // what it did before it asked
+            switch (ask::Choose(q, stop))
+            {
+            case 1: return 1;
+            case 2: return step;
+            default: return 0;
+            }
+        }
+    }
+
     FramesOutput FramesOutputFor(const std::wstring& lowerSourceExtension, std::string_view formatId)
     {
         if (IsGif(lowerSourceExtension) && (formatId == "webp" || formatId == "avif"))
@@ -329,6 +360,19 @@ namespace sd::formats
         const FramesOutput kind = FramesOutputFor(ext, format.id);
         const int quality = recipe.steps.back().params.value("quality", 90);
         const std::wstring word = IsGif(ext) ? L"frame" : L"page";
+
+        // A long GIF to a folder asks first (before the staging folder appears next to it).
+        const uint32_t total = kind == FramesOutput::Folder && IsGif(ext) ? FrameCount(source) : 0;
+        uint32_t step = 1;   // every frame, or every `step`th
+        if (total > kAskAboveFrames)
+        {
+            step = AskFrames(source, total, format, stop);
+            if (step == 0)
+            {
+                StagedOutput out(history, runId, source, true);
+                return out.Fail(L"cancelled, no frames were saved", true);
+            }
+        }
 
         StagedOutput out(history, runId, source, kind == FramesOutput::Folder);
         if (!out.Ready())
@@ -394,6 +438,11 @@ namespace sd::formats
         {
             const std::wstring stem = std::filesystem::path(source).stem().wstring();
             hr = ForEachFrame(source, stop, [&](const Image& frame, uint32_t index, uint32_t count, int) {
+                if (index % step != 0)   // every frame is still drawn: a GIF frame builds on the ones before it
+                {
+                    report(index, count);
+                    return !stop.stop_requested();
+                }
                 const int digits = std::max(2, static_cast<int>(std::to_wstring(count).size()));
                 const auto path = std::format(L"{}\\{} {} {:0{}}{}", out.Path(), stem, word, index + 1, digits, format.extension);
                 ComPtr<IWICBitmapSource> pixels;
@@ -418,8 +467,9 @@ namespace sd::formats
         if (FAILED(hr) || FAILED(failed))
             return out.Fail(error.empty() ? HResultText(FAILED(hr) ? hr : failed) : error);
 
-        log::Info(L"frames: {} -> {} {}s as {} ({})", source, frames, word, format.label,
-                  kind == FramesOutput::Animation ? L"animated" : kind == FramesOutput::Pages ? L"multi-page" : L"folder");
+        log::Info(L"frames: {} -> {} {}s as {} ({}{})", source, frames, word, format.label,
+                  kind == FramesOutput::Animation ? L"animated" : kind == FramesOutput::Pages ? L"multi-page" : L"folder",
+                  step > 1 ? std::format(L", every {}", ask::Ordinal(step)) : std::wstring());
         auto result = kind == FramesOutput::Folder ? out.Commit(L"frames", L"") : out.Commit(recipe.suffix, format.extension);
         if (result.ok)
         {
@@ -427,6 +477,8 @@ namespace sd::formats
                 result.message = std::format(L"Animated {}, {} frames", format.label, frames);
             else if (kind == FramesOutput::Pages)
                 result.message = std::format(L"TIFF with {} {}s", frames, word);
+            else if (step > 1)
+                result.message = std::format(L"{} of {} frames saved as {}", frames, total, format.label);
             else
                 result.message = std::format(L"{} {}s saved as {}", frames, word, format.label);
         }

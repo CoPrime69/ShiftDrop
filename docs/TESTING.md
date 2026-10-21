@@ -457,6 +457,7 @@ Animated GIFs and multi-page TIFFs
 - [ ] The animated GIF on AVIF: `name (converted).avif` animates in Chrome
 - [ ] The animated GIF on PNG: a folder `name (frames)` with `name frame 01.png`, `02`... Each frame looks complete (not just the changed bits); drop again and a second folder `name (frames 2)` appears, the first untouched
 - [ ] The animated GIF on JPG: the same folder, frames on white
+- [ ] A GIF with more than 100 frames (a 10-second clip from a chat app) on PNG: it asks first. **Save every Nth frame** (about 100 files): the folder holds frames 1, N+1, 2N+1… under their own numbers; **Save all N frames**: every frame; **Cancel**: no folder. The same GIF on WebP or TIFF doesn't ask
 - [ ] The animated GIF on TIFF: one `.tiff`; the Photos app (or Windows Photo Viewer) pages through every frame
 - [ ] The multi-page TIFF on PDF (Convert wheel): one PDF with every page, each its own size; with a JPG dropped alongside, the JPG is a page too
 - [ ] The multi-page TIFF on PNG: a folder `name (frames)` with `name page 01.png` and so on
@@ -541,6 +542,7 @@ Spreadsheets
 - [ ] Drop on **CSV**: a folder `book (converted)` with one CSV per sheet; double-click one: Excel opens it with accents right, dates as 2024-01-31, leading zeros kept as text
 - [ ] Drop on **ODS**: LibreOffice Calc (or Excel) opens it with both sheets, the dates still dates, the numbers still numbers
 - [ ] Drop on **PDF**: each sheet is a table under its name, wide sheets come out landscape, the header row repeats on each page
+- [ ] A CSV with more than 20,000 rows on **PDF**: it asks first. **Print the first 20,000 rows**: the last page ends with a note saying how many rows were left out; **Print all rows**: every row, no note; **Cancel**: nothing is made and the panel says so
 - [ ] Drop `book.xls` on **XLSX**: the values, dates and sheet names come through; a password-protected .xls says it is protected
 - [ ] Drop the semicolon CSV on **XLSX**: the columns are split right (not everything in column A)
 - [ ] A one-sheet workbook to CSV gives a single `… (converted).csv`, not a folder
@@ -566,11 +568,13 @@ Office bridge (LibreOffice only, no Microsoft Office)
 ### V. Archives and the sandbox
 Prepare a folder `Photos` with a few pictures, a subfolder and a file with a non-English name
 (for example `Müller 日本.txt`); a ZIP, a TAR.GZ, a 7z and a RAR made elsewhere (7-Zip or WinRAR);
-a password-protected ZIP; and an old ZIP made on a non-UTF-8 system if you have one.
+a ZIP protected with a password the classic way (7-Zip: ZIP, encryption ZipCrypto); a 7z, a RAR and a ZIP
+(AES-256) with a password; and an old ZIP made on a non-UTF-8 system if you have one.
 
 Compress
 - [ ] Drag `Photos` onto **Zip** on the File-actions wheel: `Photos (zipped).zip` appears next to the folder; open it in Explorer: the subfolder, the non-English name and the dates are all there
-- [ ] Select three files in one folder and drop them on **Zip** on the File-actions wheel: one ZIP named after their folder holding the three files
+- [ ] Select three files in one folder and drop them on **Zip** on the File-actions wheel: `Archive.zip` next to them, holding the three files; do it again: `Archive (2).zip`, the first untouched
+- [ ] Drop two folders that sit in different places (put them on the Float shelf first) on **Zip**: `Archive.zip` next to the first one; one file on its own still gives `name (zipped).zip`
 - [ ] Drag `Photos` to the Convert wheel: it shows ZIP, TAR.GZ and 7z; **TAR.GZ** makes `Photos (archived).tar.gz`, **7z** makes `Photos (archived).7z`; both open in 7-Zip with the same files
 - [ ] Zip a folder of a few GB: the top panel's progress moves smoothly; press × halfway: no `.zip` and no `.sdpart` file is left
 
@@ -579,7 +583,12 @@ Extract and convert
 - [ ] **Extract** on each: a folder `name (extracted)` next to it with the same files, names and dates; an archive holding one top-level folder doesn't add an extra folder level
 - [ ] The old non-UTF-8 ZIP: accented names come out right (not `M├╝ller`)
 - [ ] **ZIP** on the RAR and the 7z: `name (converted).zip` with the same contents
-- [ ] The password-protected ZIP on Extract: the top panel says it is password-protected; nothing is created
+- [ ] The password-protected ZIP on **Extract**: a small password box names the file and shows what you type as dots; a wrong password says "That password didn't work" and asks again; the right one extracts everything, without asking again for the other files inside
+- [ ] The same ZIP, **Cancel** in the password box: the top panel says "no password given, so nothing was extracted"; no folder and no `.sdpart` are left
+- [ ] The same ZIP on **7z**: the box asks the same way; the 7z opens in 7-Zip with no password
+- [ ] Open the password box and press × in the top panel: the box closes and the job is cancelled
+- [ ] A password-protected 7z, a password-protected RAR and a ZIP made with AES-256 in 7-Zip: no box; the panel says that kind can't be opened yet
+- [ ] Search `%LOCALAPPDATA%\ShiftDrop` (logs and `history.db`) for the password you typed: it is nowhere
 - [ ] A big archive on Extract, × halfway: no folder and no `.sdpart` is left next to it
 - [ ] Undo the last extract from History: the folder goes to the Recycle Bin
 

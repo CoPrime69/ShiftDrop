@@ -10,6 +10,7 @@
 //                files convert at once
 //   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
+#include "Ask.h"
 #include "Brand.h"
 #include "DropTarget.h"
 #include "FileActions.h"
@@ -288,6 +289,7 @@ namespace sd
             if (!m_hwnd)
                 return false;
             m_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+            ask::InstallUi();   // jobs' questions (an archive's password...) are shown on this thread
 
             m_recipes.Load(m_registry, RecipesFolder());
             m_codecs = std::make_shared<const ImageCodecs>();
@@ -528,6 +530,7 @@ namespace sd
                 log::Info(L"shutting down");
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
+                ask::UninstallUi();    // an open question closes as Cancel; its job stops with the rest
                 m_jobs.reset();        // stops and joins workers; results still in flight are freed (see PostBatch)
                 m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
                 m_audioJobs.reset();

@@ -27,6 +27,7 @@ namespace sd
 
     // The n-th candidate name (n = 1 is the first choice) in the current style, or in `naming`.
     // A suffix with spaces ("no metadata") takes the style's separator in the dash and underscore styles.
+    // An empty suffix gives the stem alone ("Archive.zip"), then "Archive (2).zip" ("Archive-2.zip"...).
     std::wstring OutputName(std::wstring_view stem, std::wstring_view suffix, int n, std::wstring_view extension);
     std::wstring OutputName(OutputNaming naming, std::wstring_view stem, std::wstring_view suffix, int n, std::wstring_view extension);
 
