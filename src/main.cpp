@@ -714,7 +714,7 @@ namespace sd
             std::vector<const Recipe*> forAll, forAny, onRing;
             for (const auto& recipe : m_recipes.All())
             {
-                if (recipe.ring != ringId || !m_features.RecipeOn(recipe))
+                if (recipe.ring != ringId || !m_features.RecipeOn(recipe) || !m_runner->AppliesToDrop(recipe, files.size()))
                     continue;
                 onRing.push_back(&recipe);
                 const auto applies = [&](const std::wstring& f) { return m_runner->Applies(recipe, f); };

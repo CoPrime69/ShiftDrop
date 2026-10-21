@@ -44,6 +44,13 @@ namespace sd
         virtual bool Handles(const Recipe& recipe) const = 0;
         // Is the recipe meant for this kind of file at all? The wheel shows only recipes that apply.
         virtual bool Applies(const Recipe& recipe, const std::wstring& path) const = 0;
+        // Is it meant for a drop of this many files at all (a collage needs two or more)? Slices that
+        // aren't are left off the wheel.
+        virtual bool AppliesToDrop(const Recipe&, size_t fileCount) const
+        {
+            (void)fileCount;
+            return true;
+        }
         // Can it run on this file now? `why` explains a "no" (shown in the wheel's centre).
         virtual bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const = 0;
         // Would running it change nothing (already that format)? Such slices are dimmed.

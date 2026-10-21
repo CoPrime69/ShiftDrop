@@ -176,6 +176,20 @@ add_library(shiftdrop_core STATIC
   src/formats/Heic.cpp
   src/formats/Pixels.cpp
   src/formats/Svg.cpp
+  # Photo tools (M8): Edit Photos, Annotate, Background, Collage; Direct2D on the GPU (WARP without one)
+  src/photo/Adjust.cpp
+  src/photo/AnnotateTool.cpp
+  src/photo/Annotations.cpp
+  src/photo/BackgroundTool.cpp
+  src/photo/CollageTool.cpp
+  src/photo/Compose.cpp
+  src/photo/EditTool.cpp
+  src/photo/Effects.cpp
+  src/photo/Filters.cpp
+  src/photo/Gpu.cpp
+  src/photo/Layout.cpp
+  src/photo/PhotoEngine.cpp
+  src/photo/PhotoModule.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -196,6 +210,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   LibArchive::LibArchive
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
   dwrite gdi32 winspool   # documents to PDF: DirectWrite layout printed to Microsoft Print to PDF
+  d2d1 d3d11 dxgi dxguid  # photo tools: Direct2D on the GPU (WARP without one); dxguid has the effect CLSIDs
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
@@ -307,6 +322,7 @@ if(SHIFTDROP_TESTS)
     tests/SandboxTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
+    tests/PhotoTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
