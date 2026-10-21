@@ -44,6 +44,10 @@ set(SHIFTDROP_DEFINES
   _WIN32_WINNT=0x0A00 WINVER=0x0A00   # Windows 10/11 API surface
 )
 set(SHIFTDROP_OPTIONS /W4 /permissive- /utf-8 /EHsc /Zc:__cplusplus /MP)
+# Smaller Release exes: each global in its own section (/Gw) so the linker can drop unreferenced
+# functions and data (/OPT:REF) and fold identical ones (/OPT:ICF). No debug info is written.
+list(APPEND SHIFTDROP_OPTIONS $<$<CONFIG:Release>:/Gw>)
+add_link_options($<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 
 # Everything that does not need the gesture UI: recipes, the image pipeline, history, undo, file
 # actions. The app and the tests both link it.
@@ -325,8 +329,11 @@ if(SHIFTDROP_TESTS)
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
+    tests/FfmpegComponentsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
+  # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.
+  target_compile_definitions(shiftdrop_tests PRIVATE SHIFTDROP_FFMPEG_COMPONENTS="${CMAKE_SOURCE_DIR}/scripts/ffmpeg-components.txt")
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest ws2_32)
   include(GoogleTest)

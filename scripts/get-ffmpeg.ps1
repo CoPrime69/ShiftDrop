@@ -1,15 +1,35 @@
-# Downloads the pinned LGPL build of FFmpeg and puts ffmpeg.exe (plus its licence) in build/engines.
-# CI runs it before the build; run it once by hand for a local build (docs/TESTING.md, section 5).
-# The zip is checked against a pinned SHA-256, so a changed or tampered download fails the build.
+# Puts ffmpeg.exe (plus its licence and source pointer) in build/engines. CI runs it before the build;
+# run it once by hand for a local build (docs/TESTING.md, section 5).
 #
-# Build: BtbN/FFmpeg-Builds (https://github.com/BtbN/FFmpeg-Builds), "win64-lgpl" variant: no GPL
-# parts (no x264/x265), so ShiftDrop can ship it unmodified next to its own exe. To update, pick a
-# newer win64-lgpl zip from that project's releases and change the three values below.
+# 1. ShiftDrop's own small LGPL build (scripts/build-ffmpeg.sh), when its output folder is there:
+#    CI builds it in the "ffmpeg" job and hands it over; for a local build, download the
+#    "ffmpeg-custom-..." artifact of any CI run into build/ffmpeg-custom (or pass -Custom).
+# 2. Otherwise the pinned full LGPL build from BtbN/FFmpeg-Builds (https://github.com/BtbN/FFmpeg-Builds),
+#    "win64-lgpl" variant: no GPL parts (no x264/x265). It has everything ShiftDrop needs and much
+#    more, so it is about three times the size. The zip is checked against a pinned SHA-256, so a
+#    changed or tampered download fails the build. To update, pick a newer win64-lgpl zip from that
+#    project's releases and change the three values below. -Btbn forces this path (CI uses it to
+#    time the two builds against each other).
 param(
     [string]$Out = "build/engines",
-    [string]$Downloads = "build/downloads"
+    [string]$Downloads = "build/downloads",
+    [string]$Custom = "build/ffmpeg-custom",
+    [switch]$Btbn
 )
 $ErrorActionPreference = 'Stop'
+
+if (-not $Btbn -and (Test-Path (Join-Path $Custom 'ffmpeg.exe'))) {
+    New-Item -ItemType Directory -Force $Out | Out-Null
+    foreach ($f in 'ffmpeg.exe', 'FFMPEG-LICENSE.txt', 'FFMPEG-SOURCE.txt') {
+        $from = Join-Path $Custom $f
+        if (-not (Test-Path $from)) { throw "$from is missing (scripts/build-ffmpeg.sh writes it)" }
+        Copy-Item $from (Join-Path $Out $f) -Force
+    }
+    $hash = (Get-FileHash (Join-Path $Out 'ffmpeg.exe') -Algorithm SHA256).Hash
+    Set-Content -Path (Join-Path $Out 'ffmpeg.version') -Value "custom $hash" -Encoding ascii
+    Write-Host "ffmpeg: ShiftDrop's own build from $Custom ($([math]::Round((Get-Item (Join-Path $Out 'ffmpeg.exe')).Length / 1MB, 1)) MB, SHA-256 $hash) -> $Out"
+    exit 0
+}
 
 $Url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-20-13-08/ffmpeg-n8.1.3-18-g46d899d7a0-win64-lgpl-8.1.zip'
 $Sha256 = '26634a5e06429c4f51ed08ba518923f928c5e4a49ed0ee62f701e035227b91a7'
