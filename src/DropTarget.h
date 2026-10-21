@@ -5,6 +5,7 @@
 #include <wrl/client.h>
 #include <wrl/implements.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,9 @@ namespace sd
     // called RegisterDragDrop.
     struct IDropSink
     {
-        // files is empty when the data has no CF_HDROP (text, a URL, a browser image...).
+        // files is empty when the drag carries no files (text, a URL...). Files dragged out of a
+        // browser or a mail app ("virtual files", VirtualDrop.h) come as the paths they will be
+        // saved at on the drop: not on disk yet, but named, so the wheel can be filtered by them.
         virtual bool OnDragEnter(const std::vector<std::wstring>& files, POINT pt) = 0;
         // Returns the effect to report for this point; `allowed` is what the source permits.
         virtual DWORD OnDragOver(POINT pt, DWORD allowed) = 0;
@@ -28,6 +31,8 @@ namespace sd
 
     // Our IDropTarget. RuntimeClass<ClassicCom> supplies IUnknown (QueryInterface/AddRef/Release),
     // and Microsoft::WRL::Make creates it with a ref count of 1, so there is no bare new/delete.
+    class VirtualDrop;
+
     class DropTarget final
         : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropTarget>
     {
@@ -40,10 +45,13 @@ namespace sd
         STDMETHOD(Drop)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
 
     private:
+        void EndVirtual();
+
         HWND m_hwnd;
         IDropSink* m_sink;   // not owned; the Overlay outlives the registration (RevokeDragDrop first)
         bool m_accepting = false;
         Microsoft::WRL::ComPtr<IDataObject> m_data;   // while accepting, to give the badge back on leave
+        std::shared_ptr<VirtualDrop> m_virtual;       // the drag's virtual files, from DragEnter to its end
         // The shell's drag-image helper would keep Explorer's drag picture visible over the wheel.
         // Left empty on purpose (see the constructor): the picture gives way to the wheel.
         Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;

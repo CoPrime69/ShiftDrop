@@ -26,6 +26,9 @@ in one place, so features can be built side by side without touching each other.
   and a history row, so every result can be undone and a crash leaves nothing half-written.
   A batch output can pass an `OutputPlace` (folder + stem) to be named after something other than
   its source, such as "Photos (zipped).zip" for a drop of a folder's files.
+  Files dragged out of a browser or a mail app are saved in a private drop folder first, and their
+  outputs go to the Desktop (or the folder the user chose): an engine that needs an output folder
+  asks `OutputFolder(source)` (OutputPath.h), never the source's own folder.
 - **Untrusted input:** parse it in the sandbox worker (`src/sandbox`, `engines\ShiftDropWorker.exe`:
   AppContainer, no capabilities, kill-on-close job) and let the app write the files, as
   `src/archive` does.

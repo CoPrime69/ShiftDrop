@@ -60,6 +60,9 @@ namespace sd
         void ShowProgress(const std::wstring& title, size_t total, std::function<void()> onCancel = {});
         // Files finished so far; a fraction moves the bar within the current file (video, audio).
         void SetProgress(double done);
+        // Runs the panel's own animation timer while the UI thread is busy with something long that
+        // can't leave it (saving files dragged out of a browser, inside the drop).
+        void Pump();
         // With `actions`, the result can be dragged out and has Float and Copy buttons; it stays while
         // the mouse is over it.
         void ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle, ResultActions actions = {});

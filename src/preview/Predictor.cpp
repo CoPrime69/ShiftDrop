@@ -4,6 +4,7 @@
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "VirtualDrop.h"
 #include "formats/Frames.h"
 #include "inspect/MetadataReader.h"
 
@@ -417,7 +418,12 @@ namespace sd::preview
         // The quick part: the first file's name, picture, size and what its metadata loses.
         const auto facts = FactsFor(first, false, stop);
         if (!facts || stop.stop_requested())
+        {
+            // A file dragged out of a browser is not on disk until the drop: its name is all there is.
+            if (!facts && !stop.stop_requested() && VirtualDrop::Find(first))
+                p.name = PredictOutputName(first, recipe.suffix, outExt);
             return p;
+        }
         p.thumb = facts->thumb;
         p.name = PredictOutputName(first, recipe.suffix, outExt);
         if (files.size() > 1)

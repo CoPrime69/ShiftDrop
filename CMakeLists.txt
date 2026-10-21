@@ -68,6 +68,7 @@ add_library(shiftdrop_core STATIC
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
+  src/VirtualDrop.cpp
   # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -320,6 +321,7 @@ if(SHIFTDROP_TESTS)
     tests/ShareSafeTests.cpp
     tests/ArchiveTests.cpp
     tests/SandboxTests.cpp
+    tests/VirtualDropTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp

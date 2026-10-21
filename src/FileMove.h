@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace sd
@@ -14,7 +15,8 @@ namespace sd
 
     // Shows the folder picker. Runs on the UI thread (the dialog is modal and keeps pumping messages, so
     // the mouse hook stays responsive). Returns false when the user cancels.
-    bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder);
+    // `verb` names what happens there ("Move 2 items to", "Move here"; "Save" for dropped files).
+    bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder, std::wstring_view verb = L"Move");
 
     struct MoveOutcome
     {
