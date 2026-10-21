@@ -373,7 +373,7 @@ Remove metadata (File-actions wheel, **Alt**)
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
-### U. Documents, spreadsheets, subtitles, Office bridge (M11)
+### V. Documents, spreadsheets, subtitles, Office bridge (M11)
 Have ready: a Word document with headings, a bulleted and a numbered list, a table, a link and a
 picture (`report.docx`); a Markdown file (`notes.md`); an RTF saved from WordPad with a picture; an
 RTFD package from a Mac (a folder ending in `.rtfd`); an old `.pages` file; a text PDF; an Excel
