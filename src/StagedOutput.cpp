@@ -17,6 +17,8 @@ namespace sd
         {
             const std::filesystem::path src(source);
             const std::filesystem::path dir(OutputFolder(source));
+            if (CurrentOutputNaming() == OutputNaming::Subfolder && FAILED(MakeOutputFolder(dir.wstring())))
+                return false;
             thread_local std::mt19937 rng{ std::random_device{}() };
             for (int attempt = 0; attempt < 16; ++attempt)
             {
@@ -114,8 +116,13 @@ namespace sd
         if (!path.ends_with(L".sdpart"))
             return false;
         std::error_code ec;
-        if (std::filesystem::is_directory(path, ec))
-            return std::filesystem::remove_all(path, ec) > 0 && !ec;
-        return DeleteFileW(path.c_str()) != FALSE;
+        const bool removed = std::filesystem::is_directory(path, ec) ? std::filesystem::remove_all(path, ec) > 0 && !ec
+                                                                      : DeleteFileW(path.c_str()) != FALSE;
+        // A "ShiftDrop" output folder made for this output alone goes too (RemoveDirectory only
+        // removes an empty folder).
+        const auto parent = std::filesystem::path(path).parent_path();
+        if (removed && CurrentOutputNaming() == OutputNaming::Subfolder && CompareStringOrdinal(parent.filename().c_str(), -1, kOutputSubfolder, -1, TRUE) == CSTR_EQUAL)
+            RemoveDirectoryW(parent.c_str());
+        return removed;
     }
 }

@@ -141,13 +141,15 @@ namespace sd::preview
         const std::filesystem::path src(source);
         const std::filesystem::path folder(OutputFolder(source));   // a dragged-in file's outputs go elsewhere
         const auto stem = src.stem().wstring();
+        // Outputs in their own "ShiftDrop" folder say so, as that is where to look for them.
+        const std::wstring prefix = folder != src.parent_path() && folder.filename() == kOutputSubfolder ? std::wstring(kOutputSubfolder) + L"\\" : L"";
         for (int n = 1; n < 1000; ++n)
         {
             const auto name = OutputName(stem, suffix, n, extension);
             if (GetFileAttributesW((folder / name).c_str()) == INVALID_FILE_ATTRIBUTES)
-                return name;
+                return prefix + name;
         }
-        return OutputName(stem, suffix, 1000, extension);
+        return prefix + OutputName(stem, suffix, 1000, extension);
     }
 
     int64_t ParseBitrate(const std::wstring& text)
