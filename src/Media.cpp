@@ -1,4 +1,5 @@
 #include "Media.h"
+#include "Strings.h"
 
 #include <algorithm>
 #include <cctype>
@@ -12,22 +13,6 @@ namespace sd
 {
     namespace
     {
-        // Whole ".ext" tokens of a run like ".mp4.m4v".
-        bool HasToken(std::wstring_view all, const std::wstring& ext)
-        {
-            if (ext.empty())
-                return false;
-            size_t pos = 0;
-            while ((pos = all.find(ext, pos)) != std::wstring_view::npos)
-            {
-                const size_t end = pos + ext.size();
-                if (end == all.size() || all[end] == L'.')
-                    return true;
-                pos = end;
-            }
-            return false;
-        }
-
         constexpr std::wstring_view kVideoExtensions = L".mp4.m4v.mov.qt.mkv.webm.avi.wmv.asf.flv.mpg.mpeg.mpe.vob.ts.mts.m2ts.3gp.3g2.ogv.mxf.divx";
         constexpr std::wstring_view kAudioExtensions = L".mp3.m4a.m4b.aac.wav.wave.flac.ogg.oga.opus.aif.aiff.aifc.wma.alac.ac3.amr.ape.wv.mka.caf";
 
@@ -112,9 +97,9 @@ namespace sd
 
     MediaKind MediaKindOfExtension(const std::wstring& ext)
     {
-        if (HasToken(kVideoExtensions, ext))
+        if (HasExtToken(kVideoExtensions, ext))
             return MediaKind::Video;
-        if (HasToken(kAudioExtensions, ext))
+        if (HasExtToken(kAudioExtensions, ext))
             return MediaKind::Audio;
         return MediaKind::None;
     }
@@ -170,7 +155,7 @@ namespace sd
 
     bool IsAlreadyMediaFormat(const MediaFormatInfo& format, const std::wstring& ext)
     {
-        return HasToken(format.aliases, ext);
+        return HasExtToken(format.aliases, ext);
     }
 
     bool MediaFormatAccepts(const MediaFormatInfo& format, MediaKind kind)

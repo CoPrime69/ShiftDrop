@@ -5,6 +5,7 @@
 // (PageEdits.h). Organize installs itself into pdf::Editors().
 #include "Ask.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Theme.h"
 #include "UiThread.h"
 #include "Utf.h"
@@ -375,13 +376,13 @@ namespace sd::pdf
                 switch (m_request.kind)
                 {
                 case PageViewKind::Organize:
-                    title = files.size() == 1 ? std::format(L"Organize pages · {}", FileNameOf(files.front())) : std::format(L"Organize pages · {} PDFs", files.size());
+                    title = files.size() == 1 ? std::format(L"Organize pages · {}", FileName(files.front())) : std::format(L"Organize pages · {} PDFs", files.size());
                     break;
                 case PageViewKind::Merge:
                     title = std::format(L"Merge {} PDFs · every page", m_request.order.size());
                     break;
                 case PageViewKind::Edit:
-                    title = Several() ? std::format(L"Edit {} PDFs", m_request.order.size()) : std::format(L"Edit PDF · {}", FileNameOf(files[m_request.order.front()]));
+                    title = Several() ? std::format(L"Edit {} PDFs", m_request.order.size()) : std::format(L"Edit PDF · {}", FileName(files[m_request.order.front()]));
                     break;
                 }
                 if (!(Organizing() ? Create(title, 900, 640, 560, 400) : Create(title, 1240, 820, 760, 500)))
@@ -965,7 +966,7 @@ namespace sd::pdf
                 const size_t k = std::min(m_focus, m_plan.size() - 1);
                 const auto& ref = m_plan[k];
                 // Caption: where the page comes from.
-                std::wstring from = Several() ? std::format(L"{} · page {}", FileNameOf(m_request.files[ref.file]), ref.page + 1)
+                std::wstring from = Several() ? std::format(L"{} · page {}", FileName(m_request.files[ref.file]), ref.page + 1)
                                               : std::format(L"Page {} of the original", ref.page + 1);
                 if (!ref.edited.empty())
                     from += L" · edited";

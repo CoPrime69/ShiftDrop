@@ -1,4 +1,5 @@
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "StagedOutput.h"
 #include "TestUtil.h"
 #include "preview/Prediction.h"
@@ -30,7 +31,7 @@ TEST(OutputPath, CommitNeverOverwrites)
     std::wstring staging;
     Microsoft::WRL::ComPtr<IStream> stream;
     ASSERT_HRESULT_SUCCEEDED(CreateStaging(source, staging, stream));
-    EXPECT_TRUE(std::filesystem::path(staging).filename().wstring().starts_with(L"~a."));
+    EXPECT_TRUE(FileName(staging).starts_with(L"~a."));
     EXPECT_EQ(std::filesystem::path(staging).extension(), L".sdpart");
     ULONG written = 0;
     ASSERT_HRESULT_SUCCEEDED(stream->Write("new", 3, &written));
@@ -38,7 +39,7 @@ TEST(OutputPath, CommitNeverOverwrites)
 
     std::wstring final;
     ASSERT_HRESULT_SUCCEEDED(CommitStaging(staging, source, L"converted", L".png", final));
-    EXPECT_EQ(std::filesystem::path(final).filename(), L"a (converted 2).png");
+    EXPECT_EQ(FileName(final), L"a (converted 2).png");
     EXPECT_EQ(ReadAll(dir / L"a (converted).png"), "earlier output");
     EXPECT_EQ(ReadAll(final), "new");
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
@@ -97,7 +98,7 @@ TEST(OutputPath, DashAndUnderscoreNeverOverwrite)
         const auto taken = dir / std::format(L"a{}converted.png", sep);
         WriteText(taken, "earlier output");
         const auto final = Commit(source, "new");
-        EXPECT_EQ(std::filesystem::path(final).filename(), std::format(L"a{0}converted{0}2.png", sep));
+        EXPECT_EQ(FileName(final), std::format(L"a{0}converted{0}2.png", sep));
         EXPECT_EQ(ReadAll(taken), "earlier output");
         EXPECT_EQ(ReadAll(final), "new");
     }

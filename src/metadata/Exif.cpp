@@ -1,4 +1,5 @@
 #include "metadata/Exif.h"
+#include "Strings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -105,19 +106,12 @@ namespace sd::metadata
             return nullptr;
         }
 
-        std::wstring Trim(std::wstring s)
+        // EXIF strings are padded with NULs and spaces at the end.
+        std::wstring StripPadding(std::wstring s)
         {
             while (!s.empty() && (s.back() == L'\0' || s.back() == L' '))
                 s.pop_back();
             return s;
-        }
-
-        std::wstring Latin1(const uint8_t* p, size_t n)
-        {
-            std::wstring s;
-            for (size_t i = 0; i < n && p[i]; ++i)
-                s.push_back(static_cast<wchar_t>(p[i]));
-            return Trim(s);
         }
 
         std::wstring Number(double v)
@@ -593,18 +587,18 @@ namespace sd::metadata
     std::wstring FormatValue(const ExifData& exif, Ifd ifd, const ExifEntry& e)
     {
         if (e.type == type::Ascii)
-            return Latin1(e.value.data(), e.value.size());
+            return StripPadding(Latin1(e.value));
         if (ifd == Ifd::Primary && e.tag >= 0x9C9B && e.tag <= 0x9C9F)
         {
             std::wstring s;
             for (size_t i = 0; i + 1 < e.value.size(); i += 2)
                 s.push_back(static_cast<wchar_t>(e.value[i] | e.value[i + 1] << 8));
-            return Trim(s);
+            return StripPadding(s);
         }
         if (ifd == Ifd::Exif && e.tag == 0x9286 && e.value.size() > 8)   // user comment: 8-byte charset, then text
-            return Latin1(e.value.data() + 8, e.value.size() - 8);
+            return StripPadding(Latin1(std::span(e.value).subspan(8)));
         if (ifd == Ifd::Exif && e.tag == 0x9000)
-            return Latin1(e.value.data(), e.value.size());
+            return StripPadding(Latin1(e.value));
         if (e.type == type::Undefined || (e.type == type::Byte && e.count > 8))
             return std::format(L"({} bytes)", e.value.size());
         if (ifd == Ifd::Gps && (e.tag == 0x0002 || e.tag == 0x0004) && e.count == 3)

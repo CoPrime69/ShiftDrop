@@ -1,3 +1,4 @@
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -261,7 +262,7 @@ TEST(Crop, EngineWritesTheCropInTheSameFormat)
     history->FinishRun(runId);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
     ASSERT_TRUE(r2.ok) << Narrow(r2.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"photo (cropped).png");
+    EXPECT_EQ(FileName(r.output), L"photo (cropped).png");
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(r.output, w, h));
     EXPECT_EQ(w, 200u);
@@ -282,7 +283,7 @@ TEST(Crop, EngineWritesTheCropInTheSameFormat)
     // Running it again never overwrites: the next one is "(cropped 2)".
     const auto again = runner.Run(recipe, runId, source, {});
     ASSERT_TRUE(again.ok);
-    EXPECT_EQ(std::filesystem::path(again.output).filename(), L"photo (cropped 2).png");
+    EXPECT_EQ(FileName(again.output), L"photo (cropped 2).png");
 }
 
 // Crop, Redact and the photo tools share one answer to which files they take, and one way of

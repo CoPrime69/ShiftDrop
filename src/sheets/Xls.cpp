@@ -1,4 +1,5 @@
 #include "sheets/Workbook.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "Utf.h"
 
@@ -186,7 +187,7 @@ namespace sd::sheets
                 else if (c == ']') bracket = false;
                 else if (bracket) continue;
                 else if (c == '\\' || c == '_' || c == '*') ++i;
-                else if (std::strchr("dDmMyYhHsS", c)) return docs::AsciiLower(code) != "general";
+                else if (std::strchr("dDmMyYhHsS", c)) return AsciiLower(code) != "general";
             }
             return false;
         }

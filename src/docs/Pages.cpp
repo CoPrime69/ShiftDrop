@@ -1,4 +1,5 @@
 #include "docs/Bytes.h"
+#include "FileIo.h"
 #include "docs/PdfSource.h"
 #include "docs/Zip.h"
 

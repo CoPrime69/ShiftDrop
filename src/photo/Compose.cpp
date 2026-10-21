@@ -1,4 +1,5 @@
 #include "photo/Compose.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "photo/Gpu.h"
 
@@ -125,7 +126,7 @@ namespace sd::photo
             e.bitmap = gpu::Upload(dc, *raster, &hr);
             e.raster = raster;
             if (!e.bitmap)
-                log::Warn(L"photo: cannot make a {}x{} bitmap ({})", raster->width, raster->height, gpu::HrText(hr));
+                log::Warn(L"photo: cannot make a {}x{} bitmap ({})", raster->width, raster->height, HexCode(hr));
         }
         return e.bitmap.Get();
     }

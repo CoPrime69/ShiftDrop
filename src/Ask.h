@@ -71,8 +71,6 @@ namespace sd::ask
     using PasswordFn = std::function<bool(const PasswordRequest&, Secret&)>;
     void SetAnswers(ChooseFn choose, PasswordFn password);
 
-    // 54321 -> "54,321", for counts in questions.
-    std::wstring Thousands(uint64_t n);
     // 1 -> "1st", 2 -> "2nd", 11 -> "11th", 23 -> "23rd".
     std::wstring Ordinal(uint64_t n);
 }

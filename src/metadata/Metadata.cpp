@@ -1,6 +1,9 @@
 #include "metadata/Metadata.h"
+#include "FileIo.h"
+#include "FormatText.h"
 #include "ImagePipeline.h"
 #include "OutputPath.h"
+#include "Strings.h"
 #include "Utf.h"
 #include "Wic.h"
 #include "canvas/Raster.h"
@@ -15,7 +18,6 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
-#include <cwctype>
 #include <format>
 #include <map>
 #include <string_view>
@@ -31,23 +33,6 @@ namespace sd::metadata
             Field field;
             int block = -1;   // index into the container's block list
         };
-
-        std::wstring Latin1(std::span<const uint8_t> b)
-        {
-            std::wstring s;
-            for (const uint8_t c : b)
-            {
-                if (!c)
-                    break;
-                s.push_back(static_cast<wchar_t>(c));
-            }
-            return s;
-        }
-
-        std::wstring Kb(size_t bytes)
-        {
-            return bytes >= 1024 ? std::format(L"{} KB", (bytes + 512) / 1024) : std::format(L"{} bytes", bytes);
-        }
 
         // The TIFF structure inside an EXIF block: JPEG's APP1 and some WebP writers start it with "Exif\0\0".
         std::span<const uint8_t> TiffOf(std::span<const uint8_t> payload)
@@ -198,7 +183,7 @@ namespace sd::metadata
                     out.push_back({ std::move(f), block });
                 }
             if (!exif.ThumbnailBytes().empty())
-                out.push_back({ Field{ "exif.1st.thumbnail", L"Thumbnail", L"Thumbnail", L"JPEG, " + Kb(exif.ThumbnailBytes().size()), true, false }, block });
+                out.push_back({ Field{ "exif.1st.thumbnail", L"Thumbnail", L"Thumbnail", L"JPEG, " + SizeText(exif.ThumbnailBytes().size()), true, false }, block });
         }
 
         std::vector<Found> Collect(std::span<const uint8_t> bytes, Container container, const std::vector<Block>& blocks)
@@ -264,23 +249,23 @@ namespace sd::metadata
                     break;
                 }
                 case BlockKind::Thumbnail:
-                    out.push_back({ Field{ "thumbnail", L"Thumbnail", L"Thumbnail", Kb(b.payloadSize), true, false }, index });
+                    out.push_back({ Field{ "thumbnail", L"Thumbnail", L"Thumbnail", SizeText(b.payloadSize), true, false }, index });
                     break;
                 case BlockKind::Jfif:
                     if (b.payloadSize >= 14 && payload[12] * payload[13] > 0)
                         out.push_back({ Field{ "thumbnail", L"Thumbnail", L"JFIF thumbnail", std::format(L"{} \u00d7 {}", payload[12], payload[13]), true, false }, index });
                     break;
                 case BlockKind::ExtraImage:
-                    out.push_back({ Field{ std::format("extra.{}", extra++), L"Hidden data", Widen(b.name), Kb(b.payloadSize), true, false }, index });
+                    out.push_back({ Field{ std::format("extra.{}", extra++), L"Hidden data", Widen(b.name), SizeText(b.payloadSize), true, false }, index });
                     break;
                 case BlockKind::Trailer:
-                    out.push_back({ Field{ "trailer", L"Hidden data", L"Data after the picture", Kb(b.size), true, false }, index });
+                    out.push_back({ Field{ "trailer", L"Hidden data", L"Data after the picture", SizeText(b.size), true, false }, index });
                     break;
                 case BlockKind::Other:
-                    out.push_back({ Field{ std::format("app.{}", apps++), L"Other", Widen(b.name), Kb(b.payloadSize), true, false }, index });
+                    out.push_back({ Field{ std::format("app.{}", apps++), L"Other", Widen(b.name), SizeText(b.payloadSize), true, false }, index });
                     break;
                 case BlockKind::Colour:
-                    out.push_back({ Field{ std::format("colour.{}", colours++), L"Colour", Widen(b.name), Kb(b.payloadSize), false, false }, index });
+                    out.push_back({ Field{ std::format("colour.{}", colours++), L"Colour", Widen(b.name), SizeText(b.payloadSize), false, false }, index });
                     break;
                 case BlockKind::Image:
                     break;
@@ -353,13 +338,6 @@ namespace sd::metadata
             if (lower.find(L"/exif") != std::wstring::npos) return L"Camera";
             if (lower.find(L"/com") != std::wstring::npos || lower.find(L"/text") != std::wstring::npos) return L"Comments";
             return L"Other";
-        }
-
-        std::wstring Lower(std::wstring s)
-        {
-            for (auto& c : s)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return s;
         }
 
         // TIFF IFD0 tags that describe the person or the camera (a TIFF's IFD0 also holds its pixel layout).
@@ -550,7 +528,7 @@ namespace sd::metadata
             }
             if (!placed)
                 return WriteReencoded(source, target, before, report, extension, error);   // e.g. a simple WebP: no room for EXIF
-            if (!WriteFileBytes(target, Bytes(out)))
+            if (!WriteFileBytes(target, Bytes(out), WriteMode::Any))
             {
                 error = L"cannot write the copy";
                 return HRESULT_FROM_WIN32(GetLastError());
@@ -795,7 +773,7 @@ namespace sd::metadata
             return HRESULT_FROM_WIN32(GetLastError());
         if (!RemoveFields(Bytes(bytes), keys, out, error))
             return E_FAIL;
-        return WriteFileBytes(target, Bytes(out)) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
+        return WriteFileBytes(target, Bytes(out), WriteMode::Any) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
     }
 
     HRESULT SetField(const std::wstring& source, const std::wstring& target, const std::string& key, const std::wstring& value, std::wstring& error)
@@ -805,7 +783,7 @@ namespace sd::metadata
             return HRESULT_FROM_WIN32(GetLastError());
         if (!SetField(Bytes(bytes), key, value, out, error))
             return E_FAIL;
-        return WriteFileBytes(target, Bytes(out)) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
+        return WriteFileBytes(target, Bytes(out), WriteMode::Any) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
     }
 
     bool CarryEditedExif(std::span<const uint8_t> source, std::vector<uint8_t>& edited, int width, int height)

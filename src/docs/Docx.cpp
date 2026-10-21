@@ -1,3 +1,4 @@
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "docs/Formats.h"
 #include "docs/Paper.h"

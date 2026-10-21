@@ -1,6 +1,7 @@
 #include "archive/Sinks.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
-#include <cwctype>
 #include <filesystem>
 #include <format>
 #include <random>
@@ -9,13 +10,6 @@ namespace sd::archive
 {
     namespace
     {
-        std::wstring Lower(std::wstring s)
-        {
-            for (auto& c : s)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return s;
-        }
-
         std::vector<std::wstring> Split(const std::wstring& name)
         {
             std::vector<std::wstring> parts;
@@ -216,14 +210,14 @@ namespace sd::archive
         for (int n = 1; n < 1000; ++n)
         {
             const std::wstring path = n == 1 ? wanted : Numbered(wanted, n);
-            if (GetFileAttributesW(LongPath(path).c_str()) != INVALID_FILE_ATTRIBUTES)
+            if (PathExists(LongPath(path)))
                 continue;
             if (e.type == EntryType::Hardlink)
             {
                 // Copied, not linked: a hard link would tie the output to another file's future edits.
                 WIN32_FILE_ATTRIBUTE_DATA info{};
                 if (GetFileAttributesExW(LongPath(source).c_str(), GetFileExInfoStandard, &info) && m_charge)
-                    if (auto r = m_charge((static_cast<uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow); !r.ok())
+                    if (auto r = m_charge(FileSizeOf(info)); !r.ok())
                         return r;
                 if (!CopyFileW(LongPath(source).c_str(), LongPath(path).c_str(), TRUE))
                     return WriteError(parts.back());

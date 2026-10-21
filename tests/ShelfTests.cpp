@@ -161,11 +161,6 @@ TEST(Shelf, SelectionFollowsExplorerClicks)
 
 TEST(Shelf, Texts)
 {
-    EXPECT_EQ(SizeText(12), L"12 bytes");
-    EXPECT_EQ(SizeText(820 * 1024), L"820 KB");
-    EXPECT_EQ(SizeText(1468006), L"1.4 MB");
-    EXPECT_EQ(SizeText(250ull * 1024 * 1024), L"250 MB");
-    EXPECT_EQ(SizeText(3ull * 1024 * 1024 * 1024), L"3.0 GB");
     EXPECT_EQ(CountText(1), L"1 item");
     EXPECT_EQ(CountText(3), L"3 items");
 }

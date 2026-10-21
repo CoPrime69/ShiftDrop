@@ -1,8 +1,10 @@
 #include "preview/Predictor.h"
+#include "FormatText.h"
 #include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "VirtualDrop.h"
 #include "Wic.h"
@@ -225,7 +227,7 @@ namespace sd::preview
         WIN32_FILE_ATTRIBUTE_DATA data{};
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
             return nullptr;
-        const uint64_t bytes = (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+        const uint64_t bytes = FileSizeOf(data);
         const auto key = std::format(L"{}|{}|{}|{}", path, bytes, data.ftLastWriteTime.dwHighDateTime, data.ftLastWriteTime.dwLowDateTime);
         {
             std::scoped_lock lock(m_cacheMutex);
@@ -425,7 +427,7 @@ namespace sd::preview
         {
             WIN32_FILE_ATTRIBUTE_DATA data{};
             if (GetFileAttributesExW(f.c_str(), GetFileExInfoStandard, &data))
-                sourceBytes += (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                sourceBytes += FileSizeOf(data);
         }
         p.was = L"was " + SizeText(sourceBytes);
         std::vector<std::wstring> detail;

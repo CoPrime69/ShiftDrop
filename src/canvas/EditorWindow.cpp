@@ -6,8 +6,11 @@
 // The window only previews. The output is rendered by the tool's engine on a worker, from the
 // params the tool hands back on Apply.
 #include "canvas/Editor.h"
+#include "ErrorText.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Theme.h"
+#include "UiThread.h"
 #include "Utf.h"
 #include "canvas/Covers.h"
 #include "EditorFrame.h"
@@ -19,7 +22,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <filesystem>
 #include <format>
 #include <thread>
 
@@ -126,20 +128,6 @@ namespace sd::canvas
             Effect effect = Effect::Blur;
             Pixels pixels;
         };
-
-        // A process that did not receive the last input event cannot take the foreground (the drop
-        // came through Explorer's drag loop): attach to the foreground thread for a moment.
-        void BringToFront(HWND hwnd)
-        {
-            const HWND fg = GetForegroundWindow();
-            const DWORD fgThread = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
-            const DWORD self = GetCurrentThreadId();
-            const bool attach = fgThread && fgThread != self && AttachThreadInput(self, fgThread, TRUE);
-            SetForegroundWindow(hwnd);
-            BringWindowToTop(hwnd);
-            if (attach)
-                AttachThreadInput(self, fgThread, FALSE);
-        }
 
         LPCWSTR CursorId(CursorShape shape)
         {
@@ -370,7 +358,7 @@ namespace sd::canvas
             {
                 if (!Hwnd() || m_files.empty())
                     return;
-                const auto name = std::filesystem::path(m_files[m_index]).filename().wstring();
+                const auto name = FileName(m_files[m_index]);
                 SetWindowTextW(Hwnd(), (m_tool->Title() + L" – " + name).c_str());
             }
 
@@ -547,7 +535,7 @@ namespace sd::canvas
                     if (FAILED(hr) || !drawn)
                     {
                         if (FAILED(hr))
-                            log::Warn(L"editor: the preview could not be drawn (0x{:08X})", static_cast<unsigned>(hr));
+                            log::Warn(L"editor: the preview could not be drawn ({})", HexCode(hr));
                         m_previewFailed = FAILED(hr);
                         m_previewTarget.Reset();
                         return false;
@@ -805,7 +793,7 @@ namespace sd::canvas
                 const bool switcher = m_tool->PerFile() && m_files.size() > 1;
                 if (switcher)
                 {
-                    const auto name = std::filesystem::path(m_files[m_index]).filename().wstring();
+                    const auto name = FileName(m_files[m_index]);
                     DrawText(std::format(L"{} of {} · {}", m_index + 1, m_files.size(), name), TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
                              D2D1::RectF(left + 40, kPad + 40, right - 40, kPad + 70), c.textDim);
                 }

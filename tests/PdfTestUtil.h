@@ -3,6 +3,7 @@
 #include "Utf.h"
 #include "pdf/Bitmap.h"
 #include "pdf/PdfWriter.h"
+#include "pdf/TextLayout.h"
 
 #include <objbase.h>
 
@@ -25,6 +26,15 @@ namespace sd::test
             if (SUCCEEDED(hr))
                 CoUninitialize();
         }).join();
+    }
+
+    // A page's lines joined with "|" after each, for one-line comparisons.
+    inline std::wstring Joined(const pdf::PageLines& lines)
+    {
+        std::wstring s;
+        for (const auto& l : lines)
+            s += l.text + L"|";
+        return s;
     }
 
     // A bitmap with a soft gradient and a few dark bars, so encoders have something to chew on.

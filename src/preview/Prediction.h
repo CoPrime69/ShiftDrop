@@ -44,8 +44,6 @@ namespace sd::preview
     double FitExponent(double bytes1, double pixels1, double bytes2, double pixels2);
     uint64_t Extrapolate(double bytes, double pixels, double targetPixels, double exponent);
 
-    // "1.2 MB", "860 KB", "12 bytes" (1 KB = 1024 bytes, like Explorer).
-    std::wstring SizeText(uint64_t bytes);
     // "4032×3024 → 1920×1440"; empty when nothing changes.
     std::wstring DimensionsChange(Size2 from, Size2 to);
 

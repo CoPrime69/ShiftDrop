@@ -1,75 +1,14 @@
 #include "docs/Bytes.h"
+#include "Strings.h"
 #include "Utf.h"
 
 #include <windows.h>
 #include <objbase.h>
-#include <wil/resource.h>
 
 #include <format>
 
 namespace sd::docs
 {
-    bool ReadFileBytes(const std::wstring& path, std::string& bytes, std::wstring* error)
-    {
-        wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                           OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-        if (!file)
-        {
-            if (error)
-                *error = std::format(L"cannot open {} (error {})", path, GetLastError());
-            return false;
-        }
-        LARGE_INTEGER size{};
-        if (!GetFileSizeEx(file.get(), &size) || size.QuadPart > (1ll << 31))
-        {
-            if (error)
-                *error = L"file is too large (over 2 GB)";
-            return false;
-        }
-        bytes.resize(static_cast<size_t>(size.QuadPart));
-        size_t done = 0;
-        while (done < bytes.size())
-        {
-            DWORD read = 0;
-            const DWORD chunk = static_cast<DWORD>(std::min<size_t>(bytes.size() - done, 1u << 24));
-            if (!ReadFile(file.get(), bytes.data() + done, chunk, &read, nullptr) || read == 0)
-            {
-                if (error)
-                    *error = std::format(L"cannot read {}", path);
-                return false;
-            }
-            done += read;
-        }
-        return true;
-    }
-
-    bool WriteFileBytes(const std::wstring& path, std::string_view bytes, std::wstring* error)
-    {
-        // TRUNCATE_EXISTING, not CREATE_ALWAYS: the staging file already exists (StagedOutput reserved
-        // it), and this must never create a file under any other name.
-        wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, TRUNCATE_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-        if (!file)
-        {
-            if (error)
-                *error = std::format(L"cannot write the output (error {})", GetLastError());
-            return false;
-        }
-        size_t done = 0;
-        while (done < bytes.size())
-        {
-            DWORD written = 0;
-            const DWORD chunk = static_cast<DWORD>(std::min<size_t>(bytes.size() - done, 1u << 24));
-            if (!WriteFile(file.get(), bytes.data() + done, chunk, &written, nullptr) || written == 0)
-            {
-                if (error)
-                    *error = std::format(L"cannot write the output (error {})", GetLastError());
-                return false;
-            }
-            done += written;
-        }
-        return true;
-    }
-
     bool IsValidUtf8(std::string_view s)
     {
         size_t i = 0;
@@ -294,25 +233,6 @@ namespace sd::docs
             out.push_back(s[i]);
         }
         return out;
-    }
-
-    std::string AsciiLower(std::string_view s)
-    {
-        std::string out(s);
-        for (auto& c : out)
-            if (c >= 'A' && c <= 'Z')
-                c = static_cast<char>(c - 'A' + 'a');
-        return out;
-    }
-
-    std::string_view Trim(std::string_view s)
-    {
-        const auto ws = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v'; };
-        while (!s.empty() && ws(s.front()))
-            s.remove_prefix(1);
-        while (!s.empty() && ws(s.back()))
-            s.remove_suffix(1);
-        return s;
     }
 
     bool IsMonoFontName(std::string_view face)

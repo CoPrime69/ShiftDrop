@@ -14,8 +14,10 @@
 #include "Ask.h"
 #include "Brand.h"
 #include "DropTarget.h"
+#include "ErrorText.h"
 #include "FileActions.h"
 #include "FileMove.h"
+#include "FormatText.h"
 #include "HistoryStore.h"
 #include "HistoryWindow.h"
 #include "ImagePipeline.h"
@@ -26,10 +28,12 @@
 #include "OutputPath.h"
 #include "Island.h"
 #include "Overlay.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "RecipeStore.h"
 #include "Settings.h"
 #include "Startup.h"
+#include "Strings.h"
 #include "Tray.h"
 #include "Utf.h"
 #include "VirtualDrop.h"
@@ -131,11 +135,6 @@ namespace sd
         std::wstring Count(size_t n, const wchar_t* noun)
         {
             return n == 1 ? std::format(L"1 {}", noun) : std::format(L"{} {}s", n, noun);
-        }
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            return std::filesystem::path(path).filename().wstring();
         }
 
         // "Desktop" for a user's Desktop folder; a drive's root has no file name, so it is shown whole.
@@ -246,14 +245,14 @@ namespace sd
         {
             std::vector<std::wstring> present;
             for (const auto& p : click.paths)
-                if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES)
+                if (PathExists(p))
                     present.push_back(p);
             if (click.verb == toast::Verb::Open && !present.empty())
                 ShellExecuteW(nullptr, nullptr, present.front().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
             else if (!present.empty())
                 RevealInExplorer(present);
             else if (const auto folder = std::filesystem::path(click.paths.front()).parent_path().wstring();
-                     GetFileAttributesW(folder.c_str()) != INVALID_FILE_ATTRIBUTES)
+                     PathExists(folder))
                 ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         }
     }
@@ -328,7 +327,7 @@ namespace sd
             {
                 wchar_t tag[64]{};
                 GetPrivateProfileStringW(L"Ocr", L"Language", L"", tag, ARRAYSIZE(tag), SettingsPath().c_str());
-                if (tag[0] && CompareStringOrdinal(tag, -1, L"auto", -1, TRUE) != CSTR_EQUAL)
+                if (tag[0] && !EqualsNoCase(tag, L"auto"))
                     ocr::SetLanguage(tag);
             }
             m_island = std::make_unique<Island>(m_instance, rings, [this] { RevealInExplorer(m_lastOutputs); });
@@ -837,10 +836,10 @@ namespace sd
                 {
                     WIN32_FILE_ATTRIBUTE_DATA data{};
                     if (GetFileAttributesExW(f.c_str(), GetFileExInfoStandard, &data) && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                        totalBytes += (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                        totalBytes += FileSizeOf(data);
                 }
                 if (totalBytes > 0)
-                    content.centerText = preview::SizeText(totalBytes);
+                    content.centerText = SizeText(totalBytes);
             }
 
             std::wstring firstReason;
@@ -874,8 +873,8 @@ namespace sd
                     const int percent = ReducePercent(*recipe);
                     if (percent > 0)
                     {
-                        content.slices.back().headline = L"\u2248 " + preview::SizeText(totalBytes * static_cast<uint64_t>(percent) / 100);
-                        content.slices.back().detail = L"was " + preview::SizeText(totalBytes);
+                        content.slices.back().headline = L"\u2248 " + SizeText(totalBytes * static_cast<uint64_t>(percent) / 100);
+                        content.slices.back().detail = L"was " + SizeText(totalBytes);
                     }
                 }
                 anyEnabled |= all && anyToDo;
@@ -1346,7 +1345,7 @@ namespace sd
             }
             m_tray.SetTip(std::format(L"" SD_NAME L": moving {} item(s)...", files.size()));
             const uint64_t token = m_islandBatch = m_nextBatch++;
-            m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FileName(folder).empty() ? folder : FileName(folder)),
+            m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FolderName(folder)),
                                    files.size());
             m_lanes->For(JobLane::Shell).Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
                                                  history = m_history.get(), token, started = std::chrono::steady_clock::now()](std::stop_token) {
@@ -1355,7 +1354,7 @@ namespace sd
                 auto done = std::make_unique<BatchResult>();
                 done->kind = BatchKind::Move;
                 done->started = started;
-                done->label = FileName(folder).empty() ? folder : FileName(folder);   // "D:\" has no file name
+                done->label = FolderName(folder);
                 done->runId = runId;
                 done->token = token;
                 for (const auto& o : outcomes)
@@ -1521,7 +1520,7 @@ namespace sd
                     for (size_t i = 0; i < m_ocrLanguages.size() && IDM_OCR_BASE + i + 1 <= IDM_OCR_LAST; ++i)
                     {
                         choice.items.push_back(m_ocrLanguages[i].name.empty() ? m_ocrLanguages[i].tag : m_ocrLanguages[i].name);
-                        if (CompareStringOrdinal(m_ocrLanguages[i].tag.c_str(), -1, current.c_str(), -1, TRUE) == CSTR_EQUAL)
+                        if (EqualsNoCase(m_ocrLanguages[i].tag, current))
                             choice.checked = static_cast<int>(i) + 1;
                     }
                     extras.choices.push_back(std::move(choice));
@@ -1595,18 +1594,6 @@ namespace sd
         constexpr wchar_t kQuitArg[] = L"--quit";
         constexpr wchar_t kUninstallArg[] = L"--uninstall";
 
-        bool HasArg(const wchar_t* arg)
-        {
-            int argc = 0;
-            wil::unique_hlocal_ptr<PWSTR> argv(CommandLineToArgvW(GetCommandLineW(), &argc));
-            if (!argv)
-                return false;
-            for (int i = 1; i < argc; ++i)
-                if (CompareStringOrdinal(argv.get()[i], -1, arg, -1, TRUE) == CSTR_EQUAL)
-                    return true;
-            return false;
-        }
-
         // Asks the copy running in this logon session to exit and waits for it, so its exe can be
         // replaced or deleted. Returns false only if it is still running after the wait.
         bool QuitRunningInstance()
@@ -1627,17 +1614,19 @@ namespace sd
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 {
+    using sd::wheelrequest::HasArg;
+    const auto args = sd::wheelrequest::CommandLineArgs();
     // The installer adds and removes the right-click entry (per user, no admin rights).
-    if (sd::HasArg(sd::wheelrequest::kRegisterShellArg))
-        return sd::shellverb::Register(sd::shellverb::CurrentExe()) ? 0 : 1;
-    if (sd::HasArg(sd::wheelrequest::kUnregisterShellArg))
+    if (HasArg(args, sd::wheelrequest::kRegisterShellArg))
+        return sd::shellverb::Register(sd::ThisExe()) ? 0 : 1;
+    if (HasArg(args, sd::wheelrequest::kUnregisterShellArg))
         return sd::shellverb::Unregister() ? 0 : 1;
-    if (sd::HasArg(sd::kQuitArg) || sd::HasArg(sd::kUninstallArg))
+    if (HasArg(args, sd::kQuitArg) || HasArg(args, sd::kUninstallArg))
     {
         const bool quit = sd::QuitRunningInstance();
         // Uninstalling also removes the Run value, wherever it points, and the right-click entry;
         // settings and history are kept.
-        if (sd::HasArg(sd::kUninstallArg))
+        if (HasArg(args, sd::kUninstallArg))
         {
             sd::startup::Disable();
             sd::shellverb::Unregister();
@@ -1647,7 +1636,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         return quit ? 0 : 1;
     }
     // A click on a toast after ShiftDrop quit: COM starts this exe to take it, and nothing else runs.
-    if (sd::HasArg(sd::toast::kActivatedArg) || sd::HasArg(L"-Embedding"))
+    if (HasArg(args, sd::toast::kActivatedArg) || HasArg(args, L"-Embedding"))
     {
         if (FAILED(OleInitialize(nullptr)))
             return 1;
@@ -1656,9 +1645,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         return sd::toast::ServeActivation(sd::OnToastClick);
     }
     // "--wheel <paths>" from Explorer's right-click entry: one process per selected item.
-    auto wheelPaths = sd::wheelrequest::WheelPaths(sd::wheelrequest::CommandLineArgs());
+    auto wheelPaths = sd::wheelrequest::WheelPaths(args);
 
-    const bool autostart = sd::HasArg(sd::startup::kAutostartArg);
+    const bool autostart = HasArg(args, sd::startup::kAutostartArg);
     // Single instance per logon session. Read GetLastError immediately: CreateMutexW returns a valid
     // handle to the existing mutex and reports ERROR_ALREADY_EXISTS.
     HANDLE rawMutex = CreateMutexW(nullptr, FALSE, sd::kMutexName);

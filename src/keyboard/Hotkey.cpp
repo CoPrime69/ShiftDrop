@@ -1,4 +1,5 @@
 #include "keyboard/Hotkey.h"
+#include "Strings.h"
 
 #include <cwctype>
 #include <format>
@@ -21,23 +22,6 @@ namespace sd
             { L"Up", VK_UP },           { L"Down", VK_DOWN },      { L"Left", VK_LEFT },
             { L"Right", VK_RIGHT },     { L"Pause", VK_PAUSE },    { L"Backspace", VK_BACK },
         };
-
-        std::wstring Lower(std::wstring_view s)
-        {
-            std::wstring out(s);
-            for (auto& c : out)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return out;
-        }
-
-        std::wstring_view Trim(std::wstring_view s)
-        {
-            while (!s.empty() && std::iswspace(s.front()))
-                s.remove_prefix(1);
-            while (!s.empty() && std::iswspace(s.back()))
-                s.remove_suffix(1);
-            return s;
-        }
 
         bool IsFunctionKey(UINT vk) { return vk >= VK_F1 && vk <= VK_F24; }
 

@@ -1,6 +1,8 @@
 #include "sandbox/Sandbox.h"
 #include "Brand.h"
+#include "ErrorText.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Settings.h"
 
 #include <aclapi.h>
@@ -224,7 +226,7 @@ namespace sd::sandbox
                 hr = derive(kProfile, &sid);
             if (FAILED(hr) || !sid)
             {
-                c.why = std::format(L"cannot create the AppContainer profile (0x{:08X})", static_cast<unsigned>(hr));
+                c.why = std::format(L"cannot create the AppContainer profile ({})", HexCode(hr));
                 return c;
             }
             c.sid = sid;   // kept for the life of the process (FreeSid at exit would gain nothing)
@@ -318,7 +320,7 @@ namespace sd::sandbox
         if (container && !(GrantRead(spec.exe) && GrantRead(std::filesystem::path(spec.exe).parent_path().wstring())))
         {
             log::Warn(L"sandbox: {} cannot be granted to the AppContainer; running it without the sandbox",
-                      std::filesystem::path(spec.exe).filename().wstring());
+                      FileName(spec.exe));
             container = false;
         }
 
@@ -338,7 +340,7 @@ namespace sd::sandbox
         }
         if (!started)
         {
-            p.error = std::format(L"cannot start {} ({})", std::filesystem::path(spec.exe).filename().wstring(), error);
+            p.error = std::format(L"cannot start {} ({})", FileName(spec.exe), error);
             return p;
         }
         wil::unique_handle process(pi.hProcess), thread(pi.hThread);
@@ -366,15 +368,7 @@ namespace sd::sandbox
             if (!g_workerPath.empty())
                 return g_workerPath;
         }
-        wchar_t env[MAX_PATH]{};
-        if (const DWORD n = GetEnvironmentVariableW(L"SHIFTDROP_WORKER", env, MAX_PATH); n > 0 && n < MAX_PATH)
-            return GetFileAttributesW(env) != INVALID_FILE_ATTRIBUTES ? std::wstring(env) : std::wstring();
-        wchar_t self[MAX_PATH]{};
-        const DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
-        if (n == 0 || n == MAX_PATH)
-            return {};
-        const auto exe = std::filesystem::path(self).parent_path() / L"engines" / (SD_NAME L"Worker.exe");
-        return GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES ? exe.wstring() : std::wstring();
+        return EngineExe(L"SHIFTDROP_WORKER", SD_NAME L"Worker.exe");
     }
 
     void SetWorkerPath(std::wstring path)

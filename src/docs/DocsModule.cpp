@@ -1,4 +1,7 @@
 #include "docs/DocsModule.h"
+#include "FileIo.h"
+#include "PathUtil.h"
+#include "TempPath.h"
 #include "docs/Bytes.h"
 #include "docs/Formats.h"
 #include "docs/PdfPrint.h"
@@ -22,12 +25,6 @@ namespace sd::docs
             { "docx", L".docx" }, { "pdf", L".pdf" }, { "md", L".md" }, { "html", L".html" }, { "epub", L".epub" }, { "txt", L".txt" },
         };
 
-        bool IsFolder(const std::wstring& path)
-        {
-            const DWORD a = GetFileAttributesW(path.c_str());
-            return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-        }
-
         const char* SameFormat(DocInput input)
         {
             switch (input)
@@ -38,21 +35,6 @@ namespace sd::docs
             case DocInput::Html: return "html";
             default: return "";
             }
-        }
-
-        std::string TargetOf(const Recipe& r)
-        {
-            return r.steps.empty() ? std::string() : r.steps[0].params.value("format", std::string());
-        }
-
-        // A fresh file in %TEMP% for a PDF handed to the PDF module's reader (it reads from a path).
-        std::wstring TempPdfPath()
-        {
-            wchar_t dir[MAX_PATH]{};
-            GetTempPathW(MAX_PATH, dir);
-            GUID g{};
-            CoCreateGuid(&g);
-            return (std::filesystem::path(dir) / std::format(L"ShiftDrop-pages-{:08x}{:04x}.pdf", g.Data1, g.Data2)).wstring();
         }
 
         class DocsEngine final : public IEngine
@@ -67,20 +49,20 @@ namespace sd::docs
 
             bool Applies(const Recipe& recipe, const std::wstring& path) const override
             {
-                return TargetFits(InputOf(path), TargetOf(recipe));
+                return TargetFits(InputOf(path), recipe.FirstParam("format"));
             }
 
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
             {
                 const auto input = InputOf(path);
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 if (!TargetFits(input, target))
                 {
                     if (why)
                         *why = input == DocInput::None ? L"not a document" : std::format(L"already {}", Widen(target));
                     return false;
                 }
-                if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!PathExists(path))
                 {
                     if (why)
                         *why = L"file not found";
@@ -93,7 +75,7 @@ namespace sd::docs
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 const auto* t = FindDocTarget(target);
                 const auto input = InputOf(source);
                 const auto stem = std::filesystem::path(source).stem().wstring();
@@ -108,7 +90,7 @@ namespace sd::docs
                         return out.Fail(out.Error());
                     std::string pdf;
                     std::wstring error;
-                    if (!PagesPreviewPdf(source, pdf, error) || !WriteFileBytes(out.Path(), pdf, &error))
+                    if (!PagesPreviewPdf(source, pdf, error) || !WriteFileBytes(out.Path(), pdf, WriteMode::Existing, &error))
                         return out.Fail(error);
                     return out.Commit(recipe.suffix, t->extension);
                 }
@@ -175,18 +157,18 @@ namespace sd::docs
                 if (folder)
                 {
                     const std::filesystem::path dir(out.Path());
-                    if (!WriteNew((dir / (stem + t->extension)).wstring(), bytes, error))
+                    if (!WriteFileBytes((dir / (stem + t->extension)).wstring(), bytes, WriteMode::New, &error))
                         return out.Fail(error);
                     std::error_code ec;
                     std::filesystem::create_directory(dir / L"images", ec);
                     for (const auto& img : doc.images)
-                        if (!WriteNew((dir / L"images" / Widen(img.name)).wstring(), img.data, error))
+                        if (!WriteFileBytes((dir / L"images" / Widen(img.name)).wstring(), img.data, WriteMode::New, &error))
                             return out.Fail(error);
                     if (progress)
                         progress(1.0);
                     return out.Commit(recipe.suffix, L"");
                 }
-                if (!WriteFileBytes(out.Path(), bytes, &error))
+                if (!WriteFileBytes(out.Path(), bytes, WriteMode::Existing, &error))
                     return out.Fail(error);
                 if (progress)
                     progress(1.0);
@@ -194,20 +176,6 @@ namespace sd::docs
             }
 
         private:
-            // A new file inside our own staging folder.
-            static bool WriteNew(const std::wstring& path, std::string_view bytes, std::wstring& error)
-            {
-                {
-                    wil::unique_hfile f(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
-                    if (!f)
-                    {
-                        error = std::format(L"cannot write {} (error {})", std::filesystem::path(path).filename().wstring(), GetLastError());
-                        return false;
-                    }
-                }
-                return WriteFileBytes(path, bytes, &error);
-            }
-
             HistoryStore* m_history;
         };
 
@@ -302,18 +270,13 @@ namespace sd::docs
             std::string pdf;
             if (!PagesPreviewPdf(path, pdf, error))
                 return false;
-            const auto temp = TempPdfPath();
-            {
-                wil::unique_hfile f(CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr));
-                if (!f)
-                {
-                    error = L"cannot write a temporary file";
-                    return false;
-                }
-            }
+            const auto temp = TempFilePath(L"pages", L".pdf");   // a fresh name of our own
             auto remove = wil::scope_exit([&] { DeleteFileW(temp.c_str()); });
-            if (!WriteFileBytes(temp, pdf, &error))
+            if (!WriteFileBytes(temp, pdf, WriteMode::New))
+            {
+                error = L"cannot write a temporary file";
                 return false;
+            }
             return ReadPdfDocument(temp, doc, stop, error);
         }
         default:

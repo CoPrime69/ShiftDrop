@@ -1,6 +1,7 @@
 #include "keyboard/KeyboardController.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "keyboard/ExplorerSelection.h"
 #include "keyboard/ShellVerb.h"
 #include "keyboard/WheelRequest.h"
@@ -42,7 +43,7 @@ namespace sd
 
         std::vector<std::wstring> Existing(std::vector<std::wstring> paths)
         {
-            std::erase_if(paths, [](const std::wstring& p) { return GetFileAttributesW(p.c_str()) == INVALID_FILE_ATTRIBUTES; });
+            std::erase_if(paths, [](const std::wstring& p) { return !PathExists(p); });
             return paths;
         }
     }
@@ -150,7 +151,7 @@ namespace sd
     void KeyboardController::ToggleShellMenu()
     {
         const bool on = !ShellMenuOn();
-        const bool ok = on ? shellverb::Register(shellverb::CurrentExe()) : shellverb::Unregister();
+        const bool ok = on ? shellverb::Register(ThisExe()) : shellverb::Unregister();
         log::Info(L"keys: right-click entry {} ({})", on ? L"added" : L"removed", ok ? L"ok" : L"failed");
         if (!ok && m_events.notice)
             m_events.notice(SD_NAME, on ? L"Could not add the right-click entry. See the log." : L"Could not remove the right-click entry. See the log.");

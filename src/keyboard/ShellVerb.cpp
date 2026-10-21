@@ -39,21 +39,6 @@ namespace sd::shellverb
         }
     }
 
-    std::wstring CurrentExe()
-    {
-        std::wstring path(MAX_PATH, L'\0');
-        for (;;)
-        {
-            const DWORD n = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-            if (n < path.size())
-            {
-                path.resize(n);
-                return path;
-            }
-            path.resize(path.size() * 2);
-        }
-    }
-
     std::wstring CommandFor(const std::wstring& exe)
     {
         return std::format(L"\"{}\" --wheel \"%1\"", exe);

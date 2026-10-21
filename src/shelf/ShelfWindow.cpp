@@ -2,9 +2,12 @@
 #include "Brand.h"
 #include "DropDescription.h"
 #include "DropTarget.h"
+#include "ErrorText.h"
 #include "FileActions.h"
+#include "FormatText.h"
 #include "Log.h"
 #include "PanelLayout.h"
+#include "PathUtil.h"
 #include "UiThread.h"
 #include "Utf.h"
 #include "shelf/Carry.h"
@@ -220,11 +223,11 @@ namespace sd
         if (const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get()); SUCCEEDED(hr))
             m_registered = true;
         else
-            log::Warn(L"shelf: RegisterDragDrop failed (0x{:08X}); files reach it only through the wheel", static_cast<unsigned>(hr));
+            log::Warn(L"shelf: RegisterDragDrop failed ({}); files reach it only through the wheel", HexCode(hr));
 
         SetInstantFileAction("file.float", [this](const std::vector<std::wstring>& files, HWND) {
             Add(files);
-            const auto what = files.size() == 1 ? std::filesystem::path(files[0]).filename().wstring() : std::format(L"{} items", files.size());
+            const auto what = files.size() == 1 ? FileName(files[0]) : std::format(L"{} items", files.size());
             return FileActionResult{ true, std::format(L"{} on the Float shelf", what) };
         });
         Restore();
@@ -254,7 +257,7 @@ namespace sd
             m_placed = true;
         }
         for (const auto& path : saved.items)
-            m_items.push_back(Item{ path, std::filesystem::path(path).filename().wstring() });
+            m_items.push_back(Item{ path, FileName(path) });
         m_selection.Resize(m_items.size());
         log::Info(L"shelf: {} item(s) restored", m_items.size());
         if (m_items.empty())
@@ -293,7 +296,7 @@ namespace sd
         for (const auto& path : paths)
         {
             const auto it = std::find_if(m_items.begin(), m_items.end(), [&](const Item& i) { return shelf::SamePath(i.path, path); });
-            items.push_back(it != m_items.end() ? std::move(*it) : Item{ path, std::filesystem::path(path).filename().wstring() });
+            items.push_back(it != m_items.end() ? std::move(*it) : Item{ path, FileName(path) });
         }
         m_items = std::move(items);
         m_selection = shelf::Selection();
@@ -372,7 +375,7 @@ namespace sd
                 if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
                 {
                     result->folder = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-                    result->size = (static_cast<unsigned long long>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                    result->size = FileSizeOf(data);
                     if (!stop.stop_requested())
                         result->pixels = ShellThumbnail(path, px);
                 }
@@ -398,7 +401,7 @@ namespace sd
         }
         it->folder = r->folder;
         const auto parent = std::filesystem::path(it->path).parent_path().filename().wstring();
-        const auto what = r->folder ? std::wstring(L"Folder") : shelf::SizeText(r->size);
+        const auto what = r->folder ? std::wstring(L"Folder") : SizeText(r->size);
         it->detail = parent.empty() ? what : std::format(L"{} · {}", what, parent);
         if (!r->pixels.px.empty())
         {

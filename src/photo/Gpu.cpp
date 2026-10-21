@@ -5,7 +5,6 @@
 #include <dxgi.h>
 
 #include <algorithm>
-#include <format>
 #include <mutex>
 
 namespace sd::photo::gpu
@@ -193,6 +192,4 @@ namespace sd::photo::gpu
     }
 
     unsigned MaxEdge(ID2D1DeviceContext* dc) { return dc ? dc->GetMaximumBitmapSize() : 0; }
-
-    std::wstring HrText(HRESULT hr) { return std::format(L"0x{:08X}", static_cast<unsigned>(hr)); }
 }

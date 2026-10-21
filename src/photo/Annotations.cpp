@@ -1,4 +1,5 @@
 #include "photo/Annotations.h"
+#include "Recipe.h"
 #include "Utf.h"
 
 #include <algorithm>
@@ -56,15 +57,6 @@ namespace sd::photo
                     return { x, y };
             }
             return fallback;
-        }
-
-        double Num(const nlohmann::json& j, const char* key, double fallback, double lo, double hi)
-        {
-            const auto it = j.find(key);
-            if (it == j.end() || !it->is_number())
-                return fallback;
-            const double v = it->get<double>();
-            return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
         }
     }
 
@@ -402,12 +394,12 @@ namespace sd::photo
             a.a = PtOf(item.value("a", nlohmann::json()));
             a.b = PtOf(item.value("b", nlohmann::json()), a.a);
             a.tip = PtOf(item.value("tip", nlohmann::json()), a.b);
-            a.radius = Num(item, "radius", a.radius, 2, 1e5);
-            a.zoom = Num(item, "zoom", a.zoom, 1, 16);
+            a.radius = JsonNumber(item, "radius", a.radius, 2, 1e5);
+            a.zoom = JsonNumber(item, "zoom", a.zoom, 1, 16);
             if (const auto c = item.find("color"); c != item.end() && c->is_number_unsigned())
                 a.color = c->get<uint32_t>() & 0xFFFFFF;
-            a.width = Num(item, "width", a.width, 0.5, 2000);
-            a.fontSize = Num(item, "fontSize", a.fontSize, 4, 4000);
+            a.width = JsonNumber(item, "width", a.width, 0.5, 2000);
+            a.fontSize = JsonNumber(item, "fontSize", a.fontSize, 4, 4000);
             a.fill = item.value("fill", false);
             a.text = Widen(item.value("text", std::string()));
             a.image = Widen(item.value("image", std::string()));

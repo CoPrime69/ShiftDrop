@@ -1,4 +1,5 @@
 #include "subtitles/Subtitles.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 
 #include <algorithm>
@@ -45,7 +46,7 @@ namespace sd::subtitles
             const size_t arrow = line.find("-->");
             if (arrow == std::string_view::npos)
                 return false;
-            auto rest = docs::Trim(line.substr(arrow + 3));
+            auto rest = Trim(line.substr(arrow + 3));
             const size_t space = rest.find_first_of(" \t");
             const auto endText = space == std::string_view::npos ? rest : rest.substr(0, space);
             return ParseTimestamp(line.substr(0, arrow), start) && ParseTimestamp(endText, end);
@@ -125,7 +126,7 @@ namespace sd::subtitles
             if (!body.empty() && std::isdigit(static_cast<unsigned char>(body[0])))
                 return {};
             const size_t end = body.find_first_of(" \t.");
-            return docs::AsciiLower(body.substr(0, end));
+            return AsciiLower(body.substr(0, end));
         }
 
         bool StartsEntity(std::string_view s)
@@ -167,7 +168,7 @@ namespace sd::subtitles
             for (auto line : SplitLines(text))
             {
                 line = RightTrim(line);
-                if (!docs::Trim(line).empty())
+                if (!Trim(line).empty())
                     lines.emplace_back(line);
             }
             return lines;
@@ -182,7 +183,7 @@ namespace sd::subtitles
 
     bool ParseTimestamp(std::string_view s, int64_t& ms)
     {
-        s = docs::Trim(s);
+        s = Trim(s);
         std::vector<std::string_view> parts;
         char lastSeparator = 0;
         size_t start = 0;
@@ -255,7 +256,7 @@ namespace sd::subtitles
 
         Track track;
         size_t first = 0;
-        while (first < lines.size() && docs::Trim(lines[first]).empty())
+        while (first < lines.size() && Trim(lines[first]).empty())
             ++first;
         bool skipping = false;   // inside the VTT header or a NOTE / STYLE / REGION block
         if (first < lines.size() && lines[first].starts_with("WEBVTT"))
@@ -284,7 +285,7 @@ namespace sd::subtitles
         for (size_t i = first; i < lines.size(); ++i)
         {
             const auto line = RightTrim(lines[i]);
-            const bool blank = docs::Trim(line).empty();
+            const bool blank = Trim(line).empty();
             int64_t start = 0, end = 0;
             const bool timing = !blank && ParseTiming(line, start, end);
 
@@ -311,9 +312,9 @@ namespace sd::subtitles
                     // text is really this cue's index.
                     const size_t nl = cue->text.rfind('\n');
                     const std::string_view last = nl == std::string::npos ? std::string_view(cue->text) : std::string_view(cue->text).substr(nl + 1);
-                    if (AllDigits(docs::Trim(last)) && nl != std::string::npos)
+                    if (AllDigits(Trim(last)) && nl != std::string::npos)
                     {
-                        id = std::string(docs::Trim(last));
+                        id = std::string(Trim(last));
                         cue->text.resize(nl);
                     }
                 }
@@ -469,7 +470,7 @@ namespace sd::subtitles
             {
                 // Collapse runs of spaces and tabs.
                 std::string clean;
-                for (char ch : docs::Trim(line))
+                for (char ch : Trim(line))
                     if (!((ch == ' ' || ch == '\t') && (clean.empty() || clean.back() == ' ')))
                         clean += ch == '\t' ? ' ' : ch;
                 if (clean.empty() || clean == previous)

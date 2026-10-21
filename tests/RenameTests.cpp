@@ -1,5 +1,6 @@
 #include "FileMove.h"
 #include "HistoryStore.h"
+#include "Strings.h"
 #include "Undo.h"
 #include "rename/RenamePattern.h"
 #include "TestUtil.h"
@@ -32,7 +33,7 @@ namespace
     {
         return [paths = std::move(paths)](const std::wstring& path) {
             for (const auto& p : paths)
-                if (CompareStringOrdinal(p.c_str(), -1, path.c_str(), -1, TRUE) == CSTR_EQUAL)
+                if (EqualsNoCase(p, path))
                     return true;
             return false;
         };

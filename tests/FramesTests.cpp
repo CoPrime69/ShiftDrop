@@ -1,4 +1,5 @@
 #include "Ask.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -146,16 +147,9 @@ namespace
         return image;
     }
 
-    ComPtr<IWICImagingFactory> Factory()
-    {
-        ComPtr<IWICImagingFactory> factory;
-        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-        return factory;
-    }
-
     HRESULT WriteTiff(const std::wstring& path, const std::vector<formats::Image>& pages)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         ComPtr<IWICStream> stream;
         ComPtr<IWICBitmapEncoder> encoder;
         RETURN_IF_FAILED(factory->CreateStream(&stream));
@@ -176,15 +170,6 @@ namespace
             RETURN_IF_FAILED(frame->Commit());
         }
         return encoder->Commit();
-    }
-
-    bool ReadPixels(const std::wstring& path, formats::Image& out)
-    {
-        auto factory = Factory();
-        ComPtr<IWICBitmapDecoder> decoder;
-        ComPtr<IWICBitmapFrameDecode> frame;
-        return SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(wic::CopyBgra(factory.Get(), frame.Get(), out.width, out.height, out.bgra));
     }
 
     const uint8_t* Px(const formats::Image& image, uint32_t x, uint32_t y) { return image.Row(y) + static_cast<size_t>(x) * 4; }
@@ -245,7 +230,7 @@ TEST(Frames, GifFramesAreDrawnInTurnWithTheirDelays)
     EXPECT_EQ(formats::FrameCount(one), 1u);
     const auto result = f.Run("to-png", one);
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename(), L"one (converted).png");
+    EXPECT_EQ(FileName(result.output), L"one (converted).png");
 }
 
 TEST(Frames, AnimatedGifToWebPStaysAnimated)
@@ -254,7 +239,7 @@ TEST(Frames, AnimatedGifToWebPStaysAnimated)
     const auto gif = WriteAnimatedGif(f.dir);
     const auto result = f.Run("to-webp", gif);
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename(), L"anim (converted).webp");
+    EXPECT_EQ(FileName(result.output), L"anim (converted).webp");
     const auto bytes = ReadAll(result.output);
     EXPECT_EQ(bytes.substr(0, 4), "RIFF");
     EXPECT_EQ(Count(bytes, "ANIM"), 1u);
@@ -296,7 +281,7 @@ TEST(Frames, AnimatedGifToPngGivesAFramesFolder)
     const auto gif = WriteAnimatedGif(f.dir);
     const auto result = f.Run("to-png", gif);
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename(), L"anim (frames)");
+    EXPECT_EQ(FileName(result.output), L"anim (frames)");
     ASSERT_TRUE(std::filesystem::is_directory(result.output));
     std::vector<std::wstring> names;
     for (const auto& e : std::filesystem::directory_iterator(result.output))
@@ -312,7 +297,7 @@ TEST(Frames, AnimatedGifToPngGivesAFramesFolder)
     // JPG has no transparency: the frames come out on white. A second run never touches the first.
     const auto jpg = f.Run("to-jpg", gif);
     ASSERT_TRUE(jpg.ok) << Narrow(jpg.error);
-    EXPECT_EQ(std::filesystem::path(jpg.output).filename(), L"anim (frames 2)");
+    EXPECT_EQ(FileName(jpg.output), L"anim (frames 2)");
     formats::Image white;
     ASSERT_TRUE(ReadPixels(jpg.output + L"\\anim frame 03.jpg", white));
     // White, give or take JPEG's ringing next to red and blue in an 8 x 8 picture.
@@ -406,7 +391,7 @@ TEST(Frames, AnimatedGifToTiffGivesOneTiffWithEveryFrame)
     const auto gif = WriteAnimatedGif(f.dir);
     const auto result = f.Run("to-tiff", gif);
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename(), L"anim (converted).tiff");
+    EXPECT_EQ(FileName(result.output), L"anim (converted).tiff");
     EXPECT_EQ(formats::FrameCount(result.output), 4u);
 }
 
@@ -419,7 +404,7 @@ TEST(Frames, TiffPagesToPngGiveAFolderAndToPdfKeepEveryPage)
 
     const auto png = f.Run("to-png", tiff);
     ASSERT_TRUE(png.ok) << Narrow(png.error);
-    EXPECT_EQ(std::filesystem::path(png.output).filename(), L"scan (frames)");
+    EXPECT_EQ(FileName(png.output), L"scan (frames)");
     formats::Image second;
     ASSERT_TRUE(ReadPixels(png.output + L"\\scan page 02.png", second));
     EXPECT_EQ(second.width, 20u);   // each page keeps its own size

@@ -1,4 +1,5 @@
 #include "sheets/Workbook.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "Utf.h"
 
@@ -232,8 +233,8 @@ namespace sd::sheets
             auto candidate = w;
             for (int n = 2;; ++n)
             {
-                const auto lower = docs::AsciiLower(Narrow(candidate));
-                if (std::none_of(names.begin(), names.end(), [&](const std::string& s) { return docs::AsciiLower(s) == lower; }))
+                const auto lower = AsciiLower(Narrow(candidate));
+                if (std::none_of(names.begin(), names.end(), [&](const std::string& s) { return AsciiLower(s) == lower; }))
                     break;
                 const auto tail = std::format(L" ({})", n);
                 candidate = w.substr(0, 31 - tail.size()) + tail;

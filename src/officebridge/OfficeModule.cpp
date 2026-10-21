@@ -1,4 +1,5 @@
 #include "officebridge/OfficeModule.h"
+#include "PathUtil.h"
 #include "officebridge/OfficeBridge.h"
 
 #include <format>
@@ -7,11 +8,6 @@ namespace sd::office
 {
     namespace
     {
-        std::string TargetOf(const Recipe& r)
-        {
-            return r.steps.empty() ? std::string() : r.steps[0].params.value("format", std::string());
-        }
-
         class OfficeEngine final : public IEngine
         {
         public:
@@ -24,7 +20,7 @@ namespace sd::office
 
             bool Applies(const Recipe& recipe, const std::wstring& path) const override
             {
-                return Choose(m_apps, FamilyOf(path), TargetOf(recipe)) != Backend::None;
+                return Choose(m_apps, FamilyOf(path), recipe.FirstParam("format")) != Backend::None;
             }
 
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
@@ -35,8 +31,7 @@ namespace sd::office
                         *why = FamilyOf(path) == Family::None ? L"not an office file" : L"needs PowerPoint";
                     return false;
                 }
-                const DWORD a = GetFileAttributesW(path.c_str());
-                if (a == INVALID_FILE_ATTRIBUTES || (a & FILE_ATTRIBUTE_DIRECTORY))
+                if (!IsFile(path))
                 {
                     if (why)
                         *why = L"file not found";
@@ -51,7 +46,7 @@ namespace sd::office
 
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const override
             {
-                const auto target = TargetOf(recipe);
+                const auto target = recipe.FirstParam("format");
                 const auto backend = Choose(m_apps, FamilyOf(source), target);
                 const bool folder = target != "pdf";
                 StagedOutput out(m_history, runId, source, folder);

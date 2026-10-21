@@ -1,9 +1,9 @@
 #include "archive/ArchiveReader.h"
+#include "Strings.h"
 
 #include <archive.h>
 #include <archive_entry.h>
 
-#include <cwctype>
 #include <format>
 #include <memory>
 #include <vector>
@@ -51,9 +51,7 @@ namespace sd::archive
         {
             if (!text)
                 return false;
-            std::string lower(text);
-            for (auto& c : lower)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            const auto lower = AsciiLower(text);
             for (const char* w : words)
                 if (lower.find(w) != std::string::npos)
                     return true;

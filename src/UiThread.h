@@ -10,8 +10,9 @@
 #include <thread>
 #include <utility>
 
-// Handing work from a window to a worker thread and the result back. The worker posts an owned
-// pointer in lParam; the window takes it back with std::unique_ptr. UI code only.
+// Helpers for window code: handing work to a worker thread and the result back (the worker posts an
+// owned pointer in lParam; the window takes it back with std::unique_ptr), and bringing a window to
+// the front. UI code only.
 namespace sd
 {
     // Posts `payload` to `hwnd`; if the window is gone the post fails and the payload is freed here.
@@ -47,5 +48,21 @@ namespace sd
             if (SUCCEEDED(com))
                 CoUninitialize();
         }).detach();
+    }
+
+    // Brings `hwnd` to the front from a drop. A process that did not receive the last input event
+    // cannot take the foreground, and a drop comes through Explorer's drag loop, not our input queue:
+    // attaching to the foreground thread's input for a moment lets the window (or a dialog it owns)
+    // open in front instead of flashing in the taskbar.
+    inline void BringToFront(HWND hwnd)
+    {
+        const HWND fg = GetForegroundWindow();
+        const DWORD fgThread = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+        const DWORD self = GetCurrentThreadId();
+        const bool attach = fgThread && fgThread != self && AttachThreadInput(self, fgThread, TRUE);
+        SetForegroundWindow(hwnd);
+        BringWindowToTop(hwnd);
+        if (attach)
+            AttachThreadInput(self, fgThread, FALSE);
     }
 }

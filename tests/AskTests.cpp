@@ -81,10 +81,6 @@ TEST(Ask, SecretsWipeAndMove)
 
 TEST(Ask, NumbersInQuestions)
 {
-    EXPECT_EQ(ask::Thousands(0), L"0");
-    EXPECT_EQ(ask::Thousands(999), L"999");
-    EXPECT_EQ(ask::Thousands(20000), L"20,000");
-    EXPECT_EQ(ask::Thousands(1234567), L"1,234,567");
     EXPECT_EQ(ask::Ordinal(1), L"1st");
     EXPECT_EQ(ask::Ordinal(2), L"2nd");
     EXPECT_EQ(ask::Ordinal(3), L"3rd");

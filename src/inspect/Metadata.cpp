@@ -1,4 +1,6 @@
 #include "inspect/Metadata.h"
+#include "FormatText.h"
+#include "Strings.h"
 
 #include <algorithm>
 #include <cwctype>
@@ -8,14 +10,6 @@ namespace sd::inspect
 {
     namespace
     {
-        std::wstring Lower(std::wstring_view s)
-        {
-            std::wstring out(s);
-            for (auto& c : out)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return out;
-        }
-
         bool StartsWith(std::wstring_view s, std::wstring_view prefix) { return s.substr(0, prefix.size()) == prefix; }
 
         // Lower rank = listed first. Track groups share a rank and keep the order they were met in.
@@ -335,29 +329,8 @@ namespace sd::inspect
         return text;
     }
 
-    std::wstring FileSizeText(uint64_t bytes)
-    {
-        std::wstring digits = std::to_wstring(bytes), grouped;
-        for (size_t i = 0; i < digits.size(); ++i)
-        {
-            if (i > 0 && (digits.size() - i) % 3 == 0)
-                grouped += L',';
-            grouped += digits[i];
-        }
-        if (bytes < 1024)
-            return std::format(L"{} bytes", grouped);
-        const double kb = static_cast<double>(bytes) / 1024.0;
-        const auto shortText = kb < 1024.0 ? std::format(L"{:.1f} KB", kb)
-                               : kb < 1024.0 * 1024.0 ? std::format(L"{:.1f} MB", kb / 1024.0)
-                                                      : std::format(L"{:.2f} GB", kb / 1024.0 / 1024.0);
-        return std::format(L"{} ({} bytes)", shortText, grouped);
-    }
-
     std::wstring DurationText(int64_t us)
     {
-        if (us < 0)
-            return L"unknown";
-        const int64_t ms = (us + 500) / 1000;
-        return std::format(L"{}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
+        return us < 0 ? L"unknown" : Timecode(us, false);
     }
 }

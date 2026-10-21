@@ -1,7 +1,10 @@
 #include "Undo.h"
+#include "ErrorText.h"
 #include "FileMove.h"
 #include "Hash.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -38,11 +41,6 @@ namespace sd
             return hr;
         }
 
-        bool SamePathNoCase(const std::wstring& a, const std::wstring& b)
-        {
-            return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL;
-        }
-
         // Also undoes a rename: the item moves back into the folder it is already in, under its old name.
         UndoReport UndoMove(HistoryStore& history, const RunRecord& run, HWND owner, bool rename)
         {
@@ -54,10 +52,10 @@ namespace sd
             {
                 if (item.status != status::Done || item.output.empty())
                     continue;
-                if (GetFileAttributesW(item.output.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!PathExists(item.output))
                     ++report.alreadyGone;
                 // A rename that only changed the case finds itself at the old name: not in the way.
-                else if (!SamePathNoCase(item.source, item.output) && GetFileAttributesW(item.source.c_str()) != INVALID_FILE_ATTRIBUTES)
+                else if (!EqualsNoCase(item.source, item.output) && PathExists(item.source))
                     report.occupied.push_back(item.source);
                 else
                     toMove.push_back(&item);
@@ -65,7 +63,7 @@ namespace sd
             if (!report.occupied.empty())
             {
                 report.message = std::format(L"Not undone: there is a new {} where the original was.",
-                                             std::filesystem::path(report.occupied.front()).filename().wstring());
+                                             FileName(report.occupied.front()));
                 log::Warn(L"undo: move run {} refused, {} original location(s) taken", runId, report.occupied.size());
                 return report;
             }
@@ -97,8 +95,8 @@ namespace sd
             }
             if (FAILED(hr))
             {
-                report.message = std::format(L"Undo failed (0x{:08X}).", static_cast<unsigned>(hr));
-                log::Error(L"undo: move run {} failed 0x{:08X}", runId, static_cast<unsigned>(hr));
+                report.message = std::format(L"Undo failed ({}).", HexCode(hr));
+                log::Error(L"undo: move run {} failed {}", runId, HexCode(hr));
                 return report;
             }
             for (const auto* item : toMove)
@@ -127,7 +125,7 @@ namespace sd
         {
             if (item.status != status::Done || item.output.empty())
                 continue;
-            if (GetFileAttributesW(item.output.c_str()) == INVALID_FILE_ATTRIBUTES)
+            if (!PathExists(item.output))
             {
                 ++report.alreadyGone;
                 continue;
@@ -146,7 +144,7 @@ namespace sd
         if (!report.modified.empty())
         {
             report.message = std::format(L"Not undone: {} was changed after ShiftDrop created it.",
-                                         std::filesystem::path(report.modified.front()).filename().wstring());
+                                         FileName(report.modified.front()));
             log::Warn(L"undo: run {} refused, {} output(s) modified", runId, report.modified.size());
             return report;
         }
@@ -169,8 +167,8 @@ namespace sd
                 hr = Perform(op.Get());
             if (FAILED(hr))
             {
-                report.message = std::format(L"Undo failed (0x{:08X}).", static_cast<unsigned>(hr));
-                log::Error(L"undo: run {} failed 0x{:08X}", runId, static_cast<unsigned>(hr));
+                report.message = std::format(L"Undo failed ({}).", HexCode(hr));
+                log::Error(L"undo: run {} failed {}", runId, HexCode(hr));
                 return report;
             }
         }

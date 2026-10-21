@@ -57,7 +57,4 @@ namespace sd
     int BestQualityUnder(int64_t target, int low, int high, const std::function<int64_t(int)>& sizeAt);
     // How much to scale each side by when even the lowest quality came out `got` bytes for `target`.
     double ShrinkFactor(int64_t target, int64_t got);
-
-    // "0x80070005 Access is denied."
-    std::wstring HResultText(HRESULT hr);
 }

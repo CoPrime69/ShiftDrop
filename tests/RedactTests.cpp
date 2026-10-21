@@ -1,3 +1,4 @@
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -318,7 +319,7 @@ TEST(Redact, EngineBurnsTheCoversInAndKeepsNoMetadata)
     const auto skipped = runner.Run(recipe, runId, other, {});
     history->FinishRun(runId);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"photo (redacted).png");
+    EXPECT_EQ(FileName(r.output), L"photo (redacted).png");
     EXPECT_FALSE(r.message.empty());
     EXPECT_TRUE(skipped.skipped);   // nothing was drawn on it: no copy
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);

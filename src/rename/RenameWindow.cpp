@@ -1,12 +1,12 @@
 #include "rename/RenameWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 
 #include <commctrl.h>
 #include <shlwapi.h>
 
 #include <algorithm>
-#include <filesystem>
 #include <format>
 
 namespace sd
@@ -21,11 +21,6 @@ namespace sd
         constexpr int kButtonW = 110, kButtonH = 30, kStartW = 80;
 
         constexpr wchar_t kFieldsHint[] = L"{name}  name    {n} or {n:000}  number    {date}  modified    {ext}  extension    {folder}  folder";
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            return std::filesystem::path(path).filename().wstring();
-        }
 
         // {date}: the modified date, local time, as 2026-10-21 (sorts the same as it reads).
         rename::Item MakeItem(const std::wstring& path)

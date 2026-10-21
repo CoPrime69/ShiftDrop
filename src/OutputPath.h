@@ -42,6 +42,12 @@ namespace sd
     HRESULT CreateStaging(const std::wstring& source, std::wstring& stagingPath, Microsoft::WRL::ComPtr<IStream>& stream);
     HRESULT CommitStaging(const std::wstring& stagingPath, const std::wstring& source, std::wstring_view suffix,
                           std::wstring_view extension, std::wstring& finalPath);
+    // The parts of those two steps the other writers share (StagedOutput, VirtualDrop): a new staging
+    // name "~photo.1a2b3c4d.sdpart" for `stem`, and the no-replace rename of a staging file to the
+    // first free OutputName in `naming` in its own folder.
+    std::wstring StagingName(std::wstring_view stem);
+    HRESULT RenameToFreeName(const std::wstring& stagingPath, OutputNaming naming, std::wstring_view stem, std::wstring_view suffix,
+                             std::wstring_view extension, std::wstring& finalPath);
 
     // Files dragged out of a browser or a mail app have no folder of their own: VirtualDrop.h saves
     // them in a private drop folder first, and their outputs go to the folder the user chose (the

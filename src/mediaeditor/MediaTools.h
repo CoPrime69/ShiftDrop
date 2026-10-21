@@ -2,6 +2,7 @@
 #include "Engine.h"
 #include "Ffmpeg.h"
 #include "Media.h"
+#include "TempPath.h"
 #include "mediaeditor/MediaProbe.h"
 #include "mediaeditor/Timeline.h"
 
@@ -38,6 +39,9 @@ namespace sd::mediatools
     // Seconds as a JSON number, and back.
     double ToSeconds(int64_t us);
     int64_t FromSeconds(double seconds);
+    // A list of seconds in a step's params (frame times, split points) as microseconds; anything
+    // that is not a number is skipped.
+    std::vector<int64_t> TimesFrom(const nlohmann::json& params, const char* key);
 
     // ---- Where an edited file goes -----------------------------------------------------------------
 
@@ -71,22 +75,6 @@ namespace sd::mediatools
     std::vector<std::wstring> AudioCodecArgs(const MediaFormatInfo& format, int sampleRate);
 
     // ---- Extraction for the editor -------------------------------------------------------------------
-
-    // A folder of our own under %TEMP%, deleted with everything in it when this goes away.
-    class TempFolder
-    {
-    public:
-        TempFolder();
-        ~TempFolder();
-        TempFolder(const TempFolder&) = delete;
-        TempFolder& operator=(const TempFolder&) = delete;
-        bool Ok() const { return !m_path.empty(); }
-        const std::wstring& Path() const { return m_path; }
-        std::wstring File(const std::wstring& name) const { return m_path + L"\\" + name; }
-
-    private:
-        std::wstring m_path;
-    };
 
     // The size a frame is scaled to so it fits `maxW` x `maxH` (shown shape, pixel aspect applied), even.
     void FitFrame(const ProbeInfo& info, int maxW, int maxH, int& w, int& h);
@@ -131,10 +119,6 @@ namespace sd::mediatools
     ItemResult RunToStagedFolder(HistoryStore* history, int64_t runId, const std::wstring& source, int steps,
                                  const std::function<FfmpegEngine::Result(int i, const std::wstring& folder, const ProgressFn& progress)>& run,
                                  std::wstring_view suffix, std::stop_token stop, const ProgressFn& progress);
-
-    // A failure before any output exists (no video stream, nothing to do), recorded in history like
-    // every other result. `cancelled` records it as skipped.
-    ItemResult FailItem(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool cancelled = false);
 
     // A file name part safe in an ffmpeg output pattern (the segment muxer reads % as a field).
     std::wstring EscapePercent(const std::wstring& text);

@@ -1,6 +1,7 @@
 #include "Ffmpeg.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "sandbox/MediaSandbox.h"
 
@@ -10,7 +11,6 @@
 #include <algorithm>
 #include <atomic>
 #include <deque>
-#include <filesystem>
 #include <format>
 #include <thread>
 
@@ -46,15 +46,7 @@ namespace sd
 
     std::wstring FfmpegEngine::Locate()
     {
-        wchar_t env[MAX_PATH]{};
-        if (const DWORD n = GetEnvironmentVariableW(L"SHIFTDROP_FFMPEG", env, MAX_PATH); n > 0 && n < MAX_PATH)
-            return GetFileAttributesW(env) != INVALID_FILE_ATTRIBUTES ? std::wstring(env) : std::wstring();
-        wchar_t self[MAX_PATH]{};
-        const DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
-        if (n == 0 || n == MAX_PATH)
-            return {};
-        const auto exe = std::filesystem::path(self).parent_path() / L"engines" / L"ffmpeg.exe";
-        return GetFileAttributesW(exe.c_str()) != INVALID_FILE_ATTRIBUTES ? exe.wstring() : std::wstring();
+        return EngineExe(L"SHIFTDROP_FFMPEG", L"ffmpeg.exe");
     }
 
     H264Encoder FfmpegEngine::H264() const

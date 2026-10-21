@@ -1,4 +1,5 @@
 #include "PipelineRunner.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "StagedOutput.h"
@@ -160,13 +161,7 @@ namespace sd
         const auto started = GetTickCount64();
         // A file refused before any output was started still gets its history row.
         const auto refuse = [&] {
-            if (m_history)
-            {
-                const auto item = m_history->BeginItem(runId, source, L"");
-                m_history->FinishItem(item, result.skipped ? status::Skipped : status::Failed, L"", 0, "", result.error,
-                                      static_cast<int64_t>(GetTickCount64() - started));
-            }
-            return result;
+            return RecordFailure(m_history, runId, source, std::move(result.error), result.skipped, static_cast<int64_t>(GetTickCount64() - started));
         };
 
         std::wstring why;

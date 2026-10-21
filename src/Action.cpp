@@ -1,6 +1,7 @@
 #include "Action.h"
 #include "ImageHooks.h"
 #include "Media.h"
+#include "Strings.h"
 
 namespace sd
 {
@@ -30,19 +31,7 @@ namespace sd
 
     bool IsAlreadyFormat(const ImageFormatInfo& format, const std::wstring& ext)
     {
-        if (ext.empty())
-            return false;
-        // aliases is a run of ".ext" tokens; match whole tokens only.
-        std::wstring_view all(format.aliases);
-        size_t pos = 0;
-        while ((pos = all.find(ext, pos)) != std::wstring_view::npos)
-        {
-            const size_t end = pos + ext.size();
-            if (end == all.size() || all[end] == L'.')
-                return true;
-            pos = end;
-        }
-        return false;
+        return HasExtToken(format.aliases, ext);   // aliases is a run of ".ext" tokens
     }
 
     const ImageFormatInfo* FormatOfExtension(const std::wstring& ext)

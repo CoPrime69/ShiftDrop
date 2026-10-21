@@ -3,6 +3,7 @@
 // itself into ocr::Platform() before main().
 #include "ocr/Ocr.h"
 #include "Log.h"
+#include "WinRtError.h"
 
 #include <unknwn.h>
 #include <winrt/base.h>
@@ -15,7 +16,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <format>
 #include <mutex>
 
 namespace sd::ocr
@@ -27,10 +27,7 @@ namespace sd::ocr
 
         std::wstring Message(const winrt::hresult_error& e)
         {
-            std::wstring text(e.message());
-            while (!text.empty() && (text.back() == L'\n' || text.back() == L'\r' || text.back() == L' '))
-                text.pop_back();
-            return text.empty() ? std::format(L"Windows OCR failed (0x{:08X})", static_cast<uint32_t>(e.code().value)) : text;
+            return WinRtMessage(e, L"Windows OCR failed");
         }
 
         // The language picked in the tray menu; else the user's own languages first (the first one

@@ -22,12 +22,4 @@ namespace sd::pdf
     bool LooksLikePdf(const std::wstring& path, std::wstring* why);
     // An image the app can read (the same decoders the image converters use), and not a PDF.
     bool IsReadableImage(const std::wstring& path);
-
-    // Records a failed (or skipped) item for a file that never got a staging output.
-    ItemResult FailItem(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped = false);
-    // Records a finished item that wrote no file (Copy text: the result is on the clipboard).
-    void RecordNoFileItem(HistoryStore* history, int64_t runId, const std::wstring& source);
-
-    std::wstring FileNameOf(const std::wstring& path);
-    std::wstring SizeText(uint64_t bytes);   // "840 KB", "4.2 MB"
 }

@@ -1,4 +1,6 @@
 #include "sandbox/MediaSandbox.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <array>
 #include <atomic>
@@ -10,21 +12,13 @@ namespace sd::sandbox
     {
         std::atomic<int> g_opened{ 0 };
 
-        std::wstring Lower(std::wstring s)
-        {
-            for (auto& c : s)
-                c = static_cast<wchar_t>(std::towlower(c));
-            return s;
-        }
-
         bool IsLocalFile(const std::wstring& path)
         {
             // "C:\..." or "\\server\share\..." with no device or protocol prefix.
             const bool drive = path.size() > 3 && std::iswalpha(path[0]) && path[1] == L':' && (path[2] == L'\\' || path[2] == L'/');
             if (!drive || path.find(L':', 2) != std::wstring::npos)
                 return false;
-            const DWORD a = GetFileAttributesW(path.c_str());
-            return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+            return IsFile(path);
         }
 
         // An argument that names something on disk ffmpeg would open by itself: a path, or a filter

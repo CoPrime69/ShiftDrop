@@ -1,3 +1,4 @@
+#include "PathUtil.h"
 #include "PdfTestUtil.h"
 #include "PipelineRunner.h"
 #include "ocr/Ocr.h"
@@ -9,8 +10,6 @@
 #include "pdf/Wic.h"
 
 #include <qpdf/QPDFPageDocumentHelper.hh>
-
-#include <filesystem>
 
 using namespace sd;
 using namespace sd::ocr;
@@ -102,14 +101,6 @@ namespace
         Hooks m_ocr;
         pdf::RenderHooks m_render;
     };
-
-    std::wstring Joined(const pdf::PageLines& lines)
-    {
-        std::wstring s;
-        for (const auto& l : lines)
-            s += l.text + L"|";
-        return s;
-    }
 
     pdf::PageLines PageText(const std::wstring& path, size_t page)
     {
@@ -330,7 +321,7 @@ TEST(OcrSearchable, ImageBecomesAPdfWhoseTextReadsBack)
     EXPECT_TRUE(runner.Accepts(recipe, image, nullptr));
     const auto result = runner.Run(recipe, 0, image, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"scan (searchable).pdf");
+    EXPECT_EQ(FileName(result.output), L"scan (searchable).pdf");
     EXPECT_EQ(result.message, L"Searchable PDF: 4 words");
     EXPECT_EQ(g_recognized, 1);
     // The text layer is real text to a PDF reader: our own extractor gets it back, in place.

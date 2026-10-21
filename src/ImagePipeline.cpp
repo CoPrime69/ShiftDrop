@@ -1,7 +1,10 @@
 #include "ImagePipeline.h"
+#include "ErrorText.h"
+#include "FileIo.h"
 #include "ImageHooks.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "Wic.h"
 #include "formats/Pixels.h"
 
@@ -30,28 +33,12 @@ namespace sd
 {
     namespace
     {
-        HRESULT ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& bytes)
-        {
-            wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                                               FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-            if (!file)
-                return HRESULT_FROM_WIN32(GetLastError());
-            LARGE_INTEGER size{};
-            RETURN_IF_WIN32_BOOL_FALSE(GetFileSizeEx(file.get(), &size));
-            if (size.QuadPart > (1ll << 31))
-                return HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);
-            bytes.resize(static_cast<size_t>(size.QuadPart));
-            DWORD read = 0;
-            RETURN_IF_WIN32_BOOL_FALSE(ReadFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr));
-            bytes.resize(read);
-            return S_OK;
-        }
-
         // libwebp decode -> WIC bitmap (32bpp BGRA), so the rest of the pipeline is format-agnostic.
         HRESULT DecodeWebP(IWICImagingFactory* factory, const std::wstring& path, ComPtr<IWICBitmapSource>& out)
         {
             std::vector<uint8_t> bytes;
-            RETURN_IF_FAILED(ReadWholeFile(path, bytes));
+            if (!ReadFileBytes(path, bytes))
+                return HRESULT_FROM_WIN32(GetLastError());
             int w = 0, h = 0;
             uint8_t* pixels = WebPDecodeBGRA(bytes.data(), bytes.size(), &w, &h);
             if (!pixels)
@@ -311,14 +298,6 @@ namespace sd
             return encoder->Commit();
         }
 
-        int64_t FileBytes(const std::wstring& path)
-        {
-            WIN32_FILE_ATTRIBUTE_DATA data{};
-            if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data))
-                return 0;
-            return (static_cast<int64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
-        }
-
         int64_t StreamBytes(IStream* stream)
         {
             STATSTG stat{};
@@ -419,17 +398,6 @@ namespace sd
             error = L"could not get under the target size";
             return E_ABORT;
         }
-    }
-
-    std::wstring HResultText(HRESULT hr)
-    {
-        wil::unique_hlocal_string msg;
-        FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                       static_cast<DWORD>(hr), 0, reinterpret_cast<LPWSTR>(&msg), 0, nullptr);
-        std::wstring text = msg ? msg.get() : L"";
-        while (!text.empty() && (text.back() == L'\n' || text.back() == L'\r' || text.back() == L' '))
-            text.pop_back();
-        return std::format(L"0x{:08X} {}", static_cast<unsigned>(hr), text);
     }
 
     ImageCodecs::ImageCodecs()
@@ -712,7 +680,7 @@ namespace sd
         };
         if (last.action == "image.compress")
         {
-            if (const HRESULT hr = CompressToTarget(factory.Get(), pixels.Get(), last.params, quality, FileBytes(source), encode, out,
+            if (const HRESULT hr = CompressToTarget(factory.Get(), pixels.Get(), last.params, quality, static_cast<int64_t>(FileSize(source)), encode, out,
                                                     stop, error);
                 FAILED(hr))
                 return hr;

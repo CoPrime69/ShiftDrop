@@ -1,4 +1,5 @@
 #include "formats/Svg.h"
+#include "FileIo.h"
 #include "Utf.h"
 
 #include <lunasvg/lunasvg.h>
@@ -81,8 +82,8 @@ namespace sd::formats
         HRESULT ReadSvgText(const std::wstring& path, std::string& text)
         {
             std::vector<uint8_t> bytes;
-            if (const HRESULT hr = ReadFileBytes(path, bytes); FAILED(hr))
-                return hr;
+            if (!ReadFileBytes(path, bytes, nullptr, kMaxImageFileBytes))
+                return HRESULT_FROM_WIN32(GetLastError());
             if (bytes.size() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
                 return Gunzip(bytes, text) ? S_OK : WINCODEC_ERR_BADIMAGE;
             text.assign(bytes.begin(), bytes.end());

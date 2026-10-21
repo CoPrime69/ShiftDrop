@@ -24,8 +24,8 @@ namespace sd::formats
         bool Opaque() const;   // every alpha is 255
     };
 
-    // The whole file in memory (Unicode path; images over 1 GB are refused).
-    HRESULT ReadFileBytes(const std::wstring& path, std::vector<uint8_t>& bytes);
+    // Image files over 1 GB are refused (FileIo.h ReadFileBytes reads them).
+    inline constexpr uint64_t kMaxImageFileBytes = 1ull << 30;
 
     // WIC bitmap of the picture (WIC copies the pixels, so `image` may go away afterwards).
     HRESULT ToWicBitmap(IWICImagingFactory* factory, const Image& image, Microsoft::WRL::ComPtr<IWICBitmapSource>& out);

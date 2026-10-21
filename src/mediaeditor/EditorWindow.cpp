@@ -1,6 +1,7 @@
 #include "mediaeditor/EditorWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "videotools/VideoTools.h"
 
@@ -28,12 +29,6 @@ namespace sd::mediatools
 
         // Control ids shared by every tool (tool controls use 100 and up).
         enum : int { kIdPlay = 1, kIdTime, kIdBack, kIdForward, kIdZoomOut, kIdZoomIn, kIdFit, kIdSkip, kIdCancel, kIdPrimary, kIdTools = 50 };
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            const auto slash = path.find_last_of(L"\\/");
-            return slash == std::wstring::npos ? path : path.substr(slash + 1);
-        }
 
         void OpenEditorWindow(HWND owner, EditorRequest request, EditorDone done) { EditorWindow::Open(owner, std::move(request), std::move(done)); }
 

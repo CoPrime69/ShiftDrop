@@ -1,4 +1,5 @@
 #include "photo/Effects.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "photo/Gpu.h"
 
@@ -435,7 +436,7 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
         if (NeedsDenoise(a))
         {
             if (!graph.denoise && FAILED(hr = MakeEffect(dc, kDenoiseFx, graph.denoise)))
-                return Fail(graph, L"noise reduction effect " + gpu::HrText(hr));
+                return Fail(graph, L"noise reduction effect " + HexCode(hr));
             graph.denoise->SetInput(0, image.Get());
             SetConstants(graph.denoise.Get(), DenoiseConstants(a, fullWidth, fullHeight, scale));
             graph.denoise->GetOutput(&image);
@@ -444,7 +445,7 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
         if (NeedsDevelop(a))
         {
             if (!graph.develop && FAILED(hr = MakeEffect(dc, kDevelopFx, graph.develop)))
-                return Fail(graph, L"develop effect " + gpu::HrText(hr));
+                return Fail(graph, L"develop effect " + HexCode(hr));
             const bool dehaze = a.dehaze != 0 && haze && !haze->Empty();
             ComPtr<ID2D1Image> hazeImage = image;
             if (dehaze)
@@ -455,7 +456,7 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
                     graph.hazeFor = haze;
                 }
                 if (!graph.hazeScale && FAILED(hr = dc->CreateEffect(CLSID_D2D12DAffineTransform, &graph.hazeScale)))
-                    return Fail(graph, L"scale effect " + gpu::HrText(hr));
+                    return Fail(graph, L"scale effect " + HexCode(hr));
                 if (!graph.hazeMap)
                     return Fail(graph, L"no float bitmaps");
                 // Stretched over the picture with linear filtering (D2D1_2DAFFINETRANSFORM_INTERPOLATION_MODE_LINEAR).
@@ -478,13 +479,13 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
         if (NeedsFinish(a))
         {
             if (!graph.finish && FAILED(hr = MakeEffect(dc, kFinishFx, graph.finish)))
-                return Fail(graph, L"finish effect " + gpu::HrText(hr));
+                return Fail(graph, L"finish effect " + HexCode(hr));
             ComPtr<ID2D1Image> fine = image, broad = image;
             const Radii radii = RadiiFor(fullWidth, fullHeight, a);
             if (a.sharpen != 0)
             {
                 if (!graph.smallBlur && FAILED(hr = dc->CreateEffect(CLSID_D2D1GaussianBlur, &graph.smallBlur)))
-                    return Fail(graph, L"blur effect " + gpu::HrText(hr));
+                    return Fail(graph, L"blur effect " + HexCode(hr));
                 graph.smallBlur->SetInput(0, image.Get());
                 SetBlur(graph.smallBlur.Get(), radii.sharpenSigma * scale);
                 graph.smallBlur->GetOutput(&fine);
@@ -492,7 +493,7 @@ float4 main(float4 pos : SV_POSITION, float4 scene : SCENE_POSITION, float4 uv0 
             if (a.clarity != 0)
             {
                 if (!graph.largeBlur && FAILED(hr = dc->CreateEffect(CLSID_D2D1GaussianBlur, &graph.largeBlur)))
-                    return Fail(graph, L"blur effect " + gpu::HrText(hr));
+                    return Fail(graph, L"blur effect " + HexCode(hr));
                 graph.largeBlur->SetInput(0, image.Get());
                 SetBlur(graph.largeBlur.Get(), radii.claritySigma * scale);
                 graph.largeBlur->GetOutput(&broad);

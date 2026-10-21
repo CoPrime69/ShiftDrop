@@ -1,6 +1,7 @@
 #include "videotools/VideoEngine.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "StagedOutput.h"
 #include "Utf.h"
 #include "videotools/VideoTools.h"
@@ -70,10 +71,7 @@ namespace sd::videotools
 
     json ToolRecipe(EditorTool tool)
     {
-        for (const auto& r : ToolRecipes())
-            if (r["steps"][0]["action"] == ToolAction(tool))
-                return r;
-        return json();
+        return FindToolRecipe(ToolRecipes(), ToolAction(tool));
     }
 
     bool IsBatchAction(const std::string& action) { return action == "video.join"; }
@@ -87,22 +85,6 @@ namespace sd::videotools
 
     namespace
     {
-        double Number(const json& params, const char* key, double fallback)
-        {
-            const auto it = params.find(key);
-            return it != params.end() && it->is_number() ? it->get<double>() : fallback;
-        }
-
-        std::vector<int64_t> Times(const json& params, const char* key)
-        {
-            std::vector<int64_t> out;
-            if (const auto it = params.find(key); it != params.end() && it->is_array())
-                for (const auto& v : *it)
-                    if (v.is_number())
-                        out.push_back(FromSeconds(v.get<double>()));
-            return out;
-        }
-
         // The probe, with the reason a file can't be edited as video.
         bool ProbeVideo(const FfmpegEngine& ffmpeg, const std::wstring& source, std::stop_token stop, ProbeInfo& info, std::wstring& why)
         {
@@ -121,13 +103,13 @@ namespace sd::videotools
         {
             const auto& p = recipe.steps[0].params;
             const int64_t duration = info.DurationUs();
-            TimeRange keep{ FromSeconds(Number(p, "start", 0)), 0 };
-            const double end = Number(p, "end", 0);
+            TimeRange keep{ FromSeconds(JsonNumber(p, "start", 0)), 0 };
+            const double end = JsonNumber(p, "end", 0);
             keep.end = end > 0 ? std::min(FromSeconds(end), duration) : duration;
             if (keep.Length() < kMinRangeUs)
-                return FailItem(s.history, runId, source, L"the part to keep is empty");
+                return RecordFailure(s.history, runId, source, L"the part to keep is empty");
             if (keep.start <= 0 && keep.end >= duration)
-                return FailItem(s.history, runId, source, L"nothing to trim: the whole video is kept");
+                return RecordFailure(s.history, runId, source, L"nothing to trim: the whole video is kept");
             const bool fast = p.value("mode", std::string("exact")) == "fast";
             const H264Encoder h264 = fast ? H264Encoder::OpenH264 : s.ffmpeg->H264();
             const auto ext = LowerExtension(source);
@@ -150,7 +132,7 @@ namespace sd::videotools
             int outW = 0, outH = 0;
             CropOutputSize(box, p.value("width", 0), p.value("height", 0), outW, outH);
             if (box == PixelRect{ 0, 0, info.width, info.height } && outW == info.width && outH == info.height)
-                return FailItem(s.history, runId, source, L"nothing to crop: the box is the whole picture");
+                return RecordFailure(s.history, runId, source, L"nothing to crop: the box is the whole picture");
             const H264Encoder h264 = s.ffmpeg->H264();
             const auto ext = LowerExtension(source);
             log::Info(L"video: crop {} to {}x{}+{}+{} -> {}x{}", source, box.w, box.h, box.x, box.y, outW, outH);
@@ -162,9 +144,9 @@ namespace sd::videotools
         ItemResult RunSpeed(const EngineServices& s, const Recipe& recipe, int64_t runId, const std::wstring& source, const ProbeInfo& info,
                             std::stop_token stop, const ProgressFn& progress)
         {
-            const double factor = std::clamp(Number(recipe.steps[0].params, "factor", 2.0), kMinSpeed, kMaxSpeed);
+            const double factor = std::clamp(JsonNumber(recipe.steps[0].params, "factor", 2.0), kMinSpeed, kMaxSpeed);
             if (std::abs(factor - 1.0) < 0.001)
-                return FailItem(s.history, runId, source, L"1x is the speed it already has");
+                return RecordFailure(s.history, runId, source, L"1x is the speed it already has");
             const H264Encoder h264 = s.ffmpeg->H264();
             const auto ext = LowerExtension(source);
             const auto outputUs = static_cast<int64_t>(static_cast<double>(info.DurationUs()) / factor);
@@ -178,9 +160,9 @@ namespace sd::videotools
         ItemResult RunFrames(const EngineServices& s, const Recipe& recipe, int64_t runId, const std::wstring& source, const ProbeInfo& info,
                              std::stop_token stop, const ProgressFn& progress)
         {
-            const auto times = NormalizeFrameTimes(Times(recipe.steps[0].params, "frames"), info.media.fps, info.DurationUs());
+            const auto times = NormalizeFrameTimes(TimesFrom(recipe.steps[0].params, "frames"), info.media.fps, info.DurationUs());
             if (times.empty())
-                return FailItem(s.history, runId, source, L"no frames were marked");
+                return RecordFailure(s.history, runId, source, L"no frames were marked");
             const auto stem = Stem(source);
             log::Info(L"video: {} frame(s) of {} as PNG", times.size(), source);
             return RunToStagedFolder(
@@ -188,7 +170,7 @@ namespace sd::videotools
                 [&](int i, const std::wstring& folder, const ProgressFn& part) {
                     const auto file = folder + L"\\" + FramePngName(stem, times[static_cast<size_t>(i)]);
                     auto r = s.ffmpeg->Run(FrameToPngArgs(source, times[static_cast<size_t>(i)], info.media.fps, file), part, stop);
-                    if (r.ok && GetFileAttributesW(file.c_str()) == INVALID_FILE_ATTRIBUTES)
+                    if (r.ok && !PathExists(file))
                         r = { false, false, std::format(L"no frame at {}", FormatTimecode(times[static_cast<size_t>(i)])) };
                     return r;
                 },
@@ -200,11 +182,11 @@ namespace sd::videotools
         {
             const auto& p = recipe.steps[0].params;
             const int64_t duration = info.DurationUs();
-            auto points = NormalizePoints(Times(p, "points"), duration);
+            auto points = NormalizePoints(TimesFrom(p, "points"), duration);
             if (points.empty())
                 points = EqualPartPoints(duration, p.value("parts", 0));
             if (points.empty())
-                return FailItem(s.history, runId, source, L"no split points: mark where to cut, or choose a number of parts");
+                return RecordFailure(s.history, runId, source, L"no split points: mark where to cut, or choose a number of parts");
             const bool fast = p.value("mode", std::string("exact")) == "fast";
             const auto ext = LowerExtension(source);
             const auto stem = Stem(source);
@@ -252,7 +234,7 @@ namespace sd::videotools
                         boxes.push_back(box);
                 }
             if (boxes.empty())
-                return FailItem(s.history, runId, source, L"no areas to redact");
+                return RecordFailure(s.history, runId, source, L"no areas to redact");
             const H264Encoder h264 = s.ffmpeg->H264();
             const auto ext = LowerExtension(source);
             log::Info(L"video: redact {} area(s) in {}", boxes.size(), source);
@@ -268,7 +250,7 @@ namespace sd::videotools
         ProbeInfo info;
         std::wstring why;
         if (!ProbeVideo(*s.ffmpeg, source, stop, info, why))
-            return FailItem(s.history, runId, source, stop.stop_requested() ? L"cancelled" : why, stop.stop_requested());
+            return RecordFailure(s.history, runId, source, stop.stop_requested() ? L"cancelled" : why, stop.stop_requested());
         const auto& action = recipe.steps[0].action;
         if (action == "video.trim") return RunTrim(s, recipe, runId, source, info, stop, progress);
         if (action == "video.crop") return RunCrop(s, recipe, runId, source, info, stop, progress);
@@ -276,7 +258,7 @@ namespace sd::videotools
         if (action == "video.frames") return RunFrames(s, recipe, runId, source, info, stop, progress);
         if (action == "video.split") return RunSplit(s, recipe, runId, source, info, stop, progress);
         if (action == "video.redact") return RunRedact(s, recipe, runId, source, info, stop, progress);
-        return FailItem(s.history, runId, source, Widen(std::format("{} runs on all files at once", action)));
+        return RecordFailure(s.history, runId, source, Widen(std::format("{} runs on all files at once", action)));
     }
 
     ItemResult RunBatch(const EngineServices& s, const Recipe& recipe, int64_t runId, const std::vector<std::wstring>& sources, std::stop_token stop,
@@ -284,7 +266,7 @@ namespace sd::videotools
     {
         const auto& first = sources.front();
         if (sources.size() < 2)
-            return FailItem(s.history, runId, first, L"Join needs two or more videos");
+            return RecordFailure(s.history, runId, first, L"Join needs two or more videos");
         std::vector<ProbeInfo> clips;
         int64_t total = 0;
         for (const auto& source : sources)
@@ -292,8 +274,8 @@ namespace sd::videotools
             ProbeInfo info;
             std::wstring why;
             if (!ProbeVideo(*s.ffmpeg, source, stop, info, why))
-                return FailItem(s.history, runId, first,
-                                std::format(L"{}: {}", std::filesystem::path(source).filename().wstring(), stop.stop_requested() ? L"cancelled" : why),
+                return RecordFailure(s.history, runId, first,
+                                std::format(L"{}: {}", FileName(source), stop.stop_requested() ? L"cancelled" : why),
                                 stop.stop_requested());
             total += info.DurationUs();
             clips.push_back(std::move(info));
