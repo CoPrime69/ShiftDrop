@@ -639,6 +639,43 @@ namespace sd
         return out->Commit(STGC_DEFAULT);
     }
 
+    HRESULT EncodePicture(IWICBitmapSource* pixels, const ImageFormatInfo& format, int quality, IStream* out, std::wstring& error)
+    {
+        auto factory = CreateFactory();
+        if (!factory)
+        {
+            error = L"WIC unavailable";
+            return REGDB_E_CLASSNOTREG;
+        }
+        ComPtr<IWICBitmapSource> bgra;
+        HRESULT hr = ToBgra(factory.Get(), pixels, bgra);
+        if (SUCCEEDED(hr) && !format.keepsAlpha)
+            hr = FlattenOnWhite(factory.Get(), bgra.Get(), bgra);
+        if (FAILED(hr))
+        {
+            error = std::format(L"convert: {}", HResultText(hr));
+            return hr;
+        }
+        std::wstring hookError;
+        if (const auto* hook = EncodeHookFor(format.id))
+        {
+            if (!hook->CanEncode(&error))
+                return E_NOTIMPL;
+            hr = hook->Encode(factory.Get(), bgra.Get(), quality, out, hookError);
+        }
+        else
+        {
+            hr = std::string_view(format.id) == "webp" ? EncodeWebP(bgra.Get(), static_cast<float>(quality), out)
+                                                      : EncodeWic(factory.Get(), bgra.Get(), format, static_cast<float>(quality), 0, 0, out);
+        }
+        if (FAILED(hr))
+        {
+            error = hookError.empty() ? std::format(L"encode: {}", HResultText(hr)) : L"encode: " + hookError;
+            return hr;
+        }
+        return out->Commit(STGC_DEFAULT);
+    }
+
     int BestQualityUnder(int64_t target, int low, int high, const std::function<int64_t(int)>& sizeAt)
     {
         // Size grows with quality (near enough for JPEG and WebP), so a binary search finds the highest

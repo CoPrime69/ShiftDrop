@@ -126,9 +126,11 @@ add_library(shiftdrop_core STATIC
   src/videotools/VideoTools.cpp
   src/audiotools/AudioEngine.cpp
   src/audiotools/AudioTools.cpp
-  # Image formats beyond WIC (AVIF, SVG, HEIC through Windows' codec), plugged into ImagePipeline
+  # Image formats beyond WIC (AVIF, SVG, HEIC through Windows' codec), plugged into ImagePipeline,
+  # and every frame of an animated GIF or multi-page TIFF
   src/formats/Avif.cpp
   src/formats/Formats.cpp
+  src/formats/Frames.cpp
   src/formats/Heic.cpp
   src/formats/Pixels.cpp
   src/formats/Svg.cpp
@@ -141,6 +143,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   unofficial::sqlite3::sqlite3
   nlohmann_json::nlohmann_json
   WebP::webp
+  WebP::libwebpmux   # animated WebP (a GIF converted to WebP stays animated)
   qpdf::libqpdf
   ZLIB::ZLIB
   avif
@@ -236,6 +239,7 @@ if(SHIFTDROP_TESTS)
     tests/RedactTests.cpp
     tests/ShareSafeTests.cpp
     tests/FormatsTests.cpp
+    tests/FramesTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)

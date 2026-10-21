@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "formats/Frames.h"
 
 #include <windows.h>
 #include <wrl/client.h>
@@ -187,6 +188,9 @@ namespace sd
             return RunDuplicate(recipe, runId, source, elapsedMs);
         if (recipe.IsMedia())
             return RunMedia(recipe, runId, source, stop, progress, elapsedMs);
+        // An animated GIF or a multi-page TIFF keeps every frame (src/formats/Frames.h).
+        if (recipe.IsSingleEncode() && formats::FrameCount(source) > 1)
+            return formats::ConvertFrames(recipe, *recipe.OutputFormatFor(LowerExtension(source)), m_history, runId, source, stop, progress);
 
         std::wstring staging;
         Microsoft::WRL::ComPtr<IStream> stream;

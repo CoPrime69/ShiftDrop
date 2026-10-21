@@ -2,6 +2,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "canvas/Raster.h"
 #include "formats/Avif.h"
 #include "formats/Heic.h"
 #include "formats/Svg.h"
@@ -454,6 +455,38 @@ TEST(Formats, HeicRoundTripWhereWindowsHasTheCodec)
     ASSERT_TRUE(ImageSize(back.output, w, h));
     EXPECT_EQ(w, 640u);
     EXPECT_EQ(h, 480u);
+}
+
+// ---- The image editors (M6: Crop, Redact, Share-safe) take the new formats too ---------------------
+
+TEST(Formats, EditorsReadAvifAndSvgAndWriteAvif)
+{
+    Fixture f;
+    const auto svg = f.dir / L"art.svg";
+    WriteText(svg, R"(<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60"><rect width="40" height="60" fill="#00ff00"/></svg>)");
+    for (const char* id : { "crop", "redact", "share-safe" })
+        if (const auto* r = f.recipes.store.Find(id))
+            EXPECT_TRUE(f.runner.Applies(*r, svg)) << id;
+
+    canvas::Raster raster;
+    std::wstring error;
+    ASSERT_HRESULT_SUCCEEDED(canvas::LoadRaster(svg, raster, error)) << Narrow(error);
+    EXPECT_EQ(raster.width, 80u);
+    EXPECT_EQ(raster.At(10, 10)[1], 255);
+    EXPECT_EQ(raster.At(70, 10)[3], 0);
+
+    // An edited AVIF stays AVIF; an edited HEIC becomes JPEG (Windows' encoder is optional); SVG becomes PNG.
+    EXPECT_STREQ(canvas::EditedFormatFor(L".avif").id, "avif");
+    EXPECT_STREQ(canvas::EditedFormatFor(L".heic").id, "jpg");
+    EXPECT_STREQ(canvas::EditedFormatFor(L".svg").id, "png");
+    const auto avif = f.dir / L"edited.avif";
+    ASSERT_HRESULT_SUCCEEDED(canvas::SaveRasterToFile(raster, *FindImageFormat("avif"), canvas::EditedQuality(*FindImageFormat("avif")), avif, error))
+        << Narrow(error);
+    canvas::Raster back;
+    ASSERT_HRESULT_SUCCEEDED(canvas::LoadRaster(avif, back, error)) << Narrow(error);
+    EXPECT_EQ(back.width, 80u);
+    EXPECT_EQ(back.height, 60u);
+    EXPECT_LT(back.At(70, 10)[3], 8);   // transparency survives
 }
 
 // ---- AVIF speed (ctest prints each test's time; the Generate test is the baseline to subtract) ------
