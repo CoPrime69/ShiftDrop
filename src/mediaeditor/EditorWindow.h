@@ -277,6 +277,7 @@ namespace sd::mediatools
         std::string m_aspect = "free";
         double m_factor = 2.0;       // speed
         bool m_equalParts = false;
+        bool m_joinFill = false;     // join: crop other shapes to fill the frame (else black bars)
         int m_parts = 2;
         bool m_blurStyle = true;     // redact default
         bool m_tone = true;          // bleep with a tone (else silence)
