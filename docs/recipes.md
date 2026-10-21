@@ -10,7 +10,7 @@ startup (tray menu > Open recipes folder, then quit ShiftDrop from the tray and 
   "id": "web-ready",            // letters, digits, - _ . ; the same id as a built-in replaces it
   "label": "Web",               // text on the slice
   "description": "Resize to 2048 px, WebP quality 80, no metadata",
-  "ring": "convert",            // convert (Shift), tools (Ctrl) or files (Alt); default convert
+  "ring": "convert",            // section: convert, tools, reduce or files; default convert
   "suffix": "converted",        // output "photo (converted).webp"; default converted
   "steps": [
     { "action": "image.resize", "params": { "maxEdge": 2048 } },

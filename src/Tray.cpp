@@ -96,7 +96,7 @@ namespace sd
         wil::unique_hmenu menu(CreatePopupMenu());
         if (!menu)
             return;
-        AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, hold Shift, Ctrl or Alt");
+        AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, press Shift, scroll for sections");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, IDM_HISTORY, L"History\x2026");
         AppendMenuW(menu.get(), MF_STRING, IDM_OPEN_RECIPES, L"Open recipes folder");

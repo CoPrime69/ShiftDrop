@@ -548,27 +548,18 @@ question 1).
 | 2026-10-20 | Redact Video blurs with `gblur` and covers with `drawbox`, each area enabled only for its own time range; the bundled build has no `boxblur` | `boxblur` is GPL and not in our LGPL ffmpeg |
 | 2026-10-20 | Normalize Volume is two-pass EBU R128 `loudnorm` (linear) at −16 LUFS and −1 dBTP; within 0.5 LU it is skipped as "already at…"; the top panel shows the loudness before and after (`ItemResult::message`, from M5). Trim Audio's silence option measures with `silencedetect` (below −50 dB for 0.1 s) and then cuts exactly | Two passes hit the target within a fraction of a LU; one-pass loudnorm drifts. A measured cut is exact where `silenceremove` would also cut pauses inside |
 | 2026-10-20 | Core changes for M9/M10, kept small: `FfmpegEngine::Run` takes the expected output length for progress, and Media exposes `H264QualityArgs` | A trim, a speed change or a join is not as long as its input; the tools reuse the H.264 encoder choice instead of their own |
+| 2026-10-20 | Prakhar's answers to the open questions: the wheel hides once the cursor leaves it; near a screen edge it moves in so every tile is on screen; a re-encoding Convert never comes out bigger than its source; the video Tools wheel keeps all twelve slices; Normalize offers Speech / Music / Broadcast; the Float shelf keeps a file that is dragged out; the tray gets "Show Float shelf"; virtual-file drags go to the Desktop by default (Downloads or Ask every time in settings); multi-page TIFF and animated GIF convert every frame; Crop keeps GPS; Organize PDF Pages opens one window per PDF; the tray offers an OCR language when several are installed; Join offers Fit (bars) and Fill (crop) | Answered on decision cards, 23:19 to 23:25 UTC |
+| 2026-10-20 | Shift is the only key that opens the wheel during a drag; Ctrl and Alt no longer do (they keep Explorer's own meaning), and every section is reached by scrolling. Old settings.ini files with Tools=Ctrl / Files=Alt are switched to None once (KeysVersion=2); a later hand edit stays | Prakhar: one key to remember, and sections will outgrow the keys. Alt also lit up the source window's menu bar |
+| 2026-10-20 | A wheel moved in from a screen edge treats the spot where it opened as the centre until the cursor moves 6 DIP, and keeps the mouse pointer visible | The cursor sits on a slice after the move; dropping without moving must still run nothing, and the user has to see where the pointer is |
+| 2026-10-20 | A fourth section, Reduce size (between Tools and File actions): eight slices, 90% to 20% smaller, as image.compress / media.compress with `percent` (the result is at most that share of the source) and pdf.compress with `percent`, which steps the pictures down (150 dpi q70 to 48 dpi q25) until it fits. The centre shows the files' total size; a hovered slice's `headline` replaces it with the size it comes out at, over "was …" | Prakhar (23:30): websites often need files under a size, and seeing both sizes before dropping saves trial and error. Fit-to-size already guaranteed the target for images and media |
 
 ## Open questions
 
 1. Tangerine advertises 26 tools but names 22. If you can see the four others in the Mac app, send their names and I'll slot them in.
-2. Should the wheel keep showing after the cursor leaves it (Tangerine-like "until drop or cancel") or hide (current)? Hiding keeps Explorer's normal drop available.
-3. Near a screen edge: keep the wheel centred (current, partly off-screen) or shift it inward?
-4. Does the LL hook keep receiving events while an elevated window is under the cursor? Do drags from an elevated app reach us? (Test in TESTING.md, section E.)
-5. Alt as a trigger: suppress the menu-bar activation it causes in the source app, or recommend against Alt?
-6. Virtual-file drags (browsers, Outlook): where should outputs go? Proposal: Downloads.
-7. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
-8. Multi-page TIFF / animated GIF: M1 converts the first frame only. Convert all pages/frames later?
-9. Hotkey for "open the wheel on Explorer's selection" (Tangerine's Enter on a file): is Ctrl+Shift+Space a good default?
-10. Converting a video to MP4/MOV/MKV now copies the streams when the target can hold them (same size, instant). When it must re-encode (AVI to MP4, say), it uses good quality, so the file can grow; Compress and the size presets are there to shrink. Fine, or should Convert also aim for the original's size?
-11. Float shelf: should dragging a file out of the shelf remove it from the shelf (like a tray you empty) or keep it (current)? And should a renamed file follow its new name instead of leaving the shelf?
-12. Should the tray menu get a "Show Float shelf" entry (it hides itself when empty, and Float on any file brings it back)?
-13. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
-14. M5: Organize PDF Pages with several PDFs dropped shows all their pages in one grid and saves one PDF. Is that wanted, or should it open one window per PDF?
-15. M5: Copy text uses the first OCR language Windows has for the user's profile languages. Should the tray menu offer a language choice when several are installed?
-16. Normalize is one slice at −16 LUFS (speech, podcasts); music for streaming is usually −14 and broadcast −23 (a recipe adds either). Should the slice open a small chooser instead, or should the three targets be slices?
-17. A video's Tools wheel now has twelve slices on two rings. Too many, or fine? The quieter tools (Frames, Redact) could live only in the editor's tabs.
-18. Join Videos re-encodes when the clips differ and pads other shapes with black bars, at the first clip's size. Should it offer "crop to fill" too?
+2. Does the LL hook keep receiving events while an elevated window is under the cursor? Do drags from an elevated app reach us? (Test in TESTING.md, section E.)
+3. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
+4. Opening the wheel on files selected in Explorer: Ctrl+Shift+Space (current) or a lone Shift tap? Prakhar decides after trying the app, before the launch video and website.
+5. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
 
 ## Sources
 
