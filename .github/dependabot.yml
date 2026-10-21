@@ -6,6 +6,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Don't rebase an open update after every merge to main: each rebase reruns CI and emails the owner.
+    rebase-strategy: disabled
     groups:
       actions:
         patterns: ["*"]
