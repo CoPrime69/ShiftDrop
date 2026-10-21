@@ -7,6 +7,7 @@
 // params the tool hands back on Apply.
 #include "canvas/Editor.h"
 #include "Clipboard.h"
+#include "DialogWindow.h"
 #include "ErrorText.h"
 #include "Log.h"
 #include "PathUtil.h"
@@ -17,7 +18,6 @@
 #include "canvas/SignaturePad.h"
 #include "EditorFrame.h"
 
-#include <commdlg.h>
 #include <d2d1_1.h>
 #include <windowsx.h>
 
@@ -1410,15 +1410,9 @@ namespace sd::canvas
 
             bool PickColour(const Color& current, uint32_t& rgb)
             {
-                static COLORREF custom[16]{};
-                CHOOSECOLORW cc{ sizeof(cc) };
-                cc.hwndOwner = Hwnd();
-                cc.rgbResult = RGB(BYTE(current.r * 255), BYTE(current.g * 255), BYTE(current.b * 255));
-                cc.lpCustColors = custom;
-                cc.Flags = CC_FULLOPEN | CC_RGBINIT;
-                if (!ChooseColorW(&cc))
+                rgb = (uint32_t(BYTE(current.r * 255)) << 16) | (uint32_t(BYTE(current.g * 255)) << 8) | BYTE(current.b * 255);
+                if (!sd::PickColour(Hwnd(), rgb))
                     return false;
-                rgb = (uint32_t(GetRValue(cc.rgbResult)) << 16) | (uint32_t(GetGValue(cc.rgbResult)) << 8) | GetBValue(cc.rgbResult);
                 if (rgb == 0)
                     rgb = 0x010101;   // 0 means "no colour picked" to tools
                 return true;
@@ -2112,7 +2106,7 @@ namespace sd::canvas
                     const auto r = D2D1::RectF(float(p.x) - s, float(p.y) - s, float(p.x) + s, float(p.y) + s);
                     if (auto* b = m_w.Brush(hot ? m_w.Theme().accent : D2D1::ColorF(1, 1, 1, 1)))
                         m_rt->FillRectangle(r, b);
-                    if (auto* b = m_w.Brush(hot ? D2D1::ColorF(1, 1, 1, 1) : m_w.Theme().accent))
+                    if (auto* b = m_w.Brush(hot ? m_w.Theme().onAccent : m_w.Theme().accent))
                         m_rt->DrawRectangle(r, b, 1.5f);
                 }
                 void Tag(PointD at, const std::wstring& text, Color back, Color fore) override

@@ -39,18 +39,22 @@ namespace
 
 // ---- The colours --------------------------------------------------------------------------------------
 
-TEST(Accent, TideIsTheDefault)
+TEST(Accent, WindowsIsTheDefaultAndTideIsFirst)
 {
+    // The default is the accent the user already chose in Windows.
     const accent::Setting none;
-    EXPECT_EQ(none.choice, Choice::Tide);
-    const auto tide = accent::Resolve(none, 0x0067C0);
+    EXPECT_EQ(none.choice, Choice::Windows);
+    EXPECT_EQ(accent::Resolve(none, 0x0067C0), accent::Derive(0x0067C0));
+    EXPECT_EQ(Preferences{}.accent, none);
+    // Tide, ShiftDrop's teal, is the first preset.
+    EXPECT_EQ(static_cast<int>(Choice::Tide), 0);
+    const auto tide = accent::Preset(Choice::Tide);
     EXPECT_EQ(tide.fill, 0x12A58Eu);
     EXPECT_EQ(tide.dark, 0x2DD4B4u);
     EXPECT_EQ(tide.light, 0x0B7A69u);
     EXPECT_EQ(accent::kTextOnDark, 0x15171Eu);
     EXPECT_EQ(accent::TextOn(tide.fill), accent::kTextOnDark);   // dark text on the teal
     EXPECT_EQ(accent::TextOn(tide.light), accent::kTextOnLight);
-    EXPECT_EQ(Preferences{}.accent, none);
 }
 
 TEST(Accent, EveryPresetReadsInLightAndDark)
@@ -115,6 +119,8 @@ TEST(Accent, CurrentFollowsTheSetting)
     accent::Set({ Choice::Windows });
     EXPECT_EQ(accent::Current(), accent::Derive(accent::WindowsRgb()));
     accent::Set({});
+    EXPECT_EQ(accent::Current(), accent::Derive(accent::WindowsRgb()));
+    accent::Set({ Choice::Tide });
     EXPECT_EQ(accent::Current(), accent::Preset(Choice::Tide));
 }
 
@@ -152,7 +158,7 @@ TEST(Accent, SavedWithTheOtherPreferences)
 {
     TempDir dir;
     const auto ini = dir / L"settings.ini";
-    // No file, or no key: Tide, and no colour of your own.
+    // No file, or no key: the Windows accent, and no colour of your own.
     EXPECT_EQ(LoadPreferences(dir / L"missing.ini").accent, accent::Setting{});
     WriteText(ini, "[Appearance]\r\nTheme=dark\r\nPanelSize=160\r\n");
     EXPECT_EQ(LoadPreferences(ini).accent, accent::Setting{});
@@ -189,7 +195,7 @@ TEST(Accent, SavedWithTheOtherPreferences)
     EXPECT_EQ(LoadPreferences(ini).accent.choice, Choice::Graphite);
 }
 
-TEST(Accent, BadValuesFallBackToTide)
+TEST(Accent, BadValuesFallBackToWindows)
 {
     TempDir dir;
     const auto ini = dir / L"settings.ini";
@@ -208,6 +214,6 @@ TEST(Accent, BadValuesFallBackToTide)
     // A bad colour of your own leaves a preset as it is.
     EXPECT_EQ(load("Accent=blue\r\nAccentCustom=nope\r\n"), accent::Setting{ Choice::Blue });
     // The other choices read on as before.
-    EXPECT_EQ(load("Accent=teal\r\nTheme=light\r\n").choice, Choice::Tide);
+    EXPECT_EQ(load("Accent=teal\r\nTheme=light\r\n").choice, Choice::Windows);
     EXPECT_EQ(LoadPreferences(ini).theme, ThemeChoice::Light);
 }
