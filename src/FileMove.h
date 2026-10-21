@@ -35,4 +35,17 @@ namespace sd
 
     // True when a history run was a move (its undo moves items back instead of recycling them).
     bool IsMoveRun(const RunRecord& run);
+
+    // "Rename…" on the File-actions wheel (rename/RenameWindow.h asks for the names, from
+    // rename/RenamePattern.h). Each item gets its new name in its own folder, through IFileOperation
+    // like Move, with FOF_RENAMEONCOLLISION: the names were checked first, and a name taken in the
+    // meantime gets "(2)" rather than replacing anything. Recorded as one history run, which Undo
+    // puts back like a move. STA thread only.
+    struct Rename
+    {
+        std::wstring from;   // full path
+        std::wstring to;     // full path, same folder
+    };
+    std::vector<MoveOutcome> RenameItems(const Recipe& recipe, const std::vector<Rename>& renames, HistoryStore* history, int64_t& runId);
+    bool IsRenameRun(const RunRecord& run);
 }

@@ -79,6 +79,7 @@ namespace sd
         m_actions.push_back(ActionDescriptor{ "file.copy_path", L"Copy path", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.terminal", L"Terminal", StepKind::FileAction, {} });
         m_actions.push_back(ActionDescriptor{ "file.duplicate", L"Duplicate", StepKind::FileAction, {} });
+        m_actions.push_back(ActionDescriptor{ "file.rename", L"Rename", StepKind::FileAction, {} });
         std::vector<std::string> mediaIds;
         for (const auto& f : MediaFormats())
             mediaIds.emplace_back(f.id);

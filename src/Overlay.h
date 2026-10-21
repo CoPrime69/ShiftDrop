@@ -1,4 +1,5 @@
 #pragma once
+#include "Accessibility.h"
 #include "Canvas.h"
 #include "DropTarget.h"
 #include "HiddenCursor.h"
@@ -83,7 +84,9 @@ namespace sd
     //
     // Besides a drag, the wheel opens in "click mode" on files given to it (Explorer's selection, the
     // right-click entry): hover or arrows to pick, click or Enter to run, Esc or a click outside to close.
-    class Overlay final : public IDropSink
+    //
+    // Screen readers see it as a list of its slices and hear the slice under the cursor (Accessibility.h).
+    class Overlay final : public IDropSink, private a11y::WheelView
     {
     public:
         using ContentProvider = std::function<WheelContent(const std::vector<std::wstring>& files, int ring)>;
@@ -172,6 +175,14 @@ namespace sd
         void Animate();
         void NotifyHidden();
 
+        // a11y::WheelView
+        bool ViewOpen() const override { return m_mode == Mode::Wheel; }
+        std::wstring ViewTitle() const override;
+        size_t ViewCount() const override { return m_shown.size(); }
+        Slice ViewSlice(size_t index) const override;
+        int ViewHighlighted() const override;
+        int ViewSliceAt(POINT screen) const override;
+
         bool EnsureTextFormats();
         Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeFormat(const std::wstring& family, float dip, DWRITE_FONT_WEIGHT weight) const;
         void Render();
@@ -193,6 +204,7 @@ namespace sd
         wil::unique_hwnd m_hwnd;
         Microsoft::WRL::ComPtr<DropTarget> m_dropTarget;
         bool m_registered = false;
+        std::unique_ptr<a11y::WheelElement> m_a11y;   // the wheel as UI Automation sees it
 
         Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
         Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;

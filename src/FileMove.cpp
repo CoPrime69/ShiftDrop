@@ -64,8 +64,9 @@ namespace sd
         }
 
         // Collects where each item ended up. With FOF_RENAMEONCOLLISION the shell may pick "name (2)",
-        // and PostMoveItem is the only place that reports the final name. For folders moved across drives
-        // it is also called for every file inside; the caller keeps only the top-level items it asked for.
+        // and PostMoveItem (PostRenameItem for a rename) is the only place that reports the final name.
+        // For folders moved across drives it is also called for every file inside; the caller keeps only
+        // the top-level items it asked for.
         class MoveSink final : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IFileOperationProgressSink>
         {
         public:
@@ -85,8 +86,13 @@ namespace sd
 
             IFACEMETHODIMP StartOperations() override { return S_OK; }
             IFACEMETHODIMP FinishOperations(HRESULT) override { return S_OK; }
+            IFACEMETHODIMP PostRenameItem(DWORD, IShellItem* item, LPCWSTR, HRESULT hrRename, IShellItem* created) override
+            {
+                entries.push_back(Entry{ PathOf(item), PathOf(created), hrRename });
+                return S_OK;
+            }
+
             IFACEMETHODIMP PreRenameItem(DWORD, IShellItem*, LPCWSTR) override { return S_OK; }
-            IFACEMETHODIMP PostRenameItem(DWORD, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override { return S_OK; }
             IFACEMETHODIMP PreMoveItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
             IFACEMETHODIMP PreCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR) override { return S_OK; }
             IFACEMETHODIMP PostCopyItem(DWORD, IShellItem*, IShellItem*, LPCWSTR, HRESULT, IShellItem*) override { return S_OK; }
@@ -268,12 +274,125 @@ namespace sd
         return outcomes;
     }
 
+    namespace
+    {
+        // The action of a run's one-step recipe ("file.move"), or empty.
+        std::string RunAction(const RunRecord& run)
+        {
+            const auto json = nlohmann::json::parse(run.recipeJson, nullptr, false);
+            if (json.is_discarded() || !json.contains("steps") || !json["steps"].is_array() || json["steps"].size() != 1)
+                return {};
+            const auto& step = json["steps"][0];
+            return step.is_object() ? step.value("action", std::string{}) : std::string{};
+        }
+    }
+
     bool IsMoveRun(const RunRecord& run)
     {
-        const auto json = nlohmann::json::parse(run.recipeJson, nullptr, false);
-        if (json.is_discarded() || !json.contains("steps") || !json["steps"].is_array() || json["steps"].size() != 1)
-            return false;
-        const auto& step = json["steps"][0];
-        return step.is_object() && step.value("action", std::string{}) == "file.move";
+        return RunAction(run) == "file.move";
+    }
+
+    bool IsRenameRun(const RunRecord& run)
+    {
+        return RunAction(run) == "file.rename";
+    }
+
+    std::vector<MoveOutcome> RenameItems(const Recipe& recipe, const std::vector<Rename>& renames, HistoryStore* history, int64_t& runId)
+    {
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<MoveOutcome> outcomes(renames.size());
+        std::vector<int64_t> itemIds(renames.size(), 0);
+        std::vector<std::wstring> longSources(renames.size());
+        runId = history ? history->BeginRun(recipe, static_cast<int>(renames.size())) : 0;
+
+        ComPtr<IFileOperation> op;
+        HRESULT hr = CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&op));
+        if (SUCCEEDED(hr))
+            hr = op->SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOERRORUI | FOF_SILENT);
+
+        size_t queued = 0;
+        for (size_t i = 0; i < renames.size(); ++i)
+        {
+            auto& out = outcomes[i];
+            out.source = renames[i].from;
+            if (history)
+                itemIds[i] = history->BeginItem(runId, out.source, L"");
+            longSources[i] = LongPath(out.source);
+            const std::filesystem::path to(renames[i].to);
+            if (renames[i].to == renames[i].from)
+            {
+                out.skipped = true;
+                out.error = L"the name stays the same";
+                continue;
+            }
+            if (!SamePath(to.parent_path().wstring(), std::filesystem::path(renames[i].from).parent_path().wstring()))
+            {
+                out.error = L"a new name can't move it to another folder";
+                continue;
+            }
+            if (FAILED(hr))
+            {
+                out.error = HrText(hr);
+                continue;
+            }
+            ComPtr<IShellItem> item;
+            const HRESULT itemHr = SHCreateItemFromParsingName(out.source.c_str(), nullptr, IID_PPV_ARGS(&item));
+            if (SUCCEEDED(itemHr) && SUCCEEDED(op->RenameItem(item.Get(), to.filename().c_str(), nullptr)))
+                ++queued;
+            else
+                out.error = HrText(FAILED(itemHr) ? itemHr : E_FAIL);
+        }
+
+        if (queued > 0)
+        {
+            auto sink = Microsoft::WRL::Make<MoveSink>();
+            DWORD cookie = 0;
+            const bool advised = sink && SUCCEEDED(op->Advise(sink.Get(), &cookie));
+            const HRESULT performed = op->PerformOperations();
+            if (advised)
+                op->Unadvise(cookie);
+            for (size_t i = 0; i < outcomes.size(); ++i)
+            {
+                auto& out = outcomes[i];
+                if (out.skipped || !out.error.empty())
+                    continue;
+                bool reported = false;
+                for (const auto& e : sink ? sink->entries : std::vector<MoveSink::Entry>{})
+                {
+                    if (!SamePath(e.source, longSources[i]) && !SamePath(e.source, out.source))
+                        continue;
+                    reported = true;
+                    if (SUCCEEDED(e.hr) && !e.destination.empty())
+                    {
+                        out.ok = true;
+                        out.destination = e.destination;
+                    }
+                    else
+                    {
+                        out.error = HrText(FAILED(e.hr) ? e.hr : E_FAIL);
+                    }
+                }
+                if (!reported)
+                    out.error = HrText(FAILED(performed) ? performed : HRESULT_FROM_WIN32(ERROR_CANCELLED));
+            }
+        }
+
+        const auto ms = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
+        for (size_t i = 0; i < outcomes.size(); ++i)
+        {
+            const auto& out = outcomes[i];
+            if (out.ok)
+                log::Info(L"rename: {} -> {}", out.source, std::filesystem::path(out.destination).filename().wstring());
+            else
+                log::Warn(L"rename: {} {}: {}", out.source, out.skipped ? L"skipped" : L"failed", out.error);
+            // No hash, as for a move: undoing a rename only renames back, so an edited file is fine.
+            if (history)
+                history->FinishItem(itemIds[i], out.ok ? status::Done : out.skipped ? status::Skipped : status::Failed, out.destination, 0, "",
+                                    out.error, ms);
+        }
+        if (history)
+            history->FinishRun(runId);
+        return outcomes;
     }
 }
