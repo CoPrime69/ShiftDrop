@@ -36,10 +36,16 @@ namespace sd::audiotools
     };
     // The JSON block loudnorm prints at the end of a run with print_format=json (the last one in the log).
     std::optional<Loudness> ParseLoudnorm(const std::vector<std::string>& log);
+    // The summary ebur128 prints at the end of a run (integrated loudness, its gate, loudness range
+    // and true peak) as the input_* values; the output_* values stay 0.
+    std::optional<Loudness> ParseEbur128(const std::vector<std::string>& log);
 
-    // Pass 1 measures; pass 2 applies the measured values linearly (one gain for the whole file)
-    // when the true peak allows it, and loudnorm limits peaks dynamically only when it must.
+    // Pass 1 measures with ebur128 (BS.1770, true peak oversampled 4x): the numbers loudnorm's own
+    // measuring pass gives, about four times faster, since loudnorm works at 192 kHz. Pass 2 applies
+    // one gain for the whole file when the true peak allows it (a plain volume change, which is what
+    // loudnorm's linear mode does), and loudnorm limits peaks dynamically only when it must.
     std::wstring MeasureFilter(const LoudnessTarget& target);
+    bool IsLinear(const LoudnessTarget& target, const Loudness& measured);
     std::wstring ApplyFilter(const LoudnessTarget& target, const Loudness& measured);
     std::vector<std::wstring> MeasureArgs(const std::wstring& input, const LoudnessTarget& target);
     std::vector<std::wstring> NormalizeArgs(const std::wstring& input, const std::wstring& lowerExtension, const ProbeInfo& info,

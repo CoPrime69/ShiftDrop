@@ -97,15 +97,74 @@ namespace sd::audiotools
         return l;
     }
 
-    std::wstring MeasureFilter(const LoudnessTarget& t)
+    std::optional<Loudness> ParseEbur128(const std::vector<std::string>& log)
     {
-        return std::format(L"loudnorm=I={}:TP={}:LRA={}:print_format=json", Num(t.integrated), Num(t.truePeak), Num(t.range));
+        // The summary looks like:  "... Summary:", "  Integrated loudness:", "    I:  -19.8 LUFS",
+        // "    Threshold: -30.0 LUFS", "  Loudness range:", "    LRA:  4.5 LU", "    Threshold: ...",
+        // "  True peak:", "    Peak:  -2.3 dBFS". Only the last summary counts.
+        size_t start = log.size();
+        for (size_t i = 0; i < log.size(); ++i)
+            if (log[i].find("Summary:") != std::string::npos)
+                start = i;
+        const auto value = [](std::string_view line, std::string_view key, double& out) {
+            const auto at = line.find(key);
+            if (at == std::string_view::npos)
+                return false;
+            auto rest = line.substr(at + key.size());
+            while (!rest.empty() && rest.front() == ' ')
+                rest.remove_prefix(1);
+            if (rest.starts_with("-inf"))
+            {
+                out = -99;
+                return true;
+            }
+            return ParseNumber(rest.substr(0, rest.find(' ')), out);
+        };
+        Loudness l;
+        bool haveI = false;
+        char section = 0;   // 'I', 'R' (range) or 'P' (true peak)
+        for (size_t i = start + 1; i < log.size(); ++i)
+        {
+            const std::string_view line = log[i];
+            if (line.find("Integrated loudness:") != std::string_view::npos)
+                section = 'I';
+            else if (line.find("Loudness range:") != std::string_view::npos)
+                section = 'R';
+            else if (line.find("True peak:") != std::string_view::npos)
+                section = 'P';
+            else if (section == 'I' && value(line, "I:", l.inputI))
+                haveI = true;
+            else if (section == 'I')
+                value(line, "Threshold:", l.inputThresh);
+            else if (section == 'R')
+                value(line, "LRA:", l.inputLRA);
+            else if (section == 'P')
+                value(line, "Peak:", l.inputTP);
+        }
+        if (!haveI)
+            return std::nullopt;
+        l.silent = l.inputI <= -70;   // ebur128's floor: nothing passed the absolute gate
+        return l;
+    }
+
+    std::wstring MeasureFilter(const LoudnessTarget&)
+    {
+        return L"ebur128=peak=true:framelog=quiet";
+    }
+
+    bool IsLinear(const LoudnessTarget& t, const Loudness& m)
+    {
+        // loudnorm's own rule for its linear mode: the gain must not lift the true peak over the target.
+        return m.inputTP + (t.integrated - m.inputI) <= t.truePeak;
     }
 
     std::wstring ApplyFilter(const LoudnessTarget& t, const Loudness& m)
     {
-        // linear=true only works when the allowed range covers the measured one; widening the range to
-        // the measured one keeps the music's dynamics untouched (one gain for the whole file).
+        if (IsLinear(t, m))
+            return std::format(L"volume={}dB", Num(std::round((t.integrated - m.inputI) * 100) / 100));
+        // The peaks would go over: loudnorm limits them. linear=true only works when the allowed range
+        // covers the measured one; widening the range to the measured one keeps the music's dynamics
+        // as untouched as the peaks allow.
         const double lra = std::clamp(std::max(t.range, std::ceil(m.inputLRA * 10 + 1) / 10), 1.0, 50.0);
         return std::format(L"loudnorm=I={}:TP={}:LRA={}:measured_I={}:measured_TP={}:measured_LRA={}:measured_thresh={}:offset={}:linear=true:print_format=json",
                            Num(t.integrated), Num(t.truePeak), Num(lra), Num(std::clamp(m.inputI, -99.0, 0.0)), Num(std::clamp(m.inputTP, -99.0, 99.0)),
