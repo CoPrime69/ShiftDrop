@@ -26,7 +26,8 @@ namespace sd::videotools
                          ParamSpec{ "width", ParamType::Int, 0, 8192, {}, 0 }, ParamSpec{ "height", ParamType::Int, 0, 8192, {}, 0 }, ask() } });
         registry.Add({ "video.speed", L"Change video speed", StepKind::Engine,
                        { ParamSpec{ "factor", ParamType::Number, kMinSpeed, kMaxSpeed, {}, 2.0 }, ask() } });
-        registry.Add({ "video.join", L"Join videos", StepKind::Engine, { ask() } });
+        registry.Add({ "video.join", L"Join videos", StepKind::Engine,
+                       { ParamSpec{ "fit", ParamType::Enum, 0, 0, { "fit", "fill" }, "fit" }, ask() } });
         registry.Add({ "video.frames", L"Save video frames", StepKind::Engine, {} });
         registry.Add({ "video.split", L"Split video", StepKind::Engine,
                        { ParamSpec{ "mode", ParamType::Enum, 0, 0, { "exact", "fast" }, "exact" }, ParamSpec{ "parts", ParamType::Int, 0, 100, {}, 0 },
@@ -318,7 +319,8 @@ namespace sd::videotools
         {
             const H264Encoder h264 = s.ffmpeg->H264();
             log::Info(L"video: join {} clips, encoded with {}", sources.size(), EncoderName(h264));
-            r = s.ffmpeg->Run(JoinEncodeArgs(sources, clips, h264, out.Path()), progress, stop, nullptr, total);
+            const bool fill = recipe.steps[0].params.value("fit", std::string("fit")) == "fill";
+            r = s.ffmpeg->Run(JoinEncodeArgs(sources, clips, h264, out.Path(), fill), progress, stop, nullptr, total);
         }
         if (!r.ok)
             return out.Fail(r.error, r.cancelled);

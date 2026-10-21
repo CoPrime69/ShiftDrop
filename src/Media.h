@@ -59,10 +59,15 @@ namespace sd
         bool copyAudio = false;
         bool hevc = false;        // copied video is HEVC (MP4/MOV tag it hvc1)
         bool hwDecode = false;    // decode on the GPU as well (-hwaccel auto, falls back by itself)
+        int64_t videoBps = 0;     // > 0: encode the video at this average bitrate instead of a quality
     };
     MediaPlan PlanConversion(const MediaFormatInfo& format, const MediaInfo& info, H264Encoder h264);
     // The fallback when copying failed (a stream the container refused): re-encode everything.
     MediaPlan TranscodePlan(const MediaPlan& plan);
+    // A video Convert never comes out bigger than its source: when the quality setting overshoots,
+    // it runs again at `share` of the source's own bitrate, less room for the sound when it has any.
+    // 0 when the length is unknown.
+    int64_t CapVideoBps(int64_t sourceBytes, int64_t durationUs, double share, bool hasAudio);
 
     // ffmpeg's input options (before -i) and output options (codecs, quality, filters and the muxer,
     // named with -f because the staging file's extension is ".sdpart") for a plan.

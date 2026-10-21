@@ -268,6 +268,12 @@ namespace sd
         return slot >= 0 && slot < static_cast<int>(m_shown.size()) && m_shown[static_cast<size_t>(slot)].enabled;
     }
 
+    bool Overlay::Explains(int slot) const
+    {
+        return slot >= 0 && slot < static_cast<int>(m_shown.size()) && !m_shown[static_cast<size_t>(slot)].enabled &&
+               !m_shown[static_cast<size_t>(slot)].detail.empty();
+    }
+
     // ---- Showing, hiding, switching -------------------------------------------------------------
 
     void Overlay::ShowProbe(POINT screenPt, int ring)
@@ -310,7 +316,8 @@ namespace sd
         KillTimer(m_hwnd.get(), kTimerMore);
         m_announced = false;
         m_hot = kCenter;
-        m_detail = -1;
+        m_detail = m_why = -1;
+        m_whyT = 0.f;
         m_scrollAccum = 0;
         m_files.clear();
         m_content = {};
@@ -455,7 +462,8 @@ namespace sd
         m_prevShown = m_shown;
         m_content = m_provider ? m_provider(m_files, m_ring) : WheelContent{};
         Arrange(0);
-        m_detail = -1;
+        m_detail = m_why = -1;
+        m_whyT = 0.f;
         m_switchDir = direction;
         m_switchT = m_motion ? 0.f : 1.f;
         // A keyboard user lands on the new wheel's first slice; a mouse user on whatever is under the cursor.
@@ -473,6 +481,8 @@ namespace sd
         }
         if (Selectable(m_hot))
             m_detail = m_hot;
+        else if (Explains(m_hot))
+            m_why = m_hot;
         KillTimer(m_hwnd.get(), kTimerMore);
         Animate();
         NotifyHighlight();
@@ -485,7 +495,8 @@ namespace sd
         m_prevLayout = m_layout;
         m_prevShown = m_shown;
         Arrange(m_layout.page + 1);
-        m_detail = -1;
+        m_detail = m_why = -1;
+        m_whyT = 0.f;
         m_switchDir = 1;
         m_switchT = m_motion ? 0.f : 1.f;
         // Enter on "More" keeps the highlight on "More", so Enter again turns the next page.
@@ -496,6 +507,8 @@ namespace sd
         m_hot = m_keyHot ? more : PointerSlot(m_lastPt);
         if (Selectable(m_hot))
             m_detail = m_hot;
+        else if (Explains(m_hot))
+            m_why = m_hot;
         log::Info(L"overlay: page {} of {}", m_layout.page + 1, m_layout.pages);
         // Still dwelling on "More" during a drag: keep turning.
         if (!m_click && !m_keyHot && m_layout.IsMore(m_hot))
@@ -517,6 +530,7 @@ namespace sd
             m_openT = m_switchT = 1.f;
             for (size_t i = 0; i < m_hotT.size(); ++i)
                 m_hotT[i] = static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f;
+            m_whyT = m_hot == m_why && Explains(m_hot) ? 1.f : 0.f;
             Render();
             return;
         }
@@ -546,6 +560,10 @@ namespace sd
             if (std::abs(target - m_hotT[i]) < 0.004f)
                 m_hotT[i] = target;
         }
+        const float whyTarget = m_hot == m_why && Explains(m_hot) ? 1.f : 0.f;
+        m_whyT += (whyTarget - m_whyT) * k;
+        if (std::abs(whyTarget - m_whyT) < 0.004f)
+            m_whyT = whyTarget;
         m_away += (m_awayTarget - m_away) * (1.f - std::exp(-dt / kAwayTauMs));
         if (std::abs(m_awayTarget - m_away) < 0.004f)
             m_away = m_awayTarget;
@@ -582,7 +600,7 @@ namespace sd
         for (size_t i = 0; i < m_hotT.size(); ++i)
             if (m_hotT[i] != (static_cast<int>(i) == m_hot && Selectable(m_hot) ? 1.f : 0.f))
                 return false;
-        return true;
+        return m_whyT == (m_hot == m_why && Explains(m_hot) ? 1.f : 0.f);
     }
 
     // ---- Hit-testing and drag events -------------------------------------------------------------
@@ -616,6 +634,8 @@ namespace sd
         m_hot = hot;
         if (Selectable(hot))
             m_detail = hot;
+        else if (Explains(hot))
+            m_why = hot;
         // Holding a drag over "More" turns the page; clicks and keys turn it at once instead.
         if (!byKey && !m_click && m_layout.IsMore(hot))
             SetTimer(m_hwnd.get(), kTimerMore, kMoreDwellMs, nullptr);
@@ -1116,8 +1136,12 @@ namespace sd
             std::wstring title = m_rings[static_cast<size_t>(m_ring)].title;
             for (auto& ch : title)
                 ch = static_cast<wchar_t>(towupper(ch));
-            Text(title, m_ringFont.Get(), lower, m_palette.text, 0.62f * (1.f - detailT));
+            Text(title, m_ringFont.Get(), lower, m_palette.text, 0.62f * (1.f - std::max(detailT, m_whyT)));
         }
+        // A dimmed slice says why it can't be used ("Needs HEIF Image Extensions").
+        if (m_whyT > 0.f && m_why >= 0 && static_cast<size_t>(m_why) < m_shown.size())
+            Text(m_shown[static_cast<size_t>(m_why)].detail, m_detailFont.Get(),
+                 D2D1::RectF(lower.left, lower.top - 1.f * s, lower.right, lower.bottom + 12.f * s), m_palette.text, 0.85f * m_whyT);
         if (detailT > 0.f && m_detail >= 0 && static_cast<size_t>(m_detail) < m_shown.size())
         {
             const auto& slice = m_shown[static_cast<size_t>(m_detail)];
