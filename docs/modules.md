@@ -17,7 +17,8 @@ in one place, so features can be built side by side without touching each other.
     point like `"E7AD"`). Ids are unique across the app; prefix them with the area when in doubt.
   - `makeEngine` returns the module's `IEngine`.
 - **Engine:** `Handles`, `Applies`, `Accepts`, `IsNoOp`, `Lane`, then either `Run` (one output per
-  file) or `IsBatch` + `RunBatch` (one output from all files). Tools that need the user first
+  file) or `IsBatch` + `RunBatch` (one output from all files). `AppliesToDrop` hides a slice for
+  a drop of the wrong size (a collage needs two pictures). Tools that need the user first
   (a trim range, a crop box) return true from `NeedsEditor` and open their own window in
   `OpenEditor` on the UI thread, then call `done` with the chosen params.
 - **Outputs:** always through `StagedOutput` ([src/StagedOutput.h](../src/StagedOutput.h)): a

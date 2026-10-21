@@ -232,6 +232,20 @@ namespace sd::canvas
                 if (index < m_files.size() && index != m_index && m_tool->PerFile())
                     Load(index);
             }
+            bool PickImage(std::wstring& path) override
+            {
+                wchar_t name[MAX_PATH * 4] = L"";
+                OPENFILENAMEW ofn{ sizeof(ofn) };
+                ofn.hwndOwner = Hwnd();
+                ofn.lpstrFilter = L"Pictures\0*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.heic;*.heif;*.avif;*.ico\0All files\0*.*\0";
+                ofn.lpstrFile = name;
+                ofn.nMaxFile = static_cast<DWORD>(std::size(name));
+                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+                if (!GetOpenFileNameW(&ofn))
+                    return false;
+                path = name;
+                return true;
+            }
 
         private:
             enum class Mode { Prepass, Editor };
@@ -360,6 +374,8 @@ namespace sd::canvas
             {
                 if (!m_full)
                     return {};
+                if (const auto* preview = m_tool->Preview())
+                    return preview->Size();
                 const auto rot = m_tool->Rotation();
                 return (rot.quarterTurns & 1) ? SizeD{ double(m_full->height), double(m_full->width) } : SizeD{ double(m_full->width), double(m_full->height) };
             }
@@ -471,8 +487,80 @@ namespace sd::canvas
                 DrawButtons(rt);
             }
 
+            // A tool's own result (IPreview): rendered into a bitmap on a second device context of
+            // the window's Direct2D device (resources are shared between a device's contexts), at
+            // about the screen's resolution for the current zoom, and redrawn only when the tool's
+            // revision or that resolution changes.
+            bool PaintPreview(ID2D1RenderTarget* rt, IPreview& preview)
+            {
+                ComPtr<ID2D1DeviceContext> windowDc;
+                if (FAILED(rt->QueryInterface(IID_PPV_ARGS(&windowDc))))
+                    return false;
+                if (!m_previewDc || m_previewGeneration != DeviceGeneration())
+                {
+                    m_previewDc.Reset();
+                    m_previewTarget.Reset();
+                    ComPtr<ID2D1Device> device;
+                    windowDc->GetDevice(&device);
+                    if (!device || FAILED(device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_previewDc)))
+                        return false;
+                    m_previewDc->SetDpi(96.f, 96.f);
+                    m_previewGeneration = DeviceGeneration();
+                    m_previewFailed = false;
+                }
+                if (m_previewFailed)
+                    return false;
+                const SizeD size = preview.Size();
+                if (size.w < 1 || size.h < 1)
+                    return false;
+                // Screen pixels per result pixel, rounded up to a power of two so zooming doesn't
+                // re-render on every notch; never more than the result itself or the bitmap limit.
+                const double needed = m_view.Zoom() * Scale();
+                double scale = std::min(1.0, std::exp2(std::ceil(std::log2(std::max(needed, 1.0 / 64)))));
+                const double limit = std::min<double>(kPreviewEdge, m_previewDc->GetMaximumBitmapSize());
+                scale = std::min(scale, limit / std::max(size.w, size.h));
+                const UINT w = std::max(1u, static_cast<UINT>(std::ceil(size.w * scale)));
+                const UINT h = std::max(1u, static_cast<UINT>(std::ceil(size.h * scale)));
+                if (!m_previewTarget || m_previewRevision != preview.Revision() || m_previewScale != scale)
+                {
+                    const auto px = m_previewTarget ? m_previewTarget->GetPixelSize() : D2D1_SIZE_U{};
+                    if (px.width != w || px.height != h)
+                    {
+                        m_previewTarget.Reset();
+                        const auto props = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET,
+                                                                   D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96.f, 96.f);
+                        if (FAILED(m_previewDc->CreateBitmap(D2D1::SizeU(w, h), nullptr, 0, props, &m_previewTarget)))
+                            return false;
+                    }
+                    m_previewDc->SetTarget(m_previewTarget.Get());
+                    m_previewDc->BeginDraw();
+                    m_previewDc->SetTransform(D2D1::Matrix3x2F::Identity());
+                    m_previewDc->Clear(D2D1::ColorF(0, 0, 0, 0));
+                    const bool drawn = preview.Render(m_previewDc.Get(), scale, DeviceGeneration());
+                    const HRESULT hr = m_previewDc->EndDraw();
+                    m_previewDc->SetTarget(nullptr);   // a bitmap can't be drawn while it is a target
+                    if (FAILED(hr) || !drawn)
+                    {
+                        if (FAILED(hr))
+                            log::Warn(L"editor: the preview could not be drawn (0x{:08X})", static_cast<unsigned>(hr));
+                        m_previewFailed = FAILED(hr);
+                        m_previewTarget.Reset();
+                        return false;
+                    }
+                    m_previewRevision = preview.Revision();
+                    m_previewScale = scale;
+                }
+                Pixels shape;
+                shape.width = w;
+                shape.height = h;
+                DrawPictureBitmap(rt, m_previewTarget.Get(), PictureTransform(1.0 / scale), shape, 1.0 / scale);
+                return true;
+            }
+
             void PaintPicture(ID2D1RenderTarget* rt)
             {
+                if (auto* preview = m_tool->Preview(); preview && PaintPreview(rt, *preview))
+                    return;
                 if (!m_picture || m_pictureGeneration != DeviceGeneration())
                 {
                     m_picture = MakeBitmap(rt, m_preview);
@@ -1413,6 +1501,14 @@ namespace sd::canvas
                         }
                         return true;
                     }
+                    if (m_tool->TextInput())
+                    {
+                        // Typed text (Enter, Esc, Tab and Backspace arrive as keys instead).
+                        const wchar_t ch = static_cast<wchar_t>(wParam);
+                        if (ch >= 0x20 && ch != 0x7F && !Ctrl())
+                            Handle(m_tool->Char(ch));
+                        return true;
+                    }
                     return false;
                 case WM_KEYDOWN:
                     OnKey(static_cast<UINT>(wParam));
@@ -1447,6 +1543,12 @@ namespace sd::canvas
                 const bool ctrl = Ctrl(), shift = Shift();
                 const auto canvas = CanvasRect(ClientDip());
                 const PointD centre{ (canvas.left + canvas.right) / 2, (canvas.top + canvas.bottom) / 2 };
+                // A tool taking typed text gets the keys first (Enter ends the text, not the editor).
+                if (m_tool->TextInput() && !(ctrl && (vk == 'Z' || vk == 'Y' || vk == '0' || vk == '1' || vk == VK_OEM_PLUS || vk == VK_OEM_MINUS)))
+                {
+                    Handle(m_tool->Key(vk, shift, ctrl));
+                    return;
+                }
                 switch (vk)
                 {
                 case VK_RETURN:
@@ -1644,6 +1746,12 @@ namespace sd::canvas
             std::wstring m_loadError;
             ComPtr<ID2D1Bitmap> m_picture;
             unsigned m_pictureGeneration = 0;
+            ComPtr<ID2D1DeviceContext> m_previewDc;   // IPreview rendering
+            ComPtr<ID2D1Bitmap1> m_previewTarget;
+            unsigned m_previewGeneration = 0;
+            uint64_t m_previewRevision = 0;
+            double m_previewScale = 0;
+            bool m_previewFailed = false;
             ComPtr<ID2D1BitmapBrush> m_checker;
             unsigned m_checkerGeneration = 0;
             Pixels m_layers[2];
