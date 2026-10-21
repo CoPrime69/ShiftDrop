@@ -13,7 +13,7 @@ namespace sd::share
 
     namespace
     {
-        // Share (Alt wheel). The share sheet belongs to a window on the UI thread, which is exactly
+        // Share (File actions wheel). The share sheet belongs to a window on the UI thread, which is exactly
         // what an engine "editor" gets, so it opens from OpenEditor and nothing runs on a worker.
         // Only when the sheet cannot open does the batch run, to put the reason in the top panel.
         class ShareEngine final : public IEngine
