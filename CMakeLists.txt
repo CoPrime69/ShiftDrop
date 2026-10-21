@@ -69,6 +69,7 @@ add_library(shiftdrop_core STATIC
   src/Startup.cpp
   src/Undo.cpp
   src/VirtualDrop.cpp
+  src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern (M12)
   # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -248,6 +249,7 @@ add_executable(ShiftDrop WIN32
   src/Tray.cpp
   src/HistoryWindow.cpp
   src/SettingsWindow.cpp
+  src/rename/RenameWindow.cpp
   src/keyboard/ExplorerSelection.cpp
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
@@ -326,6 +328,7 @@ if(SHIFTDROP_TESTS)
     tests/FramesTests.cpp
     tests/PhotoTests.cpp
     tests/FileActionsTests.cpp
+    tests/RenameTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).

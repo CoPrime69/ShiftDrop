@@ -56,7 +56,8 @@ namespace sd
   { "id": "move",      "label": "Move to\u2026", "description": "Move to a folder you pick", "ring": "files", "steps": [ { "action": "file.move" } ] },
   { "id": "copy-path", "label": "Copy path", "description": "Copy the full path", "ring": "files", "steps": [ { "action": "file.copy_path" } ] },
   { "id": "terminal",  "label": "Terminal",  "description": "Open a terminal here", "ring": "files", "steps": [ { "action": "file.terminal" } ] },
-  { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] }
+  { "id": "duplicate", "label": "Duplicate", "description": "Make a copy next to it", "ring": "files", "suffix": "copy", "steps": [ { "action": "file.duplicate" } ] },
+  { "id": "rename",    "label": "Rename\u2026", "description": "Rename with a pattern: {name}, {n}, {date}", "ring": "files", "steps": [ { "action": "file.rename" } ] }
 ])");
         // Video and audio formats (M3), one Convert slice each, in MediaFormats() order. They share the
         // Convert wheel with the image formats; the wheel shows only those that fit the dragged files.

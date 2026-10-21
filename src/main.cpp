@@ -6,7 +6,7 @@
 //   workers      JobQueue threads (MTA) that run recipes and PostMessage results back
 //   media worker one JobQueue thread for video and audio: ffmpeg already uses every core, so files
 //                go one at a time (each in its own ffmpeg process, see Ffmpeg.h)
-//   shell worker one STA thread for IFileOperation work (Move to…)
+//   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
 #include "Brand.h"
 #include "DropTarget.h"
@@ -40,6 +40,7 @@
 #include "Features.h"
 #include "SettingsWindow.h"
 #include "ocr/Ocr.h"
+#include "rename/RenameWindow.h"
 #include "shelf/ShelfWindow.h"
 
 #include <windows.h>
@@ -68,7 +69,7 @@ namespace sd
         constexpr size_t kMaxSlices = 60;            // two rings hold 16; past that the wheel pages (keyboard/WheelLayout.h)
 
         // What a finished batch is called in its notification.
-        enum class BatchKind { Convert, Tools, Duplicate, Move };
+        enum class BatchKind { Convert, Tools, Duplicate, Move, Rename };
 
         struct FileOutcome
         {
@@ -186,6 +187,7 @@ namespace sd
             if (a == "file.copy_path") return { 0xE71B };          // Link
             if (a == "file.terminal") return { 0xE756 };           // CommandPrompt
             if (a == "file.duplicate") return { 0xE8A5 };          // Document
+            if (a == "file.rename") return { 0xE8AC };             // Rename
             return { 0xE9F5 };                                     // Processing (a generic recipe)
         }
 
@@ -332,6 +334,7 @@ namespace sd
                     SavePreferences(m_preferences);
                     ApplyPreferences();
                 });
+            m_renameWindow = std::make_unique<RenameWindow>(m_instance);
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
@@ -398,6 +401,8 @@ namespace sd
                 if (m_historyWindow && m_historyWindow->PreTranslate(m))
                     continue;
                 if (m_settingsWindow && m_settingsWindow->PreTranslate(m))
+                    continue;
+                if (m_renameWindow && m_renameWindow->PreTranslate(m))
                     continue;
                 TranslateMessage(&m);
                 DispatchMessageW(&m);
@@ -1153,6 +1158,12 @@ namespace sd
                     StartMove(*recipe, std::move(drop.files), drop.virtualDrop != nullptr);
                     return;
                 }
+                if (action == "file.rename")
+                {
+                    m_island->HideSwitcher();   // the Rename window comes first
+                    StartRename(*recipe, std::move(drop.files));
+                    return;
+                }
                 if (action != "file.duplicate")
                 {
                     // Copy, Copy path, Terminal: instant, nothing written to disk, so no history.
@@ -1322,6 +1333,35 @@ namespace sd
             });
         }
 
+        // The Rename window asks for the names; they are then given on the shell thread, as one undoable
+        // history run.
+        void StartRename(const Recipe& recipe, std::vector<std::wstring> files)
+        {
+            m_renameWindow->Show(std::move(files), [this, recipe](std::vector<Rename> renames) {
+                const uint64_t token = m_islandBatch = m_nextBatch++;
+                m_island->ShowProgress(std::format(L"Renaming {}\u2026", Count(renames.size(), L"item")), renames.size());
+                m_shellJobs->Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token](std::stop_token) {
+                    int64_t runId = 0;
+                    const auto outcomes = RenameItems(recipe, renames, history, runId);
+                    auto done = std::make_unique<BatchResult>();
+                    done->kind = BatchKind::Rename;
+                    done->label = recipe.label;
+                    done->runId = runId;
+                    done->token = token;
+                    for (const auto& o : outcomes)
+                    {
+                        ItemResult r;
+                        r.ok = o.ok;
+                        r.skipped = o.skipped;
+                        r.output = o.destination;
+                        r.error = o.error;
+                        done->files.push_back(FileOutcome{ o.source, std::move(r) });
+                    }
+                    PostBatch(notify, std::move(done));
+                });
+            });
+        }
+
         void OnBatchDone(std::unique_ptr<BatchResult> batch)
         {
             m_tray.SetTip(IdleTip());
@@ -1366,6 +1406,9 @@ namespace sd
                 title = all ? std::format(L"Moved {} to {}", Count(ok, L"item"), batch->label)
                             : std::format(L"Moved {} of {} to {}", ok, total, batch->label);
                 break;
+            case BatchKind::Rename:
+                title = all ? std::format(L"Renamed {}", Count(ok, L"item")) : std::format(L"Renamed {} of {}", ok, total);
+                break;
             }
             // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
             if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
@@ -1383,7 +1426,7 @@ namespace sd
                             break;
                         }
                 }
-                else if (batch->kind == BatchKind::Move)
+                else if (batch->kind == BatchKind::Move || batch->kind == BatchKind::Rename)
                     sub = L"Undo from History in the tray menu";
                 else if (!outputs.empty())
                     sub = std::format(L"Saved {} \u00b7 Undo from History", SavedWhere(batch->savedTo));
@@ -1482,6 +1525,7 @@ namespace sd
         Features m_features;                 // what Settings turned off
         std::vector<Ring> m_sections;        // the sections on the wheel, in order (BuildRings)
         std::unique_ptr<SettingsWindow> m_settingsWindow;
+        std::unique_ptr<RenameWindow> m_renameWindow;
         std::vector<ocr::Language> m_ocrLanguages;   // as the tray menu last listed them
         std::unique_ptr<Shelf> m_shelf;      // after the island: results hand it their outputs
         uint64_t m_nextBatch = 1;
