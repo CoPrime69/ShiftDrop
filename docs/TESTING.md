@@ -348,6 +348,22 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] After a few drops, `%LOCALAPPDATA%\ShiftDrop\dropped` is empty (quit with a job running, start again: it is emptied at startup)
 - [ ] Real files from Explorer still convert next to themselves
 
+### X. Toasts, more settings, Rename and screen readers (M12)
+- [ ] Installed copy: convert a long video and drop a photo on **PNG** while it runs; when the video finishes a Windows toast (not a balloon) says so, with **Open folder** and **Open**. **Open folder** selects the output in Explorer, **Open** plays it
+- [ ] Two outputs in that toast: only **Open folder**, and it selects both. Quit ShiftDrop and click a toast still in the notification centre: Explorer opens all the same, and no tray icon appears
+- [ ] Portable copy (no Start menu shortcut): the same case shows the old balloon; Focus assist on (Do not disturb): no toast, the result is in the notification centre
+- [ ] Settings › **Terminal**: Windows Terminal, PowerShell and Command Prompt each open at the dropped folder from **File actions › Terminal**; **Custom command** with `code {folder}` opens VS Code there; the command box is greyed out unless Custom is picked
+- [ ] Settings › **Theme** › **Light** while Windows is dark: the wheel, the top panel, the card and Settings itself turn light at once; **Dark** the other way; **Follow Windows** follows it again
+- [ ] Settings › **Output names** › each style, converting `photo.jpg` twice: `photo (converted).png` / `photo (converted 2).png`, `photo-converted.png` / `photo-converted-2.png`, `photo_converted.png` / `photo_converted_2.png`, and the folder style: `ShiftDrop\photo.png` then `ShiftDrop\photo (2).png`. The card's predicted name matches each. No existing file is ever replaced
+- [ ] Folder style with a file called `ShiftDrop` (no extension) next to the photo: the convert fails with a message and the file is untouched
+- [ ] All four settings survive a restart (`[Appearance] Theme`, `[FileActions] Terminal` / `TerminalCommand`, `[Output] Naming` in settings.ini)
+- [ ] Select 12 photos, **File actions › Rename…**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
+- [ ] A pattern without `{n}` (two files would get the same name): those rows turn red, the status says why and **Rename** is greyed out; a name with `?` or ending in a dot is refused the same way; a name already taken in the folder is refused
+- [ ] **Rename**: the top panel says "Renamed 12 items"; tray › **History** › the run › **Undo**: every file has its old name back. Renaming `a.txt` to `A.txt` works
+- [ ] Narrator on: Shift+drag a photo: Narrator says "Convert wheel, 8 actions"; moving over slices reads each one ("PNG, lossless", "TIFF, not available: …"); scrolling to another section says its name; Shift+1–4 the same
+- [ ] Narrator: dropping says what the top panel shows ("Converting 1 file to PNG…"), then its result line and the line under it; a failure is read too. With Accessibility Insights, the wheel shows as a list of list items with the highlighted one selected
+- [ ] NVDA: the same announcements (2023.1 or later)
+
 ### P. Image canvas, Crop, Redact Photos, Share-safe, Remove metadata (M6)
 Have ready: a phone photo with GPS (portrait, taken with the phone upright), a PNG with transparency, a screenshot that shows an email address, a phone number and a card number (use a test number such as 4111 1111 1111 1111), a group photo with faces, a short phone video, and an MP3 with tags.
 
