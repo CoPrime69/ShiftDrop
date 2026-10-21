@@ -22,10 +22,12 @@ namespace sd::theme
         D2D1_COLOR_F tile, tileLine, centre, centreLine;   // wheel tiles and centre
         D2D1_COLOR_F glassTint;                            // over the blurred backdrop (Glass style)
         D2D1_COLOR_F panel, panelLine, panelText, panelTextDim, keycap;   // top panel
+        D2D1_COLOR_F panelAccent, panelTextOnAccent;   // the accent on the top panel (dark in both themes when Solid)
         D2D1_COLOR_F ok, warn, error;
     };
-    // From the Windows light/dark app setting (or the Settings window's override) and accent colour,
-    // read each time a wheel opens so a theme change applies without a restart.
+    // From the Windows light/dark app setting (or the Settings window's override) and the accent colour
+    // (accent::Current(), Settings › Accent colour), read each time a wheel opens so a change applies
+    // without a restart.
     Palette Current(Style style);
     // Settings > Theme: follow Windows, or always light or dark. Every window that asks Current()
     // follows it: the wheel, the top panel, the shelf, Settings and the editors. UI thread.
@@ -33,7 +35,7 @@ namespace sd::theme
 
     // The colours of the Direct2D editors (the PDF page view and Merge list, the picture editor, the
     // video and audio timeline editor), light or dark like everything else that asks Current(), with
-    // the accent adjusted so it reads well on them.
+    // the accent's tone for that theme (accent::Variants) so text on it and next to it reads.
     struct EditorPalette
     {
         bool dark = true;

@@ -72,6 +72,7 @@ folder:
 | `main.cpp` | `wWinMain`, single instance, the `App` class: gesture state, wheels, batches, tray, command line |
 | `MouseHook` | The `WH_MOUSE_LL` hook |
 | `Overlay`, `Canvas`, `Theme` | The wheel window and how it is drawn |
+| `Accent` | The accent colour (Settings › Accent colour): the presets, their light and dark tones, and the one colour every window draws with (unit-tested) |
 | `DropTarget`, `DropDescription`, `VirtualDrop` | The OLE drop target, the drag picture and its badge, files dragged out of browsers and mail |
 | `Island`, `PanelLayout` | The top panel, and its size and layout (unit-tested) |
 | `Accessibility` | The wheel and the top panel for screen readers (UI Automation) |
@@ -226,7 +227,8 @@ selected), dragged straight into another app, pinned to the Float shelf or copie
 click-through except while it shows a result, and it is never a drop target.
 
 Both windows follow the Windows light or dark theme (or the Settings override), use the accent
-colour, honour "Animation effects" being off, and are visible to screen readers through UI
+colour ([Accent.h](../src/Accent.h): ShiftDrop's teal by default, a preset, a colour of your own or
+the Windows accent colour, each in a tone that reads in light and dark), honour "Animation effects" being off, and are visible to screen readers through UI
 Automation ([Accessibility.h](../src/Accessibility.h)).
 
 ## Keyboard and click mode
@@ -478,7 +480,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 |---|---|
 | `[Gesture]` | `Convert`, `Tools`, `Reduce`, `Files`: the key that opens each section (`Shift`, `Ctrl`, `Alt` or `None`; never the Win key). Only Shift by default |
 | `[Keyboard]` | `ExplorerHotkey`, for example `Ctrl+Shift+Space` |
-| `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size). An older `HideCursor` key is ignored and removed |
+| `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size), `Accent` (tide, blue, purple, pink, red, orange, green, graphite, custom, windows; default tide, and anything else reads as tide; Settings › Accent colour), `AccentCustom` (the colour of your own as `#RRGGBB`, kept while a preset is chosen). An older `HideCursor` key is ignored and removed |
 | `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`) |
 | `[Output]` | `Naming` (output name style), `VirtualFiles` (desktop, downloads, ask) |
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |
