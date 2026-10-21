@@ -300,7 +300,19 @@ namespace sd
         MediaPlan full;
         full.h264 = plan.h264;
         full.hwDecode = plan.hwDecode;
+        full.videoBps = plan.videoBps;
         return full;
+    }
+
+    int64_t CapVideoBps(int64_t sourceBytes, int64_t durationUs, double share, bool hasAudio)
+    {
+        if (sourceBytes <= 0 || durationUs <= 0)
+            return 0;
+        constexpr int64_t kAudioBps = 192'000;   // the most any Convert spends on sound
+        constexpr int64_t kFloorBps = 32'000;    // an encoder needs something to work with
+        const double budget = static_cast<double>(sourceBytes) * 8.0 * 1'000'000.0 / static_cast<double>(durationUs) * share;
+        const double audio = hasAudio ? std::min<double>(kAudioBps, budget / 4) : 0;
+        return std::max<int64_t>(kFloorBps, static_cast<int64_t>(budget - audio));
     }
 
     std::vector<std::wstring> InputArgs(const MediaPlan& plan)
@@ -346,7 +358,18 @@ namespace sd
             else if (id == "mp4" || id == "mov" || id == "mkv")
             {
                 add({ L"-vf", kEvenSize });
-                addAll(H264Args(plan.h264));
+                addAll(plan.videoBps > 0 ? H264BitrateArgs(plan.h264, plan.videoBps) : H264Args(plan.h264));
+            }
+            else if (plan.videoBps > 0)
+            {
+                // Held to a bitrate (see CapVideoBps). VP9 keeps its quality setting under the cap.
+                const auto b = std::to_wstring(id == "wmv" ? std::min<int64_t>(plan.videoBps, 6'000'000) : plan.videoBps);
+                if (id == "webm")
+                    add({ L"-c:v", L"libvpx-vp9", L"-crf", L"32", L"-b:v", b.c_str(), L"-row-mt", L"1", L"-deadline", L"good", L"-cpu-used", L"5" });
+                else if (id == "avi")
+                    add({ L"-vf", kEvenSize, L"-c:v", L"mpeg4", L"-b:v", b.c_str(), L"-tag:v", L"XVID" });
+                else if (id == "wmv")
+                    add({ L"-vf", kEvenSize, L"-c:v", L"wmv2", L"-b:v", b.c_str() });
             }
             else if (id == "webm")
                 add({ L"-c:v", L"libvpx-vp9", L"-crf", L"32", L"-b:v", L"0", L"-row-mt", L"1", L"-deadline", L"good", L"-cpu-used", L"5" });

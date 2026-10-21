@@ -174,6 +174,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Drag two PDFs, hold **Ctrl**, drop on **Merge**: a window lists them in Explorer's order with page counts. Drag one row above the other (a blue line shows where it lands), or select it and press **Alt+↑**; **Merge** (or Enter) writes `first (merged).pdf` with the pages in that order; the panel says "Merged 2 PDFs into N pages". Esc or Cancel writes nothing
 - [ ] Drop one PDF on **Merge**: the panel says to drop two or more
 - [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
+- [ ] Hover a dimmed slice (for example HEIC on a PC without the HEIF extension): the wheel's centre says why it can't be used, and fades back when you move off
+- [ ] Drop two PDFs on **Organize**: two windows open, one per PDF; saving one writes only that PDF's `(organized)` copy, and the other window stays open
 - [ ] Organize and Merge follow the Windows light/dark setting, and look right at 150% scaling
 - [ ] Drop a large scanned PDF on **Compress**: the panel says "X to Y (N% smaller)" and the result looks the same at normal zoom; **Smallest** gives a smaller file. Drop the compressed file on Compress again: it is skipped ("already compact"), no bigger file is ever kept
 - [ ] Drop `page.jpg` on **Copy text** (Tools): the panel says "Copied N words"; Ctrl+V in Notepad pastes the text. Drop `report.pdf` and the photo together: "Copied N words from 2 files". No file is written
@@ -283,13 +285,15 @@ Video tools:
 - [ ] **Crop**: drag on the picture, then drag the edges and corners; 16:9, 9:16, 1:1, 4:5, Original and Free keep the shape; type a Width (the height follows). The result has exactly that size and keeps the sound
 - [ ] **Speed**: pick 0.5× or 2×, or type 1.8 or 180%; Space previews at that speed with the pitch kept. 2× halves the length; the silent video works too
 - [ ] **Join**: drop three clips on **Join…**. Drag rows to reorder, or select one and press Alt+↑ / Alt+↓; Delete leaves one out. Same-size phone clips say "joined without re-encoding" and are quick; with the other-size clip it re-encodes to the first clip's size with black bars. One MP4 comes out
+- [ ] **Join** a landscape and a portrait clip: under OTHER SHAPES, **Fit** (the default) keeps the whole picture with black bars; **Fill** crops the portrait clip to fill the frame, no bars, and the note under RESULT says so
 - [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
 - [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
 - [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
 - [ ] Drop three videos on **Crop…**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
 
 Audio tools:
-- [ ] **Normalize** a quiet song: the top panel says "Loudness −3x.x → −16.0 LUFS"; normalizing the result again says "already at −16.0 LUFS" and writes nothing
+- [ ] **Normalize** a song: a small window asks "How loud should it be?" with **Speech** (−16 LUFS), **Music** (−14) and **Broadcast** (−23); Esc or Cancel does nothing. With several songs it says they all get the same loudness and asks once
+- [ ] **Normalize** a quiet song and pick Speech: the top panel says "Loudness −3x.x → −16.0 LUFS"; normalizing the result again says "already at −16.0 LUFS" and writes nothing
 - [ ] **Trim** on the waveform with the handles or I and O; "Also trim silence at both ends" cuts the quiet lead-in of the voice memo
 - [ ] **Channels**: Make mono, Swap left and right, and the Left and Right volume sliders; while playing, A switches between the original and the result. On a mono file "Make mono" changes nothing and the main button is off
 - [ ] **Bleep**: drag across the waveform to mark two parts (M adds one at the playhead); a 1 kHz tone or silence; Space plays with the bleeps, A compares with the original
@@ -303,7 +307,7 @@ Always:
 Recipe examples (save in `%LOCALAPPDATA%\ShiftDrop\recipes` and restart):
 ```json
 { "id": "normalize-14", "label": "−14 LUFS", "description": "Normalize Volume for streaming", "ring": "tools", "suffix": "normalized",
-  "icon": "E767", "steps": [ { "action": "audio.normalize", "params": { "target": -14 } } ] }
+  "icon": "E767", "steps": [ { "action": "audio.normalize", "params": { "target": -14, "ask": false } } ] }
 ```
 ```json
 { "id": "speed-2x", "label": "2× speed", "description": "Twice as fast, same pitch", "ring": "tools", "icon": "EC4A",
@@ -501,6 +505,53 @@ Animated GIFs and multi-page TIFFs
 - [ ] The multi-page TIFF on PNG: a folder `name (frames)` with `name page 01.png` and so on
 - [ ] A one-frame GIF on PNG: an ordinary `name (converted).png`, no folder
 - [ ] Undo (History) on a frames folder moves the whole folder to the Recycle Bin
+
+### W. Photo tools: Edit, Annotate, Background, Collage (M8)
+Have ready: a 12 MP phone photo (JPEG with camera, date and GPS), a hazy or foggy landscape, a noisy night shot, a screenshot (PNG), a PNG with transparency, and four photos of different shapes (portrait, landscape, square).
+
+Tools wheel
+- [ ] Drag the phone photo, press **Shift** and scroll to the Tools wheel: Edit, Annotate, Background are there; Collage is not
+- [ ] Drag two or more photos: Collage is there too (with 17 image tools the wheel pages: 15 slices and More)
+- [ ] Drag a video or a PDF: none of the four photo tools are there
+
+Edit Photos
+- [ ] Drop the phone photo on **Edit**: the editor opens with Presets and four tabs (Light, Colour, Detail, Effects); every slider moves the picture live, with no lag at fit and at 100 %
+- [ ] Press and hold on the picture: the original shows with an "Original" tag; let go: the edit is back
+- [ ] Auto brightens a dark photo sensibly; each preset (Vivid, Soft, Warm, Cool, Mono, Film) looks like its name; Original and Reset clear everything
+- [ ] Dehaze +60 on the hazy landscape: the fog lifts without dark halos round the horizon; −40 adds haze
+- [ ] Clarity +60: local contrast up, no halos round edges; −60 softens
+- [ ] Noise reduction 70 on the night shot: smooth skies, edges still sharp; Grain 40 adds film grain that stays the same at every zoom
+- [ ] Ctrl+Z / Ctrl+Y undo and redo slider moves (one step per drag)
+- [ ] Save: `photo (edited).jpg` next to the photo; Properties > Details keeps camera, date and GPS; it opens upright
+- [ ] The day's log (tray > Open logs folder) has "photo: edit 4000x3000 -> 4000x3000 on GPU in N ms" (WARP on a PC without a graphics card); record N for a 12 MP photo here
+- [ ] Drop five photos: one editor (the first photo), Save all makes five edited copies with the same settings
+- [ ] PNG stays PNG with its transparency; WebP stays WebP
+
+Annotate Photos
+- [ ] Drop the screenshot on **Annotate**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
+- [ ] Text: click, type, Shift+Enter for a new line, Enter to finish; click it again (selected) to edit; Esc on an empty text removes it
+- [ ] Box and Circle (Shift keeps them even; Filled toggle), Callout (press on the subject, drag to where the bubble goes, type), Number (1, 2, 3 in the order placed; deleting 1 renumbers), Magnifier (press on a detail, drag the loupe; its grips change the spot and the magnification)
+- [ ] Pen and Highlighter draw smooth strokes; the highlighter is see-through and doesn't darken where it overlaps itself
+- [ ] Insert picture: pick a PNG logo; it lands in the middle and can be moved and resized by its corners
+- [ ] Select a mark: colour, width and size change it; To front and Delete work; arrows nudge it (Shift by ten); the letter keys V A T B O C N M P H switch tools
+- [ ] Drop three screenshots: the switcher in the panel moves between them, each keeps its own marks; Save writes only those with marks (the rest are skipped)
+- [ ] Save: `screenshot (annotated).png`; the marks look as in the editor at 100 %
+
+Add a Background
+- [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
+- [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
+- [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
+- [ ] Save: `logo (background).png`; a JPEG source gives a JPEG with its EXIF
+
+Create a Collage
+- [ ] Drop the four photos on **Collage**: "Opening 4 photos…", then a grid; Row and Column keep every photo whole; Featured makes the first one large
+- [ ] Drag a photo onto another: they swap; Shuffle and Reverse change the order; Undo puts it back
+- [ ] Shape (grid and featured), Longer side (type 2000), Spacing, Rounded corners, background colour and "Show whole photos" all change the preview live
+- [ ] Save: one `first-photo (collage).jpg` (named after the first photo in the collage), the longer side as typed, no camera or GPS in its details
+
+GPU and speed
+- [ ] On a laptop with a graphics card and on a VM without one (WARP): every preview works; the log names the device
+- [ ] Unplug or update the graphics driver while an editor is open (or change the display): the preview comes back
 
 ## 4. M0/M1 checklist
 

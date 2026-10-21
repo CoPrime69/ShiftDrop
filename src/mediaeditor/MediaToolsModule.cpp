@@ -96,6 +96,17 @@ namespace sd
             void OpenEditor(HWND owner, const Recipe& recipe, const std::vector<std::wstring>& files,
                             std::function<void(Recipe adjusted, std::vector<std::wstring> files)> done) const override
             {
+                if (recipe.steps[0].action == "audio.normalize")
+                {
+                    double target = -16;
+                    if (!audiotools::ChooseLoudness(owner, files.size(), target))
+                        return;
+                    Recipe adjusted = recipe;
+                    adjusted.steps[0].params["target"] = target;
+                    adjusted.steps[0].params["ask"] = false;
+                    done(std::move(adjusted), files);
+                    return;
+                }
                 mediatools::EditorRequest request;
                 if (!mediatools::ToolForAction(recipe.steps[0].action, request.tool))
                     return;

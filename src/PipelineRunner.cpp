@@ -50,6 +50,12 @@ namespace sd
         return e->RunBatch(recipe, runId, sources, stop, progress);
     }
 
+    bool PipelineRunner::AppliesToDrop(const Recipe& recipe, size_t fileCount) const
+    {
+        const auto* e = EngineFor(recipe);
+        return !e || e->AppliesToDrop(recipe, fileCount);
+    }
+
     bool PipelineRunner::Applies(const Recipe& recipe, const std::wstring& path) const
     {
         if (const auto* e = EngineFor(recipe))
@@ -334,13 +340,39 @@ namespace sd
             log::Info(L"media: {} -> {} ({} video {}, audio {}{})", source, format->label, Widen(info.videoCodec.empty() ? "no" : info.videoCodec),
                       plan.copyAll || plan.copyVideo ? L"copied" : L"encoded", plan.copyAll || plan.copyAudio ? L"copied" : L"encoded",
                       plan.hwDecode ? L", GPU decode" : L"");
+            MediaPlan used = plan;
             run = m_media->Run(FfmpegArgs(source, InputArgs(plan), OutputArgs(*format, plan), staging), progress, stop);
             if (!run.ok && !run.cancelled && (plan.copyAll || plan.copyVideo || plan.copyAudio))
             {
                 // Copying a stream failed (one the container can't hold after all): encode everything.
                 log::Info(L"media: copying streams into {} failed ({}); re-encoding", format->label, run.error);
-                const MediaPlan full = TranscodePlan(plan);
-                run = m_media->Run(FfmpegArgs(source, InputArgs(full), OutputArgs(*format, full), staging), progress, stop);
+                used = TranscodePlan(plan);
+                run = m_media->Run(FfmpegArgs(source, InputArgs(used), OutputArgs(*format, used), staging), progress, stop);
+            }
+            // A re-encoded video never comes out bigger than its source (Reduce size is for smaller
+            // still): over the source's size, it runs again at the source's own bitrate, then lower.
+            const std::string_view id(format->id);
+            if (run.ok && video && format->fromVideo && id != "gif" && id != "mp3" && !used.copyAll && !used.copyVideo)
+            {
+                std::error_code ec;
+                const auto sourceBytes = static_cast<int64_t>(std::filesystem::file_size(source, ec));
+                const auto size = [&] { return static_cast<int64_t>(std::filesystem::file_size(staging, ec)); };
+                for (const double share : { 0.9, 0.6 })
+                {
+                    if (!run.ok || sourceBytes <= 0 || size() <= sourceBytes)
+                        break;
+                    used.videoBps = CapVideoBps(sourceBytes, info.durationUs, share, !info.audioCodec.empty());
+                    if (used.videoBps <= 0)
+                        break;
+                    log::Info(L"media: {} came out bigger than the source ({} > {} bytes); again at {} bps", format->label, size(), sourceBytes,
+                              used.videoBps);
+                    run = m_media->Run(FfmpegArgs(source, InputArgs(used), OutputArgs(*format, used), staging), progress, stop);
+                }
+                if (run.ok && sourceBytes > 0 && size() > sourceBytes)
+                {
+                    run.ok = false;
+                    run.error = std::format(L"as {} it would be bigger than the original; Reduce size makes it smaller", format->label);
+                }
             }
         }
         else

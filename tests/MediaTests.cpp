@@ -98,6 +98,25 @@ TEST(Media, OutputArgsPerFormat)
     EXPECT_TRUE(Has(m4a, L"-map", L"0:a:0"));
     EXPECT_NE(std::find(m4a.begin(), m4a.end(), L"-vn"), m4a.end());
     EXPECT_TRUE(Has(m4a, L"-f", L"ipod"));
+    // Held to a bitrate (a Convert that came out bigger than its source).
+    MediaPlan capped;
+    capped.videoBps = 900'000;
+    EXPECT_TRUE(Has(OutputArgs(*FindMediaFormat("mp4"), capped), L"-b:v", L"900000"));
+    EXPECT_TRUE(Has(OutputArgs(*FindMediaFormat("mp4"), capped), L"-maxrate", L"900000"));
+    EXPECT_TRUE(Has(OutputArgs(*FindMediaFormat("webm"), capped), L"-b:v", L"900000"));
+    EXPECT_TRUE(Has(OutputArgs(*FindMediaFormat("avi"), capped), L"-b:v", L"900000"));
+    EXPECT_FALSE(Has(OutputArgs(*FindMediaFormat("avi"), capped), L"-q:v", L"3"));
+}
+
+TEST(Media, ConvertCapFollowsTheSource)
+{
+    // 10 MB over 10 s = 8 Mbit/s; 90% of it, less 192k for the sound.
+    EXPECT_EQ(CapVideoBps(10'000'000, 10'000'000, 0.9, true), 7'200'000 - 192'000);
+    EXPECT_EQ(CapVideoBps(10'000'000, 10'000'000, 0.9, false), 7'200'000);
+    // A tiny source: the sound gets at most a quarter.
+    EXPECT_EQ(CapVideoBps(100'000, 10'000'000, 1.0, true), 60'000);
+    EXPECT_EQ(CapVideoBps(1'000, 10'000'000, 1.0, false), 32'000);   // the floor
+    EXPECT_EQ(CapVideoBps(10'000'000, -1, 0.9, true), 0);            // length unknown
 }
 
 TEST(Media, ProbeLogIsParsed)
@@ -323,6 +342,25 @@ TEST(MediaEngine, ConvertsThroughThePipeline)
         EXPECT_EQ(history->RecentRuns(1).at(0).status, status::Done) << id;
     }
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
+}
+
+TEST(MediaEngine, ConvertNeverComesOutBigger)
+{
+    const auto engine = Engine();
+    if (!engine->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    TempDir dir;
+    Recipes recipes(dir);
+    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
+    // Heavily compressed already: a quality-based MP4 would be bigger than this.
+    const auto source = dir / L"tiny.avi";
+    std::stop_source never;
+    ASSERT_TRUE(engine->Run({ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"testsrc=s=640x360:r=25:d=4", L"-c:v", L"mpeg4",
+                              L"-q:v", L"31", L"-y", L"-f", L"avi", source }, nullptr, never.get_token()).ok);
+    const auto sourceBytes = std::filesystem::file_size(source);
+    const auto r = runner.Run(recipes.Get("to-mp4"), 0, source, std::stop_token{}, nullptr);
+    ASSERT_TRUE(r.ok) << Narrow(r.error);
+    EXPECT_LE(r.size, sourceBytes);
 }
 
 TEST(MediaEngine, CancelStopsFfmpegAndLeavesNothing)
