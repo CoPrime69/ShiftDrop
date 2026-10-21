@@ -4,8 +4,10 @@
 //   UI thread    hidden main window, tray icon, overlay, WH_MOUSE_LL hook, OLE drop target, history
 //                window, clipboard file actions (STA)
 //   workers      JobQueue threads (MTA) that run recipes and PostMessage results back
-//   media worker one JobQueue thread for video and audio: ffmpeg already uses every core, so files
-//                go one at a time (each in its own ffmpeg process, see Ffmpeg.h)
+//   media worker one JobQueue thread for video: ffmpeg already uses every core, so files go one at a
+//                time (each in its own ffmpeg process, see Ffmpeg.h)
+//   audio workers JobQueue threads for sound-only ffmpeg runs, which use one core each, so several
+//                files convert at once
 //   shell worker one STA thread for IFileOperation work (Move to…)
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
 #include "Brand.h"
@@ -94,6 +96,18 @@ namespace sd
             std::atomic<size_t> remaining{ 0 };
             std::stop_source cancel;          // the top panel's ×; also requested when the app shuts down
             std::atomic<int> lastPermille{ -1 };   // throttles progress posts to whole tenths of a percent
+            std::vector<double> done;              // each file's own progress, 0..1 (under mutex)
+
+            // Sets file i's progress and returns the whole batch's, in files.
+            double Progress(size_t i, double fraction)
+            {
+                std::scoped_lock lock(mutex);
+                done[i] = fraction;
+                double sum = 0;
+                for (const double d : done)
+                    sum += d;
+                return sum;
+            }
         };
 
         struct PendingDrop
@@ -246,11 +260,12 @@ namespace sd
             m_runner = std::make_unique<PipelineRunner>(m_codecs, m_history.get(), m_media);
             m_runner->RecoverInterrupted();
 
-            const unsigned threads = std::clamp(std::thread::hardware_concurrency() / 2, 1u, 4u);
+            const unsigned threads = JobQueue::PoolThreads();
             m_jobs = std::make_unique<JobQueue>(threads);
             m_mediaJobs = std::make_unique<JobQueue>(1);
+            m_audioJobs = std::make_unique<JobQueue>(threads);
             m_shellJobs = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);
-            log::Info(L"jobs: {} worker thread(s) + 1 media thread + 1 shell thread", threads);
+            log::Info(L"jobs: {0} worker thread(s) + 1 video thread + {0} audio thread(s) + 1 shell thread", threads);
             // The H.264 encoder test (a few tiny encodes, about a second) runs now, on the media thread,
             // instead of delaying the first video conversion.
             if (m_media->Available())
@@ -455,6 +470,7 @@ namespace sd
                 KillTimer(hwnd, kTimerWatchdog);
                 m_jobs.reset();        // stops and joins workers; results still in flight are freed (see PostBatch)
                 m_mediaJobs.reset();   // kills a running ffmpeg (its job object) and deletes its staging file
+                m_audioJobs.reset();
                 m_shellJobs.reset();   // waits for a move in progress: IFileOperation can't be cancelled halfway
                 m_historyWindow.reset();
                 m_keyboard.reset();    // before the overlay it drives
@@ -1014,6 +1030,7 @@ namespace sd
             state->result.runId = m_history ? m_history->BeginRun(recipe, static_cast<int>(files.size())) : 0;
             state->result.token = m_islandBatch = m_nextBatch++;
             state->result.files.resize(files.size());
+            state->done.assign(files.size(), 0.0);
             state->remaining = files.size();
             const auto verb = state->result.kind == BatchKind::Convert ? std::format(L"Converting {} to {}", Count(files.size(), L"file"), recipe.label)
                               : state->result.kind == BatchKind::Duplicate ? std::format(L"Duplicating {}", Count(files.size(), L"file"))
@@ -1024,7 +1041,7 @@ namespace sd
             // Video and audio go through the media queue, one file at a time; images use every worker;
             // shell work goes to the STA thread. A batch action (join, merge, zip) is one job for all files.
             const JobLane lane = m_runner->Lane(recipe);
-            JobQueue& queue = lane == JobLane::Media ? *m_mediaJobs : lane == JobLane::Shell ? *m_shellJobs : *m_jobs;
+            JobQueue& queue = lane == JobLane::Media ? *m_mediaJobs : lane == JobLane::Audio ? *m_audioJobs : lane == JobLane::Shell ? *m_shellJobs : *m_jobs;
             if (const auto* engine = m_runner->EngineFor(recipe); engine && engine->IsBatch(recipe))
             {
                 state->result.files.resize(1);
@@ -1060,11 +1077,11 @@ namespace sd
                               token = state->result.token](std::stop_token stop) {
                     // Shutting down stops the batch the same way the × does.
                     std::stop_callback onShutdown(stop, [&] { state->cancel.request_stop(); });
-                    // Within-file progress (media only): finished files plus this one's fraction, in
-                    // thousandths of a file, posted when it moves by a tenth of a percent of the batch.
+                    // Within-file progress (media only): every file's own fraction added up (several run
+                    // at once on the audio lane), in thousandths of a file, posted when it moves by a
+                    // tenth of a percent of the batch.
                     const auto progress = [&](double fraction) {
-                        const size_t finished = total - state->remaining.load();
-                        const auto at = static_cast<int>((static_cast<double>(finished) + fraction) * 1000.0);
+                        const auto at = static_cast<int>(state->Progress(i, fraction) * 1000.0);
                         if (at / static_cast<int>(total) != state->lastPermille.exchange(at / static_cast<int>(total)))
                             PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(at));
                     };
@@ -1077,9 +1094,10 @@ namespace sd
                         std::scoped_lock lock(state->mutex);
                         state->result.files[i].result = std::move(result);
                     }
+                    const double batchDone = state->Progress(i, 1.0);
                     const size_t left = state->remaining.fetch_sub(1) - 1;
                     if (left > 0)
-                        PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>((total - left) * 1000));
+                        PostMessageW(state->notify, msg::BatchProgress, static_cast<WPARAM>(token), static_cast<LPARAM>(batchDone * 1000));
                     else   // last file of the batch
                     {
                         if (history)
@@ -1280,6 +1298,7 @@ namespace sd
         std::unique_ptr<PipelineRunner> m_runner;
         std::unique_ptr<JobQueue> m_jobs;
         std::unique_ptr<JobQueue> m_mediaJobs;
+        std::unique_ptr<JobQueue> m_audioJobs;
         std::unique_ptr<JobQueue> m_shellJobs;
         Appearance m_appearance;
         std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it

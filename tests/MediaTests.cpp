@@ -1,4 +1,5 @@
 #include "Ffmpeg.h"
+#include "JobQueue.h"
 #include "Media.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
@@ -6,6 +7,7 @@
 
 #include <shellapi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -247,10 +249,25 @@ TEST(Media, RecipesApplyByKind)
     EXPECT_FALSE(runner.Applies(png, L"C:\\v\\clip.mov"));
     EXPECT_TRUE(runner.Applies(png, L"C:\\v\\photo.jpg"));
     EXPECT_TRUE(runner.IsNoOp(mp4, L"C:\\v\\clip.m4v"));
+    // Video runs one at a time (one ffmpeg already uses every core); sound runs several files at once.
+    EXPECT_EQ(runner.Lane(mp4), JobLane::Media);
+    EXPECT_EQ(runner.Lane(recipes.Get("to-gif")), JobLane::Media);
+    EXPECT_EQ(runner.Lane(mp3), JobLane::Audio);
+    EXPECT_EQ(runner.Lane(recipes.Get("to-m4a")), JobLane::Audio);
+    EXPECT_EQ(runner.Lane(png), JobLane::Pool);
     // Without the engine a media recipe says why it can't run.
     std::wstring why;
     EXPECT_FALSE(runner.Accepts(mp4, L"C:\\v\\clip.mov", &why));
     EXPECT_NE(why.find(L"media engine"), std::wstring::npos);
+}
+
+TEST(Media, PoolLeavesACoreFree)
+{
+    const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
+    const unsigned threads = JobQueue::PoolThreads();
+    EXPECT_GE(threads, 1u);
+    EXPECT_LE(threads, 8u);
+    EXPECT_EQ(threads, std::clamp(cores > 1 ? cores - 1 : 1u, 1u, 8u));
 }
 
 TEST(Media, MediaStepMustBeAlone)

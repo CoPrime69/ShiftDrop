@@ -33,6 +33,9 @@ namespace sd
     {
         if (const auto* e = EngineFor(recipe))
             return e->Lane(recipe);
+        // An audio format (MP3 from a video too) decodes and encodes sound only, on one core.
+        if (const auto* format = recipe.MediaFormat(); format && format->fromAudio)
+            return JobLane::Audio;
         return recipe.IsMedia() ? JobLane::Media : JobLane::Pool;
     }
 
