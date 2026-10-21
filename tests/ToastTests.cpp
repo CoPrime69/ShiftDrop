@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cwchar>
 #include <format>
 
 using namespace sd::toast;
@@ -45,7 +44,7 @@ TEST(Toast, ParseRefusesAnythingElse)
 {
     for (const wchar_t* bad : { L"", L"reveal", L"reveal|", L"open", L"delete|C:\\a.txt", L"reveal|relative\\a.txt", L"open|C:\\a|C:\\b",
                                 L"reveal|C:\\a||C:\\b", L"REVEAL|C:\\a", L"open|http://example.com/x" })
-        EXPECT_FALSE(ParseArguments(bad)) << std::string(bad, bad + wcslen(bad));
+        EXPECT_FALSE(ParseArguments(bad)) << testing::PrintToString(std::wstring(bad));
 }
 
 TEST(Toast, EscapesXml)
