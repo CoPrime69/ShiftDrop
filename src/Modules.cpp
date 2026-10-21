@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "archive/ArchiveModule.h"
 #include "inspect/InspectModule.h"
 #include "imagetools/ImageToolsModule.h"
 #include "shelf/ShelfModule.h"
@@ -25,6 +26,7 @@ namespace sd
             office::Module(),      // Office bridge: exact PDFs and slide pictures (M11, src/officebridge)
             MediaToolsModule(),   // video tools (M9) and audio tools (M10)
             ImageToolsModule(),   // Crop, Redact, Share-safe, Remove metadata, src/imagetools
+            archive::Module(),   // Zip, Extract, convert archives; parsed in the sandboxed worker (src/archive, src/sandbox)
         };
         return modules;
     }
