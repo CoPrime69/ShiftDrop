@@ -74,10 +74,7 @@ namespace sd::pdf
                     return false;
                 StartCounting();
                 if (pages && !More())
-                {
-                    ShowWindow(Hwnd(), SW_SHOWNORMAL);
-                    SetForegroundWindow(Hwnd());
-                }
+                    Present();
                 return true;
             }
 
@@ -180,8 +177,7 @@ namespace sd::pdf
                     m_planOrder = Order();
                     m_editFolder = std::move(folder);
                     m_notice.clear();
-                    ShowWindow(hwnd, SW_SHOWNORMAL);
-                    SetForegroundWindow(hwnd);
+                    Present();
                     Invalidate();
                 };
                 request.cancelled = [this, hwnd] {

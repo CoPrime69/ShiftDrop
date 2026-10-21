@@ -1,5 +1,6 @@
 #include "EditorFrame.h"
 #include "Brand.h"
+#include "UiThread.h"
 #include "resource.h"
 
 #include <shellscalingapi.h>
@@ -88,7 +89,7 @@ namespace sd
     void EditorFrame::Present()
     {
         ShowWindow(m_hwnd, SW_SHOWNORMAL);
-        SetForegroundWindow(m_hwnd);   // we are answering the user's drop
+        BringToFront(m_hwnd);   // we are answering the user's drop
     }
 
     void EditorFrame::Close()

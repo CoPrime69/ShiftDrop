@@ -176,7 +176,6 @@ namespace sd::canvas
                     m_buttons.push_back(Button{ L"Cancel", 0, false, true, {}, [this] { Close(); } });
                     if (!Create(m_tool->Title(), 440, 150, 360, 140))
                         return false;
-                    BringToFront(Hwnd());
                     RunPrepass(std::move(prepass));
                     return true;
                 }
