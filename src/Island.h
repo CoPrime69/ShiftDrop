@@ -53,6 +53,8 @@ namespace sd
 
         bool Create();
         void SetAppearance(const Appearance& appearance) { m_appearance = appearance; }
+        // Settings › Top panel size in percent (Preferences::panelSize); used from the next time it shows.
+        void SetPanelSize(int percent) { m_panelSize = percent; }
 
         void ShowSwitcher(int ring, HMONITOR monitor);   // a wheel opened on `monitor`
         void SetRing(int ring);
@@ -98,6 +100,7 @@ namespace sd
         std::vector<WheelRing> m_rings;
         std::function<void()> m_onClick;
         Appearance m_appearance;
+        int m_panelSize = panel::kSizeMinPercent;
 
         wil::unique_hwnd m_hwnd;
         std::unique_ptr<a11y::TextElement> m_a11y;   // after m_hwnd: goes first
@@ -109,6 +112,7 @@ namespace sd
         SIZE m_size{};
         float m_pad = 0.f;   // transparent room around the panel for its shadow
         float m_maxContent = 0.f;   // the widest the panel may be on this monitor
+        float m_fittedScale = 0.f;  // the last scale panel::FitScale gave (logged when it is cut down)
         theme::Palette m_palette{};
         theme::Pixels m_backdropPx;
         float m_backdropStep = 1.f;

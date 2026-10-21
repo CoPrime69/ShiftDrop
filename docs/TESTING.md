@@ -183,6 +183,8 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] 2560x1440 at 100% and at 125%, Size Auto: the panel is larger again (about 24 px text, about 80 px tall) and still sharp; on a second monitor at a different scaling it is the same size relative to that monitor's text
 - [ ] A 1366x768 screen at 100% (or a window-sized VM), every Size: the whole panel fits on screen with all four names and the hint; at 150% with Size Large the hint is dropped before any name is cut
 - [ ] At the new size, the progress panel ("Converting N files…", bar, ×) and the result panel (badge, two lines, Float and Copy buttons) look as before, only larger: nothing is cut off and the × and buttons are easy to hit
+- [ ] Settings › **Top panel size**: a slider from 100% to 300% in 10% steps, with its value beside it ("160%"); arrow keys move it one step. At 100% the panel is as above; drag a file with Shift after each change (no restart): the switcher, the progress and the result panels grow by that share on top of the tray's Size (Small, Medium, Large and Auto still differ), text, icons, gaps and corners together, sharp at 100%, 125% and 150% scaling
+- [ ] Top panel size at 300% on a 1366x768 screen (or at 150% scaling): the panel grows only as far as all four names stay whole and it stays in the top half of the screen (the log says `island: top panel size 300% does not fit this screen; drawn at N%`); the value survives a restart as `[Appearance] PanelSize=` in settings.ini
 - [ ] Tray menu > **Style** > Glass: the wheel shows a frosted copy of what is behind it; Solid is opaque
 - [ ] Windows Settings > Accessibility > Visual effects > Animation effects off: the wheel and panel appear and switch without animation
 

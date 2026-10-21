@@ -24,12 +24,12 @@ namespace sd
 
         constexpr wchar_t kClassName[] = L"" SD_NAME L".Island";
 
-        // DIPs, times the panel's scale (panel::Scale: 1.4x the wheel's). The switcher's sizes and the
-        // widest the panel gets are in PanelLayout.h.
-        constexpr float kTopGapDip = 10.f;      // work-area top edge to the panel
-        constexpr float kPadDip = 24.f;         // shadow room
-        constexpr float kMaxHeightDip = 72.f;
+        // DIPs, times the panel's scale (panel::Scale: 1.4x the wheel's, times the Top panel size).
+        // The panel's outer sizes and the switcher's are in PanelLayout.h.
         using panel::kInsetDip;
+        using panel::kMaxHeightDip;
+        using panel::kPadDip;
+        using panel::kTopGapDip;
 
         constexpr float kPresenceMs = 520.f;    // spring down; settled well before the end
         constexpr float kRetractMs = 220.f;
@@ -128,11 +128,27 @@ namespace sd
     void Island::Layout(HMONITOR monitor)
     {
         m_monitor = monitor;
-        // The tray's Size setting and the monitor's DPI and height, as for the wheel, then larger.
-        m_scale = panel::Scale(ScaleFor(monitor, m_appearance.size));
-        EnsureTextFormats();
+        // The tray's Size setting and the monitor's DPI and height, as for the wheel, then larger,
+        // then the Top panel size: as much of it as fits this monitor (never less than at 100%).
         MONITORINFO mi{ sizeof(mi) };
         GetMonitorInfoW(monitor, &mi);
+        const float wheel = ScaleFor(monitor, m_appearance.size);
+        m_scale = panel::Scale(wheel, m_panelSize);
+        EnsureTextFormats();
+        std::vector<float> names;
+        for (const auto& ring : m_rings)
+            names.push_back(TextWidth(ring.title, m_tabFont.Get()) / m_scale);
+        const float fit = panel::FitScale(m_scale, panel::Scale(wheel), names, static_cast<float>(mi.rcWork.right - mi.rcWork.left),
+                                          static_cast<float>(mi.rcWork.bottom - mi.rcWork.top));
+        if (fit != m_scale)
+        {
+            if (fit != m_fittedScale)
+                log::Info(L"island: top panel size {}% does not fit this screen; drawn at {}%", panel::SizePercent(m_panelSize),
+                          static_cast<int>(std::lround(100.f * fit / panel::Scale(wheel))));
+            m_scale = fit;
+            EnsureTextFormats();
+        }
+        m_fittedScale = fit;
         m_pad = std::round(kPadDip * m_scale);
         // Never wider than the screen (a 1366 px laptop at Large): the switcher fits itself into this.
         m_maxContent = std::floor(panel::MaxContentWidth(m_scale, static_cast<float>(mi.rcWork.right - mi.rcWork.left)));
@@ -166,7 +182,7 @@ namespace sd
                 // Snapshot before our window covers the area.
                 if (visible)
                     ShowWindow(m_hwnd.get(), SW_HIDE);
-                const int step = std::max(4, static_cast<int>(std::lround(6.f * m_scale / panel::kScale)));   // as blurred as the wheel's
+                const int step = std::max(4, static_cast<int>(std::lround(6.f * ScaleFor(monitor, m_appearance.size))));   // as blurred as the wheel's
                 m_backdropPx = CaptureBlurred(area, step);
                 m_backdropStep = static_cast<float>(step);
                 m_backdropRect = area;

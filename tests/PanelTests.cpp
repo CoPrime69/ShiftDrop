@@ -222,6 +222,139 @@ TEST(Panel, IsLargerThanTheWheelAndFollowsTheSizeSetting)
     EXPECT_LT(PanelScale(WheelSize::Auto, 1.f, 1080.f), PanelScale(WheelSize::Auto, 1.f, 1440.f));
 }
 
+// ---- Settings › Top panel size ----------------------------------------------------------------------
+
+TEST(Panel, SizePercentKeepsToTheSlidersSteps)
+{
+    EXPECT_EQ(panel::SizePercent(100), 100);
+    EXPECT_EQ(panel::SizePercent(160), 160);
+    EXPECT_EQ(panel::SizePercent(300), 300);
+    EXPECT_EQ(panel::SizePercent(155), 160);   // a hand edit lands on the nearest step
+    EXPECT_EQ(panel::SizePercent(154), 150);
+    EXPECT_EQ(panel::SizePercent(99), 100);
+    EXPECT_EQ(panel::SizePercent(0), 100);
+    EXPECT_EQ(panel::SizePercent(-40), 100);
+    EXPECT_EQ(panel::SizePercent(301), 300);
+    EXPECT_EQ(panel::SizePercent(100000), 300);
+}
+
+TEST(Panel, SizeSliderMultipliesTheSizeSetting)
+{
+    for (const auto size : kSizes)
+        for (const float dpi : { 1.f, 1.25f, 1.5f, 2.f })
+        {
+            const float wheel = SizeScale(size, dpi, 1440.f);
+            // 100% is the panel as it was; every other step multiplies it, Size setting and DPI included.
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 100), panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 100), 1.4f * wheel) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 200), 2.f * panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 160), 1.6f * panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 300), 3.f * panel::Scale(wheel)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 999), panel::Scale(wheel, 300)) << dpi;
+            EXPECT_FLOAT_EQ(panel::Scale(wheel, 10), panel::Scale(wheel, 100)) << dpi;
+        }
+    // Small, Medium and Large keep their order at any slider value.
+    EXPECT_LT(panel::Scale(SizeScale(WheelSize::Small, 1.f, 1080.f), 200), panel::Scale(SizeScale(WheelSize::Medium, 1.f, 1080.f), 200));
+    EXPECT_LT(panel::Scale(SizeScale(WheelSize::Medium, 1.f, 1080.f), 200), panel::Scale(SizeScale(WheelSize::Large, 1.f, 1080.f), 200));
+}
+
+TEST(Panel, SizeSliderScalesEverythingTogether)
+{
+    // On a screen with room to spare, 200% doubles the tabs, gaps, hint and the whole switcher.
+    const float s = PanelScale(WheelSize::Auto, 1.f, 1080.f);
+    const auto one = Fit(s, 100000.f), two = Fit(2.f * s, 100000.f);
+    ASSERT_TRUE(one.hint && two.hint);
+    EXPECT_FLOAT_EQ(two.pad, 2.f * one.pad);
+    EXPECT_FLOAT_EQ(two.iconGap, 2.f * one.iconGap);
+    EXPECT_FLOAT_EQ(two.hintGap, 2.f * one.hintGap);
+    ASSERT_EQ(two.tabs.size(), one.tabs.size());
+    for (size_t i = 0; i < one.tabs.size(); ++i)
+        EXPECT_NEAR(two.tabs[i], 2.f * one.tabs[i], 0.01f) << i;
+    EXPECT_NEAR(two.width, 2.f * one.width, 0.05f);
+    EXPECT_FLOAT_EQ(panel::MaxContentWidth(2.f * s, 100000.f), 2.f * panel::MaxContentWidth(s, 100000.f));
+}
+
+TEST(Panel, SizeSliderNeverRunsOffTheScreen)
+{
+    const auto names = NameWidths(1.f);   // DIPs
+    // The window's lowest edge, from the top of the work area (Island::Layout).
+    const auto bottom = [](float s) { return (panel::kTopGapDip + panel::kMaxHeightDip + panel::kPadDip) * s; };
+    const auto check = [&](WheelSize size, float dpi, float width, float height) {
+        const float base = PanelScale(size, dpi, height);
+        // 100% is never changed, whatever the screen.
+        EXPECT_FLOAT_EQ(panel::FitScale(base, base, names, width, height), base);
+        for (int percent = panel::kSizeMinPercent; percent <= panel::kSizeMaxPercent; percent += panel::kSizeStepPercent)
+        {
+            const float asked = panel::Scale(SizeScale(size, dpi, height), percent);
+            const float s = panel::FitScale(asked, base, names, width, height);
+            EXPECT_LE(s, asked + 1e-5f) << percent;
+            EXPECT_GE(s, base) << percent;   // never smaller than before the slider
+            if (s > base + 1e-4f)
+            {
+                // Grown: every name is still whole and the window stays in the top half of the screen.
+                const auto fit = Fit(s, width);
+                EXPECT_FLOAT_EQ(fit.nameScale, 1.f) << percent;
+                EXPECT_LE(fit.width + 2.f * panel::kInsetDip * s, panel::MaxContentWidth(s, width) + 0.05f) << percent;
+                EXPECT_LE(bottom(s), height / 2.f + 0.05f) << percent;
+            }
+        }
+    };
+    for (const auto size : kSizes)
+    {
+        check(size, 1.f, 1920.f, 1032.f);
+        check(size, 1.5f, 1920.f, 1032.f);
+        check(size, 1.f, 1366.f, 728.f);
+        check(size, 1.25f, 2560.f, 1392.f);
+        check(size, 1.5f, 800.f, 560.f);
+        check(size, 1.f, 3840.f, 400.f);
+    }
+
+    // 1080p at 100%, Auto: all of 300% fits.
+    const float base = PanelScale(WheelSize::Auto, 1.f, 1032.f);
+    EXPECT_FLOAT_EQ(panel::FitScale(3.f * base, base, names, 1920.f, 1032.f), 3.f * base);
+    // A 1366 px laptop at Large: 300% is cut down to what fits across, still well above 100%.
+    const float large = PanelScale(WheelSize::Large, 1.f, 728.f);
+    const float cut = panel::FitScale(3.f * large, large, names, 1366.f, 728.f);
+    EXPECT_LT(cut, 3.f * large);
+    EXPECT_GT(cut, 1.5f * large);
+    // A short, wide screen: the height is what limits it.
+    const float wide = panel::FitScale(3.f * 1.4f, 1.4f, names, 3840.f, 400.f);
+    EXPECT_NEAR(bottom(wide), 200.f, 0.01f);
+    // A screen too small for any growth keeps the size it had.
+    EXPECT_FLOAT_EQ(panel::FitScale(9.f, 2.52f, names, 800.f, 560.f), 2.52f);
+}
+
+TEST(Panel, SizeSliderIsSavedInAppearance)
+{
+    TempDir dir;
+    const auto ini = dir / L"settings.ini";
+    // No file, or no key: 100%.
+    EXPECT_EQ(LoadPreferences(dir / L"missing.ini").panelSize, 100);
+    WriteText(ini, "[Appearance]\r\nSize=large\r\nStyle=glass\r\n");
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 100);
+
+    auto p = LoadPreferences(ini);
+    p.panelSize = 160;
+    SavePreferences(p, ini);
+    EXPECT_EQ(GetPrivateProfileIntW(L"Appearance", L"PanelSize", -1, ini.c_str()), 160);
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 160);
+    // The tray's Size and Style are left alone, and saving them keeps the panel size.
+    auto a = LoadAppearance(ini);
+    EXPECT_EQ(a.size, WheelSize::Large);
+    EXPECT_EQ(a.style, Style::Glass);
+    a.size = WheelSize::Small;
+    SaveAppearance(a, ini);
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 160);
+
+    // A hand edit out of range or between steps is read as the nearest step.
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"155", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 160);
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"900", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 300);
+    WritePrivateProfileStringW(L"Appearance", L"PanelSize", L"big", ini.c_str());
+    EXPECT_EQ(LoadPreferences(ini).panelSize, 100);
+}
+
 TEST(Panel, AutoIsReadableOn1440p)
 {
     // 2560x1440 at 100% and 125%: names of about 24 px and a panel about 80 px tall (it was 17 and 57).

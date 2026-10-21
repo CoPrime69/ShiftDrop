@@ -35,8 +35,9 @@ namespace sd
         std::vector<Section> sections;
     };
 
-    // "Settings…" from the tray. On top, three choices: the terminal File actions › Terminal opens (or
-    // a command line of your own), the theme, and how outputs are named; each applies at once
+    // "Settings…" from the tray. On top, the choices: the terminal File actions › Terminal opens (or
+    // a command line of your own), the theme, the top panel's size (a slider on top of the tray's
+    // Size, with its value beside it) and how outputs are named; each applies at once
     // (onPreferences). Under them a tree of every section, kind of file and slice, each with a tick.
     // Unticking hides it from the wheel at once (onChange); a section, or a kind of file, ticks or
     // unticks everything under it. Standard controls in a DialogWindow, like the history window.
@@ -61,6 +62,7 @@ namespace sd
         void Fill();
         void FillPreferences();
         void OnPreferenceChanged();
+        void OnPanelSizeScroll(WORD code);   // the slider's WM_HSCROLL
         void OnItemChanged(HTREEITEM item, UINT oldState, UINT newState);
         void SetCheck(HTREEITEM item, int check);       // 1 off, 2 on, 3 some (TreeView state images)
         int Check(HTREEITEM item) const;
@@ -79,6 +81,7 @@ namespace sd
         HWND m_terminalLabel = nullptr, m_terminal = nullptr;   // children are destroyed with m_hwnd
         HWND m_commandLabel = nullptr, m_command = nullptr;
         HWND m_themeLabel = nullptr, m_theme = nullptr;
+        HWND m_panelSizeLabel = nullptr, m_panelSize = nullptr, m_panelSizeValue = nullptr;   // a trackbar and its "160%"
         HWND m_namingLabel = nullptr, m_naming = nullptr;
         HWND m_intro = nullptr;
         HWND m_list = nullptr;
