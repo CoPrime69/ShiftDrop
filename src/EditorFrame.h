@@ -42,7 +42,8 @@ namespace sd
         // Creates the window (and shows it in front, unless `show` is false), its client area
         // `widthDip` x `heightDip` on the cursor's monitor, centred and kept on screen; the user can't
         // make the client area smaller than the minimum. On failure the caller still owns the object.
-        bool Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show = true);
+        // An `owner` makes it a window of the owner's (no taskbar button), centred over it.
+        bool Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show = true, HWND owner = nullptr);
         void Present();   // shows it in front: we are answering the user's drop
         void Close();     // OnClosing(), then destroys the window and the object
         // The × button or Alt+F4. A window whose own handlers might still be running posts its

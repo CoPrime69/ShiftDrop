@@ -211,39 +211,105 @@ namespace sd::photo
 
     namespace
     {
-        ComPtr<IDWriteTextLayout> TextLayout(const std::wstring& text, double fontSize, float maxWidth, bool wrap, bool centred)
+        constexpr float kNoLimit = 100000.f;   // a layout width or height that never binds
+
+        ComPtr<IDWriteTextLayout> MakeLayout(const std::wstring& text, const wchar_t* family, int weight, bool italic, double fontSize, float maxWidth,
+                                             float maxHeight, bool wrap, DWRITE_TEXT_ALIGNMENT align, bool middle)
         {
             ComPtr<IDWriteTextFormat> format;
             ComPtr<IDWriteTextLayout> layout;
             auto* dw = WriteFactory();
-            if (!dw || FAILED(dw->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                                   float(fontSize), L"", &format)))
+            if (!dw || FAILED(dw->CreateTextFormat(family, nullptr, static_cast<DWRITE_FONT_WEIGHT>(std::clamp(weight, 1, 999)),
+                                                   italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                   float(std::max(1.0, fontSize)), L"", &format)))
                 return layout;
-            format->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
-            if (centred)
-            {
-                format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            // Words longer than the box break where they must (DWRITE_WORD_WRAPPING_EMERGENCY_BREAK, Windows 8.1).
+            if (!wrap || FAILED(format->SetWordWrapping(static_cast<DWRITE_WORD_WRAPPING>(2))))
+                format->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
+            format->SetTextAlignment(align);
+            if (middle)
                 format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            }
-            dw->CreateTextLayout(text.c_str(), UINT32(text.size()), format.Get(), maxWidth, centred ? maxWidth : 100000.f, &layout);
+            dw->CreateTextLayout(text.c_str(), UINT32(text.size()), format.Get(), maxWidth, maxHeight, &layout);
             return layout;
         }
 
-        SizeD Measure(IDWriteTextLayout* layout)
+        DWRITE_TEXT_ALIGNMENT AlignOf(Align a)
         {
-            DWRITE_TEXT_METRICS m{};
-            if (!layout || FAILED(layout->GetMetrics(&m)))
-                return {};
-            return { m.widthIncludingTrailingWhitespace, m.height };
+            return a == Align::Centre ? DWRITE_TEXT_ALIGNMENT_CENTER : a == Align::Right ? DWRITE_TEXT_ALIGNMENT_TRAILING : DWRITE_TEXT_ALIGNMENT_LEADING;
         }
 
-        void Caret(ID2D1DeviceContext* dc, IDWriteTextLayout* layout, size_t length, D2D1_POINT_2F origin, ID2D1Brush* brush, float width)
+        // A text, callout or number mark's text as it is drawn: the layout, its top-left corner, the
+        // ink and, for a callout, the box it is clipped to.
+        struct MarkText
         {
-            FLOAT x = 0, y = 0;
-            DWRITE_HIT_TEST_METRICS hit{};
-            if (!layout || FAILED(layout->HitTestTextPosition(UINT32(length), length > 0, &x, &y, &hit)))
-                return;
-            dc->DrawLine(D2D1::Point2F(origin.x + x, origin.y + hit.top), D2D1::Point2F(origin.x + x, origin.y + hit.top + hit.height), brush, width);
+            ComPtr<IDWriteTextLayout> layout;
+            PointD origin;
+            uint32_t ink = 0;
+            RectD clip;   // empty: not clipped
+            SizeD measured;
+        };
+
+        bool MakeMarkText(const Annotation& m, const Annotations& marks, MarkText& out)
+        {
+            switch (m.kind)
+            {
+            case Mark::Text:
+            {
+                const bool wrap = m.wrap;
+                const float width = wrap ? float(std::max(MinTextWidth(m), m.b.x - m.a.x)) : kNoLimit;
+                out.layout = MakeLayout(m.text, FontOf(m), m.weight, m.italic, m.fontSize, width, kNoLimit, wrap, AlignOf(m.align), false);
+                if (!out.layout)
+                    return false;
+                if (m.underline)
+                    out.layout->SetUnderline(TRUE, { 0, UINT32(m.text.size()) });
+                DWRITE_TEXT_METRICS tm{};
+                out.layout->GetMetrics(&tm);
+                const double textWidth = std::max<double>(tm.widthIncludingTrailingWhitespace, m.fontSize * 0.3);
+                if (!wrap && m.align != Align::Left)
+                    out.layout->SetMaxWidth(float(textWidth));   // lines line up within the text's own width
+                out.measured = { wrap ? double(width) : textWidth, tm.height };
+                out.origin = m.a;
+                out.ink = m.fill ? ContrastingText(m.color) : m.color;
+                return true;
+            }
+            case Mark::Callout:
+            {
+                const RectD box = canvas::FromCorners(m.a, m.b);
+                if (box.w < 1 || box.h < 1)
+                    return false;
+                const double pad = std::min(box.w, box.h) * 0.12;
+                const float tw = float(std::max(1.0, box.w - 2 * pad)), th = float(std::max(1.0, box.h - 2 * pad));
+                out.layout = MakeLayout(m.text, L"Segoe UI", 600, false, m.fontSize, tw, th, true, DWRITE_TEXT_ALIGNMENT_CENTER, true);
+                if (!out.layout)
+                    return false;
+                out.origin = { box.x + pad, box.y + pad };
+                out.clip = { box.x + pad, box.y + pad, tw, th };
+                out.ink = ContrastingText(m.color);
+                out.measured = { box.w, box.h };
+                return true;
+            }
+            case Mark::Number:
+            {
+                const double r = m.fontSize * 0.75;
+                const float side = float(2 * r);
+                out.layout = MakeLayout(std::to_wstring(marks.NumberOf(m.id)), L"Segoe UI", 600, false, m.fontSize * 0.9, side, side, false,
+                                        DWRITE_TEXT_ALIGNMENT_CENTER, true);
+                if (!out.layout)
+                    return false;
+                out.origin = { m.a.x - r, m.a.y - r };
+                out.ink = ContrastingText(m.color);
+                out.measured = { side, side };
+                return true;
+            }
+            default: return false;
+            }
+        }
+
+        void DrawMarkText(ID2D1DeviceContext* dc, const MarkText& t)
+        {
+            auto ink = Brush(dc, Rgb(t.ink));
+            if (t.layout && ink)
+                dc->DrawTextLayout(Pt(t.origin), t.layout.Get(), ink.Get(), t.clip.Empty() ? D2D1_DRAW_TEXT_OPTIONS_NONE : D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
 
         ComPtr<ID2D1PathGeometry> Polyline(ID2D1DeviceContext* dc, const std::vector<PointD>& pts)
@@ -253,81 +319,59 @@ namespace sd::photo
             if (pts.empty() || FAILED(FactoryOf(dc)->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
                 return nullptr;
             sink->BeginFigure(Pt(pts[0]), D2D1_FIGURE_BEGIN_HOLLOW);
-            if (pts.size() == 1)
-                sink->AddLine(D2D1::Point2F(float(pts[0].x) + 0.01f, float(pts[0].y)));
             // Smoothed through the midpoints, so a quick stroke doesn't look like a polygon.
-            for (size_t i = 1; i + 1 < pts.size(); ++i)
-            {
-                const PointD mid{ (pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2 };
-                sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(Pt(pts[i]), Pt(mid)));
-            }
-            if (pts.size() > 1)
-                sink->AddLine(Pt(pts.back()));
+            for (const auto& seg : SmoothStroke(pts))
+                sink->AddQuadraticBezier(D2D1::QuadraticBezierSegment(Pt(seg.control), Pt(seg.end)));
             sink->EndFigure(D2D1_FIGURE_END_OPEN);
+            sink->Close();
+            return path;
+        }
+
+        ComPtr<ID2D1PathGeometry> Polygon(ID2D1DeviceContext* dc, const PointD* pts, size_t n)
+        {
+            ComPtr<ID2D1PathGeometry> path;
+            ComPtr<ID2D1GeometrySink> sink;
+            if (n < 2 || FAILED(FactoryOf(dc)->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
+                return nullptr;
+            sink->BeginFigure(Pt(pts[0]), D2D1_FIGURE_BEGIN_FILLED);
+            for (size_t i = 1; i < n; ++i)
+                sink->AddLine(Pt(pts[i]));
+            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
             sink->Close();
             return path;
         }
 
         void DrawArrow(ID2D1DeviceContext* dc, const Annotation& m, ID2D1Brush* brush, ID2D1StrokeStyle* round)
         {
-            const double dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, len = std::hypot(dx, dy);
-            if (len < 0.5)
+            if (std::hypot(m.b.x - m.a.x, m.b.y - m.a.y) < 0.5)
                 return;
-            const double ux = dx / len, uy = dy / len;
-            const double head = std::min(len * 0.6, std::max(m.width * 3.6, 10.0)), half = head * 0.55;
-            const PointD base{ m.b.x - ux * head * 0.85, m.b.y - uy * head * 0.85 };
-            dc->DrawLine(Pt(m.a), Pt(base), brush, float(m.width), round);
-            ComPtr<ID2D1PathGeometry> path;
-            ComPtr<ID2D1GeometrySink> sink;
-            if (FAILED(FactoryOf(dc)->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
-                return;
-            const PointD back{ m.b.x - ux * head, m.b.y - uy * head };
-            sink->BeginFigure(Pt(m.b), D2D1_FIGURE_BEGIN_FILLED);
-            sink->AddLine(Pt({ back.x - uy * half, back.y + ux * half }));
-            sink->AddLine(Pt({ back.x + uy * half, back.y - ux * half }));
-            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-            sink->Close();
-            dc->FillGeometry(path.Get(), brush);
-            dc->DrawGeometry(path.Get(), brush, float(std::max(1.0, m.width * 0.25)), round);
+            const ArrowShape shape = ArrowGeometry(m);
+            dc->DrawLine(Pt(m.a), Pt(shape.lineEnd), brush, float(m.width), round);
+            if (auto head = Polygon(dc, shape.head, 3))
+            {
+                dc->FillGeometry(head.Get(), brush);
+                dc->DrawGeometry(head.Get(), brush, float(shape.headStroke), round);
+            }
         }
 
-        void DrawCallout(ID2D1DeviceContext* dc, const Annotation& m, Annotations& marks, uint32_t editing)
+        void DrawCallout(ID2D1DeviceContext* dc, const Annotation& m, Annotations& marks)
         {
             const RectD box = canvas::FromCorners(m.a, m.b);
             if (box.w < 1 || box.h < 1)
                 return;
             auto fill = Brush(dc, Rgb(m.color));
-            auto ink = Brush(dc, Rgb(ContrastingText(m.color)));
-            const double r = std::min({ box.w, box.h, m.fontSize * 1.2 }) * 0.35;
-            // The tail: a triangle from inside the box to the tip, drawn first so the box covers its base.
-            const PointD c = box.Centre();
-            const double dx = m.tip.x - c.x, dy = m.tip.y - c.y, len = std::max(1.0, std::hypot(dx, dy));
-            const double half = std::min(box.w, box.h) * 0.16;
-            ComPtr<ID2D1PathGeometry> tail;
-            ComPtr<ID2D1GeometrySink> sink;
-            if (SUCCEEDED(FactoryOf(dc)->CreatePathGeometry(&tail)) && SUCCEEDED(tail->Open(&sink)))
-            {
-                sink->BeginFigure(Pt({ c.x - dy / len * half, c.y + dx / len * half }), D2D1_FIGURE_BEGIN_FILLED);
-                sink->AddLine(Pt(m.tip));
-                sink->AddLine(Pt({ c.x + dy / len * half, c.y - dx / len * half }));
-                sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-                sink->Close();
-                dc->FillGeometry(tail.Get(), fill.Get());
-            }
-            dc->FillRoundedRectangle(D2D1::RoundedRect(Rect(box), float(r), float(r)), fill.Get());
-            const double pad = std::min(box.w, box.h) * 0.12;
-            const float tw = float(std::max(1.0, box.w - 2 * pad));
-            auto layout = TextLayout(m.text, m.fontSize, tw, true, false);
-            if (!layout)
+            const float r = float(CalloutRadius(m));
+            // The tail first, so the box covers its base.
+            PointD tail[3];
+            CalloutTail(m, tail);
+            if (auto path = Polygon(dc, tail, 3))
+                dc->FillGeometry(path.Get(), fill.Get());
+            dc->FillRoundedRectangle(D2D1::RoundedRect(Rect(box), r, r), fill.Get());
+            MarkText text;
+            if (!MakeMarkText(m, marks, text))
                 return;
-            layout->SetMaxHeight(float(std::max(1.0, box.h - 2 * pad)));
-            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-            layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            const auto origin = D2D1::Point2F(float(box.x + pad), float(box.y + pad));
-            dc->DrawTextLayout(origin, layout.Get(), ink.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
-            marks.SetMeasured(m.id, { box.w, box.h });
-            if (editing == m.id)
-                Caret(dc, layout.Get(), m.text.size(), origin, ink.Get(), float(std::max(1.0, m.fontSize / 14)));
+            DrawMarkText(dc, text);
+            marks.SetMeasured(m.id, text.measured);
         }
 
         void DrawMagnifier(ID2D1DeviceContext* dc, unsigned device, const Annotation& m, const Picture& photo, Bitmaps& bitmaps, ID2D1Brush* ring)
@@ -360,34 +404,23 @@ namespace sd::photo
             }
             dc->DrawEllipse(loupe, ring, float(std::max(2.0, m.width)));
         }
-    }
 
-    HRESULT DrawAnnotated(ID2D1DeviceContext* dc, unsigned device, double scale, const Picture& photo, Annotations& marks,
-                          const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps, uint32_t editing)
-    {
-        if (photo.Empty())
-            return E_INVALIDARG;
-        dc->SetTransform(D2D1::Matrix3x2F::Scale(float(scale), float(scale)));
-        auto* base = bitmaps.Get(dc, device, photo.raster);
-        if (!base)
-            return E_OUTOFMEMORY;
-        dc->DrawBitmap(base, D2D1::RectF(0, 0, float(photo.width), float(photo.height)), 1.f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr);
-        auto round = RoundStroke(dc);
-        for (const auto& m : marks.Items())
+        void DrawMark(ID2D1DeviceContext* dc, unsigned device, const Annotation& m, const Picture& photo, Annotations& marks,
+                      const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps, ID2D1StrokeStyle* round)
         {
             auto brush = Brush(dc, Rgb(m.color));
             if (!brush)
-                return E_OUTOFMEMORY;
+                return;
             switch (m.kind)
             {
-            case Mark::Arrow: DrawArrow(dc, m, brush.Get(), round.Get()); break;
+            case Mark::Arrow: DrawArrow(dc, m, brush.Get(), round); break;
             case Mark::Rect:
             {
                 const auto r = Rect(canvas::FromCorners(m.a, m.b));
                 if (m.fill)
                     dc->FillRectangle(r, brush.Get());
                 else
-                    dc->DrawRectangle(r, brush.Get(), float(m.width), round.Get());
+                    dc->DrawRectangle(r, brush.Get(), float(m.width), round);
                 break;
             }
             case Mark::Ellipse:
@@ -402,38 +435,31 @@ namespace sd::photo
             }
             case Mark::Text:
             {
-                const std::wstring shown = m.text.empty() && editing == m.id ? std::wstring() : m.text;
-                auto layout = TextLayout(shown.empty() ? std::wstring(L" ") : shown, m.fontSize, 100000.f, false, false);
-                SizeD size = Measure(layout.Get());
-                size.w = std::max(size.w, m.fontSize * 0.3);
-                marks.SetMeasured(m.id, size);
-                const auto origin = Pt(m.a);
-                auto ink = brush;
+                MarkText text;
+                if (!MakeMarkText(m, marks, text))
+                    break;
+                marks.SetMeasured(m.id, text.measured);
                 if (m.fill)
                 {
                     const double pad = m.fontSize * 0.3;
-                    const RectD back{ m.a.x - pad, m.a.y - pad, size.w + 2 * pad, size.h + 2 * pad };
+                    const RectD box = marks.TextBox(m);
+                    const RectD back{ box.x - pad, box.y - pad, box.w + 2 * pad, box.h + 2 * pad };
                     dc->FillRoundedRectangle(D2D1::RoundedRect(Rect(back), float(pad), float(pad)), brush.Get());
-                    ink = Brush(dc, Rgb(ContrastingText(m.color)));
                 }
-                if (layout && !shown.empty())
-                    dc->DrawTextLayout(origin, layout.Get(), ink.Get());
-                if (editing == m.id)
-                    Caret(dc, layout.Get(), shown.size(), origin, ink.Get(), float(std::max(1.0, m.fontSize / 14)));
+                if (!m.text.empty())
+                    DrawMarkText(dc, text);
                 break;
             }
-            case Mark::Callout: DrawCallout(dc, m, marks, editing); break;
+            case Mark::Callout: DrawCallout(dc, m, marks); break;
             case Mark::Number:
             {
                 const double r = m.fontSize * 0.75;
                 dc->FillEllipse(D2D1::Ellipse(Pt(m.a), float(r), float(r)), brush.Get());
                 auto ring = Brush(dc, D2D1::ColorF(1, 1, 1, 0.9f));
                 dc->DrawEllipse(D2D1::Ellipse(Pt(m.a), float(r), float(r)), ring.Get(), float(std::max(1.0, r * 0.08)));
-                auto ink = Brush(dc, Rgb(ContrastingText(m.color)));
-                const float side = float(2 * r);
-                auto layout = TextLayout(std::to_wstring(marks.NumberOf(m.id)), m.fontSize * 0.9, side, false, true);
-                if (layout)
-                    dc->DrawTextLayout(D2D1::Point2F(float(m.a.x - r), float(m.a.y - r)), layout.Get(), ink.Get());
+                MarkText text;
+                if (MakeMarkText(m, marks, text))
+                    DrawMarkText(dc, text);
                 break;
             }
             case Mark::Magnifier: DrawMagnifier(dc, device, m, photo, bitmaps, brush.Get()); break;
@@ -455,17 +481,175 @@ namespace sd::photo
                 // A highlighter is see-through as a whole, so where it crosses itself it isn't darker.
                 const bool marker = m.kind == Mark::Highlighter;
                 if (marker)
-                    dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(), 0.42f),
+                    dc->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(), kHighlighterOpacity),
                                   nullptr);
-                dc->DrawGeometry(path.Get(), brush.Get(), float(m.width), round.Get());
+                dc->DrawGeometry(path.Get(), brush.Get(), float(m.width), round);
                 if (marker)
                     dc->PopLayer();
                 break;
             }
+            case Mark::Check:
+            case Mark::Cross:
+            {
+                double width = 1;
+                for (const auto& stroke : CheckStrokes(m, width))
+                {
+                    // Straight segments with round caps and joins.
+                    ComPtr<ID2D1PathGeometry> path;
+                    ComPtr<ID2D1GeometrySink> sink;
+                    if (FAILED(FactoryOf(dc)->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
+                        break;
+                    sink->BeginFigure(Pt(stroke[0]), D2D1_FIGURE_BEGIN_HOLLOW);
+                    for (size_t i = 1; i < stroke.size(); ++i)
+                        sink->AddLine(Pt(stroke[i]));
+                    sink->EndFigure(D2D1_FIGURE_END_OPEN);
+                    sink->Close();
+                    dc->DrawGeometry(path.Get(), brush.Get(), float(width), round);
+                }
+                break;
+            }
             }
         }
+    }
+
+    bool LayOutMarkText(const Annotation& m, const Annotations& marks, TextLayoutInfo& info, PointD& origin, SizeD* measured)
+    {
+        MarkText text;
+        if (!MakeMarkText(m, marks, text))
+            return false;
+        info = DescribeTextLayout(text.layout.Get(), m.kind == Mark::Number ? std::to_wstring(marks.NumberOf(m.id)) : m.text);
+        origin = text.origin;
+        if (measured)
+            *measured = text.measured;
+        return true;
+    }
+
+    TextLayoutInfo DescribeTextLayout(IDWriteTextLayout* layout, const std::wstring& text)
+    {
+        TextLayoutInfo info;
+        if (!layout)
+            return info;
+        DWRITE_TEXT_METRICS tm{};
+        layout->GetMetrics(&tm);
+        info.width = tm.widthIncludingTrailingWhitespace;
+        info.height = tm.height;
+        UINT32 count = 0;
+        layout->GetLineMetrics(nullptr, 0, &count);
+        std::vector<DWRITE_LINE_METRICS> lines(count);
+        if (count && FAILED(layout->GetLineMetrics(lines.data(), count, &count)))
+            lines.clear();
+        const size_t n = text.size();
+        info.caretX.assign(n + 1, 0.0);
+        for (size_t pos = 0; pos <= n; ++pos)
+        {
+            FLOAT x = 0, y = 0;
+            DWRITE_HIT_TEST_METRICS hit{};
+            // The end of a text that doesn't end in a line break is the last character's trailing edge.
+            const bool trailing = pos == n && n > 0 && text[n - 1] != L'\n';
+            if (SUCCEEDED(layout->HitTestTextPosition(UINT32(trailing ? n - 1 : pos), trailing, &x, &y, &hit)))
+                info.caretX[pos] = x;
+        }
+        size_t start = 0;
+        double top = 0;
+        for (const auto& lm : lines)
+        {
+            TextLine line;
+            line.start = std::min(start, n);
+            line.end = std::min(start + lm.length - lm.newlineLength, n);
+            line.top = top;
+            line.height = lm.height;
+            line.left = line.right = info.caretX[line.start];
+            if (line.end > line.start)
+            {
+                UINT32 rects = 0;
+                layout->HitTestTextRange(UINT32(line.start), UINT32(line.end - line.start), 0, 0, nullptr, 0, &rects);
+                std::vector<DWRITE_HIT_TEST_METRICS> hits(rects);
+                if (rects && SUCCEEDED(layout->HitTestTextRange(UINT32(line.start), UINT32(line.end - line.start), 0, 0, hits.data(), rects, &rects)))
+                {
+                    line.left = hits[0].left;
+                    line.right = hits[0].left + hits[0].width;
+                    for (const auto& h : hits)
+                    {
+                        line.left = std::min<double>(line.left, h.left);
+                        line.right = std::max<double>(line.right, h.left + h.width);
+                    }
+                }
+            }
+            info.lines.push_back(line);
+            start += lm.length;
+            top += lm.height;
+        }
+        if (info.lines.empty())
+            info.lines.push_back({ 0, 0, 0, tm.height, 0, 0 });
+        return info;
+    }
+
+    const std::vector<std::wstring>& SystemFontFamilies()
+    {
+        static std::vector<std::wstring> families;
+        static std::once_flag once;
+        std::call_once(once, [] {
+            ComPtr<IDWriteFontCollection> collection;
+            auto* dw = WriteFactory();
+            if (!dw || FAILED(dw->GetSystemFontCollection(&collection, FALSE)))
+                return;
+            wchar_t locale[LOCALE_NAME_MAX_LENGTH] = L"";
+            GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH);
+            for (UINT32 i = 0; i < collection->GetFontFamilyCount(); ++i)
+            {
+                ComPtr<IDWriteFontFamily> family;
+                ComPtr<IDWriteLocalizedStrings> names;
+                if (FAILED(collection->GetFontFamily(i, &family)) || FAILED(family->GetFamilyNames(&names)))
+                    continue;
+                // The family's name as DirectWrite finds it again: English where it has one.
+                UINT32 index = 0;
+                BOOL exists = FALSE;
+                names->FindLocaleName(L"en-us", &index, &exists);
+                if (!exists)
+                    names->FindLocaleName(locale, &index, &exists);
+                if (!exists)
+                    index = 0;
+                UINT32 length = 0;
+                if (FAILED(names->GetStringLength(index, &length)))
+                    continue;
+                std::wstring name(length + 1, L'\0');
+                if (FAILED(names->GetString(index, name.data(), length + 1)))
+                    continue;
+                name.resize(length);
+                if (!name.empty() && name[0] != L'@')   // vertical CJK variants
+                    families.push_back(std::move(name));
+            }
+            std::sort(families.begin(), families.end(), [](const std::wstring& a, const std::wstring& b) { return _wcsicmp(a.c_str(), b.c_str()) < 0; });
+            families.erase(std::unique(families.begin(), families.end(), [](const std::wstring& a, const std::wstring& b) { return _wcsicmp(a.c_str(), b.c_str()) == 0; }),
+                           families.end());
+        });
+        return families;
+    }
+
+    HRESULT DrawMarks(ID2D1DeviceContext* dc, unsigned device, const D2D1_MATRIX_3X2_F& transform, const Picture& photo, Annotations& marks,
+                      const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps, const std::function<bool(const Annotation&)>& only)
+    {
+        dc->SetTransform(transform);
+        auto round = RoundStroke(dc);
+        for (const auto& m : marks.Items())
+            if (!only || only(m))
+                DrawMark(dc, device, m, photo, marks, images, bitmaps, round.Get());
         dc->SetTransform(D2D1::Matrix3x2F::Identity());
         return S_OK;
+    }
+
+    HRESULT DrawAnnotated(ID2D1DeviceContext* dc, unsigned device, double scale, const Picture& photo, Annotations& marks,
+                          const std::map<std::wstring, Picture>& images, Bitmaps& bitmaps)
+    {
+        if (photo.Empty())
+            return E_INVALIDARG;
+        const auto transform = D2D1::Matrix3x2F::Scale(float(scale), float(scale));
+        dc->SetTransform(transform);
+        auto* base = bitmaps.Get(dc, device, photo.raster);
+        if (!base)
+            return E_OUTOFMEMORY;
+        dc->DrawBitmap(base, D2D1::RectF(0, 0, float(photo.width), float(photo.height)), 1.f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr);
+        return DrawMarks(dc, device, transform, photo, marks, images, bitmaps, {});
     }
 
     // ---- Add a Background ---------------------------------------------------------------------------

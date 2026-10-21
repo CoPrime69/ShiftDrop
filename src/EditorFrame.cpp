@@ -50,7 +50,7 @@ namespace sd
         return { info.rcWork, dpiX };
     }
 
-    bool EditorFrame::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show)
+    bool EditorFrame::Create(const std::wstring& title, int widthDip, int heightDip, int minWidthDip, int minHeightDip, bool show, HWND owner)
     {
         static const bool registered = [] {
             WNDCLASSEXW wc{ sizeof(wc) };
@@ -67,17 +67,27 @@ namespace sd
         m_minDip = { minWidthDip, minHeightDip };
 
         // Open on the monitor the user is working on (where the drop happened), centred.
-        const auto monitor = CursorMonitor();
+        auto monitor = CursorMonitor();
+        RECT around = monitor.work;
+        if (owner)
+        {
+            // Over its owner, on the owner's monitor.
+            MONITORINFO info{ sizeof(info) };
+            GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &info);
+            monitor = { info.rcWork, GetDpiForWindow(owner) };
+            GetWindowRect(owner, &around);
+        }
         const RECT work = monitor.work;
         const int dpi = static_cast<int>(monitor.dpi);
+        const DWORD exStyle = owner ? 0 : WS_EX_APPWINDOW;
         RECT r{ 0, 0, MulDiv(widthDip, dpi, 96), MulDiv(heightDip, dpi, 96) };
-        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW, monitor.dpi);
+        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, exStyle, monitor.dpi);
         const int w = std::min<int>(r.right - r.left, work.right - work.left);
         const int h = std::min<int>(r.bottom - r.top, work.bottom - work.top);
+        const int x = std::clamp<int>(around.left + (around.right - around.left - w) / 2, work.left, std::max<int>(work.left, work.right - w));
+        const int y = std::clamp<int>(around.top + (around.bottom - around.top - h) / 2, work.top, std::max<int>(work.top, work.bottom - h));
         // WM_NCCREATE stores the handle in m_hwnd (messages arrive before CreateWindowEx returns).
-        if (!CreateWindowExW(WS_EX_APPWINDOW, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, work.left + (work.right - work.left - w) / 2,
-                             work.top + (work.bottom - work.top - h) / 2, w, h, nullptr, nullptr, GetModuleHandleW(nullptr), this) ||
-            !m_hwnd)
+        if (!CreateWindowExW(exStyle, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, x, y, w, h, owner, nullptr, GetModuleHandleW(nullptr), this) || !m_hwnd)
             return false;
         m_dpi = GetDpiForWindow(m_hwnd);
         LoadColors();   // the title bar needs the window

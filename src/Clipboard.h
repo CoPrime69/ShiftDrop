@@ -14,6 +14,8 @@ namespace sd::clipboard
 {
     // Plain text (CF_UNICODETEXT). `error` (optional) says why it failed.
     bool SetText(HWND owner, const std::wstring& text, std::wstring* error = nullptr);
+    // The clipboard's plain text; false when it holds none.
+    bool GetText(HWND owner, std::wstring& text);
 
     // Files the way Explorer's Copy puts them: CF_HDROP plus "Preferred DropEffect", which tells
     // Explorer's Paste to copy or move (`effect`). With a picture of a single image file, pasting into

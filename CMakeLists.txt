@@ -213,6 +213,8 @@ add_library(shiftdrop_core STATIC
   src/photo/Layout.cpp
   src/photo/PhotoEngine.cpp
   src/photo/PhotoModule.cpp
+  src/photo/Signatures.cpp
+  src/photo/TextBox.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -284,6 +286,7 @@ add_executable(ShiftDrop WIN32
   src/mediaeditor/MediaLoader.cpp
   src/mediaeditor/Playback.cpp
   src/canvas/EditorWindow.cpp
+  src/canvas/SignaturePad.cpp   # draw or pick a signature, over the picture editor
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
