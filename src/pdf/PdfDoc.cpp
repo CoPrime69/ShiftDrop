@@ -26,14 +26,6 @@ namespace sd::pdf
             return Narrow(std::filesystem::path(path).filename().wstring());
         }
 
-        int RotationOf(QPDFPageObjectHelper& page)
-        {
-            // /Rotate is inheritable from the page tree; a missing or odd value counts as 0.
-            auto rotate = page.getAttribute("/Rotate", false);
-            const int r = rotate.isInteger() ? static_cast<int>(rotate.getIntValue()) : 0;
-            return ((r % 360) + 360) % 360 / 90 * 90;
-        }
-
         // The base's pages that are not in the output stay in its object table, and its outline,
         // named destinations or form fields can still point at them, which would carry their content
         // into the new file. So each one left out (deleted, or replaced by an edited copy such as a
@@ -313,5 +305,32 @@ namespace sd::pdf
             error = QpdfError(e);
             return false;
         }
+    }
+
+    int RotationOf(QPDFPageObjectHelper& page)
+    {
+        auto rotate = page.getAttribute("/Rotate", false);
+        const int r = rotate.isInteger() ? static_cast<int>(rotate.getIntValue()) : 0;
+        return ((r % 360) + 360) % 360 / 90 * 90;
+    }
+
+    std::vector<std::string> StreamFilters(QPDFObjectHandle filter)
+    {
+        std::vector<std::string> out;
+        if (filter.isName())
+            out.push_back(filter.getName());
+        else if (filter.isArray())
+            for (int i = 0; i < filter.getArrayNItems(); ++i)
+                if (filter.getArrayItem(i).isName())
+                    out.push_back(filter.getArrayItem(i).getName());
+        return out;
+    }
+
+    bool IsDctFilter(std::string_view f) { return f == "/DCTDecode" || f == "/DCT"; }
+
+    bool IsLosslessFilter(std::string_view f)
+    {
+        return f == "/FlateDecode" || f == "/Fl" || f == "/LZWDecode" || f == "/LZW" || f == "/RunLengthDecode" || f == "/RL" ||
+               f == "/ASCII85Decode" || f == "/A85" || f == "/ASCIIHexDecode" || f == "/AHx";
     }
 }

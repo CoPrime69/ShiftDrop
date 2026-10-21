@@ -52,6 +52,8 @@ namespace sd::sandbox
         std::vector<HANDLE> crtFds;
         Limits limits;
         bool appContainer = true;        // false: a plain child (still in the job, with the limits)
+        std::wstring workingDir;         // the child's current folder (a plain child only; empty: ours)
+        bool hideWindow = false;         // starts its windows hidden (a GUI program run headless: LibreOffice)
         bool mitigations = false;        // extra process mitigations (no extension points, no remote images)
         DWORD priority = BELOW_NORMAL_PRIORITY_CLASS;
     };

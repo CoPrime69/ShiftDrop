@@ -1,4 +1,5 @@
 #include "canvas/Covers.h"
+#include "formats/Pixels.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,15 +36,6 @@ namespace sd::canvas
             const unsigned a = p[3];
             for (int c = 0; c < 3; ++c)
                 p[c] = static_cast<uint8_t>((p[c] * a + 127) / 255);
-        }
-
-        void Unpremultiply(uint8_t* p)
-        {
-            const unsigned a = p[3];
-            if (a == 0 || a == 255)
-                return;
-            for (int c = 0; c < 3; ++c)
-                p[c] = static_cast<uint8_t>(std::min(255u, (p[c] * 255 + a / 2) / a));
         }
 
         int BoxRadius(double sigma)
@@ -83,7 +75,7 @@ namespace sd::canvas
                     uint8_t* d = image.At(static_cast<UINT>(x), static_cast<UINT>(y));
                     const uint8_t* s = work.data() + (static_cast<size_t>(y - area.y) * area.w + static_cast<size_t>(x - area.x)) * 4;
                     std::copy_n(s, 4, d);
-                    Unpremultiply(d);
+                    formats::UnpremultiplyPixel(d);
                 }
         }
 

@@ -66,8 +66,4 @@ namespace sd::ocr
     // The top panel's line after Copy text: "Copied 214 words", "Copied 1 word from 3 files",
     // "No text found".
     std::wstring CopiedMessage(size_t words, size_t files);
-
-    // Puts text on the clipboard as CF_UNICODETEXT. Works from any thread (OpenClipboard with no
-    // owner window); retries briefly when another app holds the clipboard.
-    bool SetClipboardText(const std::wstring& text, std::wstring& error);
 }

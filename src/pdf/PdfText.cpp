@@ -14,13 +14,6 @@ namespace sd::pdf
 {
     namespace
     {
-        int RotationOf(QPDFPageObjectHelper& page)
-        {
-            auto rotate = page.getAttribute("/Rotate", false);
-            const int r = rotate.isInteger() ? static_cast<int>(rotate.getIntValue()) : 0;
-            return ((r % 360) + 360) % 360 / 90 * 90;
-        }
-
         double PageArea(QPDFPageObjectHelper& page)
         {
             auto box = page.getCropBox(false, false);

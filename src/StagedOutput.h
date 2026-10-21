@@ -56,6 +56,9 @@ namespace sd
         bool Ready() const { return !m_path.empty(); }
         const std::wstring& Error() const { return m_error; }
         const std::wstring& Path() const { return m_path; }   // staging path to write
+        // Opens the (empty, reserved) staging file for an encoder that writes to a stream. Release
+        // the stream before Commit or Fail, which rename or delete the file.
+        HRESULT OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const;
 
         // Renames into place, hashes, records Done. On a rename error returns a failed result.
         ItemResult Commit(std::wstring_view suffix, std::wstring_view extension);

@@ -182,13 +182,18 @@ namespace sd::sandbox
                 si.StartupInfo.cbReserved2 = static_cast<WORD>(fdBlock.size());
                 si.StartupInfo.lpReserved2 = fdBlock.data();
             }
+            if (spec.hideWindow)
+            {
+                si.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
+                si.StartupInfo.wShowWindow = SW_HIDE;
+            }
             si.lpAttributeList = attrs;
 
             // In the AppContainer the child's current folder is System32, which every AppContainer may
-            // read (ours may be a folder it cannot open). A plain child keeps ours.
+            // read (ours may be a folder it cannot open). A plain child keeps ours unless told otherwise.
             wchar_t system[MAX_PATH]{};
             GetSystemDirectoryW(system, MAX_PATH);
-            const wchar_t* folder = container ? system : nullptr;
+            const wchar_t* folder = container ? system : spec.workingDir.empty() ? nullptr : spec.workingDir.c_str();
             std::wstring commandLine = spec.commandLine;   // CreateProcessW may write to it
             if (!CreateProcessW(spec.exe.c_str(), commandLine.data(), nullptr, nullptr, inherit.empty() ? FALSE : TRUE,
                                 CREATE_SUSPENDED | CREATE_NO_WINDOW | spec.priority | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,

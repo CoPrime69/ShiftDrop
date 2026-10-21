@@ -1,6 +1,7 @@
 #include "formats/Frames.h"
 #include "Ask.h"
 #include "ImagePipeline.h"
+#include "Wic.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "formats/Avif.h"
@@ -25,13 +26,6 @@ namespace sd::formats
 
         bool IsGif(const std::wstring& ext) { return ext == L".gif"; }
         bool IsTiff(const std::wstring& ext) { return ext == L".tif" || ext == L".tiff"; }
-
-        ComPtr<IWICImagingFactory> Factory()
-        {
-            ComPtr<IWICImagingFactory> factory;
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            return factory;
-        }
 
         HRESULT OpenDecoder(IWICImagingFactory* factory, const std::wstring& path, ComPtr<IWICBitmapDecoder>& decoder)
         {
@@ -232,7 +226,7 @@ namespace sd::formats
         const auto ext = LowerExtension(path);
         if (!IsGif(ext) && !IsTiff(ext))
             return 1;
-        auto factory = Factory();
+        auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
         UINT count = 0;
         if (!factory || FAILED(OpenDecoder(factory.Get(), path, decoder)) || FAILED(decoder->GetFrameCount(&count)))
@@ -242,7 +236,7 @@ namespace sd::formats
 
     HRESULT ForEachFrame(const std::wstring& path, std::stop_token stop, const FrameFn& each, std::wstring& error)
     {
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory)
         {
             error = L"WIC unavailable";
@@ -277,7 +271,7 @@ namespace sd::formats
             Image picture;
             hr = decoder->GetFrame(i, &frame);
             if (SUCCEEDED(hr))
-                hr = FromWicSource(factory.Get(), frame.Get(), picture);
+                hr = wic::CopyBgra(factory.Get(), frame.Get(), picture.width, picture.height, picture.bgra);
             if (FAILED(hr))
             {
                 error = std::format(L"frame {}: {}", i + 1, HResultText(hr));
@@ -382,7 +376,7 @@ namespace sd::formats
                 progress(static_cast<double>(index + 1) / count);
         };
 
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory)
             return out.Fail(L"WIC unavailable");
         std::wstring error;

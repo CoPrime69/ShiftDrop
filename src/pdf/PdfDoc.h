@@ -3,10 +3,12 @@
 #include "pdf/PagePlan.h"
 
 #include <qpdf/QPDF.hh>
+#include <qpdf/QPDFPageObjectHelper.hh>
 
 #include <memory>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // QPDF (Apache-2.0) does everything structural: opening any PDF (repairing damaged ones), merging,
@@ -35,6 +37,17 @@ namespace sd::pdf
     // are copied in. A page used twice becomes a copy; rotations add to the page's own /Rotate.
     bool AssemblePages(const std::vector<std::wstring>& sources, const PagePlan& plan, const std::wstring& out, std::stop_token stop,
                        const ProgressFn& progress, std::wstring& error);
+
+    // A page's /Rotate, inherited from the page tree too, as 0, 90, 180 or 270 (a missing or odd value
+    // counts as 0).
+    int RotationOf(QPDFPageObjectHelper& page);
+
+    // A stream's /Filter as a list of names (one name, an array of them, or none).
+    std::vector<std::string> StreamFilters(QPDFObjectHandle filter);
+    // JPEG data: /DCTDecode (or its short form /DCT).
+    bool IsDctFilter(std::string_view filter);
+    // A filter that decodes to the exact samples (Flate, LZW, run length, ASCII85, ASCIIHex).
+    bool IsLosslessFilter(std::string_view filter);
 
     // QPDF's exception text as a wide string.
     std::wstring QpdfError(const std::exception& e);

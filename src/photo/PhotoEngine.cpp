@@ -1,11 +1,8 @@
 #include "photo/PhotoEngine.h"
 #include "Log.h"
-#include "Media.h"
 #include "OutputPath.h"
 #include "Utf.h"
 #include "canvas/Editor.h"
-#include "metadata/Container.h"
-#include "metadata/Metadata.h"
 #include "photo/Gpu.h"
 #include "photo/PhotoTools.h"
 
@@ -85,28 +82,6 @@ namespace sd::photo
             to.dpiX = from.dpiX;
             to.dpiY = from.dpiY;
             to.icc = from.icc;
-        }
-
-        // Encodes in the source's format (Raster.h: EditedFormatFor), carries its EXIF when asked, and
-        // commits.
-        ItemResult Write(StagedOutput& out, const std::wstring& source, const Raster& image, const Recipe& recipe, bool carryExif,
-                         const std::wstring& extensionOf = {})
-        {
-            const auto& format = canvas::EditedFormatFor(LowerExtension(extensionOf.empty() ? source : extensionOf));
-            std::vector<uint8_t> bytes;
-            std::wstring error;
-            if (FAILED(canvas::EncodeRaster(image, format, canvas::EditedQuality(format), bytes, error)))
-                return out.Fail(error);
-            if (carryExif)
-            {
-                // Dates, camera and location stay with the photo; the old thumbnail and orientation don't.
-                std::vector<uint8_t> original;
-                if (metadata::ReadFileBytes(source, original))
-                    metadata::CarryEditedExif(original, bytes, static_cast<int>(image.width), static_cast<int>(image.height));
-            }
-            if (!metadata::WriteFileBytes(out.Path(), bytes))
-                return out.Fail(L"cannot write next to the source");
-            return out.Commit(recipe.suffix, format.extension);
         }
 
         std::vector<ParamSpec> AdjustSpecs()
@@ -287,26 +262,11 @@ namespace sd::photo
 
     // ---- The engine ---------------------------------------------------------------------------------
 
-    PhotoEngine::PhotoEngine(const EngineServices& services) : m_services(services), m_codecs(std::make_shared<const ImageCodecs>()) {}
+    PhotoEngine::PhotoEngine(const EngineServices& services) : PictureEngine(services, std::make_shared<const ImageCodecs>()) {}
 
     bool PhotoEngine::Handles(const Recipe& recipe) const { return ToolOf(recipe) != Tool::None; }
 
-    bool PhotoEngine::Applies(const Recipe&, const std::wstring& path) const
-    {
-        const auto ext = LowerExtension(path);
-        return MediaKindOfExtension(ext) == MediaKind::None && m_codecs->CanDecode(ext);
-    }
-
     bool PhotoEngine::AppliesToDrop(const Recipe& recipe, size_t fileCount) const { return ToolOf(recipe) != Tool::Collage || fileCount >= 2; }
-
-    bool PhotoEngine::Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const
-    {
-        if (Applies(recipe, path))
-            return true;
-        if (why)
-            *why = std::format(L"no image decoder for '{}' on this PC", LowerExtension(path));
-        return false;
-    }
 
     bool PhotoEngine::IsBatch(const Recipe& recipe) const { return ToolOf(recipe) == Tool::Collage; }
 
@@ -399,7 +359,7 @@ namespace sd::photo
             return out.Fail(L"cancelled", true);
         if (progress)
             progress(0.8);
-        auto r = Write(out, source, result, recipe, true);
+        auto r = canvas::CommitEdited(out, result, source, recipe.suffix, true);
         if (progress)
             progress(1.0);
         return r;
@@ -455,7 +415,7 @@ namespace sd::photo
         if (progress)
             progress(0.9);
         // A new picture: the first photo's format, none of the photos' metadata.
-        auto r = Write(out, sources[static_cast<size_t>(order.front())], result, recipe, false);
+        auto r = canvas::CommitEdited(out, result, sources[static_cast<size_t>(order.front())], recipe.suffix, false);
         if (progress)
             progress(1.0);
         return r;

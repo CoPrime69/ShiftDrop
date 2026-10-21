@@ -4,6 +4,8 @@
 #include "Log.h"
 #include "OutputPath.h"
 
+#include <shlwapi.h>
+
 #include <filesystem>
 #include <format>
 #include <random>
@@ -76,6 +78,15 @@ namespace sd
     {
         if (!m_path.empty())
             RemoveStaging(m_path);
+    }
+
+    HRESULT StagedOutput::OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const
+    {
+        if (m_path.empty() || m_folder)
+            return E_UNEXPECTED;
+        // fCreate=FALSE: the file was made new by CreateStaging, so this only ever opens our own file.
+        return SHCreateStreamOnFileEx(m_path.c_str(), STGM_WRITE | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr,
+                                      stream.ReleaseAndGetAddressOf());
     }
 
     ItemResult StagedOutput::Commit(std::wstring_view suffix, std::wstring_view extension)

@@ -3,6 +3,8 @@
 #include "TestUtil.h"
 #include "officebridge/OfficeBridge.h"
 
+#include <shellapi.h>
+
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -58,11 +60,22 @@ TEST(Office, LibreOfficeCommandLine)
     EXPECT_EQ(FileUrl(L"\\\\server\\share\\x"), L"file://server/share/x");
     EXPECT_EQ(FileUrl(L"C:\\Ünï"), L"file:///C:/%C3%9Cn%C3%AF");
 
-    EXPECT_EQ(LibreOfficeCommandLine(L"C:\\LO\\soffice.exe", L"file:///C:/p", L"C:\\Temp\\out", L"C:\\Docs\\a b.pptx"),
-              L"\"C:\\LO\\soffice.exe\" --headless --invisible --norestore --nologo --nodefault --nolockcheck --nofirststartwizard "
-              L"\"-env:UserInstallation=file:///C:/p\" --convert-to pdf --outdir \"C:\\Temp\\out\" \"C:\\Docs\\a b.pptx\"");
-    // A trailing backslash must not escape the closing quote.
-    EXPECT_NE(LibreOfficeCommandLine(L"s.exe", L"u", L"C:\\", L"x").find(L"\"C:\\\\\""), std::wstring::npos);
+    // Quoted the way every child process's arguments are (Media.h: QuoteArg): only where needed.
+    EXPECT_EQ(LibreOfficeCommandLine(L"C:\\Program Files\\LO\\soffice.exe", L"file:///C:/p", L"C:\\Temp\\out", L"C:\\Docs\\a b.pptx"),
+              L"\"C:\\Program Files\\LO\\soffice.exe\" --headless --invisible --norestore --nologo --nodefault --nolockcheck --nofirststartwizard "
+              L"-env:UserInstallation=file:///C:/p --convert-to pdf --outdir C:\\Temp\\out \"C:\\Docs\\a b.pptx\"");
+    // soffice gets exactly these arguments back, and a trailing backslash does not escape a closing quote.
+    const auto line = LibreOfficeCommandLine(L"C:\\LO\\soffice.exe", L"file:///C:/My%20p", L"C:\\Temp\\a b\\", L"C:\\Docs\\a \"b\".pptx");
+    int argc = 0;
+    wchar_t** argv = CommandLineToArgvW(line.c_str(), &argc);
+    ASSERT_NE(argv, nullptr);
+    const std::vector<std::wstring> args(argv, argv + argc);
+    LocalFree(argv);
+    ASSERT_EQ(args.size(), 14u);
+    EXPECT_EQ(args[0], L"C:\\LO\\soffice.exe");
+    EXPECT_EQ(args[8], L"-env:UserInstallation=file:///C:/My%20p");
+    EXPECT_EQ(args[12], L"C:\\Temp\\a b\\");
+    EXPECT_EQ(args[13], L"C:\\Docs\\a \"b\".pptx");
 }
 
 TEST(Office, SlideNamesAndSizes)

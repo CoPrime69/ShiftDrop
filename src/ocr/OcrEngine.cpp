@@ -1,4 +1,5 @@
 #include "ocr/OcrEngine.h"
+#include "Clipboard.h"
 #include "Log.h"
 #include "ocr/Ocr.h"
 #include "pdf/ImagePdf.h"
@@ -140,7 +141,7 @@ namespace sd::ocr
                 if (all.empty())
                     return FailItem(m_history, runId, sources.front(), firstError.empty() ? std::wstring(L"no text found") : firstError);
                 std::wstring error;
-                if (!SetClipboardText(all, error))
+                if (!clipboard::SetText(nullptr, all, &error))
                     return FailItem(m_history, runId, sources.front(), error);
                 RecordNoFileItem(m_history, runId, sources.front());
                 ItemResult result;
