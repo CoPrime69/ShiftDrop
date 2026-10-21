@@ -9,7 +9,7 @@ mouse wheel to step through the sections (Convert, Tools, Reduce size, File acti
 | Section | Slices so far |
 |---|---|
 | Convert | Images: PNG, JPG, WebP, TIFF, BMP, Web (a recipe: resize + WebP). Videos: MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3. Audio: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA. PDFs: JPG, PNG (every page), TXT, Markdown. Images: PDF (one PDF from all of them) |
-| Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB; for video Trim…, Crop…, Speed…, Join…, Frames…, Split…, Redact…; for audio Normalize, Trim…, Channels…, Bleep…, Visualizer…; PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF. Images: Crop, Redact (cover text, faces and personal details), Share-safe (verified metadata scrub with a review step; also video and audio) |
+| Tools | Rotate, Flip, 1920 px, 1080 px, 50%, Compress, Under 1 MB, Inspect (every metadata field, searchable); for video and audio Compress, 50% size, Under 10 MB, Under 25 MB; for video Trim…, Crop…, Speed…, Join…, Frames…, Split…, Redact…; for audio Normalize, Trim…, Channels…, Bleep…, Visualizer…; PDFs: Merge, Organize, Compress, Smallest. Images and PDFs: Copy text (OCR), Searchable PDF. Images: Crop, Redact (cover text, faces and personal details), Share-safe (verified metadata scrub with a review step; also video and audio), Edit (light, colour, detail, dehaze, clarity, noise, grain), Annotate (arrows, text, shapes, callouts, numbers, magnifiers, pictures, pen, highlighter), Background (solid, gradient, blur or picture, with shape, spacing, corners and shadow); for two or more images Collage (grid, row, column, featured) |
 | Reduce size | 90%, 80% … 20% smaller, for photos, video, audio and PDFs. The centre shows the size now; hover a slice to see the size it comes out at |
 | File actions | Copy, Move to…, Copy path, Terminal, Duplicate, Float (a shelf that holds files until you drag them into any app), Share, Remove metadata (images, video, audio) |
 
@@ -24,6 +24,10 @@ is highlighted, a card under the wheel predicts the result: format, size, name a
 The video and audio tools open one timeline editor (filmstrip or waveform, playback, typed timecodes) whose
 tabs hold every tool of its kind: Trim, Crop, Speed, Join, Frames, Split and Redact for video; Trim,
 Channels, Bleep and Visualizer for audio.
+
+The photo tools (Edit, Annotate, Background, Collage) open an image editor that previews the real
+result live on the GPU (Direct2D, with our own shaders); the saved copy keeps the photo's format and
+its camera, date and location details.
 
 Status: **M3a** (video and audio). Every slice is a recipe (your own go in `%LOCALAPPDATA%\ShiftDrop\recipes`), every
 run is in History, and any run can be undone. Long jobs show their progress in the top panel and
