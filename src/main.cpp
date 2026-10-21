@@ -54,6 +54,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <filesystem>
 #include <format>
@@ -87,6 +88,7 @@ namespace sd
             std::wstring savedTo;  // files dragged out of an app: the folder the outputs went to
             int64_t runId = 0;     // history run (0 when history is unavailable)
             uint64_t token = 0;    // which batch, so its progress and result reach the top panel
+            std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();   // a long one also gets a toast
             bool cancelled = false;
             std::vector<FileOutcome> files;
         };
@@ -1351,11 +1353,12 @@ namespace sd
             m_island->ShowProgress(std::format(L"Moving {} to {}\u2026", Count(files.size(), L"item"), FileName(folder).empty() ? folder : FileName(folder)),
                                    files.size());
             m_shellJobs->Submit([notify = m_hwnd.get(), recipe, files = std::move(files), folder,
-                                 history = m_history.get(), token](std::stop_token) {
+                                 history = m_history.get(), token, started = std::chrono::steady_clock::now()](std::stop_token) {
                 int64_t runId = 0;
                 const auto outcomes = MoveToFolder(recipe, files, folder, history, runId);
                 auto done = std::make_unique<BatchResult>();
                 done->kind = BatchKind::Move;
+                done->started = started;
                 done->label = FileName(folder).empty() ? folder : FileName(folder);   // "D:\" has no file name
                 done->runId = runId;
                 done->token = token;
@@ -1379,11 +1382,13 @@ namespace sd
             m_renameWindow->Show(std::move(files), [this, recipe](std::vector<Rename> renames) {
                 const uint64_t token = m_islandBatch = m_nextBatch++;
                 m_island->ShowProgress(std::format(L"Renaming {}\u2026", Count(renames.size(), L"item")), renames.size());
-                m_shellJobs->Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token](std::stop_token) {
+                m_shellJobs->Submit([notify = m_hwnd.get(), recipe, renames = std::move(renames), history = m_history.get(), token,
+                                     started = std::chrono::steady_clock::now()](std::stop_token) {
                     int64_t runId = 0;
                     const auto outcomes = RenameItems(recipe, renames, history, runId);
                     auto done = std::make_unique<BatchResult>();
                     done->kind = BatchKind::Rename;
+                    done->started = started;
                     done->label = recipe.label;
                     done->runId = runId;
                     done->token = token;
@@ -1452,7 +1457,8 @@ namespace sd
             // An engine's own line for a single result ("Copied 214 words", "4.2 MB to 1.1 MB").
             if (total == 1 && ok == 1 && !batch->files[0].result.message.empty())
                 title = batch->files[0].result.message;
-            if (batch->token == m_islandBatch)
+            const bool shownInPanel = batch->token == m_islandBatch;
+            if (shownInPanel)
             {
                 // The panel: one line on what happened, one on where (or what went wrong first).
                 std::wstring sub;
@@ -1481,16 +1487,18 @@ namespace sd
                 const bool carry = m_shelf && !outputs.empty();
                 m_island->ShowResult(outcome, title, sub, carry ? m_shelf->CarryActions(outputs) : Island::ResultActions{});
             }
-            else
+            // A later job owns the panel, or this one took long enough that the user may have looked
+            // away: a toast says so (with Open folder and Open), or a balloon where toasts are not
+            // available. Windows' own setting for ShiftDrop's notifications (and Do not disturb) applies.
+            const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - batch->started);
+            if (toast::ShouldNotify(shownInPanel, took, batch->cancelled))
             {
-                // A later job owns the panel: this one says so in a toast (with Open folder and Open),
-                // or a balloon where toasts are not available.
                 if (ok > 0 && m_history)
                     details += L"Undo: tray menu > History";
                 if (!m_toasts || !toast::Show(toast::Content{ title, details, outputs }))
                     m_tray.Balloon(title, details, failed ? NIIF_WARNING : NIIF_INFO);
             }
-            log::Info(L"batch (run {}): {} ok, {} skipped, {} failed", batch->runId, ok, skipped, failed);
+            log::Info(L"batch (run {}): {} ok, {} skipped, {} failed, {:.1f} s", batch->runId, ok, skipped, failed, took.count() / 1000.0);
             if (m_historyWindow)
                 m_historyWindow->Refresh();
         }

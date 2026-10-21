@@ -624,13 +624,14 @@ namespace sd
     }
 
     HRESULT RunImageRecipe(const Recipe& recipe, const std::wstring& source, IStream* out, std::stop_token stop,
-                           std::wstring& error)
+                           std::wstring& error, const ImageFormatInfo* format)
     {
         auto fail = [&](HRESULT hr, std::wstring_view what) {
             error = std::format(L"{}: {}", what, HResultText(hr));
             return hr;
         };
-        const auto* format = recipe.OutputFormatFor(LowerExtension(source));
+        if (!format)
+            format = recipe.OutputFormatFor(LowerExtension(source));
         if (!format)
         {
             error = L"recipe has no image.encode step";

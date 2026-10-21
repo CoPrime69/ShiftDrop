@@ -217,13 +217,15 @@ namespace sd
         const int64_t item = m_history ? m_history->BeginItem(runId, source, staging) : 0;
 
         std::wstring error;
-        HRESULT hr = RunImageRecipe(recipe, source, stream.Get(), stop, error);
+        // Resolved once: the bytes and the name's extension agree (Action.h: KeptFormatOf).
+        const auto* format = recipe.OutputFormatFor(LowerExtension(source));
+        HRESULT hr = RunImageRecipe(recipe, source, stream.Get(), stop, error, format);
         stream.Reset();   // close the handle before renaming or deleting
 
         std::wstring finalPath;
         if (SUCCEEDED(hr))
         {
-            hr = CommitStaging(staging, source, recipe.suffix, recipe.OutputFormatFor(LowerExtension(source))->extension, finalPath);
+            hr = CommitStaging(staging, source, recipe.suffix, format->extension, finalPath);
             if (FAILED(hr))
                 error = std::format(L"commit: {}", HResultText(hr));
         }

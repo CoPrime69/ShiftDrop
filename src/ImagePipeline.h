@@ -40,9 +40,12 @@ namespace sd
 
     // The fused image pipeline: decode -> EXIF orientation -> transforms -> encode, all as a chain of
     // IWICBitmapSource objects, so a multi-step recipe never writes an intermediate file (ADR 0004).
-    // Writes the encoded bytes to `out`. `error` gets a readable reason on failure.
+    // Writes the encoded bytes to `out`. `error` gets a readable reason on failure. `format` is what
+    // to write, as the caller already resolved it (so the file's name matches its bytes even if
+    // "same" changes its answer meanwhile: HEIC once the encoder check finishes); nullptr: the
+    // recipe's own Recipe::OutputFormatFor.
     HRESULT RunImageRecipe(const Recipe& recipe, const std::wstring& source, IStream* out, std::stop_token stop,
-                           std::wstring& error);
+                           std::wstring& error, const ImageFormatInfo* format = nullptr);
 
     // Encodes one picture (any WIC pixel format) as `format` at `quality`, the way the last step of an
     // image recipe does: flattened on white for formats without alpha, through libwebp or a format

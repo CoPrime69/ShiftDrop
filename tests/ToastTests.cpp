@@ -74,3 +74,20 @@ TEST(Toast, XmlHasTheButtons)
     EXPECT_EQ(none.find(L"<actions>"), std::wstring::npos);
     EXPECT_NE(none.find(L"a.png: &lt;unreadable&gt;"), std::wstring::npos);
 }
+
+TEST(Toast, WhenABatchGetsAToast)
+{
+    using namespace std::chrono_literals;
+    // A later batch owns the top panel: always a toast, however short (as before).
+    EXPECT_TRUE(ShouldNotify(false, 200ms, false));
+    EXPECT_TRUE(ShouldNotify(false, 30s, false));
+    EXPECT_TRUE(ShouldNotify(false, 1s, true));
+    // Its own panel showed the result: a toast only once the job took over 10 seconds.
+    EXPECT_FALSE(ShouldNotify(true, 0ms, false));
+    EXPECT_FALSE(ShouldNotify(true, 2s, false));
+    EXPECT_FALSE(ShouldNotify(true, kLongJob, false));   // "over" 10 seconds
+    EXPECT_TRUE(ShouldNotify(true, kLongJob + 1ms, false));
+    EXPECT_TRUE(ShouldNotify(true, 5min, false));
+    // Cancelled from its panel: the user was there.
+    EXPECT_FALSE(ShouldNotify(true, 5min, true));
+}

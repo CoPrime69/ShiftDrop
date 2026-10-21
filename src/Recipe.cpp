@@ -280,12 +280,10 @@ namespace sd
         const auto formatId = steps.back().params.value("format", std::string{});
         if (formatId == "same")
         {
-            // Formats nothing can write back become PNG (every pixel kept); HEIC, which needs Windows'
-            // optional encoder, becomes JPG, so a rotated iPhone photo stays a small photo everywhere.
-            const auto* own = FormatOfExtension(ext);
-            if (own && own->windowsCodec)
-                return FindImageFormat("jpg");
-            return own ? own : FindImageFormat("png");
+            // Formats nothing can write back become PNG (every pixel kept); HEIC stays HEIC where
+            // Windows' HEIF encoder is installed, and becomes JPG elsewhere (Action.h: KeptFormatOf).
+            const auto* kept = KeptFormatOf(ext);
+            return kept ? kept : FindImageFormat("png");
         }
         return FindImageFormat(formatId);
     }
