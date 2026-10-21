@@ -1,9 +1,11 @@
 #pragma once
+#include "Accent.h"
 #include "OutputPath.h"
 
 #include <windows.h>
 
 #include <array>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -70,6 +72,7 @@ namespace sd
         std::wstring terminalCommand;                        // Custom: a command line, {folder} for the folder
         OutputNaming naming = OutputNaming::Parentheses;     // [Output] Naming=parentheses|dash|underscore|subfolder
         int panelSize = 100;                                 // [Appearance] PanelSize=50..300, percent (panel::SizePercent)
+        accent::Setting accent;                              // [Appearance] Accent=tide|...|custom|windows (Accent.h)
         bool operator==(const Preferences&) const = default;
     };
     Preferences LoadPreferences();
@@ -77,4 +80,8 @@ namespace sd
     // The same for a given settings.ini (tests).
     Preferences LoadPreferences(const std::wstring& path);
     void SavePreferences(const Preferences& preferences, const std::wstring& path);
+
+    // The index of the value of [section] key in `names` (ignoring case), or `fallback` (with a warning
+    // in the log) when it is none of them; a missing key is the fallback too.
+    int IniChoice(const std::wstring& path, const wchar_t* section, const wchar_t* key, std::span<const wchar_t* const> names, int fallback);
 }

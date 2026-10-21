@@ -1,10 +1,15 @@
 #pragma once
+#include "EditorFrame.h"
 #include "Theme.h"
 
 #include <windows.h>
+#include <commctrl.h>
 #include <wil/resource.h>
 
+#include <cstdint>
+#include <functional>
 #include <initializer_list>
+#include <memory>
 
 namespace sd
 {
@@ -65,6 +70,11 @@ namespace sd
         void SetTheme(std::initializer_list<HWND> controls, const wchar_t* dark, const wchar_t* light = nullptr) const;
         // A report-view ListView in the current colours: its rows, its header and its theme.
         void ThemeList(HWND list, const wchar_t* light = nullptr) const;
+        // A button the window draws itself, from its NM_CUSTOMDRAW, with the editors' control kit
+        // (EditorFrame.h) over the window's background: `paint` draws in DIPs, `r` being the button's
+        // client area and `s` its state (focused only while focus cues show). The WM_NOTIFY result.
+        using KitPaint = std::function<void(ControlKit& kit, const D2D1_RECT_F& r, ControlKit::ControlState s)>;
+        LRESULT CustomDraw(const NMCUSTOMDRAW& draw, const KitPaint& paint);
 
         HINSTANCE m_instance;
         HWND m_hwnd = nullptr;   // the controls are destroyed with it
@@ -75,9 +85,15 @@ namespace sd
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         void ApplyDpi(UINT dpi);
 
+        struct Kit;                    // CustomDraw's target and kit, made on first use
+        std::unique_ptr<Kit> m_kit;
         Frame m_frame;
         wil::unique_hfont m_font;
         wil::unique_hbrush m_background;
         wil::unique_hbrush m_field;   // edit box and drop-down list backgrounds in dark mode
     };
+
+    // The Windows colour dialog (ChooseColor), owned by `owner`, opening on `rgb` (0xRRGGBB): true with
+    // the colour picked in `rgb`, false when cancelled. Its custom colours are kept while the app runs.
+    bool PickColour(HWND owner, uint32_t& rgb);
 }

@@ -72,7 +72,7 @@ namespace sd
         // light or dark app theme.
         struct Colors
         {
-            D2D1_COLOR_F surface, line, text, dim, hover, button, accent, onAccent, danger, shadow;
+            D2D1_COLOR_F surface, line, text, dim, hover, button, accent, danger, onDanger, shadow;
         };
         Colors ColorsFor(const Palette& p, Style style)
         {
@@ -89,8 +89,8 @@ namespace sd
             c.hover = p.dark ? white(0.07f) : black(0.05f);
             c.button = p.dark ? white(0.10f) : black(0.06f);
             c.accent = p.accent;
-            c.onAccent = p.textOnAccent;
             c.danger = p.dark ? p.error : D2D1::ColorF(0xC42B1C, 1.f);
+            c.onDanger = p.dark ? D2D1::ColorF(accent::kTextOnDark, 1.f) : white(1.f);   // the light red takes dark text
             c.shadow = p.shadow;
             return c;
         }
@@ -1218,7 +1218,7 @@ namespace sd
         if (hover)
             m_rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(box.left + r, box.top + r), r, r),
                               Brush(danger ? colors.danger : colors.button, (danger ? 0.9f : 1.f) * alpha).Get());
-        Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onAccent : colors.dim, alpha);
+        Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onDanger : colors.dim, alpha);
     }
 
     void Shelf::DrawThumb(Item& item, const Box& box, float alpha)
