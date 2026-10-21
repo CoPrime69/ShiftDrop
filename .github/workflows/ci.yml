@@ -52,7 +52,11 @@ jobs:
           for id in $(gh api "repos/$REPO/actions/artifacts?name=tested-tree-$tree&per_page=50" --jq '.artifacts[] | select(.expired | not) | .workflow_run.id' || true); do
             run=$(gh api "repos/$REPO/actions/runs/$id" --jq '[.conclusion, .event, .path, .head_repository.full_name, .html_url] | @tsv' || true)
             IFS=$'\t' read -r conclusion event path head url <<< "$run"
-            if [ "$conclusion" = success ] && [ "$event" = pull_request ] && [ "${path%%@*}" = .github/workflows/ci.yml ] && [ "$head" = "$REPO" ]; then
+            [ "$conclusion" = success ] && [ "$event" = pull_request ] && [ "${path%%@*}" = .github/workflows/ci.yml ] && [ "$head" = "$REPO" ] || continue
+            # And every job that builds or tests passed in it (not skipped).
+            passed=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.conclusion == "success") | .name]' || echo '[]')
+            missing=$(jq -n --argjson p "$passed" '["build", "installer", "placeholder", "tests (1 of 3)", "tests (2 of 3)", "tests (3 of 3)"] - $p | length')
+            if [ "$missing" = 0 ]; then
               echo "run-id=$id" >> "$GITHUB_OUTPUT"
               echo "Tree $tree was built and tested by $url: reusing its installer and exe, nothing is built again." | tee -a "$GITHUB_STEP_SUMMARY"
               exit 0
@@ -224,7 +228,8 @@ jobs:
   # process (TempDir names its folder after the process), four at a time on each runner.
   tests:
     needs: build
-    if: ${{ !inputs.cache-only }}
+    # Spelled out: an implicit success() is false when an earlier job (reuse) was skipped.
+    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only }}
     name: tests (${{ matrix.shard }} of 3)
     runs-on: windows-2022
     strategy:
@@ -262,7 +267,7 @@ jobs:
 
   installer:
     needs: build
-    if: ${{ !inputs.cache-only }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only }}
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -315,7 +320,7 @@ jobs:
   # manual runs and pull requests labelled "bench", not on every push.
   timings:
     needs: [ffmpeg, build]
-    if: ${{ !inputs.cache-only && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench')) }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench')) }}
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
