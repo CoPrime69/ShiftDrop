@@ -585,7 +585,7 @@ TEST(Photo, AnnotateToolDrawsTypesAndKeepsMarksPerFile)
     tool.PointerDown(p);
     tool.PointerUp(p);
     EXPECT_EQ(tool.Marks().Items().size(), 1u);
-    // Text: click, type, Enter.
+    // Text: click, type (Enter starts a new line), Ctrl+Enter ends it.
     tool.SetMode(AnnotateTool::Mode::Text);
     p.at = { 500, 400 };
     tool.PointerDown(p);
@@ -593,11 +593,12 @@ TEST(Photo, AnnotateToolDrawsTypesAndKeepsMarksPerFile)
     EXPECT_TRUE(tool.TextInput());
     for (wchar_t c : std::wstring(L"Hi"))
         tool.Char(c);
-    tool.Key(VK_RETURN, true, false);
+    tool.Key(VK_RETURN, false, false);
     tool.Char(L'!');
     tool.Key(VK_BACK, false, false);
     tool.Char(L'?');
-    EXPECT_TRUE(tool.Key(VK_RETURN, false, false).changed);
+    EXPECT_TRUE(tool.TextInput());
+    EXPECT_TRUE(tool.Key(VK_RETURN, false, true).changed);
     EXPECT_FALSE(tool.TextInput());
     ASSERT_EQ(tool.Marks().Items().size(), 2u);
     EXPECT_EQ(tool.Marks().Items()[1].text, L"Hi\n?");

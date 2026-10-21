@@ -6,6 +6,7 @@
 // The window only previews. The output is rendered by the tool's engine on a worker, from the
 // params the tool hands back on Apply.
 #include "canvas/Editor.h"
+#include "Clipboard.h"
 #include "ErrorText.h"
 #include "Log.h"
 #include "PathUtil.h"
@@ -13,6 +14,7 @@
 #include "UiThread.h"
 #include "Utf.h"
 #include "canvas/Covers.h"
+#include "canvas/SignaturePad.h"
 #include "EditorFrame.h"
 
 #include <commdlg.h>
@@ -23,6 +25,7 @@
 #include <atomic>
 #include <cmath>
 #include <format>
+#include <map>
 #include <thread>
 
 namespace sd::canvas
@@ -36,6 +39,7 @@ namespace sd::canvas
         constexpr UINT kPrepassProgress = WM_APP + 42;  // wParam: 0..1000
         constexpr UINT kPrepassDone = WM_APP + 43;      // wParam: 1 = open the editor, 0 = apply as is
         constexpr UINT kLayerReady = WM_APP + 44;       // lParam: Layer*, ours to delete
+        constexpr UINT kThumbReady = WM_APP + 45;       // lParam: Thumb*, ours to delete
 
         constexpr float kPanelW = 300.f;     // the side panel, DIPs
         constexpr float kPad = 16.f;
@@ -129,6 +133,17 @@ namespace sd::canvas
             Pixels pixels;
         };
 
+        // A small copy of a picture a Pictures control offers (a saved signature).
+        struct Thumb
+        {
+            std::wstring path;
+            Pixels pixels;
+        };
+
+        constexpr float kDropRow = 28.f;     // a row of a dropdown's list
+        constexpr int kDropRows = 12;        // rows the list shows at once
+        constexpr float kTileH = 64.f;       // a picture tile
+
         LPCWSTR CursorId(CursorShape shape)
         {
             switch (shape)
@@ -141,6 +156,7 @@ namespace sd::canvas
             case CursorShape::Cross: return IDC_CROSS;
             case CursorShape::Hand: return IDC_HAND;
             case CursorShape::Busy: return IDC_APPSTARTING;
+            case CursorShape::Text: return IDC_IBEAM;
             case CursorShape::Arrow: break;
             }
             return IDC_ARROW;
@@ -224,19 +240,12 @@ namespace sd::canvas
                 if (index < m_files.size() && index != m_index && m_tool->PerFile())
                     Load(index);
             }
-            bool PickImage(std::wstring& path) override
+            bool PickImage(std::wstring& path) override { return PickPictureFile(Hwnd(), path); }
+            bool CopyText(const std::wstring& text) override { return clipboard::SetText(Hwnd(), text); }
+            bool PasteText(std::wstring& text) override { return clipboard::GetText(Hwnd(), text); }
+            bool NewSignature(bool fromPicture, std::function<void(std::shared_ptr<const Raster>, bool)> done) override
             {
-                wchar_t name[MAX_PATH * 4] = L"";
-                OPENFILENAMEW ofn{ sizeof(ofn) };
-                ofn.hwndOwner = Hwnd();
-                ofn.lpstrFilter = L"Pictures\0*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.heic;*.heif;*.avif;*.ico\0All files\0*.*\0";
-                ofn.lpstrFile = name;
-                ofn.nMaxFile = static_cast<DWORD>(std::size(name));
-                ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
-                if (!GetOpenFileNameW(&ofn))
-                    return false;
-                path = name;
-                return true;
+                return OpenSignaturePad(Hwnd(), fromPicture, std::move(done));
             }
 
         private:
@@ -460,6 +469,7 @@ namespace sd::canvas
                 PaintZoomChip(rt, canvas);
                 rt->PopAxisAlignedClip();
                 PaintPanel(rt, size);
+                PaintDrop(rt, size);
             }
 
             void PaintPrepass(ID2D1RenderTarget* rt, D2D1_SIZE_F size)
@@ -733,6 +743,7 @@ namespace sd::canvas
                     case ControlKind::Button:
                     case ControlKind::Toggle:
                     case ControlKind::Number:
+                    case ControlKind::Dropdown:
                         item.rect = D2D1::RectF(left, y, halfRight, y + kRow);
                         y += kRow + kGap;
                         break;
@@ -771,6 +782,34 @@ namespace sd::canvas
                         }
                         item.rect = D2D1::RectF(left, y, right, y + kRow);
                         y += kRow + kGap;
+                        break;
+                    }
+                    case ControlKind::Icons:
+                    {
+                        // One row of square buttons, as many as fit.
+                        const float n = float(std::max<size_t>(1, c.icons.size()));
+                        const float side = std::min(kRow, (width - (n - 1) * 3) / n);
+                        for (size_t k = 0; k < c.icons.size(); ++k)
+                        {
+                            const float x = left + k * (side + 3);
+                            item.parts.push_back(D2D1::RectF(x, y, x + side, y + side));
+                        }
+                        item.rect = D2D1::RectF(left, y, right, y + side);
+                        y += side + kGap;
+                        break;
+                    }
+                    case ControlKind::Pictures:
+                    {
+                        // Two tiles a row.
+                        const float w = (width - kGap) / 2;
+                        for (size_t k = 0; k < c.pictures.size(); ++k)
+                        {
+                            const float x = left + (k % 2) * (w + kGap), top = y + (k / 2) * (kTileH + kGap);
+                            item.parts.push_back(D2D1::RectF(x, top, x + w, top + kTileH));
+                        }
+                        const float rows = float((c.pictures.size() + 1) / 2);
+                        item.rect = D2D1::RectF(left, y, right, y + std::max(0.f, rows * (kTileH + kGap) - kGap));
+                        y += rows * (kTileH + kGap);
                         break;
                     }
                     }
@@ -814,6 +853,8 @@ namespace sd::canvas
                 for (const auto& item : m_items)
                     PaintControl(rt, m_controls[item.control], item);
                 rt->PopAxisAlignedClip();
+                if (m_drop.id.empty())
+                    PaintTip(rt);
 
                 // Footer: the status line, Cancel and Apply.
                 std::wstring why;
@@ -833,7 +874,7 @@ namespace sd::canvas
                                      D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 if (m_buttons.size() >= 6)
                 {
-                    m_buttons[0].enabled = m_undoAt > 0;
+                    m_buttons[0].enabled = m_undoAt > 0 || m_tool->TextInput();
                     m_buttons[1].enabled = m_undoAt + 1 < m_undo.size();
                     m_buttons[2].enabled = m_buttons[3].enabled = switcher && !Busy();
                     m_buttons[5].enabled = canApply && !Busy();
@@ -926,7 +967,334 @@ namespace sd::canvas
                     }
                     break;
                 }
+                case ControlKind::Dropdown:
+                {
+                    const bool open = m_drop.id == c.id;
+                    DrawField(item.rect, open, false, state);
+                    float x = item.rect.left + 10;
+                    if (!c.label.empty())
+                    {
+                        const float w = TextWidth(c.label, 12.f) + 10;
+                        DrawText(c.label, TextFormat(12.f), D2D1::RectF(x, item.rect.top, x + w, item.rect.bottom), dim);
+                        x += w;
+                    }
+                    const std::wstring value = c.selected >= 0 && c.selected < static_cast<int>(c.options.size()) ? c.options[c.selected] : c.text;
+                    DrawText(value, c.fonts ? FontFormat(value) : TextFormat(kControlText), D2D1::RectF(x, item.rect.top, item.rect.right - 28, item.rect.bottom),
+                             ink);
+                    DrawText(std::wstring(1, open ? wchar_t(0xE70E) : wchar_t(0xE70D)), IconFormat(10.f),
+                             D2D1::RectF(item.rect.right - 26, item.rect.top, item.rect.right - 8, item.rect.bottom), dim);   // ChevronUp / Down
+                    break;
                 }
+                case ControlKind::Icons:
+                    for (size_t i = 0; i < item.parts.size() && i < c.icons.size(); ++i)
+                        DrawIconButton(item.parts[i], c.icons[i], i < c.flags.size() && c.flags[i],
+                                       { c.enabled, hot && m_hotPart == static_cast<int>(i), false, false });
+                    break;
+                case ControlKind::Pictures:
+                    for (size_t i = 0; i < item.parts.size() && i < c.pictures.size(); ++i)
+                    {
+                        // On a light card whatever the theme: signatures are dark ink.
+                        const auto& r = item.parts[i];
+                        const bool tileHot = hot && m_hotPart == static_cast<int>(i);
+                        FillRound(r, D2D1::ColorF(0xFCFCFC), 6.f);
+                        StrokeRound(r, tileHot ? t.accent : t.controlLine, tileHot ? 1.5f : 1.f, 6.f);
+                        if (const auto* thumb = ThumbFor(c.pictures[i]))
+                        {
+                            const float s = std::min((r.right - r.left - 16) / thumb->width, (r.bottom - r.top - 12) / thumb->height);
+                            const float w = thumb->width * s, h = thumb->height * s;
+                            const float x = (r.left + r.right - w) / 2, y = (r.top + r.bottom - h) / 2;
+                            if (auto* bitmap = ThumbBitmap(rt, c.pictures[i]))
+                                rt->DrawBitmap(bitmap, D2D1::RectF(x, y, x + w, y + h), alpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                        }
+                        if (tileHot)
+                        {
+                            // The remove mark.
+                            const auto x = RemoveRect(r);
+                            const bool on = In(x, m_mouse);
+                            if (on)
+                                FillRound(x, t.danger, 9.f);
+                            DrawText(std::wstring(1, wchar_t(0xE711)), IconFormat(10.f), x, on ? D2D1::ColorF(1, 1, 1, 1) : D2D1::ColorF(0x333333));   // Cancel
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // A Pictures tile's remove mark, in its top-right corner.
+            static D2D1_RECT_F RemoveRect(const D2D1_RECT_F& tile) { return D2D1::RectF(tile.right - 22, tile.top + 4, tile.right - 4, tile.top + 22); }
+
+            // The text format a font family's name is shown in: the family itself, at the controls'
+            // size (the interface font for a symbol font, whose name would be unreadable).
+            IDWriteTextFormat* FontFormat(const std::wstring& family)
+            {
+                if (const auto it = m_fontFormats.find(family); it != m_fontFormats.end())
+                    return it->second ? it->second.Get() : TextFormat(kControlText);
+                if (m_fontFormats.size() > 600)
+                    m_fontFormats.clear();
+                ComPtr<IDWriteTextFormat> format;
+                ComPtr<IDWriteFontCollection> fonts;
+                UINT32 index = 0;
+                BOOL exists = FALSE;
+                ComPtr<IDWriteFontFamily> found;
+                ComPtr<IDWriteFont> font;
+                if (DWrite() && SUCCEEDED(DWrite()->GetSystemFontCollection(&fonts)) && SUCCEEDED(fonts->FindFamilyName(family.c_str(), &index, &exists)) && exists &&
+                    SUCCEEDED(fonts->GetFontFamily(index, &found)) &&
+                    SUCCEEDED(found->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, &font)) &&
+                    !font->IsSymbolFont() &&
+                    SUCCEEDED(DWrite()->CreateTextFormat(family.c_str(), fonts.Get(), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+                                                         DWRITE_FONT_STRETCH_NORMAL, 14.f, L"", &format)))
+                {
+                    format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                    format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
+                    ComPtr<IDWriteInlineObject> ellipsis;
+                    DWrite()->CreateEllipsisTrimmingSign(format.Get(), &ellipsis);
+                    format->SetTrimming(&trimming, ellipsis.Get());
+                }
+                auto* out = format.Get();
+                m_fontFormats.emplace(family, std::move(format));
+                return out ? out : TextFormat(kControlText);
+            }
+
+            // A Pictures tile's picture, loaded on a worker the first time it is asked for.
+            const Pixels* ThumbFor(const std::wstring& path)
+            {
+                const auto it = m_thumbs.find(path);
+                if (it != m_thumbs.end())
+                    return it->second.pixels.Empty() ? nullptr : &it->second.pixels;
+                m_thumbs[path];   // pending
+                std::thread([hwnd = Hwnd(), path, alive = m_alive] {
+                    const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                    auto out = std::make_unique<Thumb>();
+                    out->path = path;
+                    Raster r;
+                    std::wstring error;
+                    if (SUCCEEDED(LoadRaster(path, r, error, 512)))
+                        out->pixels = Shrink(r, 256);
+                    if (SUCCEEDED(co))
+                        CoUninitialize();
+                    if (alive->load() && PostMessageW(hwnd, kThumbReady, 0, reinterpret_cast<LPARAM>(out.get())))
+                        out.release();
+                }).detach();
+                return nullptr;
+            }
+
+            ID2D1Bitmap* ThumbBitmap(ID2D1RenderTarget* rt, const std::wstring& path)
+            {
+                auto it = m_thumbs.find(path);
+                if (it == m_thumbs.end() || it->second.pixels.Empty())
+                    return nullptr;
+                auto& t = it->second;
+                if (!t.bitmap || t.generation != DeviceGeneration())
+                {
+                    t.bitmap = MakeBitmap(rt, t.pixels);
+                    t.generation = DeviceGeneration();
+                }
+                return t.bitmap.Get();
+            }
+
+            // The name of the icon button under the mouse, below it.
+            void PaintTip(ID2D1RenderTarget* rt)
+            {
+                for (const auto& item : m_items)
+                {
+                    const auto& c = m_controls[item.control];
+                    if (c.kind != ControlKind::Icons || c.id != m_hotControl || m_hotPart < 0 || m_hotPart >= static_cast<int>(c.options.size()) ||
+                        m_hotPart >= static_cast<int>(item.parts.size()))
+                        continue;
+                    const auto& text = c.options[m_hotPart];
+                    const auto& r = item.parts[m_hotPart];
+                    const auto size = ClientDip();
+                    const float w = TextWidth(text, 12.f) + 16, h = 24;
+                    const float x = std::clamp((r.left + r.right - w) / 2, PanelRect(size).left + 4, size.width - w - 4);
+                    const auto tip = D2D1::RectF(x, r.bottom + 4, x + w, r.bottom + 4 + h);
+                    FillRound(D2D1::RectF(tip.left, tip.top + 1, tip.right, tip.bottom + 2), Theme().shadow, 5.f);
+                    FillRound(tip, Theme().window, 5.f);
+                    StrokeRound(tip, Theme().controlLine, 1.f, 5.f);
+                    DrawText(text, TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), tip, Theme().text);
+                    (void)rt;
+                }
+            }
+
+            // ---- A dropdown's list -------------------------------------------------------------------
+            // Drawn over the window below (or above) its field; typing filters it, the arrows, Page
+            // Up/Down, Home and End move through it, Enter picks and Esc closes.
+            struct DropList
+            {
+                std::string id;
+                std::vector<std::wstring> options;
+                bool fonts = false;
+                int selected = -1;
+                std::wstring filter;
+                std::vector<int> shown;   // indexes into options
+                int hot = 0;              // into shown
+                int first = 0;            // the first row shown
+                D2D1_RECT_F field{}, rect{};
+            };
+
+            void OpenDrop(const Control& c, const D2D1_RECT_F& field)
+            {
+                m_drop = {};
+                m_drop.id = c.id;
+                m_drop.options = c.options;
+                m_drop.fonts = c.fonts;
+                m_drop.selected = c.selected;
+                m_drop.field = field;
+                FilterDrop();
+                for (size_t i = 0; i < m_drop.shown.size(); ++i)
+                    if (m_drop.shown[i] == c.selected)
+                        m_drop.hot = static_cast<int>(i);
+                m_drop.first = std::max(0, m_drop.hot - kDropRows / 2);
+                ShowDropHot();
+                SetTimer(Hwnd(), 2, 530, nullptr);   // the search line's caret
+                Invalidate();
+            }
+
+            void CloseDrop()
+            {
+                if (m_drop.id.empty())
+                    return;
+                m_drop = {};
+                KillTimer(Hwnd(), 2);
+                Invalidate();
+            }
+
+            void FilterDrop()
+            {
+                m_drop.shown.clear();
+                std::wstring needle = m_drop.filter;
+                CharLowerBuffW(needle.data(), static_cast<DWORD>(needle.size()));
+                // Names that start with the typed text first, then names that hold it.
+                std::vector<int> later;
+                for (size_t i = 0; i < m_drop.options.size(); ++i)
+                {
+                    std::wstring name = m_drop.options[i];
+                    CharLowerBuffW(name.data(), static_cast<DWORD>(name.size()));
+                    const size_t at = needle.empty() ? 0 : name.find(needle);
+                    if (at == 0)
+                        m_drop.shown.push_back(static_cast<int>(i));
+                    else if (at != std::wstring::npos)
+                        later.push_back(static_cast<int>(i));
+                }
+                m_drop.shown.insert(m_drop.shown.end(), later.begin(), later.end());
+                m_drop.hot = 0;
+                m_drop.first = 0;
+            }
+
+            void ShowDropHot()
+            {
+                const int n = static_cast<int>(m_drop.shown.size());
+                m_drop.hot = std::clamp(m_drop.hot, 0, std::max(0, n - 1));
+                if (m_drop.hot < m_drop.first)
+                    m_drop.first = m_drop.hot;
+                if (m_drop.hot >= m_drop.first + kDropRows)
+                    m_drop.first = m_drop.hot - kDropRows + 1;
+                m_drop.first = std::clamp(m_drop.first, 0, std::max(0, n - kDropRows));
+            }
+
+            void PickDrop(int row)
+            {
+                if (row < 0 || row >= static_cast<int>(m_drop.shown.size()))
+                    return;
+                ControlEvent e;
+                e.id = m_drop.id;
+                e.index = m_drop.shown[row];
+                CloseDrop();
+                Handle(m_tool->OnControl(e));
+            }
+
+            float DropRowsTop() const { return m_drop.rect.top + 36; }
+
+            int DropRowAt(D2D1_POINT_2F p) const
+            {
+                if (!In(m_drop.rect, p) || p.y < DropRowsTop())
+                    return -1;
+                const int row = m_drop.first + static_cast<int>((p.y - DropRowsTop()) / kDropRow);
+                return row < static_cast<int>(m_drop.shown.size()) && row < m_drop.first + kDropRows ? row : -1;
+            }
+
+            void PaintDrop(ID2D1RenderTarget* rt, D2D1_SIZE_F size)
+            {
+                if (m_drop.id.empty())
+                    return;
+                const auto& t = Theme();
+                const int rows = std::max(1, std::min(kDropRows, static_cast<int>(m_drop.shown.size())));
+                const float h = 36 + rows * kDropRow + 6, w = std::max(280.f, m_drop.field.right - m_drop.field.left);
+                const float x = std::max(8.f, std::min(m_drop.field.right - w, size.width - w - 8));
+                float top = m_drop.field.bottom + 4;
+                if (top + h > size.height - 8)
+                    top = std::max(8.f, m_drop.field.top - 4 - h);
+                m_drop.rect = D2D1::RectF(x, top, x + w, top + h);
+                FillRound(D2D1::RectF(x - 1, top + 1, x + w + 1, top + h + 4), t.shadow, 8.f);
+                FillRound(m_drop.rect, t.window, 8.f);
+                StrokeRound(m_drop.rect, t.controlLine, 1.f, 8.f);
+                // The search line.
+                const auto search = D2D1::RectF(x + 6, top + 6, x + w - 6, top + 32);
+                FillRound(search, t.control, kControlRadius);
+                DrawText(std::wstring(1, wchar_t(0xE721)), IconFormat(12.f), D2D1::RectF(search.left + 8, search.top, search.left + 26, search.bottom), t.textDim);
+                const auto searchText = D2D1::RectF(search.left + 30, search.top, search.right - 8, search.bottom);
+                if (m_drop.filter.empty())
+                    DrawText(m_drop.fonts ? L"Type to find a font" : L"Type to search", TextFormat(12.f), searchText, t.textFaint);
+                else
+                    DrawText(m_drop.filter + ((GetTickCount64() / 530) % 2 == 0 ? L"|" : L""), TextFormat(kControlText), searchText, t.text);
+                if (m_drop.shown.empty())
+                {
+                    DrawText(L"No match", TextFormat(12.f), D2D1::RectF(x + 14, DropRowsTop(), x + w - 14, DropRowsTop() + kDropRow), t.textDim);
+                    return;
+                }
+                rt->PushAxisAlignedClip(D2D1::RectF(x, DropRowsTop(), x + w, top + h - 4), D2D1_ANTIALIAS_MODE_ALIASED);
+                for (int i = 0; i < rows && m_drop.first + i < static_cast<int>(m_drop.shown.size()); ++i)
+                {
+                    const int row = m_drop.first + i;
+                    const int option = m_drop.shown[row];
+                    const auto r = D2D1::RectF(x + 6, DropRowsTop() + i * kDropRow, x + w - 12, DropRowsTop() + (i + 1) * kDropRow);
+                    if (row == m_drop.hot)
+                        FillRound(r, t.controlHover, kControlRadius);
+                    if (option == m_drop.selected)
+                        FillRound(D2D1::RectF(r.left, r.top + 7, r.left + 3, r.bottom - 7), t.accent, 1.5f);
+                    const auto& name = m_drop.options[option];
+                    DrawText(name, m_drop.fonts ? FontFormat(name) : TextFormat(kControlText), D2D1::RectF(r.left + 10, r.top, r.right - 6, r.bottom), t.text);
+                }
+                rt->PopAxisAlignedClip();
+                const int n = static_cast<int>(m_drop.shown.size());
+                if (n > kDropRows)
+                {
+                    // Where the rows shown are in the whole list.
+                    const float track = rows * kDropRow;
+                    const float thumb = std::max(20.f, track * kDropRows / n);
+                    const float y = DropRowsTop() + (track - thumb) * m_drop.first / std::max(1, n - kDropRows);
+                    FillRound(D2D1::RectF(x + w - 8, y, x + w - 5, y + thumb), t.textFaint, 1.5f);
+                }
+            }
+
+            // Keys while a dropdown's list is open; true when used.
+            bool DropKey(UINT vk)
+            {
+                if (m_drop.id.empty())
+                    return false;
+                switch (vk)
+                {
+                case VK_ESCAPE:
+                case VK_TAB: CloseDrop(); return true;
+                case VK_RETURN: PickDrop(m_drop.hot); return true;
+                case VK_UP: --m_drop.hot; break;
+                case VK_DOWN: ++m_drop.hot; break;
+                case VK_PRIOR: m_drop.hot -= kDropRows - 1; break;
+                case VK_NEXT: m_drop.hot += kDropRows - 1; break;
+                case VK_HOME: m_drop.hot = 0; break;
+                case VK_END: m_drop.hot = static_cast<int>(m_drop.shown.size()) - 1; break;
+                case VK_BACK:
+                    if (!m_drop.filter.empty())
+                    {
+                        m_drop.filter.pop_back();
+                        FilterDrop();
+                    }
+                    break;
+                default: return true;   // typed text arrives as WM_CHAR
+                }
+                ShowDropHot();
+                Invalidate();
+                return true;
             }
 
             // The control (and part) under a point in the panel.
@@ -944,7 +1312,9 @@ namespace sd::canvas
                                 *part = static_cast<int>(i);
                             return &item;
                         }
-                    if (In(item.rect, p) && m_controls[item.control].kind != ControlKind::Choice && m_controls[item.control].kind != ControlKind::Swatches)
+                    const auto kind = m_controls[item.control].kind;
+                    if (In(item.rect, p) && kind != ControlKind::Choice && kind != ControlKind::Swatches && kind != ControlKind::Icons &&
+                        kind != ControlKind::Pictures)
                     {
                         if (part)
                             *part = -1;
@@ -1012,6 +1382,25 @@ namespace sd::canvas
                         if (!PickColour(c.swatches[part], e.rgb))
                             break;
                     }
+                    Handle(m_tool->OnControl(e));
+                    break;
+                case ControlKind::Dropdown:
+                    if (m_drop.id == c.id)
+                        CloseDrop();
+                    else
+                        OpenDrop(c, item->rect);
+                    break;
+                case ControlKind::Icons:
+                    if (part < 0)
+                        break;
+                    e.index = part;
+                    Handle(m_tool->OnControl(e));
+                    break;
+                case ControlKind::Pictures:
+                    if (part < 0)
+                        break;
+                    e.index = part;
+                    e.on = In(RemoveRect(item->parts[part]), p);
                     Handle(m_tool->OnControl(e));
                     break;
                 default:
@@ -1129,7 +1518,12 @@ namespace sd::canvas
 
             void Undo()
             {
-                if (m_undoAt == 0 || m_dragging)
+                if (m_dragging)
+                    return;
+                // Typing records a step a word at a time: what was typed since comes back first.
+                if (!m_undo.empty())
+                    RecordUndo();
+                if (m_undoAt == 0)
                     return;
                 m_tool->Restore(m_undo[--m_undoAt]);
                 m_status.clear();
@@ -1234,9 +1628,18 @@ namespace sd::canvas
                     }
                     return true;
                 case WM_TIMER:
-                    if (wParam == 1)
+                    if (wParam == 1 || wParam == 2)
                         Invalidate();
                     return true;
+                case kThumbReady:
+                {
+                    std::unique_ptr<Thumb> thumb(reinterpret_cast<Thumb*>(lParam));
+                    auto& t = m_thumbs[thumb->path];
+                    t.pixels = std::move(thumb->pixels);
+                    t.bitmap.Reset();
+                    Invalidate();
+                    return true;
+                }
                 default:
                     break;
                 }
@@ -1272,13 +1675,40 @@ namespace sd::canvas
                     }
                     return false;
                 case WM_LBUTTONDOWN:
+                case WM_LBUTTONDBLCLK:
                 case WM_MBUTTONDOWN:
                 {
                     SetFocus(Hwnd());
                     const auto p = DipFromLParam(lParam);
+                    if (msg == WM_LBUTTONDBLCLK && ButtonAt(p) >= 0)
+                        return false;
+                    // A double click, and a third click soon after it on the same spot.
+                    int clicks = 1;
+                    if (msg == WM_LBUTTONDBLCLK)
+                    {
+                        clicks = 2;
+                        m_doubleAt = GetMessageTime();
+                        m_doublePoint = p;
+                    }
+                    else if (msg == WM_LBUTTONDOWN && m_doubleAt && static_cast<UINT>(GetMessageTime() - m_doubleAt) <= GetDoubleClickTime() &&
+                             std::abs(p.x - m_doublePoint.x) <= 4 && std::abs(p.y - m_doublePoint.y) <= 4)
+                        clicks = 3;
+                    if (clicks != 2)
+                        m_doubleAt = 0;
+                    if (!m_drop.id.empty())
+                    {
+                        // A click picks from the open list, or closes it.
+                        const bool inList = In(m_drop.rect, p), onField = In(m_drop.field, p);
+                        if (inList)
+                            PickDrop(DropRowAt(p));   // the search line keeps it open
+                        else
+                            CloseDrop();
+                        if (inList || onField || msg != WM_LBUTTONDOWN || OverCanvas(p))
+                            return true;
+                    }
                     if (!OverCanvas(p))
                     {
-                        if (msg == WM_LBUTTONDOWN)
+                        if (msg != WM_MBUTTONDOWN)
                             PanelDown(p);
                         return true;
                     }
@@ -1301,12 +1731,25 @@ namespace sd::canvas
                         return true;
                     m_dragging = true;
                     SetCapture(Hwnd());
-                    Handle(m_tool->PointerDown(PointerAt(p)));
+                    Pointer pointer = PointerAt(p);
+                    pointer.clicks = clicks;
+                    Handle(m_tool->PointerDown(pointer));
                     return true;
                 }
                 case WM_MOUSEMOVE:
                 {
                     const auto p = DipFromLParam(lParam);
+                    m_mouse = p;
+                    if (!m_drop.id.empty())
+                    {
+                        const int row = DropRowAt(p);
+                        if (row >= 0 && row != m_drop.hot)
+                        {
+                            m_drop.hot = row;
+                            Invalidate();
+                        }
+                        return false;
+                    }
                     if (m_panning)
                     {
                         m_view.PanBy(p.x - m_panFrom.x, p.y - m_panFrom.y);
@@ -1403,6 +1846,13 @@ namespace sd::canvas
                     ScreenToClient(Hwnd(), &pt);
                     const auto p = D2D1::Point2F(pt.x / Scale(), pt.y / Scale());
                     const int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+                    if (!m_drop.id.empty())
+                    {
+                        const int n = static_cast<int>(m_drop.shown.size());
+                        m_drop.first = std::clamp(m_drop.first - delta / WHEEL_DELTA * 3, 0, std::max(0, n - kDropRows));
+                        Invalidate();
+                        return true;
+                    }
                     if (OverCanvas(p))
                     {
                         if (m_full)
@@ -1423,6 +1873,17 @@ namespace sd::canvas
                     return true;
                 }
                 case WM_CHAR:
+                    if (!m_drop.id.empty())
+                    {
+                        const wchar_t ch = static_cast<wchar_t>(wParam);
+                        if (ch >= 0x20 && ch != 0x7F && m_drop.filter.size() < 40)
+                        {
+                            m_drop.filter.push_back(ch);
+                            FilterDrop();
+                            Invalidate();
+                        }
+                        return true;
+                    }
                     if (!m_editId.empty())
                     {
                         const wchar_t ch = static_cast<wchar_t>(wParam);
@@ -1438,7 +1899,8 @@ namespace sd::canvas
                     {
                         // Typed text (Enter, Esc, Tab and Backspace arrive as keys instead).
                         const wchar_t ch = static_cast<wchar_t>(wParam);
-                        if (ch >= 0x20 && ch != 0x7F && !Ctrl())
+                        // Ctrl with Alt is AltGr, which types characters on many keyboards.
+                        if (ch >= 0x20 && ch != 0x7F && (!Ctrl() || Alt()))
                             Handle(m_tool->Char(ch));
                         return true;
                     }
@@ -1471,9 +1933,19 @@ namespace sd::canvas
 
             void OnKey(UINT vk)
             {
-                if (EditKey(vk))
+                if (DropKey(vk) || EditKey(vk))
                     return;
                 const bool ctrl = Ctrl(), shift = Shift();
+                if (ctrl && shift && vk == 'F')
+                {
+                    // The font list, as in word processors.
+                    for (const auto& item : m_items)
+                        if (m_controls[item.control].kind == ControlKind::Dropdown && m_controls[item.control].fonts && m_controls[item.control].enabled)
+                        {
+                            OpenDrop(m_controls[item.control], item.rect);
+                            return;
+                        }
+                }
                 const auto canvas = CanvasRect(ClientDip());
                 const PointD centre{ (canvas.left + canvas.right) / 2, (canvas.top + canvas.bottom) / 2 };
                 // A tool taking typed text gets the keys first (Enter ends the text, not the editor).
@@ -1493,6 +1965,12 @@ namespace sd::canvas
                         m_dragging = false;
                         ReleaseCapture();
                         Handle(m_tool->PointerCancel());
+                        return;
+                    }
+                    if (m_tool->Escape())
+                    {
+                        // The tool dropped a half-done step (a picture to place, a selection).
+                        Invalidate();
                         return;
                     }
                     Close();
@@ -1710,6 +2188,19 @@ namespace sd::canvas
 
             std::vector<nlohmann::json> m_undo;
             size_t m_undoAt = 0;
+
+            D2D1_POINT_2F m_mouse{};
+            LONG m_doubleAt = 0;   // the message time of the last double click
+            D2D1_POINT_2F m_doublePoint{};
+            DropList m_drop;
+            std::map<std::wstring, ComPtr<IDWriteTextFormat>> m_fontFormats;
+            struct CachedThumb
+            {
+                Pixels pixels;
+                ComPtr<ID2D1Bitmap> bitmap;
+                unsigned generation = 0;
+            };
+            std::map<std::wstring, CachedThumb> m_thumbs;
         };
 
         bool OpenWindow(EditorRequest request)

@@ -14,12 +14,14 @@
 // the original page's text, links and form fields are not in it. Nothing touches the source files;
 // the pictures and pages live in a folder under %TEMP% that goes once the export has read it, or
 // when the page view is cancelled.
+// Annotate and Fill and sign differ: their marks go over the page itself as PDF content (PageMarks.h).
 namespace sd::pdf
 {
     enum class PageTool
     {
         Redact,     // Redact Photos: covers, with Find text, Find faces and Find personal info
         Annotate,   // Annotate Photos: arrows, text, shapes, pen and highlighter
+        Sign,       // Fill and sign: text boxes, signatures, ticks, the date (Annotate's marks)
         Crop,       // Crop Images: trim, turn or straighten a scanned page
         Adjust,     // Edit Photos: light and colour, for scans and photographed pages
     };
@@ -57,10 +59,27 @@ namespace sd::pdf
     bool RenderPageEdit(PageTool tool, const nlohmann::json& params, const std::wstring& picture, const std::wstring& out, bool& changed,
                         std::wstring& error);
 
+    // Whether the tool's marks go onto the page as PDF content (Annotate, Fill and sign): the page
+    // keeps its own text and drawings, and the marks stay editable when it is edited again.
+    bool KeepsPage(PageTool tool);
+
+    // The tool's result for one page, as "<stem>.pdf" (what the plan points at) and "<stem>.png" (a
+    // picture of it, which the other tools edit further). `picture` shows page `page` (from 0) of
+    // `source`, each pixel `pointsPerPixel` points. A tool that keeps the page writes its marks over
+    // the page's own content, and beside it the picture without them ("<stem>.base.png") and the
+    // marks ("<stem>.marks.json", with copies of the pictures they place), to edit them again; it
+    // falls back to a picture of the page when the page can't be read. `changed` is false (and
+    // nothing is written) when the tool left the page as it was. Any thread with COM.
+    bool SavePageEdit(PageTool tool, const nlohmann::json& params, const std::wstring& picture, const std::wstring& source, uint32_t page,
+                      double pointsPerPixel, const std::wstring& stem, bool& changed, std::wstring& error);
+
     // `picture` as a one-page PDF, each pixel `pointsPerPixel` points (the page's own scale, so an
     // uncropped page keeps its size): what the plan's edited page points at.
     bool WritePicturePage(const std::wstring& picture, double pointsPerPixel, const std::wstring& out, std::wstring& error);
 
     // The picture kept beside an edited page, to edit it again: "x.pdf" -> "x.png".
     std::wstring PictureOf(const std::wstring& editedPage);
+    // The picture `tool` opens to edit the page again: for a tool that keeps the page, the page
+    // without its marks when the page has them (they come back as marks).
+    std::wstring PictureOf(const std::wstring& editedPage, PageTool tool);
 }

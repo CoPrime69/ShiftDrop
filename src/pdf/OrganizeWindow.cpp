@@ -149,11 +149,10 @@ namespace sd::pdf
             {
                 auto& item = batch.items[n];
                 const auto stem = EditFileStem(batch.folder, true, batch.serial, n + 1);
-                const std::wstring picture = stem + L".png", page = stem + L".pdf";
+                const std::wstring page = stem + L".pdf";
                 bool changed = false;
                 std::wstring error;
-                if (!RenderPageEdit(batch.tool, params, item.picture, picture, changed, error) ||
-                    (changed && !WritePicturePage(picture, item.pointsPerPixel, page, error)))
+                if (!SavePageEdit(batch.tool, params, item.picture, item.source, item.page, item.pointsPerPixel, stem, changed, error))
                 {
                     batch.error = error.empty() ? std::wstring(L"the edit could not be saved") : error;
                     return;
@@ -1021,7 +1020,7 @@ namespace sd::pdf
                     item.source = key.path;
                     item.page = key.page;
                     if (!ref.edited.empty())
-                        item.picture = PictureOf(ref.edited);   // builds on the earlier edit
+                        item.picture = PictureOf(ref.edited, tool);   // builds on the earlier edit
                     batch->items.push_back(std::move(item));
                 }
                 if (batch->items.empty())

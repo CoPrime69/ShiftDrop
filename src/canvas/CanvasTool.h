@@ -38,7 +38,7 @@ namespace sd::canvas
         Color accent, onAccent, text, textDim, shade, line, handle;
     };
 
-    enum class CursorShape { Arrow, Move, SizeNS, SizeWE, SizeNWSE, SizeNESW, Cross, Hand, Busy };
+    enum class CursorShape { Arrow, Move, SizeNS, SizeWE, SizeNWSE, SizeNESW, Cross, Hand, Busy, Text };
 
     enum class Effect { Blur, Pixelate };
 
@@ -75,6 +75,12 @@ namespace sd::canvas
         Number,     // a typed number: `label`, `value`, `min`..`max`, `decimals`, `text` = unit ("px")
         Slider,     // `label`, `value`, `min`..`max`, `decimals`, `text` = unit ("°")
         Swatches,   // colour chips: `swatches`, `selected`; the last chip may be "custom" (`custom`)
+        Dropdown,   // a field that opens a list: `label`, `options`, `selected`; `fonts`: each option is a
+                    // font family, shown in its own type, and the list can be searched by typing
+        Icons,      // a row of icon buttons: `icons`, their names in `options` (shown on hover), `flags`
+                    // (drawn pressed); the event's `index` is the button
+        Pictures,   // picture tiles to pick from: files in `pictures`, names in `options`; each has a
+                    // remove mark (the event's `on` is true for it)
     };
 
     struct Control
@@ -89,7 +95,11 @@ namespace sd::canvas
         bool on = false;
         bool half = false;          // half the panel's width: two in a row (W and H fields)
         bool custom = false;        // Swatches: the last chip opens a colour picker
+        bool fonts = false;         // Dropdown: the options are font families
         std::vector<std::wstring> options;
+        std::vector<wchar_t> icons;          // Icons
+        std::vector<bool> flags;             // Icons: pressed
+        std::vector<std::wstring> pictures;  // Pictures: the files
         std::vector<Color> swatches;
         int selected = -1;
         double value = 0, min = 0, max = 0;
@@ -99,9 +109,9 @@ namespace sd::canvas
     struct ControlEvent
     {
         std::string id;
-        int index = -1;        // Choice / Swatches
+        int index = -1;        // Choice / Swatches / Dropdown / Icons / Pictures
         double value = 0;      // Number / Slider
-        bool on = false;       // Toggle
+        bool on = false;       // Toggle; Pictures: remove the picture
         uint32_t rgb = 0;      // Swatches: a custom colour picked
         bool final = true;     // Slider: false while the thumb is still being dragged
     };
@@ -111,6 +121,7 @@ namespace sd::canvas
         PointD at;                 // image coordinates
         double tolerance = 6;      // image pixels within which a grip counts as hit (a few DIPs on screen)
         bool shift = false, ctrl = false, alt = false;
+        int clicks = 1;            // PointerDown: 2 for a double click, 3 for a triple click
     };
 
     // What a tool's handler changed. `changed` records an undo step (after a drag, at its end).
@@ -161,6 +172,27 @@ namespace sd::canvas
         virtual bool PickImage(std::wstring& path)
         {
             (void)path;
+            return false;
+        }
+        // Plain text to and from the clipboard (typing in a text box). False when there is none.
+        virtual bool CopyText(const std::wstring& text)
+        {
+            (void)text;
+            return false;
+        }
+        virtual bool PasteText(std::wstring& text)
+        {
+            (void)text;
+            return false;
+        }
+        // Opens the signature pad over the window (returns at once): drawn with the mouse or a pen, or
+        // taken from a photo or scan (`fromPicture`). `done` gets the ink on a transparent background
+        // and whether to keep it for next time; it isn't called when the pad is cancelled. False when
+        // there is no window (tests).
+        virtual bool NewSignature(bool fromPicture, std::function<void(std::shared_ptr<const Raster> ink, bool remember)> done)
+        {
+            (void)fromPicture;
+            (void)done;
             return false;
         }
     };
@@ -217,6 +249,9 @@ namespace sd::canvas
         virtual Response Hover(const Pointer&) { return {}; }
         // Keys the window doesn't use itself (it keeps Enter, Esc, Ctrl+Z/Y, zoom and space).
         virtual Response Key(unsigned vk, bool shift, bool ctrl) = 0;
+        // Esc, when no text is being typed: true when the tool used it to drop a half-done step (a
+        // picture waiting to be placed, a selection), so the window stays open.
+        virtual bool Escape() { return false; }
         // While true (a text annotation being typed), typed characters go to Char() and every key but
         // Ctrl+Z / Ctrl+Y / zoom goes to Key() first, Enter and Esc included.
         virtual bool TextInput() const { return false; }

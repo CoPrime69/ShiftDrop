@@ -250,6 +250,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] In that view, right-click a page (or **Edit page** above the preview) > **Redact…**: the page opens in the Redact editor; box a line and apply: the page gets a pencil mark and the box. Annotate, Crop and Light and colour work the same way; **Revert** brings back the original. In the exported PDF, Ctrl+F in Edge finds none of the redacted text; the source PDFs are unchanged
 - [ ] Edit PDF on a 4-page PDF: step through every page with **Next** and by clicking each thumbnail, at 100% and again at 150% or 200% display scale (or after moving the window to a monitor with another scale): the large preview turns sharp within a moment on every page, not only the first, and small text in it is as crisp as in Edge at that size
 - [ ] Redact one line of a table on page 3 and apply: the thumbnail and the large preview show page 3 with the box (never a blank page with a grey "3"). Redact it again: both update. **Revert** (or Undo): the original page is back in both. In the saved PDF the box covers that one line, exactly where it was in the editor, and the rest of the page is unchanged
+- [ ] Edit PDF > right-click a page > **Fill and sign…**: type into the form's blanks, add a tick, the date and a signature, apply. In the saved PDF at 400 % in Edge the page's own text and the typed text are both sharp; Ctrl+F finds the typed words and copying them pastes the same text; the signature has no white box around it. Edit the page again: the marks come back editable
+- [ ] Fill and sign a sideways (rotated) page and a page with a cropped margin: the marks land exactly where they were placed
 - [ ] Merge two PDFs > **More…**, edit a page, **Back**, **More…** again, edit another page, **Merge and export**: both edited pages are in the output, each with its own edit
 - [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
 - [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
@@ -412,7 +414,13 @@ Edit Photos
 
 Annotate Photos
 - [ ] Drop the screenshot on **Annotate**: Arrow is chosen; drag: an arrow from the press to the release; Shift snaps it to 45°
-- [ ] Text: click, type, Shift+Enter for a new line, Enter to finish; click it again (selected) to edit; Esc on an empty text removes it
+- [ ] Text: click, type, Enter for a new line, Esc (or Ctrl+Enter) to finish; click it again to edit; Esc on an empty text removes it
+- [ ] In a text: the caret follows the arrows, Home/End, Ctrl+arrows; Shift selects, double-click a word; Backspace/Delete, Ctrl+A/C/V/X and Ctrl+Z work as in Notepad; typed Hindi and emoji show and delete whole
+- [ ] **Font** (or Ctrl+Shift+F) lists the installed fonts, each in its own face; type to find one. Size, B/I/U, colour and alignment change the selected box; Ctrl+[ and Ctrl+] step the size
+- [ ] **Auto-wrap** on: drag a side handle narrower, the lines rewrap. Off: the box grows with the text and dragging a corner scales the type; a side handle sets a width (Auto-wrap turns on)
+- [ ] **Date** puts today's date where you click; **Tick** and **Cross** mark a form's boxes (drag for bigger); Delete removes the selected mark; Undo and Redo step through every change
+- [ ] Signature > **Draw…**: sign with the mouse or a pen, **Add**: click to place it; its corners keep its shape (Shift stretches). **From a photo…**: a phone photo of a signature on white loses its paper ("Make the white see-through"). Saved signatures come back after a restart (in `%LOCALAPPDATA%\ShiftDrop`); × removes one. Nothing goes online
+- [ ] The signature pad and the font list follow light/dark, look right at 150 % and 200 %, and work by keyboard (Tab, Enter, Esc)
 - [ ] Box and Circle (Shift keeps them even; Filled toggle), Callout (press on the subject, drag to where the bubble goes, type), Number (1, 2, 3 in the order placed; deleting 1 renumbers), Magnifier (press on a detail, drag the loupe; its grips change the spot and the magnification)
 - [ ] Pen and Highlighter draw smooth strokes; the highlighter is see-through and doesn't darken where it overlaps itself
 - [ ] Insert picture: pick a PNG logo; it lands in the middle and can be moved and resized by its corners

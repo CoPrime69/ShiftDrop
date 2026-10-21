@@ -212,6 +212,56 @@ namespace sd::pdf
         return m_font;
     }
 
+    EncodedImage EncodeImage(const uint8_t* bgra, uint32_t width, uint32_t height)
+    {
+        EncodedImage out;
+        out.width = width;
+        out.height = height;
+        const size_t count = static_cast<size_t>(width) * height;
+        bool alpha = false, gray = true;
+        for (size_t i = 0; i < count && (gray || !alpha); ++i)
+        {
+            const uint8_t* p = &bgra[i * 4];
+            alpha = alpha || p[3] != 255;
+            gray = gray && p[0] == p[1] && p[1] == p[2];
+        }
+        const uint32_t channels = gray ? 1 : 3;
+        std::vector<uint8_t> samples(count * channels), mask(alpha ? count : 0);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const uint8_t* p = &bgra[i * 4];
+            if (gray)
+                samples[i] = p[0];
+            else
+            {
+                samples[i * 3] = p[2];   // BGRA -> RGB
+                samples[i * 3 + 1] = p[1];
+                samples[i * 3 + 2] = p[0];
+            }
+            if (alpha)
+                mask[i] = p[3];
+        }
+        out.gray = gray;
+        out.samples = PaethRows(samples.data(), width, height, channels);
+        if (alpha)
+            out.mask = PaethRows(mask.data(), width, height, 1);
+        return out;
+    }
+
+    std::string EncodedImage::Dict() const
+    {
+        return std::format("/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent 8 "
+                           "/DecodeParms << /Predictor 15 /Colors {} /BitsPerComponent 8 /Columns {} >>",
+                           width, height, gray ? "/DeviceGray" : "/DeviceRGB", gray ? 1 : 3, width);
+    }
+
+    std::string EncodedImage::MaskDict() const
+    {
+        return std::format("/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceGray /BitsPerComponent 8 "
+                           "/DecodeParms << /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns {} >>",
+                           width, height, width);
+    }
+
     bool ImagePdfBuilder::AddPage(const ImageSource& image, const ocr::Result* ocrResult, std::wstring& error)
     {
         const uint32_t dw = image.DisplayWidth(), dh = image.DisplayHeight();
@@ -239,46 +289,15 @@ namespace sd::pdf
         else
         {
             const auto& px = image.pixels;
-            const size_t count = static_cast<size_t>(px.width) * px.height;
-            bool alpha = false, gray = true;
-            for (size_t i = 0; i < count && (gray || !alpha); ++i)
-            {
-                const uint8_t* p = &px.bgra[i * 4];
-                alpha = alpha || p[3] != 255;
-                gray = gray && p[0] == p[1] && p[1] == p[2];
-            }
-            const uint32_t channels = gray ? 1 : 3;
-            std::vector<uint8_t> samples(count * channels), mask(alpha ? count : 0);
-            for (size_t i = 0; i < count; ++i)
-            {
-                const uint8_t* p = &px.bgra[i * 4];
-                if (gray)
-                    samples[i] = p[0];
-                else
-                {
-                    samples[i * 3] = p[2];   // BGRA -> RGB
-                    samples[i * 3 + 1] = p[1];
-                    samples[i * 3 + 2] = p[0];
-                }
-                if (alpha)
-                    mask[i] = p[3];
-            }
+            const EncodedImage encoded = EncodeImage(px.bgra.data(), px.width, px.height);
             std::string smask;
-            if (alpha)
+            if (!encoded.mask.empty())
             {
                 const int maskObject = m_writer.NewObject();
-                m_writer.FlateStream(maskObject,
-                                     std::format("/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceGray /BitsPerComponent 8 "
-                                                 "/DecodeParms << /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns {} >>",
-                                                 px.width, px.height, px.width),
-                                     PaethRows(mask.data(), px.width, px.height, 1));
+                m_writer.FlateStream(maskObject, encoded.MaskDict(), encoded.mask);
                 smask = std::format(" /SMask {} 0 R", maskObject);
             }
-            m_writer.FlateStream(xobject,
-                                 std::format("/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace {} /BitsPerComponent 8 "
-                                             "/DecodeParms << /Predictor 15 /Colors {} /BitsPerComponent 8 /Columns {} >>{}",
-                                             px.width, px.height, gray ? "/DeviceGray" : "/DeviceRGB", channels, px.width, smask),
-                                 PaethRows(samples.data(), px.width, px.height, channels));
+            m_writer.FlateStream(xobject, encoded.Dict() + smask, encoded.samples);
         }
 
         std::string content = std::format("q {} cm /Im0 Do Q\n", Matrix(placement));
