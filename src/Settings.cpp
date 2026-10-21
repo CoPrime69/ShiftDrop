@@ -11,6 +11,7 @@ namespace sd
         {
         case Ring::Convert: return "convert";
         case Ring::Tools: return "tools";
+        case Ring::Reduce: return "reduce";
         default: return "files";
         }
     }
@@ -21,6 +22,7 @@ namespace sd
         {
         case Ring::Convert: return L"Convert";
         case Ring::Tools: return L"Tools";
+        case Ring::Reduce: return L"Reduce size";
         default: return L"File actions";
         }
     }
@@ -69,7 +71,7 @@ namespace sd
         }
 
         Settings s;
-        const wchar_t* keys[kRingCount] = { L"Convert", L"Tools", L"Files" };
+        const wchar_t* keys[kRingCount] = { L"Convert", L"Tools", L"Reduce", L"Files" };
         for (int i = 0; i < kRingCount; ++i)
         {
             wchar_t buf[32]{};
@@ -100,7 +102,7 @@ namespace sd
                     s.keys[j] = 0;
                     s.keyNames[j] = L"off";
                 }
-        log::Info(L"settings: Convert={}, Tools={}, Files={} ({})", s.keyNames[0], s.keyNames[1], s.keyNames[2], path);
+        log::Info(L"settings: Convert={}, Tools={}, Reduce={}, Files={} ({})", s.keyNames[0], s.keyNames[1], s.keyNames[2], s.keyNames[3], path);
         return s;
     }
 
