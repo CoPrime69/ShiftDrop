@@ -124,6 +124,20 @@ add_library(shiftdrop_core STATIC
   src/videotools/VideoTools.cpp
   src/audiotools/AudioEngine.cpp
   src/audiotools/AudioTools.cpp
+  # Photo tools (M8): Edit Photos, Annotate, Background, Collage; Direct2D on the GPU (WARP without one)
+  src/photo/Adjust.cpp
+  src/photo/AnnotateTool.cpp
+  src/photo/Annotations.cpp
+  src/photo/BackgroundTool.cpp
+  src/photo/CollageTool.cpp
+  src/photo/Compose.cpp
+  src/photo/EditTool.cpp
+  src/photo/Effects.cpp
+  src/photo/Filters.cpp
+  src/photo/Gpu.cpp
+  src/photo/Layout.cpp
+  src/photo/PhotoEngine.cpp
+  src/photo/PhotoModule.cpp
 )
 target_include_directories(shiftdrop_core PUBLIC src)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
@@ -136,6 +150,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   qpdf::libqpdf
   ZLIB::ZLIB
   windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
+  d2d1 dwrite d3d11 dxgi
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the
@@ -225,6 +240,7 @@ if(SHIFTDROP_TESTS)
     tests/CropTests.cpp
     tests/RedactTests.cpp
     tests/ShareSafeTests.cpp
+    tests/PhotoTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest)

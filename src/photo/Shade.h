@@ -109,14 +109,14 @@ namespace sd::photo::shade
     };
 
 #define SD_PHOTO_SHADE_FUNCTIONS                                                                         \
-    float Luma(float3 c) { return dot(c, float3(0.2126f, 0.7152f, 0.0722f)); }                          \
+    inline float Luma(float3 c) { return dot(c, float3(0.2126f, 0.7152f, 0.0722f)); }                    \
                                                                                                          \
     /* A soft S-curve (contrast > 0) or its flattening (< 0); 0 and 1 stay put. */                       \
-    float Contrast(float l, float k) { return l + k * (l * l * (3.0f - 2.0f * l) - l); }                \
+    inline float Contrast(float l, float k) { return l + k * (l * l * (3.0f - 2.0f * l) - l); }          \
                                                                                                          \
     /* Tone on luminance: shadows and highlights each move their part of the range (peaks at 1/3 and    \
        2/3), whites and blacks the two ends. */                                                          \
-    float Tone(float l, DevelopK k)                                                                      \
+    inline float Tone(float l, DevelopK k)                                                               \
     {                                                                                                    \
         float u = 1.0f - l;                                                                              \
         l = l + k.shadows * 0.25f * (l * u * u * 6.75f);                                                 \
@@ -128,7 +128,7 @@ namespace sd::photo::shade
                                                                                                          \
     /* Dark channel prior: `haze` is the refined dark channel of the picture over the atmospheric       \
        light (0 clear .. 1 all haze); clearing divides the haze out, J = (I - A) / t + A. */             \
-    float3 Dehaze(float3 c, float haze, DevelopK k)                                                      \
+    inline float3 Dehaze(float3 c, float haze, DevelopK k)                                               \
     {                                                                                                    \
         float3 a = float3(k.hazeR, k.hazeG, k.hazeB);                                                    \
         if (k.dehaze > 0.0f)                                                                             \
@@ -139,7 +139,7 @@ namespace sd::photo::shade
         return lerp(c, a, -k.dehaze * 0.6f * (1.0f - 0.5f * saturate(haze)));                            \
     }                                                                                                    \
                                                                                                          \
-    float3 Develop(float3 c, float haze, DevelopK k)                                                     \
+    inline float3 Develop(float3 c, float haze, DevelopK k)                                              \
     {                                                                                                    \
         if (k.dehaze != 0.0f)                                                                            \
             c = Dehaze(c, haze, k);                                                                      \
@@ -161,10 +161,10 @@ namespace sd::photo::shade
         return saturate(m + (c - m) * gain);                                                             \
     }                                                                                                    \
                                                                                                          \
-    float Hash(float x, float y, float seed) { return frac(sin(x * 127.1f + y * 311.7f + seed) * 43758.5453f); } \
+    inline float Hash(float x, float y, float seed) { return frac(sin(x * 127.1f + y * 311.7f + seed) * 43758.5453f); } \
                                                                                                          \
     /* Smooth value noise in -0.5..0.5, one cell per `size` pixels of the full picture. */              \
-    float Grain(float x, float y, FinishK k)                                                             \
+    inline float Grain(float x, float y, FinishK k)                                                      \
     {                                                                                                    \
         float gx = x / (k.scale * k.grainSize);                                                          \
         float gy = y / (k.scale * k.grainSize);                                                          \
@@ -182,7 +182,7 @@ namespace sd::photo::shade
     /* Detail and finishing: `fine` and `broad` are the picture blurred by about one pixel and by     \
        about one percent of its size. Clarity adds back the large-scale local contrast in the           \
        midtones, sharpen the fine detail; then the vignette and grain. (x, y) is the pixel centre. */   \
-    float3 Finish(float3 c, float3 fine, float3 broad, float x, float y, FinishK k)                     \
+    inline float3 Finish(float3 c, float3 fine, float3 broad, float x, float y, FinishK k)               \
     {                                                                                                    \
         float l = Luma(c);                                                                               \
         float mid = 1.0f - (2.0f * l - 1.0f) * (2.0f * l - 1.0f);                                        \
@@ -206,7 +206,7 @@ namespace sd::photo::shade
     }                                                                                                    \
                                                                                                          \
     /* The edge-preserving filter's weight for a tap `d2` taps^2 away whose luma differs by `dl`. */    \
-    float BilateralWeight(float d2, float dl, DenoiseK k) { return exp(-d2 * k.invSpatial - dl * dl * k.invRange); }
+    inline float BilateralWeight(float d2, float dl, DenoiseK k) { return exp(-d2 * k.invSpatial - dl * dl * k.invRange); }
 
 namespace sd::photo::shade
 {
