@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-// Tool 2, Edit Metadata, part 1: the "Inspect" slice on the Tools wheel opens a read-only window
-// listing every metadata field of the dropped files (editing comes with M6).
+// The "Inspect" slice on the Tools wheel opens a read-only window listing every metadata field of
+// the dropped files. Editing fields is not built yet.
 //
 // The engine lives in the core library; the window is UI code in the app, so the app hands the
 // engine a function that opens it (InspectorWindow.h). Without one (tests) the slice only logs.

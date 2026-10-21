@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-// The document model every document converter goes through (M11): readers (DOCX, Markdown, HTML,
+// The document model every document converter goes through: readers (DOCX, Markdown, HTML,
 // TXT, RTF, and later PDF) fill it, writers (DOCX, Markdown, HTML, TXT, EPUB, PDF) read it. It holds
 // what survives a trip between formats: headings, paragraphs, bold/italic/strike/code, links, lists,
 // quotes, code blocks, tables and images. Text is UTF-8.

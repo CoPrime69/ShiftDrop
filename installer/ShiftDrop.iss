@@ -1,5 +1,5 @@
 ; ShiftDrop installer (Inno Setup 6.3 or later). CI builds it on every push; to build it by hand after
-; a Release build (see docs/TESTING.md, section 5):
+; a Release build (see docs/BUILDING.md, "Build the installer"):
 ;   ./scripts/get-ffmpeg.ps1
 ;   ./scripts/make-notices.ps1
 ;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
@@ -44,7 +44,7 @@ DisableProgramGroupPage=yes
 DisableReadyPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 22H2 (build 19045) or later, as decided in docs/PLAN.md.
+; Windows 10 22H2 (build 19045) or later.
 MinVersion=10.0.19045
 OutputDir=..\build\installer
 OutputBaseFilename={#AppName}-Setup-{#AppVersion}
@@ -80,7 +80,7 @@ Source: "{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#EnginesDir}\ffmpeg.exe"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-LICENSE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
-; The sandboxed worker (S6): reads archives inside an AppContainer with no file or network access.
+; The sandboxed worker: reads archives inside an AppContainer with no file or network access.
 Source: "{#WorkerExe}"; DestDir: "{app}\engines"; Flags: ignoreversion
 
 [Icons]

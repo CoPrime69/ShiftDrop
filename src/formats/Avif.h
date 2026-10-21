@@ -13,7 +13,7 @@ namespace sd::formats
 {
     // aom's speed (0 slowest .. 10 fastest). On a 12 MP photo at quality 60, 4 threads, speed 8 took
     // 0.28 s on the Windows CI runner against 1.01 s at libavif's default 6, for a file about 8%
-    // bigger (docs/PLAN.md has the numbers).
+    // bigger. Speed 7 took 0.93 s and speed 9 0.23 s, so 9 saves little more.
     inline constexpr int kAvifSpeed = 8;
 
     struct AvifOptions

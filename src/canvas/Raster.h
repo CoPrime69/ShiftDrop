@@ -10,7 +10,7 @@
 
 namespace sd::canvas
 {
-    // A decoded picture in memory: what the image editors (Crop, Redact, later the M8 photo tools)
+    // A decoded picture in memory: what the image editors (Crop, Redact and the photo tools)
     // edit and what their engines render. 32 bpp BGRA with straight (not premultiplied) alpha,
     // top-down rows, no padding.
     struct Raster

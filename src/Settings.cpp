@@ -84,7 +84,7 @@ namespace sd
         {
             wchar_t buf[32]{};
             GetPrivateProfileStringW(L"Gesture", keys[i], L"", buf, ARRAYSIZE(buf), path.c_str());
-            // M0/M1 files used TriggerKey for the only wheel there was.
+            // The first versions used TriggerKey for the only wheel there was.
             if (i == 0 && !buf[0])
                 GetPrivateProfileStringW(L"Gesture", L"TriggerKey", L"", buf, ARRAYSIZE(buf), path.c_str());
             if (!buf[0])

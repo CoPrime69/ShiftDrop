@@ -3,7 +3,7 @@
 
 #include <memory>
 
-// Text from anything (S4): "Copy text" puts the text of images and PDFs on the clipboard (the PDF's
+// Text from anything: "Copy text" puts the text of images and PDFs on the clipboard (the PDF's
 // own text layer where it has one, Windows OCR where it doesn't); "Searchable PDF" turns images and
 // scanned PDFs into PDFs with an invisible, selectable text layer.
 namespace sd::ocr

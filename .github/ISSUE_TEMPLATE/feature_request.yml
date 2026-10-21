@@ -1,0 +1,26 @@
+name: Feature request
+description: A format, tool or behaviour you'd like ShiftDrop to have.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the Limitations section of the README first: some gaps are on purpose (no network, no GPL code, no machine-learning models).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The task, not the solution. What do you drag, and what do you want to end up with?
+      placeholder: I send screen recordings to a chat app with a 25 MB limit and want them to fit without picking a bitrate.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: Which wheel section, what the slice would be called, what the output would be named.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: Other tools or workarounds you use for this now.

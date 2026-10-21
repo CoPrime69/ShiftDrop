@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-// Subtitles (M11): SRT and WebVTT in; SRT, WebVTT and plain text out. One FeatureModule, one
+// Subtitles: SRT and WebVTT in; SRT, WebVTT and plain text out. One FeatureModule, one
 // action, "subtitles.convert".
 namespace sd::subtitles
 {

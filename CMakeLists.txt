@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(SHIFTDROP_M0 "Build the M0 placeholder: plain circle, every drop only logs + notifies" OFF)
+option(SHIFTDROP_M0 "Build the placeholder gesture build: plain circle, every drop only logs + notifies" OFF)
 option(SHIFTDROP_TESTS "Build the unit tests (ctest)" ON)
 
 if(NOT MSVC)
@@ -73,9 +73,9 @@ add_library(shiftdrop_core STATIC
   src/Startup.cpp
   src/Undo.cpp
   src/VirtualDrop.cpp
-  src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern (M12)
-  src/toast/ToastXml.cpp         # what a finished batch's toast says (M12)
-  # M4: keyboard picking and the wheel without a drag, predicted output, metadata inspector
+  src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern
+  src/toast/ToastXml.cpp         # what a finished batch's toast says
+  # Keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
   src/keyboard/ShellVerb.cpp
@@ -110,7 +110,7 @@ add_library(shiftdrop_core STATIC
   src/redact/RedactTool.cpp
   src/redact/Vision.cpp
   src/sharesafe/ShareSafeEngine.cpp
-  # PDF module (M5): plain C++ and QPDF; the WinRT and UI parts are in the libraries below
+  # PDF module: plain C++ and QPDF; the WinRT and UI parts are in the libraries below
   src/pdf/ImagePdf.cpp
   src/pdf/PageRenderer.cpp
   src/pdf/PagePlan.cpp
@@ -127,7 +127,7 @@ add_library(shiftdrop_core STATIC
   src/ocr/OcrEngine.cpp
   src/ocr/TextLayer.cpp
   src/share/ShareEngine.cpp
-  # Documents, spreadsheets, subtitles and the Office bridge (M11)
+  # Documents, spreadsheets, subtitles and the Office bridge
   src/docs/Bytes.cpp
   src/docs/DocModel.cpp
   src/docs/DocsModule.cpp
@@ -153,7 +153,7 @@ add_library(shiftdrop_core STATIC
   src/officebridge/OfficeBridge.cpp
   src/officebridge/OfficeCom.cpp
   src/officebridge/OfficeModule.cpp
-  # Video and audio tools (M9, M10): engines and the editor's pure maths; the editor window is in the app
+  # Video and audio tools: engines and the editor's pure maths; the editor window is in the app
   src/mediaeditor/EditorApi.cpp
   src/mediaeditor/EditorLayout.cpp
   src/mediaeditor/MediaProbe.cpp
@@ -183,7 +183,7 @@ add_library(shiftdrop_core STATIC
   src/formats/Heic.cpp
   src/formats/Pixels.cpp
   src/formats/Svg.cpp
-  # Photo tools (M8): Edit Photos, Annotate, Background, Collage; Direct2D on the GPU (WARP without one)
+  # Photo tools: Edit Photos, Annotate, Background, Collage; Direct2D on the GPU (WARP without one)
   src/photo/Adjust.cpp
   src/photo/AnnotateTool.cpp
   src/photo/Annotations.cpp
@@ -247,7 +247,7 @@ add_executable(ShiftDrop WIN32
   src/MouseHook.cpp
   src/Overlay.cpp
   src/Island.cpp
-  src/Accessibility.cpp   # screen readers: the wheel and the top panel through UI Automation (M12)
+  src/Accessibility.cpp   # screen readers: the wheel and the top panel through UI Automation
   src/Canvas.cpp
   src/Theme.cpp
   src/DropDescription.cpp
@@ -276,7 +276,7 @@ target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme uiautomationcore)
 
-# The sealed engine host (S6): parses archives inside an AppContainer with no capabilities. A
+# The sealed engine host: parses archives inside an AppContainer with no capabilities. A
 # separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
 # lives in "engines" next to ffmpeg.exe; every build copies it there so the build folder runs like
 # an install.

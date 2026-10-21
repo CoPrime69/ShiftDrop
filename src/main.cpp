@@ -144,7 +144,7 @@ namespace sd
         // File actions that hand the files themselves to something else (the clipboard, the Float
         // shelf, the share sheet, a terminal): for files dragged out of an app they get a copy kept in
         // the output folder, since the drop folder is deleted when the job ends.
-        [[maybe_unused]] bool HandsFilesOn(const Recipe& recipe)   // unused in the M0 build
+        [[maybe_unused]] bool HandsFilesOn(const Recipe& recipe)   // unused in the placeholder build
         {
             if (recipe.steps.size() != 1)
                 return false;
@@ -179,7 +179,7 @@ namespace sd
             wchar_t icon = 0;
             bool mirror = false;
         };
-        [[maybe_unused]] Look SliceLook(const Recipe& recipe)   // unused in the M0 build
+        [[maybe_unused]] Look SliceLook(const Recipe& recipe)   // unused in the placeholder build
         {
             if (recipe.icon)
                 return { recipe.icon };   // the recipe names its own (feature modules, user recipes)
@@ -347,7 +347,7 @@ namespace sd
                     m_island->HideSwitcher();
             };
             events.ringChanged = [this](int ring) { m_island->SetRing(ring); };
-            // The predicted-output card follows the highlighted slice (M4).
+            // The predicted-output card follows the highlighted slice.
             events.highlighted = [this](const WheelHighlight& h) {
                 if (m_preview)
                     m_preview->Update(h, h.actionId.empty() ? nullptr : m_recipes.Find(Narrow(h.actionId)));
@@ -375,7 +375,7 @@ namespace sd
             // Real toasts need the installer's Start menu shortcut; without it, balloons as before.
             m_toasts = toast::Start(OnToastClick);
 
-            // M4: the predicted-output card, the inspector window, keyboard picking and the wheel on
+            // The predicted-output card, the inspector window, keyboard picking and the wheel on
             // Explorer's selection. None of them is needed for the drag gesture, so a failure only logs.
             inspect::InstallWindow();
             m_preview = std::make_unique<PreviewCard>(m_instance, m_media);
@@ -738,7 +738,7 @@ namespace sd
                 {
                     SwitchOnKeyPress();
                     if (m_keyboard)
-                        m_keyboard->PollDrag();   // arrows and Enter pick a slice (M4)
+                        m_keyboard->PollDrag();   // arrows and Enter pick a slice
                     return;
                 }
                 const UINT held = HeldKey();
@@ -1573,8 +1573,8 @@ namespace sd
         uint64_t m_nextBatch = 1;
         uint64_t m_islandBatch = 0;          // the batch whose progress the top panel shows
         std::unique_ptr<HistoryWindow> m_historyWindow;
-        std::unique_ptr<PreviewCard> m_preview;            // M4: after the overlay, which reports highlights to it
-        std::unique_ptr<KeyboardController> m_keyboard;    // M4: drives the overlay
+        std::unique_ptr<PreviewCard> m_preview;            // after the overlay, which reports highlights to it
+        std::unique_ptr<KeyboardController> m_keyboard;    // drives the overlay
         std::vector<std::wstring> m_startWheel;            // --wheel paths this process was started with
         bool m_keyDown[kRingCount]{};
         static constexpr int kDigitKeys = 9;   // 1 to 9
@@ -1641,7 +1641,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
             sd::startup::Disable();
             sd::shellverb::Unregister();
             sd::toast::Unregister();
-            sd::sandbox::RemoveProfile();   // the sandbox's AppContainer profile (S6)
+            sd::sandbox::RemoveProfile();   // the sandbox's AppContainer profile
         }
         return quit ? 0 : 1;
     }

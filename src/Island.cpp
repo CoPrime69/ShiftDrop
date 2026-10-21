@@ -233,7 +233,7 @@ namespace sd
     void Island::ShowSwitcher(int ring, HMONITOR monitor)
     {
         if (m_rings.empty())
-            return;   // the M0 placeholder build has a single unnamed wheel
+            return;   // the placeholder build has a single unnamed wheel
         m_ring = ring;
         if (m_state != State::Switcher || m_retracting)
             m_tabPos = static_cast<float>(ring);

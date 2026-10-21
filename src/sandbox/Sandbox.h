@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-// S6, sealed engines: work on untrusted input (archives, and optionally ffmpeg) runs in a child
+// Sealed engines: work on untrusted input (archives, and optionally ffmpeg) runs in a child
 // process inside an AppContainer with no capabilities. Such a process has no network access and can
 // open none of the user's files by name; it works only on the handles we pass it.
 //
@@ -79,8 +79,10 @@ namespace sd::sandbox
     void SetWorkerPath(std::wstring path);
 
     // Settings ([Sandbox] in settings.ini). Archives=1 (default): archive parsing in the AppContainer
-    // worker. Media=0 (default): ffmpeg in the AppContainer; see docs/plugins.md and PLAN.md for why
-    // it is off by default.
+    // worker. Media=0 (default): ffmpeg runs outside it. Media=1 puts it inside, which works with the
+    // CPU encoders (the tests prove it), but GPU encoders (NVENC, Quick Sync, AMF) and -hwaccel need
+    // driver access a container with no capabilities may not get, and CI has no GPU to check them
+    // on, so it stays off by default (docs/ARCHITECTURE.md, "Sandbox").
     bool ArchiveSandboxEnabled();
     bool MediaSandboxEnabled();
     void SetMediaSandbox(bool on);      // tests, and a future settings window

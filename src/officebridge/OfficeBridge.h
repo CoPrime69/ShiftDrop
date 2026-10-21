@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-// Office bridge (M11): when Microsoft Office or LibreOffice is installed, it makes the faithful
+// Office bridge: when Microsoft Office or LibreOffice is installed, it makes the faithful
 // conversions our own code can't: presentations to PDF and to slide pictures, and Word and Excel
 // files to a PDF exactly as the app prints them. Nothing is bundled; the apps are found once at
 // startup. Microsoft Office is driven through COM (out of process, invisible, macros off, alerts

@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-// Text recognition (S4 "Text from anything") through Windows' built-in OCR, Windows.Media.Ocr. It is
+// Text recognition through Windows' built-in OCR, Windows.Media.Ocr. It is
 // part of Windows: nothing is bundled or downloaded, and it uses the OCR languages the user has
 // installed. The WinRT code lives in WinOcr.cpp (built only by MSVC); everything here is plain C++ so
 // the logic around it is unit-tested anywhere.
