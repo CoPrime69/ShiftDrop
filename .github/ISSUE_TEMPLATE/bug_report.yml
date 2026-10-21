@@ -1,0 +1,53 @@
+name: Bug report
+description: Something went wrong, or a result looks wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For a security problem, please don't use this form; see SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you dragged, which section and slice you dropped it on, and what you saw.
+      placeholder: Dragged a 40 MB .mov from my phone, Reduce size > -50%. The top panel said "Failed" and no file was written.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If a particular file triggers it, say what kind (format, size, where it came from). Attach it if you can share it.
+      placeholder: |
+        1. Select two PDFs in Explorer
+        2. Press Ctrl+Shift+Space
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: ShiftDrop version
+      description: Settings > Apps lists it, or the tray notification at startup.
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Win+R, winver.
+      placeholder: Windows 11 24H2, build 26100
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: From %LOCALAPPDATA%\ShiftDrop\logs\shiftdrop-YYYYMMDD.log (tray menu > Open logs folder). The lines around the failure are enough. Check them for file names you'd rather not share.
+      render: text
