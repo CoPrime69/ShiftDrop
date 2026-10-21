@@ -23,6 +23,11 @@ in one place, so features can be built side by side without touching each other.
 - **Outputs:** always through `StagedOutput` ([src/StagedOutput.h](../src/StagedOutput.h)): a
   staging file or folder next to the source, a no-replace rename to `name (suffix).ext`, a hash,
   and a history row, so every result can be undone and a crash leaves nothing half-written.
+  A batch output can pass an `OutputPlace` (folder + stem) to be named after something other than
+  its source, such as "Photos (zipped).zip" for a drop of a folder's files.
+- **Untrusted input:** parse it in the sandbox worker (`src/sandbox`, `engines\ShiftDropWorker.exe`:
+  AppContainer, no capabilities, kill-on-close job) and let the app write the files, as
+  `src/archive` does.
 - **ffmpeg:** through `EngineServices::ffmpeg` (`FfmpegEngine::Run`, `Probe`), always with
   `FfmpegArgs` (local files only), on `JobLane::Media`.
 - **Rules that hold everywhere:** offline (no network calls), no ML models, no API keys, no GPL or

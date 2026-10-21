@@ -19,6 +19,7 @@
     "miniz",
     "pugixml",
     "md4c",
+    { "name": "libarchive", "default-features": false, "features": [ "bzip2", "lzma", "zstd" ] },
     "gtest"
   ],
   "vcpkg-configuration": {

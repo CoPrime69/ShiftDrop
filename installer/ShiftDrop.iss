@@ -6,13 +6,17 @@
 ;
 ; Per-user install: no admin rights, no UAC prompt. Files go to %LOCALAPPDATA%\Programs\ShiftDrop.
 ; The app is linked with the static CRT, so nothing else (no VC++ redistributable) is installed.
-; ffmpeg.exe (engines\) is the only other program; it runs only when a video or audio file is converted.
+; ffmpeg.exe and ShiftDropWorker.exe (engines\) are the only other programs; ffmpeg runs when a video or
+; audio file is converted, the worker when an archive is read.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef AppExe
   #define AppExe "..\build\x64-release\Release\ShiftDrop.exe"
+#endif
+#ifndef WorkerExe
+  #define WorkerExe "..\build\x64-release\Release\ShiftDropWorker.exe"
 #endif
 #ifndef EnginesDir
   #define EnginesDir "..\build\engines"
@@ -74,6 +78,8 @@ Source: "{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#EnginesDir}\ffmpeg.exe"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-LICENSE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
 Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
+; The sandboxed worker (S6): reads archives inside an AppContainer with no file or network access.
+Source: "{#WorkerExe}"; DestDir: "{app}\engines"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"
