@@ -37,7 +37,10 @@ namespace sd
         : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>, IDropTarget>
     {
     public:
-        DropTarget(HWND hwnd, IDropSink* sink);
+        // `helper` is the shell's drag-image helper (MakeDragImageHelper; null: no drag picture over
+        // `hwnd`). Every drag event is handed to it with `hwnd`, so the source's picture of the item
+        // stays visible over the window and follows the cursor.
+        DropTarget(HWND hwnd, IDropSink* sink, Microsoft::WRL::ComPtr<IDropTargetHelper> helper);
 
         STDMETHOD(DragEnter)(IDataObject* data, DWORD keyState, POINTL pt, DWORD* effect) override;
         STDMETHOD(DragOver)(DWORD keyState, POINTL pt, DWORD* effect) override;
@@ -52,9 +55,8 @@ namespace sd
         bool m_accepting = false;
         Microsoft::WRL::ComPtr<IDataObject> m_data;   // while accepting, to give the badge back on leave
         std::shared_ptr<VirtualDrop> m_virtual;       // the drag's virtual files, from DragEnter to its end
-        // The shell's drag-image helper would keep Explorer's drag picture visible over the wheel.
-        // Left empty on purpose (see the constructor): the picture gives way to the wheel.
         Microsoft::WRL::ComPtr<IDropTargetHelper> m_helper;
+        HWND m_dragWindow = nullptr;   // the source's drag picture, kept above our windows during the drag
     };
 
     // Reads CF_HDROP from a data object. Returns an empty vector if the format is not present.

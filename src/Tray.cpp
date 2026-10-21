@@ -117,7 +117,6 @@ namespace sd
         // The menu takes ownership of submenus appended with MF_POPUP and destroys them with itself.
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(size.release()), L"Size");
         AppendMenuW(menu.get(), MF_POPUP, reinterpret_cast<UINT_PTR>(style.release()), L"Style");
-        AppendMenuW(menu.get(), MF_STRING | (appearance.hideCursor ? MF_CHECKED : MF_UNCHECKED), IDM_HIDE_CURSOR, L"Hide cursor over the wheel");
         for (const auto& c : extras.choices)
         {
             wil::unique_hmenu sub(CreatePopupMenu());

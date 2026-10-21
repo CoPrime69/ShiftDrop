@@ -5,6 +5,14 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- The top panel is about 1.4 times larger, so it reads at a glance on large screens; it follows the
+  tray Size setting and still fits a 1366 px screen.
+- The dragged item's picture (its icon or thumbnail and name) stays visible over the wheel again,
+  still without a "+ Copy" badge.
+- "Hide cursor over the wheel" is gone: the pointer is never hidden.
+
 ## [0.5.0] - 2026-10-21
 
 The first public release.

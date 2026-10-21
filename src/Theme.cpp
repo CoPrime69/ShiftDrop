@@ -151,24 +151,9 @@ namespace sd::theme
     {
         UINT dpiX = 96, dpiY = 96;
         GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-        const float dpi = static_cast<float>(dpiX) / 96.f;
-        float preset = 1.f;
-        switch (size)
-        {
-        case WheelSize::Small: preset = 0.85f; break;
-        case WheelSize::Medium: preset = 1.f; break;
-        case WheelSize::Large: preset = 1.2f; break;
-        case WheelSize::Auto:
-        {
-            // 1080 physical rows at 100% is the reference; 1440p at 100% gets ~1.25x.
-            MONITORINFO mi{ sizeof(mi) };
-            GetMonitorInfoW(monitor, &mi);
-            const float heightDip = static_cast<float>(mi.rcMonitor.bottom - mi.rcMonitor.top) / dpi;
-            preset = std::clamp(heightDip / 1080.f, 0.9f, 1.3f);
-            break;
-        }
-        }
-        return dpi * preset;
+        MONITORINFO mi{ sizeof(mi) };
+        GetMonitorInfoW(monitor, &mi);
+        return SizeScale(size, static_cast<float>(dpiX) / 96.f, static_cast<float>(mi.rcMonitor.bottom - mi.rcMonitor.top));
     }
 
     bool AnimationsOn()

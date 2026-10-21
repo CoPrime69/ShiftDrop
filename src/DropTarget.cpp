@@ -48,11 +48,9 @@ namespace sd
         return files;
     }
 
-    DropTarget::DropTarget(HWND hwnd, IDropSink* sink) : m_hwnd(hwnd), m_sink(sink)
+    DropTarget::DropTarget(HWND hwnd, IDropSink* sink, Microsoft::WRL::ComPtr<IDropTargetHelper> helper)
+        : m_hwnd(hwnd), m_sink(sink), m_helper(std::move(helper))
     {
-        // No drag-image helper: Explorer's drag picture shows only over windows that use one, so it
-        // fades away as soon as the wheel opens and the wheel takes its place.
-        // Creating CLSID_DragDropHelper into m_helper here would bring the picture back over the wheel.
     }
 
     STDMETHODIMP DropTarget::DragEnter(IDataObject* data, DWORD, POINTL pt, DWORD* effect)
@@ -80,11 +78,18 @@ namespace sd
         if (m_accepting)
         {
             m_data = data;
-            // No "+ Copy" badge under the drag picture: the wheel says what will happen.
+            // The picture stays, but no "+ Copy" badge under it: the wheel says what will happen.
             SetDropDescription(data, DROPIMAGE_NOIMAGE);
         }
         if (m_helper)
+        {
+            // The same for files with no path (a browser's image, a mail attachment): the helper
+            // shows whatever picture the source made.
             m_helper->DragEnter(m_hwnd, data, &p, *effect);
+            // The wheel and the top panel opened after the drag began, on top of the picture.
+            m_dragWindow = DragImageWindow(data);
+            KeepDragImageOnTop(m_dragWindow);
+        }
         return S_OK;
     }
 
@@ -93,7 +98,10 @@ namespace sd
         POINT p{ pt.x, pt.y };   // IDropTargetHelper takes a non-const POINT*
         *effect = m_accepting ? m_sink->OnDragOver(p, *effect) : DROPEFFECT_NONE;
         if (m_helper)
+        {
             m_helper->DragOver(&p, *effect);
+            KeepDragImageOnTop(m_dragWindow);   // e.g. the predicted-output card just appeared
+        }
         return S_OK;
     }
 
@@ -104,6 +112,7 @@ namespace sd
         if (m_data)
             SetDropDescription(m_data.Get(), DROPIMAGE_INVALID);   // other windows get their usual badge
         m_data.Reset();
+        m_dragWindow = nullptr;
         m_accepting = false;
         m_sink->OnDragLeave();
         EndVirtual();
@@ -119,6 +128,7 @@ namespace sd
         if (m_helper)
             m_helper->Drop(data, &p, *effect);
         m_data.Reset();
+        m_dragWindow = nullptr;
 
         // The drag source (e.g. Explorer) is blocked inside DoDragDrop until we return, so Drop only
         // reads the paths and hands them on; conversion runs on the job queue. Virtual files are
