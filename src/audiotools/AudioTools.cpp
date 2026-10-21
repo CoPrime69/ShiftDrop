@@ -229,19 +229,102 @@ namespace sd::audiotools
         }
     }
 
-    std::vector<std::wstring> WaveformVideoArgs(const std::wstring& audio, const ProbeInfo& info, Shape shape, H264Encoder encoder,
-                                                const std::wstring& output)
+    VisualStyle VisualStyleByName(std::string_view name)
     {
+        if (name == "bars") return VisualStyle::Bars;
+        if (name == "circle") return VisualStyle::Circle;
+        if (name == "square") return VisualStyle::Square;
+        if (name == "vertical") return VisualStyle::Vertical;
+        if (name == "image") return VisualStyle::Picture;
+        return VisualStyle::Wave;
+    }
+
+    const char* VisualStyleName(VisualStyle style)
+    {
+        switch (style)
+        {
+        case VisualStyle::Bars: return "bars";
+        case VisualStyle::Circle: return "circle";
+        case VisualStyle::Square: return "square";
+        case VisualStyle::Vertical: return "vertical";
+        case VisualStyle::Picture: return "image";
+        default: return "waveform";
+        }
+    }
+
+    namespace
+    {
+        constexpr const wchar_t* kVisualColour = L"0x7AB8FF";   // a soft blue on the near-black 0x0E0F13
+
+        // showfreqs drawn small, `cols` bins by `rows` levels, then enlarged with hard edges to
+        // `pitch` pixels a bin (and `rowPitch` a level; 0 = whole bars), and a transparent gap of
+        // `gap` cut between the bins (and levels).
+        std::wstring FreqBlocks(const std::wstring& in, int cols, int rows, int pitch, int rowPitch, int gap)
+        {
+            const int outH = rowPitch > 0 ? rows * rowPitch : rows;
+            const std::wstring gridH = rowPitch > 0 ? std::to_wstring(rowPitch) : std::wstring(L"ih+1");
+            // The square root scale lifts quiet bins; the log frequency scale gives the bass room.
+            return std::format(L"[{}]aformat=channel_layouts=mono,showfreqs=s={}x{}:mode=bar:ascale=sqrt:fscale=log:win_size=4096:colors={}:rate=30,"
+                               L"scale={}:{}:flags=neighbor,drawgrid=w={}:h={}:t={}:c=black@0:replace=1",
+                               in, cols, rows, kVisualColour, cols * pitch, outH, pitch, gridH, gap);
+        }
+    }
+
+    std::wstring VisualGraph(VisualStyle style, int w, int h, const std::wstring& in)
+    {
+        switch (style)
+        {
+        case VisualStyle::Bars:
+            return FreqBlocks(in, std::max(16, w * 5 / 6 / 20), (h / 2) & ~1, 20, 0, 4) + L"[vis]";
+        case VisualStyle::Square:
+            return FreqBlocks(in, std::max(8, w * 5 / 6 / 40), std::max(6, h * 2 / 3 / 40), 40, 40, 6) + L"[vis]";
+        case VisualStyle::Vertical:
+            // The bars and their reflection, back to back on the middle line.
+            return FreqBlocks(in, std::max(16, w * 5 / 6 / 20), (h / 4) & ~1, 20, 0, 4) + L",split=2[vt][vb];[vb]vflip[vf];[vt][vf]vstack[vis]";
+        case VisualStyle::Circle:
+        {
+            // x = the sound, y = the sound shifted a quarter turn (its Hilbert transform, a 255-tap
+            // FIR; the sound is delayed by the filter's 127 samples to stay in step). A tone traces a
+            // circle as wide as it is loud; the low-pass keeps the lines smooth.
+            const int size = std::min(w, h) & ~1;
+            return std::format(L"[{}]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=mono,lowpass=f=600,asplit=2[cx][cy];"
+                               L"hilbert=sample_rate=44100:taps=255[ch];[cy][ch]afir=irnorm=-1[cyh];[cx]adelay=127S[cxd];"
+                               L"[cxd][cyh]join=inputs=2:channel_layout=stereo,avectorscope=s={}x{}:mode=lissajous_xy:draw=line:scale=lin:zoom=1.3:"
+                               L"rc=122:gc=184:bc=255:ac=255:rf=30:gf=20:bf=12:af=20:rate=30[vis]",
+                               in, size, size);
+        }
+        case VisualStyle::Wave:
+            // A centred line, filled from the middle; the square root scale keeps quiet passages moving.
+            return std::format(L"[{}]aformat=channel_layouts=mono,showwaves=s={}x{}:mode=cline:rate=30:colors={}:scale=sqrt:draw=full[vis]", in, w,
+                               (h / 2) & ~1, kVisualColour);
+        default:
+            return {};
+        }
+    }
+
+    std::vector<std::wstring> VisualizerArgs(const std::wstring& audio, const std::wstring& image, const ProbeInfo& info, VisualStyle style,
+                                             Shape shape, H264Encoder encoder, const std::wstring& output)
+    {
+        if (style == VisualStyle::Picture)
+        {
+            if (!image.empty())
+                return StillVideoArgs(audio, image, info, shape, encoder, output);
+            style = VisualStyle::Wave;   // no picture to show: the waveform instead
+        }
         int w = 0, h = 0;
         ShapeSize(shape, w, h);
-        const int waveH = (h / 2) & ~1;
-        // A soft blue wave, filled from the centre line, over a near-black background. The square root
-        // scale lifts quiet passages so the picture keeps moving.
-        const auto graph = std::format(L"color=c=0x0E0F13:s={0}x{1}:r=30[bg];"
-                                       L"[0:a:0]aformat=channel_layouts=mono,showwaves=s={0}x{2}:mode=cline:rate=30:colors=0x7AB8FF:scale=sqrt:draw=full[w];"
-                                       L"[bg][w]overlay=x=0:y=(H-h)/2:shortest=1,format=yuv420p[v]",
-                                       w, h, waveH);
-        return FfmpegArgs(audio, {}, Join({ L"-filter_complex", graph }, VideoTail(info, w, h, encoder, 0)), output);
+        const bool picture = !image.empty();
+        // A picture fills the frame (cropped to its shape) and is darkened so the animation stands
+        // out; it is read once a second (-loop 1 -framerate 1) and repeated up to 30 fps.
+        std::wstring graph = picture ? std::format(L"[0:v]scale={0}:{1}:force_original_aspect_ratio=increase,crop={0}:{1},setsar=1,format=yuv420p,"
+                                                   L"drawbox=c=black@0.45:t=fill,fps=30[bg];",
+                                                   w, h)
+                                     : std::format(L"color=c=0x0E0F13:s={}x{}:r=30[bg];", w, h);
+        graph += VisualGraph(style, w, h, picture ? L"1:a:0" : L"0:a:0") + L";[bg][vis]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1,format=yuv420p[v]";
+        const auto out = Join({ L"-filter_complex", graph }, VideoTail(info, w, h, encoder, picture ? 1 : 0));
+        if (picture)
+            return mediatools::MultiInputArgs({ { image, { L"-loop", L"1", L"-framerate", L"1" } }, { audio, {} } }, out, output);
+        return FfmpegArgs(audio, {}, out, output);
     }
 
     std::vector<std::wstring> StillVideoArgs(const std::wstring& audio, const std::wstring& image, const ProbeInfo& info, Shape shape,
@@ -378,11 +461,20 @@ namespace sd::audiotools
         return e.empty() ? L"0" : e;
     }
 
-    std::wstring BleepGraph(const std::vector<TimeRange>& ranges, bool tone, int sampleRate, int64_t offsetUs)
+    BleepSound BleepSoundByName(std::string_view name)
+    {
+        if (name == "silence") return BleepSound::Silence;
+        if (name == "duck") return BleepSound::Duck;
+        return BleepSound::Tone;
+    }
+
+    std::wstring BleepGraph(const std::vector<TimeRange>& ranges, BleepSound sound, double duckDb, int sampleRate, int64_t offsetUs)
     {
         const auto any = AnyBetween(ranges, offsetUs);
-        if (!tone)
+        if (sound == BleepSound::Silence)
             return std::format(L"[0:a]volume=0:enable='{}'[out]", any);
+        if (sound == BleepSound::Duck)
+            return std::format(L"[0:a]volume={}dB:enable='{}'[out]", Num(-std::clamp(duckDb, kMinDuckDb, kMaxDuckDb)), any);
         // The sound is muted in the ranges and a 1 kHz tone (about -10 dBFS) is heard only there.
         return std::format(L"[0:a]volume=0:enable='{0}'[m];"
                            L"sine=frequency=1000:sample_rate={1},volume=2.5,volume=0:enable='not({0})'[t];"
@@ -391,10 +483,10 @@ namespace sd::audiotools
     }
 
     std::vector<std::wstring> BleepArgs(const std::wstring& input, const std::wstring& ext, const ProbeInfo& info, const std::vector<TimeRange>& ranges,
-                                        bool tone, const std::wstring& output)
+                                        BleepSound sound, double duckDb, const std::wstring& output)
     {
         return FfmpegArgs(input, {},
-                          Join({ L"-filter_complex", BleepGraph(ranges, tone, info.sampleRate), L"-map", L"[out]", L"-vn", L"-sn", L"-dn" },
+                          Join({ L"-filter_complex", BleepGraph(ranges, sound, duckDb, info.sampleRate), L"-map", L"[out]", L"-vn", L"-sn", L"-dn" },
                                SameFormat(ext, info)),
                           output);
     }

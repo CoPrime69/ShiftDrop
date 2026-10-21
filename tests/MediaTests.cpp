@@ -38,6 +38,13 @@ TEST(Media, KindsByExtension)
     EXPECT_EQ(MediaKindOfExtension(L".gif"), MediaKind::None);   // stays an image
     EXPECT_EQ(MediaKindOfExtension(L".png"), MediaKind::None);
     EXPECT_EQ(MediaKindOfExtension(L".m4"), MediaKind::None);    // only whole extensions match
+    // The same lists as a file dialog's filter (Join's "Add clips").
+    const auto videos = MediaFilePatterns(MediaKind::Video);
+    EXPECT_TRUE(videos.starts_with(L"*.mp4;*.m4v;*.mov;")) << Narrow(videos);
+    EXPECT_TRUE(videos.ends_with(L";*.divx")) << Narrow(videos);
+    EXPECT_EQ(videos.find(L"*.mp3"), std::wstring::npos);
+    EXPECT_NE(MediaFilePatterns(MediaKind::Audio).find(L";*.flac;"), std::wstring::npos);
+    EXPECT_TRUE(MediaFilePatterns(MediaKind::None).empty());
     EXPECT_EQ(MediaKindOfExtension(L".mp"), MediaKind::None);
     EXPECT_EQ(MediaKindOfExtension(L""), MediaKind::None);
 }

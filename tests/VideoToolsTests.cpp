@@ -1,4 +1,5 @@
 #include "Ffmpeg.h"
+#include "FileIo.h"
 #include "MediaTestUtil.h"
 #include "PathUtil.h"
 #include "PipelineRunner.h"
@@ -107,6 +108,13 @@ TEST(Timeline, RangesAndPoints)
     EXPECT_EQ(parts[2].end, 6'000'000);
     EXPECT_EQ(EqualPartPoints(9'000'000, 3), (std::vector<int64_t>{ 3'000'000, 6'000'000 }));
     EXPECT_TRUE(EqualPartPoints(9'000'000, 1).empty());
+    // Split every so long: the last part is what is left over.
+    EXPECT_EQ(EveryPoints(95'000'000, 30'000'000), (std::vector<int64_t>{ 30'000'000, 60'000'000, 90'000'000 }));
+    EXPECT_EQ(EveryPoints(60'000'000, 30'000'000), (std::vector<int64_t>{ 30'000'000 }));   // no empty part at the end
+    EXPECT_EQ(EveryPoints(90'020'000, 30'000'000), (std::vector<int64_t>{ 30'000'000, 60'000'000 }));   // 20 ms over joins the last part
+    EXPECT_TRUE(EveryPoints(20'000'000, 30'000'000).empty());   // shorter than one part
+    EXPECT_TRUE(EveryPoints(10'000'000, 40'000).empty());       // under kMinRangeUs
+    EXPECT_TRUE(EveryPoints(0, 30'000'000).empty());
 
     // Dragging an edge stops at the neighbour and keeps the range at least 50 ms long.
     const std::vector<TimeRange> list{ { 1'000'000, 2'000'000 }, { 3'000'000, 4'000'000 } };
@@ -428,7 +436,7 @@ TEST(VideoTools, FramesAndParts)
     EXPECT_TRUE(Has(png, L"-frames:v", L"1"));
     EXPECT_TRUE(Has(png, L"-update", L"1"));      // the name is not an image-sequence pattern
     EXPECT_TRUE(Has(png, L"-c:v", L"png"));
-    EXPECT_EQ(FramePngName(L"clip", 62'345'000), L"clip 00-01-02.345.png");
+    EXPECT_EQ(FrameFileName(L"clip", 62'345'000, L".png"), L"clip 00-01-02.345.png");
     EXPECT_EQ(NormalizeFrameTimes({ 1'010'000, 1'000'000, 99'000'000, 0 }, 25, 2'000'000), (std::vector<int64_t>{ 0, 1'000'000, 1'960'000 }));
 
     EXPECT_EQ(PartName(L"clip", 2, 3, L".mp4"), L"clip part 2.mp4");
@@ -439,9 +447,127 @@ TEST(VideoTools, FramesAndParts)
     EXPECT_TRUE(Has(copy, L"-segment_format", L"mp4"));
     EXPECT_TRUE(Has(copy, L"-c", L"copy"));
     EXPECT_EQ(copy.back(), L"C:\\out\\50%% off part %01d.mp4");   // the user's % doubled, ours a field
+    EXPECT_EQ(SplitCopyArgs(L"in.mp4", L".mp4", { 2'000'000 }, L"C:\\100% out", L"clip").back(), L"C:\\100%% out\\clip part %01d.mp4");   // in the folder too
+    EXPECT_EQ(PartName(L"clip", 7, 1000, L".mp4"), L"clip part 0007.mp4");   // split every few seconds of a long video
     const auto part = SplitPartArgs(L"in.mp4", L".mp4", Clip(), { 2'000'000, 4'500'000 }, H264Encoder::Nvenc, L"out");
     EXPECT_TRUE(Has(part, L"-ss", L"2.000000"));
     EXPECT_TRUE(Has(part, L"-c:v", L"h264_nvenc"));
+}
+
+TEST(VideoTools, TrimRemovesAPartAndFadesAtTheCuts)
+{
+    EXPECT_TRUE(TrimCopies(true, {}));
+    EXPECT_FALSE(TrimCopies(false, {}));
+    EXPECT_FALSE(TrimCopies(true, { true, false }));   // removing a part re-encodes
+    EXPECT_FALSE(TrimCopies(true, { false, true }));   // so does fading
+    const TimeRange sel{ 2'000'000, 5'000'000 };
+    EXPECT_EQ(TrimParts(sel, 10'000'000, false), (std::vector<TimeRange>{ sel }));
+    EXPECT_EQ(TrimParts(sel, 10'000'000, true), (std::vector<TimeRange>{ { 0, 2'000'000 }, { 5'000'000, 10'000'000 } }));
+    EXPECT_EQ(TrimParts({ 0, 5'000'000 }, 10'000'000, true), (std::vector<TimeRange>{ { 5'000'000, 10'000'000 } }));   // from the start
+    EXPECT_EQ(TrimParts({ 20'000, 9'990'000 }, 10'000'000, true).size(), 0u);   // slivers are not kept
+    EXPECT_EQ(TrimmedLength(sel, 10'000'000, true), 7'000'000);
+    EXPECT_EQ(TrimmedLength(sel, 10'000'000, false), 3'000'000);
+
+    EXPECT_EQ(FadeFilter(false, 3'000'000, true, true), L"fade=t=in:st=0:d=0.500000,fade=t=out:st=2.500000:d=0.500000");
+    EXPECT_EQ(FadeFilter(true, 900'000, false, true), L"afade=t=out:st=0.600000:d=0.300000");   // a third of a short part
+    EXPECT_EQ(FadeFilter(true, 3'000'000, true, false), L"afade=t=in:st=0:d=0.500000");
+    EXPECT_TRUE(FadeFilter(false, 3'000'000, false, false).empty());
+
+    const auto info = Clip();
+    // Keeping with fades: one input, faded where it was cut, re-encoded even when Fast.
+    const auto faded = TrimArgs(L"in.mp4", L".mp4", info, { 2'000'000, 5'500'000 }, true, H264Encoder::Nvenc, L"out", { false, true });
+    EXPECT_FALSE(Has(faded, L"-c", L"copy"));
+    EXPECT_EQ(After(faded, L"-vf"), L"fade=t=in:st=0:d=0.500000,fade=t=out:st=3.000000:d=0.500000,crop=trunc(iw/2)*2:trunc(ih/2)*2");
+    EXPECT_EQ(After(faded, L"-af"), L"afade=t=in:st=0:d=0.500000,afade=t=out:st=3.000000:d=0.500000");
+    EXPECT_TRUE(Has(faded, L"-c:a", L"aac"));
+    // The kept part reaches the end: it only fades in.
+    const auto tail = TrimArgs(L"in.mp4", L".mp4", info, { 2'000'000, 10'000'000 }, false, H264Encoder::Nvenc, L"out", { false, true });
+    EXPECT_EQ(After(tail, L"-af"), L"afade=t=in:st=0:d=0.500000");
+
+    // Removing the middle: the parts either side, each through its own seek, joined.
+    const auto removed = TrimArgs(L"in.mp4", L".mp4", info, sel, true, H264Encoder::Nvenc, L"out", { true, true });
+    EXPECT_EQ(std::count(removed.begin(), removed.end(), L"-i"), 2);
+    EXPECT_TRUE(Has(removed, L"-to", L"2.000000"));
+    EXPECT_TRUE(Has(removed, L"-ss", L"5.000000"));
+    EXPECT_TRUE(Has(removed, L"-to", L"10.000000"));
+    EXPECT_EQ(After(removed, L"-filter_complex"),
+              L"[0:v:0]fade=t=out:st=1.500000:d=0.500000[v0];[0:a:0]afade=t=out:st=1.500000:d=0.500000[a0];"
+              L"[1:v:0]fade=t=in:st=0:d=0.500000[v1];[1:a:0]afade=t=in:st=0:d=0.500000[a1];"
+              L"[v0][a0][v1][a1]concat=n=2:v=1:a=1[joined][a];[joined]crop=trunc(iw/2)*2:trunc(ih/2)*2[v]");
+    EXPECT_TRUE(Has(removed, L"-map", L"[v]"));
+    EXPECT_TRUE(Has(removed, L"-map", L"[a]"));
+    EXPECT_TRUE(Has(removed, L"-c:v", L"h264_nvenc"));
+    EXPECT_TRUE(Has(removed, L"-c:a", L"aac"));
+    EXPECT_TRUE(Has(removed, L"-f", L"mp4"));
+    // Without fades the parts pass through as they are; a silent clip joins pictures only.
+    const auto plain = TrimArgs(L"in.mp4", L".mp4", Clip(640, 480, 25, "h264", ""), sel, false, H264Encoder::OpenH264, L"out", { true, false });
+    EXPECT_EQ(After(plain, L"-filter_complex"), L"[0:v:0]null[v0];[1:v:0]null[v1];[v0][v1]concat=n=2:v=1:a=0[joined];[joined]crop=trunc(iw/2)*2:trunc(ih/2)*2[v]");
+    EXPECT_FALSE(Has(plain, L"-map", L"[a]"));
+    EXPECT_NE(std::find(plain.begin(), plain.end(), L"-an"), plain.end());
+    // Removing the start leaves one part: a plain trim of what follows.
+    const auto start = TrimArgs(L"in.mp4", L".mp4", info, { 0, 5'000'000 }, false, H264Encoder::Nvenc, L"out", { true, false });
+    EXPECT_EQ(std::count(start.begin(), start.end(), L"-i"), 1);
+    EXPECT_TRUE(Has(start, L"-ss", L"5.000000"));
+}
+
+TEST(VideoTools, SpeedCanLetThePitchFollow)
+{
+    EXPECT_EQ(SpeedAudioFilter(2, true, 48000), L"atempo=2");
+    EXPECT_EQ(SpeedAudioFilter(4, true, 48000), L"atempo=2,atempo=2");   // chained outside 0.5..2
+    EXPECT_EQ(SpeedAudioFilter(0.25, true, 48000), L"atempo=0.5,atempo=0.5");
+    EXPECT_EQ(SpeedAudioFilter(2, false, 48000), L"asetrate=96000,aresample=48000");
+    EXPECT_EQ(SpeedAudioFilter(0.25, false, 44100), L"asetrate=11025,aresample=44100");
+    EXPECT_EQ(SpeedAudioFilter(1.5, false, 0), L"atempo=1.5");   // the rate is unknown: atempo after all
+    const auto args = SpeedArgs(L"in.mp4", L".mp4", Clip(1280, 720, 25), 1.5, H264Encoder::Amf, L"out", false);
+    EXPECT_EQ(After(args, L"-af"), L"asetrate=72000,aresample=48000");
+    EXPECT_TRUE(Has(args, L"-c:a", L"aac"));
+    EXPECT_EQ(After(SpeedArgs(L"in.mp4", L".mp4", Clip(1280, 720, 25), 1.5, H264Encoder::Amf, L"out"), L"-af"), L"atempo=1.5");   // pitch kept by default
+}
+
+TEST(VideoTools, FrameSequencesAndTheirEstimate)
+{
+    EXPECT_EQ(FrameFileName(L"clip", 62'345'000, L".webp"), L"clip 00-01-02.345.webp");
+    EXPECT_EQ(FramePickByName("every"), FramePick::Every);
+    EXPECT_EQ(FramePickByName("rate"), FramePick::PerSecond);
+    EXPECT_EQ(FramePickByName("marks"), FramePick::Marks);
+    EXPECT_EQ(FramePickByName("other"), FramePick::Marks);
+    const FrameSequence every{ FramePick::Every, 7, 1 }, rate{ FramePick::PerSecond, 30, 2.5 };
+    EXPECT_EQ(FrameSequenceFilter(every), L"select='not(mod(n,7))'");
+    EXPECT_EQ(FrameSequenceFilter(rate), L"fps=2.5");
+    EXPECT_EQ(FrameSequenceFilter({ FramePick::Every, 0, 1 }), L"select='not(mod(n,1))'");   // at least every frame
+    EXPECT_EQ(FrameSequenceFilter({ FramePick::PerSecond, 1, 500 }), L"fps=60");             // at most 60 a second
+    const auto args = FrameSequenceArgs(L"in.mp4", every, L"C:\\out\\100% frames");
+    EXPECT_EQ(After(args, L"-vf"), L"select='not(mod(n,7))'");
+    EXPECT_TRUE(Has(args, L"-map", L"0:v:0"));
+    EXPECT_TRUE(Has(args, L"-fps_mode", L"passthrough"));   // dropped frames are not filled in again
+    EXPECT_TRUE(Has(args, L"-c:v", L"png"));
+    EXPECT_TRUE(Has(args, L"-start_number", L"0"));
+    EXPECT_TRUE(Has(args, L"-f", L"image2"));
+    EXPECT_EQ(args.back(), L"C:\\out\\100%% frames\\%06d.png");   // the folder's % doubled, ours the number
+
+    // The counts ffmpeg writes (measured): 3.7 s at 29.97 fps is 111 frames, so every 7th is 16;
+    // 3 a second gives 11, 2.5 a second 9 and 1 a second 4 (the fps filter rounds to the nearest).
+    const double ntsc = 30000.0 / 1001;
+    EXPECT_EQ(FrameSequenceCount({ FramePick::Every, 1, 1 }, ntsc, 3'700'000), 111);
+    EXPECT_EQ(FrameSequenceCount(every, ntsc, 3'700'000), 16);
+    EXPECT_EQ(FrameSequenceCount(every, 25, 4'000'000), 15);
+    EXPECT_EQ(FrameSequenceCount({ FramePick::PerSecond, 30, 3 }, ntsc, 3'700'000), 11);
+    EXPECT_EQ(FrameSequenceCount(rate, ntsc, 3'700'000), 9);
+    EXPECT_EQ(FrameSequenceCount({ FramePick::PerSecond, 30, 1 }, 25, 3'700'000), 4);
+    EXPECT_EQ(FrameSequenceCount(every, 0, 3'700'000), 0);   // every Nth of an unknown frame rate
+    EXPECT_EQ(FrameSequenceCount(rate, 0, 3'700'000), 9);    // N a second needs no frame rate
+    EXPECT_EQ(FrameSequenceTime(every, 25, 2), 560'000);     // frame 14
+    EXPECT_EQ(FrameSequenceTime(rate, 25, 3), 1'200'000);
+    EXPECT_EQ(FrameSequenceTime(every, 0, 3), 0);
+
+    // The size estimate: a 1920x1080 frame, then the whole folder.
+    EXPECT_NEAR(static_cast<double>(FrameFileBytes(1920, 1080, "png")), 3'110'400, 1);
+    EXPECT_NEAR(static_cast<double>(FrameFileBytes(1920, 1080, "jpg")), 456'192, 1);
+    EXPECT_NEAR(static_cast<double>(FrameFileBytes(1920, 1080, "webp")), 165'888, 1);
+    EXPECT_EQ(FrameFileBytes(0, 1080, "png"), 0u);
+    EXPECT_NEAR(static_cast<double>(FrameFileBytes(1920, 1080, "jpg") * static_cast<uint64_t>(FrameSequenceCount(every, ntsc, 3'700'000))), 16 * 456'192.0, 16);
+    EXPECT_EQ(FrameQuality("jpg"), 92);
+    EXPECT_EQ(FrameQuality("webp"), 85);
 }
 
 TEST(VideoTools, RedactBlursOrCoversEachBoxInItsTime)
@@ -782,6 +908,112 @@ TEST(VideoToolsEngine, SavesExactFramesAndSplits)
     for (const auto& e : std::filesystem::directory_iterator(fast.output))
         parts += e.path().extension() == L".mp4";
     EXPECT_EQ(parts, 3u);
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+}
+
+TEST(VideoToolsEngine, RemovesAPartFadesAndKeepsOrDropsThePitch)
+{
+    if (!TestFfmpeg()->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    MediaToolsFixture f;
+    const auto clip = f.dir / L"clip.mp4";
+    ASSERT_TRUE(MakeH264(clip));
+    TempFolder temp;
+    const auto brightness = [&](const std::wstring& video, int64_t us) {
+        const auto info = Probe(*TestFfmpeg(), video);
+        Frame frame;
+        if (!ExtractFrame(*TestFfmpeg(), video, info, us, 320, 240, false, temp, {}, frame) || frame.bgra.empty())
+            return -1.0;
+        double sum = 0;
+        for (const auto p : frame.bgra)
+            sum += ((p >> 16 & 0xFF) + (p >> 8 & 0xFF) + (p & 0xFF)) / 3.0;
+        return sum / static_cast<double>(frame.bgra.size());
+    };
+    // 1 s to 2.5 s cut out: 2.5 s left, faded to black where the two parts meet.
+    const auto removed = f.Run("video-trim", { { "start", 1.0 }, { "end", 2.5 }, { "part", "remove" }, { "fade", true } }, clip);
+    ASSERT_TRUE(removed.ok) << Narrow(removed.error);
+    EXPECT_EQ(FileName(removed.output), L"clip (trimmed).mp4");
+    const auto r = Probe(*TestFfmpeg(), removed.output);
+    EXPECT_NEAR(Seconds(r), 2.5, 0.1);
+    EXPECT_TRUE(r.HasAudio());
+    const double atJoin = brightness(removed.output, 960'000), after = brightness(removed.output, 2'000'000);
+    EXPECT_GE(atJoin, 0);
+    EXPECT_LT(atJoin, after * 0.35) << atJoin << " vs " << after;
+    // Fast is set aside for a fade: the kept part starts from black on its exact frame.
+    const auto faded = f.Run("video-trim", { { "start", 1.0 }, { "end", 3.0 }, { "mode", "fast" }, { "fade", true } }, clip);
+    ASSERT_TRUE(faded.ok) << Narrow(faded.error);
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), faded.output)), 2.0, 0.1);
+    EXPECT_LT(brightness(faded.output, 0), brightness(faded.output, 1'000'000) * 0.35);
+    // Removing everything is refused.
+    EXPECT_FALSE(f.Run("video-trim", { { "start", 0.0 }, { "end", 4.0 }, { "part", "remove" } }, clip).ok);
+
+    // Twice as fast with the pitch following: the 440 Hz tone comes out at 880 Hz.
+    const auto tape = f.Run("video-speed", { { "factor", 2 }, { "pitch", false }, { "ask", false } }, clip);
+    ASSERT_TRUE(tape.ok) << Narrow(tape.error);
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), tape.output)), 2.0, 0.15);
+    const auto pcm = f.dir / L"tape.pcm";
+    ASSERT_TRUE(Make({ L"-i", tape.output, L"-vn", L"-ac", L"1", L"-ar", L"8000", L"-c:a", L"pcm_s16le", L"-f", L"s16le", pcm }));
+    std::string bytes;
+    ASSERT_TRUE(ReadFileBytes(pcm, bytes));
+    const auto* samples = reinterpret_cast<const int16_t*>(bytes.data());
+    int crossings = 0;
+    for (size_t i = 8000 / 4 + 1; i < 8000 * 3 / 4 && i < bytes.size() / 2; ++i)   // 0.25 s to 0.75 s
+        crossings += (samples[i - 1] < 0) != (samples[i] < 0);
+    EXPECT_NEAR(crossings, 880, 40);   // 880 Hz crosses zero 1760 times a second
+    EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
+}
+
+TEST(VideoToolsEngine, SavesFrameSequencesAndSplitsEvery)
+{
+    if (!TestFfmpeg()->Available())
+        GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
+    MediaToolsFixture f;
+    const auto numbered = f.dir / L"numbered.avi";   // 3 s at 10 fps
+    ASSERT_TRUE(MakeNumbered(numbered));
+    const auto names = [](const std::wstring& folder) {
+        std::vector<std::wstring> list;
+        for (const auto& e : std::filesystem::directory_iterator(folder))
+            list.push_back(e.path().filename().wstring());
+        std::sort(list.begin(), list.end());
+        return list;
+    };
+    // Every 7th of 30 frames: 0, 7, 14, 21, 28, as JPG.
+    const auto every = f.Run("video-frames", { { "pick", "every" }, { "every", 7 }, { "format", "jpg" } }, numbered);
+    ASSERT_TRUE(every.ok) << Narrow(every.error);
+    auto list = names(every.output);
+    ASSERT_EQ(list.size(), static_cast<size_t>(FrameSequenceCount({ FramePick::Every, 7, 1 }, 10, 3'000'000)));
+    ASSERT_EQ(list.size(), 5u);
+    EXPECT_EQ(list[1], L"numbered 00-00-00.700.jpg");
+    EXPECT_EQ(list[4], L"numbered 00-00-02.800.jpg");
+    UINT w = 0, h = 0;
+    ASSERT_TRUE(ImageSize(every.output + L"\\" + list[1], w, h));
+    EXPECT_EQ(w, 64u);
+    // Two a second as WebP: six pictures, half a second apart.
+    const auto rate = f.Run("video-frames", { { "pick", "rate" }, { "rate", 2 }, { "format", "webp" } }, numbered);
+    ASSERT_TRUE(rate.ok) << Narrow(rate.error);
+    list = names(rate.output);
+    ASSERT_EQ(list.size(), 6u);
+    EXPECT_EQ(list[1], L"numbered 00-00-00.500.webp");
+    std::string head;
+    ASSERT_TRUE(ReadFileBytes(rate.output + L"\\" + list[1], head));
+    ASSERT_GE(head.size(), 12u);
+    EXPECT_EQ(head.substr(0, 4), "RIFF");
+    EXPECT_EQ(head.substr(8, 4), "WEBP");
+    // Marked frames as JPG too.
+    const auto marked = f.Run("video-frames", { { "frames", { 1.2 } }, { "format", "jpg" } }, numbered);
+    ASSERT_TRUE(marked.ok) << Narrow(marked.error);
+    EXPECT_EQ(names(marked.output), std::vector<std::wstring>{ L"numbered 00-00-01.200.jpg" });
+
+    // A part every 1.5 s of 4 s: 1.5 + 1.5 + 1.
+    const auto clip = f.dir / L"long.mp4";
+    ASSERT_TRUE(MakeH264(clip));
+    const auto split = f.Run("video-split", { { "every", 1.5 }, { "mode", "exact" } }, clip);
+    ASSERT_TRUE(split.ok) << Narrow(split.error);
+    list = names(split.output);
+    ASSERT_EQ(list.size(), 3u);
+    EXPECT_EQ(list[2], L"long part 3.mp4");
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), split.output + L"\\long part 1.mp4")), 1.5, 0.1);
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), split.output + L"\\long part 3.mp4")), 1.0, 0.1);
     EXPECT_EQ(CountFiles(f.dir, L".sdpart"), 0u);
 }
 

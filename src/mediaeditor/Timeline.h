@@ -51,6 +51,9 @@ namespace sd::mediatools
     std::vector<TimeRange> PartsFromPoints(const std::vector<int64_t>& points, int64_t durationUs);
     // The cut points that make `parts` equal parts.
     std::vector<int64_t> EqualPartPoints(int64_t durationUs, int parts);
+    // A cut every `everyUs` from the start (the last part is what is left over); none when `everyUs`
+    // is under kMinRangeUs. A leftover shorter than kMinRangeUs joins the part before it.
+    std::vector<int64_t> EveryPoints(int64_t durationUs, int64_t everyUs);
 
     // Moving one edge of range `index` in a sorted, non-overlapping list: the edge stops at its
     // neighbours and the clip ends, and the range never gets shorter than kMinRangeUs.

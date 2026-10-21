@@ -536,6 +536,11 @@ Video tools:
 - [ ] **Frames**: press M (or double-click the timeline) at three places and drag a mark to move it; "Save 3 frames" makes a folder next to the video with full-size PNGs named by their time
 - [ ] **Split**: add two cuts with M, or choose Equal parts and 3; the parts land in one folder, numbered in order, and play end to end without a gap
 - [ ] **Redact**: drag two areas on the picture, one Blur and one Solid; select one and press I and O to show it for part of the video only. The preview shows the blur; in the result each area is covered only for its own time
+- [ ] **Trim** with **Remove selection**: the caption reads PART TO REMOVE, the part is shaded red on the timeline, Removed and Result show the lengths, Exact/Fast is off ("always re-encodes") and the button reads "Remove part"; `clip (trimmed).mp4` jumps straight from before the part to after it. **Fade in and out** (keep or remove) gives half a second of fade to black and silence at each cut
+- [ ] **Speed** 2× with **Keep pitch** off: Space and the result sound higher, like a fast tape; with it on (the default) the voice keeps its pitch; on the silent video the switch is greyed out
+- [ ] **Frames**: **Every N** (type `30` or `30 frames`) and **Per second** (`2`, `0.5 a second`) draw ticks on the timeline; RESULT counts the frames and estimates Each and In all for PNG, JPG and WebP (WebP smallest). The folder holds exactly that many pictures in that format, named by their time; pressing M goes back to **Marked**
+- [ ] **Split** → **Every**, type `0:30` (or `90`): Parts and Last part follow, dashed lines show the cuts, and each part but the last is that long; `0:00.5` or a length giving over 1000 parts stays red
+- [ ] **Join** → **Add clips…**: pick two more videos (Ctrl+click); they join the end of the list, get thumbnails, and can be dragged, moved and removed like the others
 - [ ] Drop three videos on **Crop**: the header says "File 1 of 3"; Next file and Skip this file walk through them; at the end one batch runs (one History entry) and the skipped file is left alone
 
 Audio tools:
@@ -545,6 +550,8 @@ Audio tools:
 - [ ] **Channels**: Make mono, Swap left and right, and the Left and Right volume sliders; while playing, A switches between the original and the result. On a mono file "Make mono" changes nothing and the main button is off
 - [ ] **Bleep**: drag across the waveform to mark two parts (M adds one at the playhead); a 1 kHz tone or silence; Space plays with the bleeps, A compares with the original
 - [ ] **Visualizer** (tab in the song's editor): Landscape, Portrait or Square; the moving waveform, or a still picture (the cover art, or one you choose); the MP4 has the song's sound and length
+- [ ] **Bleep** → **Duck**: a "Lower by" slider (3–60 dB, 20 by default); Space plays the marked parts quieter, not cut out, and so does the result
+- [ ] **Visualizer** styles: **Bars**, **Wave**, **Circle**, **Square**, **Vertical** each show their look in the preview and the MP4 moves with the sound; **Choose a picture…** puts a darkened picture behind any of them (**No picture** takes it away); **Picture** is the still picture as before
 
 Always:
 - [ ] Cancel (×) in the top panel during a long render: nothing is left in the folder (no `.sdpart`)

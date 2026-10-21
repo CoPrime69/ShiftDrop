@@ -68,21 +68,36 @@ namespace sd::mediatools
         // Shared choices start from the recipe's parameters (a user recipe can preset them).
         const auto& p = m_req.params;
         m_fast = p.value("mode", std::string("exact")) == "fast";
+        m_remove = p.value("part", std::string("keep")) == "remove";
+        m_fade = p.value("fade", false);
         m_aspect = p.value("aspect", std::string("free"));
         m_factor = std::clamp(p.value("factor", 2.0), 0.25, 4.0);
+        m_keepPitch = p.value("pitch", true);
+        m_frames.pick = videotools::FramePickByName(p.value("pick", std::string("marks")));
+        m_frames.every = std::clamp(p.value("every", 30), 1, videotools::kMaxEvery);
+        m_frames.perSecond = std::clamp(p.value("rate", 1.0), videotools::kMinPerSecond, videotools::kMaxPerSecond);
+        m_frameFormat = p.value("format", std::string("png"));
+        if (m_frameFormat != "jpg" && m_frameFormat != "webp")
+            m_frameFormat = "png";
         m_parts = std::clamp(p.value("parts", 0), 0, 100);
-        m_equalParts = m_parts >= 2;
+        // Split's "every" is seconds; Frames' is a frame count (an integer): only a fraction or a split
+        // recipe's own value reads as a length.
+        const double every = p.value("every", 0.0);
+        if (m_req.tool == EditorTool::SplitVideo && every >= 1)
+            m_splitEvery = FromSeconds(every);
+        m_split = m_parts >= 2 ? SplitKind::Equal : m_req.tool == EditorTool::SplitVideo && every >= 1 ? SplitKind::Every : SplitKind::Marks;
         m_joinFill = p.value("fit", std::string("fit")) == "fill";
         if (m_parts < 2)
             m_parts = 2;
         m_blurStyle = p.value("style", std::string("blur")) != "solid";
-        m_tone = p.value("tone", std::string("tone")) != "silence";
+        m_bleep = audiotools::BleepSoundByName(p.value("tone", std::string("tone")));
+        m_duckDb = std::clamp(p.value("duck", audiotools::kDuckDb), audiotools::kMinDuckDb, audiotools::kMaxDuckDb);
         m_silence = p.value("silence", false);
         m_mono = p.value("mode", std::string("stereo")) == "mono";
         m_swap = p.value("swap", false);
         m_left = std::clamp(p.value("left", 1.0), 0.0, 2.0);
         m_right = std::clamp(p.value("right", 1.0), 0.0, 2.0);
-        m_imageStyle = p.value("style", std::string("waveform")) == "image";
+        m_style = audiotools::VisualStyleByName(p.value("style", std::string("waveform")));
         m_shape = p.value("shape", std::string("landscape"));
         m_image = Widen(p.value("image", std::string()));
     }
