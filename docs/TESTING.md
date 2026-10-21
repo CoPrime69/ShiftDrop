@@ -72,13 +72,16 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - Z. Install, upgrade, uninstall
 
 ### A. Startup
-- [ ] A tray icon appears (blue disc with a white ring) and a notification says ShiftDrop is running, naming the version (the placeholder build says "M0 placeholder build")
+- [ ] A tray icon appears (the page with a folded corner, in one colour) and a notification says ShiftDrop is running, naming the version (the placeholder build says "M0 placeholder build")
 - [ ] Right-click the tray icon: the menu includes History…, Open recipes folder, Open logs folder, Start with Windows and Quit; each works
 - [ ] Launching the exe a second time shows "ShiftDrop is already running" and no second icon
 - [ ] `settings.ini` exists in `%LOCALAPPDATA%\ShiftDrop` with `Convert=Shift`, `Tools=None`, `Files=None` (an older file with `Tools=Ctrl` / `Files=Alt` is switched to None once, and the log says so)
 - [ ] The log lists the WIC decoders and encoders on your PC (note whether WebP/HEIC/AVIF appear)
 - [ ] Task Manager: memory at idle is a few MB; CPU is 0% while you move the mouse normally
 - [ ] Restart Explorer (`Stop-Process -Name explorer`): the tray icon comes back
+- [ ] Tray glyph: white on a dark taskbar, near-black on a light one. Settings > Personalisation > Colours > "Choose your default Windows mode" Light, then Dark: the glyph switches within a second, with no restart; "Custom" with Windows dark and apps light keeps the white one
+- [ ] Tray glyph at 100%, 125%, 150% and 200% scaling (Settings > Display > Scale, changed while it runs): sharp at each, no blur or soft edges; 175% is sharp too (the 32 px drawing scaled down)
+- [ ] The app icon (the tilted page with the teal corner) on ShiftDrop.exe in Explorer at every view size, in Task Manager, on the Settings, History and editor title bars and in Alt+Tab, sharp at 100% to 200% scaling
 
 ### B. Placeholder gesture build
 - [ ] In the placeholder build (preset `x64-release-m0`), drag `photo.jpg` in Explorer, then press and hold Shift while dragging: a circle labelled "ShiftDrop / 1 file" appears under the cursor (move the mouse a pixel if it doesn't appear at once)
@@ -721,6 +724,8 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 1. Run the setup. SmartScreen may warn (unsigned): **More info**, **Run anyway**. No UAC prompt appears.
    The first page says "Setup will install ShiftDrop <version> on this PC. It runs offline and needs no
    account. Works on Windows 10 and 11." with this build's version.
+   Setup.exe has the new app icon; the welcome and finish pages show the dark side picture with the
+   tilted page, and the inner pages the small mark at the top right, sharp at 100%, 150% and 200%.
 2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
    sign in to Windows". The last page says "Drag any file and press Shift to open the wheel. ShiftDrop
    lives in the tray." with "Start ShiftDrop" ticked; Finish: the tray icon appears. Untick it on another
