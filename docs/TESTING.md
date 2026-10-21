@@ -466,6 +466,57 @@ Sandbox
 - [ ] Optional (open question 10), on a PC with a GPU: set `[Sandbox] Media=1`, restart, convert a video to MP4 and compress one (GPU encoder in use): both work, ffmpeg.exe shows **AppContainer** in Process Explorer; note any failure and the log lines
 - [ ] Uninstall: the AppContainer profile is removed (`%LOCALAPPDATA%\Packages\shiftdrop.sandbox` is gone)
 
+### V. AVIF, HEIC, SVG and multi-frame files (M5)
+Have ready: a large phone photo (JPG), a transparent PNG logo, an `.avif` from a phone or a website
+(Chrome: right-click an image on a site that serves AVIF > Save image as), an iPhone `.heic`, and three
+SVGs: one with `width`/`height` (most exported logos), one with only a `viewBox` (most icon sets), and
+one with text in it. For the last part: an animated GIF (any from a chat app or a website) and a
+multi-page TIFF (from a scanner or a fax app). Check Settings > Apps > Installed apps for **HEIF Image Extensions** and **HEVC
+Video Extensions** first, and note which are installed.
+
+AVIF
+- [ ] Drag the photo and open the Convert wheel: **AVIF** sits next to WebP; hovering it shows "AVIF, quality 60" and a predicted size on the card
+- [ ] Drop on AVIF: `photo (converted).avif` appears within a few seconds (a 12 MP photo); it is clearly smaller than the JPG and looks the same at 100% zoom
+- [ ] Open the result in Edge or Chrome (drag it into a tab) and in the Photos app: both show it the right way up and with the right colours
+- [ ] The transparent PNG on AVIF: the result keeps the transparency (check in a browser on a dark page)
+- [ ] Drag the downloaded `.avif`: the Convert wheel offers PNG, JPG, WebP, TIFF, BMP, PDF (AVIF is dimmed: it already is one); PNG works, also on a PC without the AV1 Video Extension
+- [ ] The `.avif` on the Tools wheel's Rotate: the result is an `.avif`, turned; on Compress: an `.avif` again (or "already compressed" when it can't get smaller)
+- [ ] The `.avif` on Reduce size, **−50%**: an `.avif` at most half the size
+- [ ] Ten photos on AVIF at once: the top panel shows progress, the PC stays usable, Cancel stops the rest
+
+HEIC
+- [ ] With both extensions installed: the iPhone `.heic` on PNG and JPG works; the photo is upright
+- [ ] With both installed: the photo (JPG) on **HEIC** gives `photo (converted).heic`, which Photos opens
+- [ ] The `.heic` on the Tools wheel's Rotate: the result is a JPG (on purpose: it opens everywhere)
+- [ ] Without HEVC Video Extensions (uninstall it, or use a PC that lacks it): the HEIC slice is dimmed and the log says `wheel: 'HEIC' dimmed: install "HEVC Video Extensions"...`; the other slices still work
+- [ ] Without HEIF Image Extensions: dragging the `.heic` dims every Convert slice and the centre says "Needs HEIF Image Extensions"; the HEIC slice for a JPG is dimmed, and the log line names both extensions to install
+- [ ] Install the missing extension and restart ShiftDrop: the slices come back
+
+SVG
+- [ ] The SVG with a size on PNG: the PNG has exactly the SVG's width and height, transparent around the drawing
+- [ ] The viewBox-only SVG on PNG: 1024 px on its long side, sharp edges, transparent background
+- [ ] The SVG with text on PNG: the text is drawn (Arial / Segoe UI / Times look-alikes), not missing
+- [ ] SVG on JPG: white background where the SVG is transparent; on WebP and AVIF: transparency kept
+- [ ] SVG on **PDF** (Convert wheel): a one-page PDF with the drawing; several SVGs together give one page each
+- [ ] Hover a slice with an SVG dragged: the card shows the output size (e.g. 1024×512)
+- [ ] An `.svgz` (gzipped SVG) works the same as `.svg`
+- [ ] A broken SVG (rename a `.txt` to `.svg`): the job fails with "not a readable SVG" and leaves nothing behind
+
+Crop, Redact and Share-safe
+- [ ] The `.avif` on Crop: the cropped result is an `.avif`; the `.heic` on Crop: a `.jpg`; the SVG on Crop: a `.png` with the transparency kept
+- [ ] The `.avif` on Share-safe: a clean `.avif` comes out
+
+Animated GIFs and multi-page TIFFs
+- [ ] The animated GIF on WebP: `name (converted).webp` animates in Edge or Chrome at the same speed as the GIF; the top panel says "Animated WebP, N frames"
+- [ ] The animated GIF on AVIF: `name (converted).avif` animates in Chrome
+- [ ] The animated GIF on PNG: a folder `name (frames)` with `name frame 01.png`, `02`... Each frame looks complete (not just the changed bits); drop again and a second folder `name (frames 2)` appears, the first untouched
+- [ ] The animated GIF on JPG: the same folder, frames on white
+- [ ] The animated GIF on TIFF: one `.tiff`; the Photos app (or Windows Photo Viewer) pages through every frame
+- [ ] The multi-page TIFF on PDF (Convert wheel): one PDF with every page, each its own size; with a JPG dropped alongside, the JPG is a page too
+- [ ] The multi-page TIFF on PNG: a folder `name (frames)` with `name page 01.png` and so on
+- [ ] A one-frame GIF on PNG: an ordinary `name (converted).png`, no folder
+- [ ] Undo (History) on a frames folder moves the whole folder to the Recycle Bin
+
 ## 4. M0/M1 checklist
 
 ### A. Startup (both builds)
