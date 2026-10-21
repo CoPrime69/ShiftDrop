@@ -5,6 +5,7 @@
 #include <archive_entry.h>
 #include <wil/resource.h>
 
+#include <algorithm>
 #include <cwctype>
 #include <filesystem>
 #include <format>
@@ -28,6 +29,25 @@ namespace sd::archive
         {
             return static_cast<int64_t>((static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime);
         }
+    }
+
+    bool IsCompressedAlready(const std::wstring& name)
+    {
+        // Photos, video, music and other archives (Office files and EPUBs are ZIPs too): Deflate
+        // spends a second per 30 MB or so on them to save a percent or two.
+        static constexpr std::wstring_view kPacked[] = {
+            L".jpg", L".jpeg", L".png", L".gif", L".webp", L".heic", L".heif", L".avif", L".jxl", L".mp4", L".m4v", L".mov", L".mkv",
+            L".webm", L".avi", L".wmv", L".3gp", L".mp3", L".m4a", L".aac", L".ogg", L".opus", L".flac", L".wma", L".zip", L".7z",
+            L".rar", L".gz", L".tgz", L".bz2", L".xz", L".zst", L".cab", L".docx", L".xlsx", L".pptx", L".odt", L".ods", L".odp",
+            L".epub", L".jar", L".apk",
+        };
+        const auto dot = name.find_last_of(L"./");
+        if (dot == std::wstring::npos || name[dot] != L'.')
+            return false;
+        std::wstring ext = name.substr(dot);
+        for (auto& c : ext)
+            c = static_cast<wchar_t>(std::towlower(c));
+        return std::find(std::begin(kPacked), std::end(kPacked), ext) != std::end(kPacked);
     }
 
     ArchiveWriter::~ArchiveWriter()
@@ -93,6 +113,14 @@ namespace sd::archive
             archive_entry_set_filetype(e.get(), AE_IFREG);
             archive_entry_set_perm(e.get(), 0644);
             archive_entry_set_size(e.get(), entry.size < 0 ? 0 : entry.size);
+            // A ZIP stores what is compressed already as it is: the same files come out, much sooner.
+            if (m_format == WriteFormat::Zip)
+            {
+                if (IsCompressedAlready(entry.name))
+                    archive_write_zip_set_compression_store(m_a);
+                else
+                    archive_write_zip_set_compression_deflate(m_a);
+            }
             break;
         }
         if (entry.mtime)
