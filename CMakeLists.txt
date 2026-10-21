@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.24)
 # Must be set before project(); CMP0091 is NEW because of the minimum version above.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(ShiftDrop VERSION 0.3.0 LANGUAGES CXX RC)
+project(ShiftDrop VERSION 0.5.0 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
