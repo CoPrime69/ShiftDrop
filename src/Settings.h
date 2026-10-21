@@ -44,4 +44,10 @@ namespace sd
     };
     Appearance LoadAppearance();
     void SaveAppearance(const Appearance& appearance);
+
+    // Where the outputs of files dragged out of a browser or a mail app go (they have no folder of
+    // their own, see VirtualDrop.h); [Output] VirtualFiles=desktop|downloads|ask, set from the tray.
+    enum class VirtualOutput { Desktop, Downloads, Ask };
+    VirtualOutput LoadVirtualOutput();
+    void SaveVirtualOutput(VirtualOutput choice);
 }

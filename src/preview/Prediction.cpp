@@ -139,7 +139,7 @@ namespace sd::preview
     std::wstring PredictOutputName(const std::wstring& source, const std::wstring& suffix, const std::wstring& extension)
     {
         const std::filesystem::path src(source);
-        const auto folder = src.parent_path();
+        const std::filesystem::path folder(OutputFolder(source));   // a dragged-in file's outputs go elsewhere
         const auto stem = src.stem().wstring();
         for (int n = 1; n < 1000; ++n)
         {
