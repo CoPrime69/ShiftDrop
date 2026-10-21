@@ -50,6 +50,9 @@ namespace sd
         bool Create();
         void Destroy();
 
+        // Which key switches to which wheel section, by the section's place on the wheel (0 = off).
+        void SetRingKeys(std::array<UINT, kRingCount> keys) { m_ringKeys = keys; }
+
         // From the drag poll while the wheel is visible.
         void PollDrag();
 

@@ -232,6 +232,15 @@ namespace sd
         Present(State::Switcher, monitor);
     }
 
+    void Island::SetRings(std::vector<WheelRing> rings)
+    {
+        m_rings = std::move(rings);
+        m_ring = std::clamp(m_ring, 0, std::max(0, static_cast<int>(m_rings.size()) - 1));
+        m_tabPos = static_cast<float>(m_ring);
+        if (m_state == State::Switcher)
+            Animate();
+    }
+
     void Island::SetRing(int ring)
     {
         m_ring = ring;

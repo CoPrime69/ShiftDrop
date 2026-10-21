@@ -35,6 +35,9 @@
 #include "keyboard/WheelRequest.h"
 #include "preview/PreviewCard.h"
 #include "preview/Prediction.h"
+#include "Features.h"
+#include "SettingsWindow.h"
+#include "ocr/Ocr.h"
 #include "shelf/ShelfWindow.h"
 
 #include <windows.h>
@@ -252,15 +255,15 @@ namespace sd
             if (m_media->Available())
                 m_mediaJobs->Submit([media = m_media](std::stop_token) { media->H264(); });
 
-            std::vector<WheelRing> rings;
-#if !SHIFTDROP_M0
-            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), BackToWindow (arrows in), Folder.
-            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE73F, 0xE8B7 };
-            for (int i = 0; i < kRingCount; ++i)
-                rings.push_back(WheelRing{ RingTitle(static_cast<Ring>(i)), m_settings.keys[i] ? m_settings.keyNames[i] : L"",
-                                           kRingIcons[i], static_cast<Ring>(i) == Ring::Convert });
-#endif
+            m_features = LoadFeatures();
+            std::vector<WheelRing> rings = BuildRings();
             m_appearance = LoadAppearance();
+            {
+                wchar_t tag[64]{};
+                GetPrivateProfileStringW(L"Ocr", L"Language", L"", tag, ARRAYSIZE(tag), SettingsPath().c_str());
+                if (tag[0] && CompareStringOrdinal(tag, -1, L"auto", -1, TRUE) != CSTR_EQUAL)
+                    ocr::SetLanguage(tag);
+            }
             m_island = std::make_unique<Island>(m_instance, rings, [this] { RevealInExplorer(m_lastOutputs); });
             if (!m_island->Create())
                 return false;
@@ -286,12 +289,13 @@ namespace sd
             };
             m_overlay = std::make_unique<Overlay>(
                 m_instance, std::move(rings),
-                [this](const std::vector<std::wstring>& files, int ring) { return ContentFor(files, static_cast<Ring>(ring)); },
+                [this](const std::vector<std::wstring>& files, int ring) { return ContentFor(files, SectionAt(ring)); },
                 [this](std::vector<std::wstring> files, std::wstring actionId) { HandleDrop(std::move(files), std::move(actionId)); },
                 std::move(events));
             if (!m_overlay->Create())
                 return false;
             m_overlay->SetAppearance(m_appearance);
+            m_settingsWindow = std::make_unique<SettingsWindow>(m_instance, [this](const Features& f) { ApplyFeatures(f); });
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
@@ -306,7 +310,7 @@ namespace sd
                 m_preview.reset();
             KeyboardController::Events keyEvents;
             keyEvents.notice = [this](const std::wstring& title, const std::wstring& text) { m_tray.Balloon(title, text); };
-            m_keyboard = std::make_unique<KeyboardController>(m_instance, *m_overlay, m_settings.keys, std::move(keyEvents));
+            m_keyboard = std::make_unique<KeyboardController>(m_instance, *m_overlay, SectionKeys(), std::move(keyEvents));
             if (!m_keyboard->Create())
                 m_keyboard.reset();
             else if (!m_startWheel.empty())
@@ -356,6 +360,8 @@ namespace sd
             while (GetMessageW(&m, nullptr, 0, 0) > 0)
             {
                 if (m_historyWindow && m_historyWindow->PreTranslate(m))
+                    continue;
+                if (m_settingsWindow && m_settingsWindow->PreTranslate(m))
                     continue;
                 TranslateMessage(&m);
                 DispatchMessageW(&m);
@@ -527,7 +533,24 @@ namespace sd
                 else
                     m_historyWindow->Show();
                 break;
+            case IDM_SETTINGS:
+                if (m_settingsWindow)
+                    m_settingsWindow->Show(BuildSettingsTree(), m_features);
+                break;
+            case IDM_SHOW_SHELF:
+                if (m_shelf)
+                    m_shelf->Reveal();
+                break;
             default:
+                if (id >= IDM_OCR_BASE && id <= IDM_OCR_LAST)
+                {
+                    // 0 = Automatic, else the language at that place in the list the menu showed.
+                    const size_t i = id - IDM_OCR_BASE;
+                    const std::wstring tag = i == 0 || i > m_ocrLanguages.size() ? L"" : m_ocrLanguages[i - 1].tag;
+                    ocr::SetLanguage(tag);
+                    WritePrivateProfileStringW(L"Ocr", L"Language", tag.empty() ? L"auto" : tag.c_str(), SettingsPath().c_str());
+                    log::Info(L"ocr: language {}", tag.empty() ? L"automatic" : tag);
+                }
                 break;
             }
         }
@@ -545,9 +568,11 @@ namespace sd
 
         void ShowWheel(UINT vk, POINT pt)
         {
-            const int ring = RingOfKey(vk);
-            if (ring < 0 || !m_overlay || m_overlay->IsVisible())
+            const int key = RingOfKey(vk);
+            if (key < 0 || !m_overlay || m_overlay->IsVisible())
                 return;
+            // Where that section sits on the wheel; a section turned off in Settings opens the first one.
+            const int ring = std::max(0, SectionIndex(static_cast<Ring>(key)));
             // The overlay asks ContentFor() once OLE's DragEnter tells it which files are being
             // dragged. Keys already down now must not count as "pressed again" to switch wheels.
             for (int i = 0; i < kRingCount; ++i)
@@ -587,8 +612,8 @@ namespace sd
             for (int i = 0; i < kRingCount; ++i)
             {
                 const bool down = IsDown(m_settings.keys[i]);
-                if (down && !m_keyDown[i])
-                    m_overlay->SetRing(i);
+                if (down && !m_keyDown[i] && SectionIndex(static_cast<Ring>(i)) >= 0)
+                    m_overlay->SetRing(SectionIndex(static_cast<Ring>(i)));
                 m_keyDown[i] = down;
             }
         }
@@ -677,7 +702,7 @@ namespace sd
             std::vector<const Recipe*> forAll, forAny, onRing;
             for (const auto& recipe : m_recipes.All())
             {
-                if (recipe.ring != ringId)
+                if (recipe.ring != ringId || !m_features.RecipeOn(recipe))
                     continue;
                 onRing.push_back(&recipe);
                 const auto applies = [&](const std::wstring& f) { return m_runner->Applies(recipe, f); };
@@ -748,6 +773,121 @@ namespace sd
             }
 #endif
             return content;
+        }
+
+        // ---- Sections and Settings ------------------------------------------------------------------
+
+        // The wheel's sections that are on, in scroll order; m_sections[i] is what ring i of the
+        // overlay and the top panel shows.
+        std::vector<WheelRing> BuildRings()
+        {
+            std::vector<WheelRing> rings;
+            m_sections.clear();
+#if !SHIFTDROP_M0
+            // Tab icons (Segoe Fluent Icons / MDL2): Sync, Repair (wrench), BackToWindow (arrows in), Folder.
+            constexpr wchar_t kRingIcons[kRingCount] = { 0xE895, 0xE90F, 0xE73F, 0xE8B7 };
+            for (int i = 0; i < kRingCount; ++i)
+            {
+                const auto ring = static_cast<Ring>(i);
+                if (!m_features.SectionOn(ring))
+                    continue;
+                m_sections.push_back(ring);
+                rings.push_back(WheelRing{ RingTitle(ring), m_settings.keys[i] ? m_settings.keyNames[i] : L"", kRingIcons[i],
+                                           ring == Ring::Convert });
+            }
+#endif
+            return rings;
+        }
+
+        Ring SectionAt(int index) const
+        {
+            return index >= 0 && static_cast<size_t>(index) < m_sections.size() ? m_sections[static_cast<size_t>(index)] : Ring::Convert;
+        }
+
+        // Where a section sits on the wheel, or -1 when it is turned off.
+        int SectionIndex(Ring ring) const
+        {
+            const auto it = std::find(m_sections.begin(), m_sections.end(), ring);
+            return it == m_sections.end() ? -1 : static_cast<int>(it - m_sections.begin());
+        }
+
+        // The wheel keys by place on the wheel, for the click-mode wheel (KeyboardController).
+        std::array<UINT, kRingCount> SectionKeys() const
+        {
+            std::array<UINT, kRingCount> keys{};
+            for (size_t i = 0; i < m_sections.size() && i < keys.size(); ++i)
+                keys[i] = m_settings.keys[static_cast<size_t>(m_sections[i])];
+            return keys;
+        }
+
+        // Settings changed what is on. Sections take effect on the next wheel (the tray menu or the
+        // Settings window has the focus, so no wheel is open); slices on the next ContentFor.
+        void ApplyFeatures(const Features& features)
+        {
+            const bool sectionsChanged = features.sections != m_features.sections;
+            m_features = features;
+            SaveFeatures(m_features);
+            if (!sectionsChanged)
+                return;
+            auto rings = BuildRings();
+            if (m_island)
+                m_island->SetRings(rings);
+            if (m_overlay)
+                m_overlay->SetRings(std::move(rings));
+            if (m_keyboard)
+                m_keyboard->SetRingKeys(SectionKeys());
+        }
+
+        // Every slice, by section and by the kind of file it is for, for the Settings window.
+        SettingsTree BuildSettingsTree() const
+        {
+            SettingsTree tree;
+            struct Kind
+            {
+                const wchar_t* title;
+                const wchar_t* sample;   // a name its slices apply to (by extension; the file need not exist)
+            };
+            static constexpr Kind kKinds[] = {
+                { L"Photos", L"x.jpg" },          { L"Video", L"x.mp4" },          { L"Audio", L"x.mp3" },
+                { L"PDF", L"x.pdf" },             { L"Documents", L"x.docx" },     { L"Spreadsheets", L"x.xlsx" },
+                { L"Subtitles", L"x.srt" },       { L"Archives", L"x.zip" },
+            };
+            for (int i = 0; i < kRingCount; ++i)
+            {
+                const auto ring = static_cast<Ring>(i);
+                SettingsTree::Section section{ ring, RingTitle(ring), {} };
+                std::vector<SettingsTree::Group> groups;
+                const auto groupFor = [&](const std::wstring& title) -> SettingsTree::Group& {
+                    for (auto& g : groups)
+                        if (g.title == title)
+                            return g;
+                    return groups.emplace_back(SettingsTree::Group{ title, {} });
+                };
+                for (const auto& recipe : m_recipes.All())
+                {
+                    if (recipe.ring != RingId(ring))
+                        continue;
+                    std::vector<bool> applies;
+                    for (const auto& k : kKinds)
+                        applies.push_back(m_runner->Applies(recipe, k.sample));
+                    std::wstring title = L"Other";
+                    if (recipe.IsFileAction() || std::all_of(applies.begin(), applies.begin() + 4, [](bool b) { return b; }))
+                        title = L"Any file";
+                    else if (applies[1] && applies[2])
+                        title = L"Video and audio";
+                    else
+                        for (size_t k = 0; k < applies.size(); ++k)
+                            if (applies[k])
+                            {
+                                title = kKinds[k].title;
+                                break;
+                            }
+                    groupFor(title).slices.push_back(SettingsTree::Slice{ recipe.id, recipe.label, recipe.description });
+                }
+                section.groups = std::move(groups);
+                tree.sections.push_back(std::move(section));
+            }
+            return tree;
         }
 
         // A Reduce size recipe's target, as a percentage of the source's size (10 for "90% smaller").
@@ -1073,13 +1213,28 @@ namespace sd
             case NIN_SELECT:
             case NIN_KEYSELECT:
             {
-                std::vector<TrayToggle> toggles;
+                TrayExtras extras;
+                extras.shelf = m_shelf != nullptr;
+                // A text-recognition language choice, only when there is more than one to pick from.
+                m_ocrLanguages = ocr::Languages();
+                if (m_ocrLanguages.size() > 1)
+                {
+                    TrayChoice choice{ L"Text recognition language", IDM_OCR_BASE, { L"Automatic" }, 0 };
+                    const auto current = ocr::LanguageChoice();
+                    for (size_t i = 0; i < m_ocrLanguages.size() && IDM_OCR_BASE + i + 1 <= IDM_OCR_LAST; ++i)
+                    {
+                        choice.items.push_back(m_ocrLanguages[i].name.empty() ? m_ocrLanguages[i].tag : m_ocrLanguages[i].name);
+                        if (CompareStringOrdinal(m_ocrLanguages[i].tag.c_str(), -1, current.c_str(), -1, TRUE) == CSTR_EQUAL)
+                            choice.checked = static_cast<int>(i) + 1;
+                    }
+                    extras.choices.push_back(std::move(choice));
+                }
                 if (m_keyboard)
                 {
-                    toggles.push_back({ IDM_EXPLORER_HOTKEY, std::format(L"Wheel on Explorer's selection ({})", m_keyboard->HotkeyLabel()), m_keyboard->HotkeyOn() });
-                    toggles.push_back({ IDM_SHELL_MENU, L"\u201c" SD_NAME L"\u2026\u201d in Explorer's right-click menu", KeyboardController::ShellMenuOn() });
+                    extras.toggles.push_back({ IDM_EXPLORER_HOTKEY, std::format(L"Wheel on Explorer's selection ({})", m_keyboard->HotkeyLabel()), m_keyboard->HotkeyOn() });
+                    extras.toggles.push_back({ IDM_SHELL_MENU, L"\u201c" SD_NAME L"\u2026\u201d in Explorer's right-click menu", KeyboardController::ShellMenuOn() });
                 }
-                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled(), m_appearance, toggles);
+                m_tray.ShowMenu(POINT{ GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam) }, startup::Choice() && startup::IsEnabled(), m_appearance, extras);
                 break;
             }
             case NIN_BALLOONUSERCLICK:
@@ -1111,6 +1266,10 @@ namespace sd
         Appearance m_appearance;
         std::unique_ptr<Island> m_island;     // before the overlay: the overlay's events use it
         std::unique_ptr<Overlay> m_overlay;
+        Features m_features;                 // what Settings turned off
+        std::vector<Ring> m_sections;        // the sections on the wheel, in order (BuildRings)
+        std::unique_ptr<SettingsWindow> m_settingsWindow;
+        std::vector<ocr::Language> m_ocrLanguages;   // as the tray menu last listed them
         std::unique_ptr<Shelf> m_shelf;      // after the island: results hand it their outputs
         uint64_t m_nextBatch = 1;
         uint64_t m_islandBatch = 0;          // the batch whose progress the top panel shows

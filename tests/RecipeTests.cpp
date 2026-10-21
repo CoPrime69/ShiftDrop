@@ -1,3 +1,4 @@
+#include "Features.h"
 #include "Recipe.h"
 #include "TestUtil.h"
 
@@ -107,4 +108,28 @@ TEST(Recipe, UserRecipeReplacesBuiltIn)
     EXPECT_EQ(recipes.Get("to-png").label, L"PNG!");
     ASSERT_EQ(recipes.store.Errors().size(), 1u);
     EXPECT_NE(recipes.store.Errors()[0].find(L"broken.json"), std::wstring::npos);
+}
+
+TEST(Features, SlicesAndSectionsTurnOff)
+{
+    EXPECT_EQ(SplitIds(" to-tiff, to-bmp,,to-tiff "), (std::set<std::string>{ "to-bmp", "to-tiff" }));
+    EXPECT_EQ(JoinIds({ "b", "a" }), "a,b");
+    EXPECT_TRUE(SplitIds("").empty());
+
+    Features f;
+    Recipe tiff;
+    tiff.id = "to-tiff";
+    tiff.ring = "convert";
+    Recipe rotate;
+    rotate.id = "rotate-right";
+    rotate.ring = "tools";
+    EXPECT_TRUE(f.RecipeOn(tiff));
+    f.off.insert("to-tiff");
+    EXPECT_FALSE(f.RecipeOn(tiff));
+    EXPECT_TRUE(f.RecipeOn(rotate));
+    f.sections[static_cast<size_t>(Ring::Tools)] = false;
+    EXPECT_FALSE(f.RecipeOn(rotate));
+    EXPECT_EQ(f.SectionsOn(), 3);
+    EXPECT_EQ(RingFromId("reduce"), Ring::Reduce);
+    EXPECT_EQ(RingFromId("nonsense"), Ring::Convert);
 }

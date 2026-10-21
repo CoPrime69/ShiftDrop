@@ -58,6 +58,7 @@ add_library(shiftdrop_core STATIC
   src/Recipe.cpp
   src/RecipeStore.cpp
   src/Settings.cpp
+  src/Features.cpp
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
@@ -171,6 +172,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/SettingsWindow.cpp
   src/keyboard/ExplorerSelection.cpp
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
@@ -188,7 +190,7 @@ add_executable(ShiftDrop WIN32
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme)
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
