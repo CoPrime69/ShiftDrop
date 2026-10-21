@@ -4,7 +4,7 @@ Drag a file, hold a key, and a wheel appears under the cursor. Drop on a slice t
 Everything runs offline. Windows 10/11, native C++20 / Win32 / COM.
 
 Drag a file and press **Shift**: the wheel opens on the section that suits the file best. Turn the
-mouse wheel to step through the sections (Convert, Tools, Reduce size, File actions) in order, round and round.
+mouse wheel to step through the sections (Convert, Tools, Reduce size, File actions) in order, round and round. No mouse wheel? Keep Shift held and tap 1, 2, 3 or 4 to jump to a section.
 
 | Section | Slices so far |
 |---|---|

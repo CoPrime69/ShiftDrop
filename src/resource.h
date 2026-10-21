@@ -12,6 +12,12 @@
 // Keyboard and Explorer (M4)
 #define IDM_EXPLORER_HOTKEY 40030
 #define IDM_SHELL_MENU  40031
+// Settings window, Float shelf (M3c) and the OCR language submenu (M5): base + the index in
+// ocr::Languages() + 1, base + 0 = Automatic
+#define IDM_SETTINGS    40033
+#define IDM_SHOW_SHELF  40032
+#define IDM_OCR_BASE    40040
+#define IDM_OCR_LAST    40069
 // Size and Style submenus: base + the WheelSize / Style value (see Settings.h)
 #define IDM_SIZE_BASE   40010
 #define IDM_STYLE_BASE  40020

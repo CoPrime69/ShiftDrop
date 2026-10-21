@@ -62,6 +62,7 @@ add_library(shiftdrop_core STATIC
   src/Recipe.cpp
   src/RecipeStore.cpp
   src/Settings.cpp
+  src/Features.cpp
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
@@ -217,6 +218,7 @@ add_executable(ShiftDrop WIN32
   src/DropTarget.cpp
   src/Tray.cpp
   src/HistoryWindow.cpp
+  src/SettingsWindow.cpp
   src/keyboard/ExplorerSelection.cpp
   src/keyboard/KeyboardController.cpp
   src/preview/PreviewCard.cpp
@@ -234,7 +236,7 @@ add_executable(ShiftDrop WIN32
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme)
 
 # The sealed engine host (S6): parses archives inside an AppContainer with no capabilities. A
 # separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It

@@ -48,6 +48,9 @@ namespace sd
 
         // Puts the files at the top of the shelf and shows it.
         void Add(const std::vector<std::wstring>& files);
+        // The tray's "Show Float shelf": opens it where it was, empty or not, so files can be dropped on
+        // it. An empty shelf goes away with Clear (or once its last file is dragged out).
+        void Reveal();
 
         // Convert-and-carry for a finished job's outputs in the top panel: drag them out, put them on
         // the shelf, copy them. The actions do nothing once the shelf is gone.
