@@ -1,7 +1,7 @@
 # Plugins (design, not built yet)
 
-Status: design only. Nothing in this document ships in M7; it fixes the contract so a later
-milestone can build it without changing the sandbox or the module plumbing.
+Nothing in this document is built. It fixes the contract, so plugins can be added later without
+changing the sandbox or the module plumbing. Comments on it are welcome in an issue.
 
 ## Goal
 
@@ -113,11 +113,11 @@ the archive entry stream, because the worker is untrusted.
 - A plugin's `.wasm` files are hashed (SHA-256) when first seen; a changed hash turns the plugin off
   until the person confirms it again.
 
-## Open points for the milestone that builds it
+## Open points
 
 1. Pick the interpreter (wasm3 is MIT and small; check its maintenance status at that time) and a
    C++ toolchain story for plugin authors (wasi-sdk, with only the imports above, no WASI files).
 2. Speed: an interpreter is 5–20 times slower than native code. Fine for text, names and checksums;
    image or media plugins would need a JIT, which conflicts with the prohibit-dynamic-code mitigation.
-3. Whether plugins may produce a prediction for the S1 card (a separate `predict` export with no
+3. Whether plugins may produce a prediction for the predicted-output card (a separate `predict` export with no
    file access) or always show "~?".
