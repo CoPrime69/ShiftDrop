@@ -360,6 +360,7 @@ if(SHIFTDROP_TESTS)
     tests/PanelTests.cpp
     tests/AccentTests.cpp
     tests/ThemeTests.cpp
+    tests/TrayIconTests.cpp
     tests/FormatsTests.cpp
     tests/FramesTests.cpp
     tests/PhotoTests.cpp

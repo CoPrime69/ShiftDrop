@@ -54,6 +54,10 @@ SetupIconFile=..\src\ShiftDrop.ico
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName}
 WizardStyle=modern
+; The wizard's art at 100% and 200% (Setup picks the best match for the screen's DPI), rendered from
+; the brand kit's drawings as 24-bit BMP, which every Inno Setup 6 reads.
+WizardImageFile=images\wizard-side-164x314.bmp,images\wizard-side-328x628.bmp
+WizardSmallImageFile=images\wizard-small-55x55.bmp,images\wizard-small-110x110.bmp
 ; ultra64: the strongest LZMA2 setting (a 64 MB dictionary); the installer is built once per CI run.
 Compression=lzma2/ultra64
 SolidCompression=yes

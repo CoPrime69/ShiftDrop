@@ -2,8 +2,10 @@
 #include "Tray.h"
 #include "Log.h"
 #include "Messages.h"
+#include "TrayIcon.h"
 #include "resource.h"
 
+#include <shellscalingapi.h>
 #include <wil/resource.h>
 
 #include <algorithm>
@@ -23,6 +25,28 @@ namespace sd
             std::copy_n(src.data(), n, dst);
             dst[n] = L'\0';
         }
+
+        // The taskbar's theme, which can differ from the apps' (Windows' "Choose your default Windows
+        // mode"). No value (Windows 10 before 1903): the taskbar is dark.
+        bool LightTaskbar()
+        {
+            DWORD value = 0, size = sizeof(value);
+            return RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                                L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS &&
+                   value != 0;
+        }
+
+        // The notification area is on the primary taskbar; its icons are sized for that monitor's DPI.
+        UINT TaskbarDpi()
+        {
+            const HWND taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
+            const HMONITOR monitor = taskbar ? MonitorFromWindow(taskbar, MONITOR_DEFAULTTOPRIMARY)
+                                             : MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+            UINT dpiX = 96, dpiY = 96;
+            if (FAILED(GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)))
+                return 96;
+            return dpiX;
+        }
     }
 
     NOTIFYICONDATAW Tray::Base(UINT flags) const
@@ -34,19 +58,47 @@ namespace sd
         return nid;
     }
 
-    bool Tray::Add(HWND owner, HICON icon, std::wstring_view tip)
+    bool Tray::Add(HWND owner, std::wstring_view tip)
     {
         m_owner = owner;
-        m_icon = icon;
         m_tip = tip;
         return Readd();
     }
 
+    bool Tray::LoadGlyph()
+    {
+        const auto pick = trayicon::For(LightTaskbar(), TaskbarDpi());
+        if (m_icon && pick.resource == m_resource && pick.size == m_size)
+            return false;
+        // The exact image from the resource, so nothing is rescaled on our side.
+        wil::unique_hicon icon(static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(pick.resource), IMAGE_ICON,
+                                                             pick.size, pick.size, LR_DEFAULTCOLOR)));
+        if (!icon)
+        {
+            log::Warn(L"tray: could not load icon {} at {} px", pick.resource, pick.size);
+            return false;
+        }
+        m_icon = std::move(icon);
+        m_resource = pick.resource;
+        m_size = pick.size;
+        return true;
+    }
+
+    void Tray::Refresh()
+    {
+        if (!LoadGlyph() || !m_added)
+            return;
+        auto nid = Base(NIF_ICON);
+        nid.hIcon = m_icon.get();
+        Shell_NotifyIconW(NIM_MODIFY, &nid);
+    }
+
     bool Tray::Readd()
     {
+        LoadGlyph();   // Explorer also restarts when the display's scale changes
         auto nid = Base(NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP);
         nid.uCallbackMessage = msg::TrayCallback;
-        nid.hIcon = m_icon;
+        nid.hIcon = m_icon.get();
         Copy(nid.szTip, m_tip);
         Shell_NotifyIconW(NIM_DELETE, &nid);   // harmless if not present
         m_added = Shell_NotifyIconW(NIM_ADD, &nid) != FALSE;

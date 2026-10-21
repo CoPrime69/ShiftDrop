@@ -1,5 +1,7 @@
 # ShiftDrop
 
+![ShiftDrop: drag, press Shift, drop. Convert, shrink and edit files from a wheel at your cursor.](docs/images/banner.png)
+
 [![CI](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml/badge.svg)](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/CoPrime69/ShiftDrop)](https://github.com/CoPrime69/ShiftDrop/releases)
