@@ -228,4 +228,15 @@ namespace sd::shelf
     {
         return count == 1 ? std::wstring(L"1 item") : std::format(L"{} items", count);
     }
+
+    std::wstring CountText(size_t files, size_t folders)
+    {
+        if (files == 0 && folders == 0)
+            return {};
+        if (folders == 0)
+            return files == 1 ? std::wstring(L"1 file") : std::format(L"{} files", files);
+        if (files == 0)
+            return folders == 1 ? std::wstring(L"1 folder") : std::format(L"{} folders", folders);
+        return CountText(files + folders);
+    }
 }

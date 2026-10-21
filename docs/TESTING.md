@@ -276,20 +276,20 @@ Float shelf:
 - [ ] Add more than five items: the list scrolls with the mouse wheel and shows a thin scroll bar
 - [ ] Drag one item out into an Explorer folder: it is **copied** there (the original stays on the shelf and on disk); into a browser upload box, a mail message and a chat app (Teams, Discord, Slack, WhatsApp): each gets the file
 - [ ] Ctrl+click two items (or click one and Shift+click another), drag one of them out: both go; the handle at the bottom says "Drag 2 selected into an app"; with nothing selected it says "Drag all N into an app" and dragging it carries everything
-- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear the shelf
+- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear all, Close the shelf
 - [ ] Click an item, then use the keyboard: Up/Down move, Shift+Up/Down extend, Ctrl+A, Enter opens, Delete removes, Ctrl+C copies (the footer says "Copied…"), Esc folds a pinned shelf
 - [ ] Drag the shelf by its header to the middle of the screen: it floats there (no folding); drag it near the left, top or bottom edge and let go: it glides flush against that edge with square outer corners, and folds when you leave it
 - [ ] The pin button in the header pins a floating shelf to the nearest edge and unpins a pinned one
 - [ ] With two monitors at different scaling (100 % and 150 %), drag the shelf from one to the other: it changes size to match, pins to the edges of the monitor it is on and never spills onto the other one
 - [ ] Delete or rename one of the shelf's files in Explorer: within a few seconds it disappears from the shelf
-- [ ] The trash button (or "Clear the shelf") empties it and it **stays**: a dashed box under the header says "Drop files here" (no footer, no trash button); removing the last item with its × or Delete, or deleting its file in Explorer, leaves the same empty shelf
+- [ ] The header reads "Float" with the count ("3 files", "1 folder", "4 items" when both); **Clear all** (next to the ×, or right-click › "Clear all") empties it and it **stays**: the count goes, a dashed box under the header says "Drop files here" (no footer, no Clear all); the files are still where they were in Explorer; removing the last item with its × or Delete, or deleting its file in Explorer, leaves the same empty shelf
 - [ ] Empty shelf: drag a file from Explorer, one from the desktop, and a picture out of a web page (Edge, Chrome, Firefox) onto the dashed box: it fills with the accent colour while the drag is over it, the badge says "Add to the Float shelf", and on drop each file is added (the browser's picture is saved where tray › Save browser drops to says, then put on the shelf); the originals are not moved or changed and no wheel opens
 - [ ] Empty and pinned: it folds into a tab with the pin icon; dragging a file onto the tab unfolds it and the drop adds the file
 - [ ] The × at the right of the header (tooltip "Close the shelf (the tray icon brings it back)") hides it; the tray's **Show Float shelf** is now unticked; ticking it brings the shelf back where it was with its files; Alt+F4 on the shelf and right-click › "Close the shelf" do the same
 - [ ] Close the shelf, quit and restart ShiftDrop: it stays hidden (`"shown": false` in shelf.json); tick **Show Float shelf**: back
 - [ ] With the shelf closed, use **Float** on a file (or a result's Float button): the shelf comes back with the file on it and **Show Float shelf** is ticked again, as before
-- [ ] Click the shelf, then Tab: the focus moves from the list to Clear, Pin and the × (a ring around the button), Shift+Tab goes back; Enter or Space presses the button; hover each header button: a tooltip names it
-- [ ] Empty shelf at every tray Size (Small, Medium, Large, Auto) and at 100 %, 150 % and 200 % scaling, light and dark, Solid and Glass: the dashed box, its icon and "Drop files here" are centred and crisp, nothing is cut off, and the × and pin buttons are the same size as the trash button
+- [ ] Click the shelf, then Tab: the focus moves from the list to Pin, Clear all and the × (a ring around the button), Shift+Tab goes back; Enter or Space presses the button; hover each header button: a tooltip names it
+- [ ] Empty shelf at every tray Size (Small, Medium, Large, Auto) and at 100 %, 150 % and 200 % scaling, light and dark, Solid and Glass: the dashed box, its icon and "Drop files here" are centred and crisp, nothing is cut off, and the × and pin buttons are the same size as with files, and "Clear all" fits its button
 - [ ] Quit and restart ShiftDrop with files on the shelf: it comes back (folded if pinned) in the same place with the same files; `%LOCALAPPDATA%\ShiftDrop\shelf.json` lists them; with an empty shelf that was on, it comes back empty
 - [ ] Windows dark and light app theme: the shelf follows it (Settings > Personalisation > Colours), also while it is open; tray Style > Glass makes it translucent
 - [ ] Animation effects off: the shelf appears, folds and moves without animation
@@ -666,7 +666,7 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Untick **Convert › Video**: a video's Convert wheel has no video formats; Photos shows a partly ticked box when only some of its slices are on; clicking a partly ticked line ticks everything under it
 - [ ] Untick the whole **Tools** section: scrolling goes Convert, Reduce size, File actions (no Tools tab in the top panel); unticking the last section left is refused with a note
 - [ ] **Turn everything on** ticks everything again; quitting and starting again keeps your choices (`[Features]` in settings.ini)
-- [ ] Untick **Show Float shelf**: the shelf hides (with its files kept); tick it with an empty shelf: it opens saying "Drop files here"; drop a file on it: it is added; Clear empties it and it stays on screen
+- [ ] Untick **Show Float shelf**: the shelf hides (with its files kept); tick it with an empty shelf: it opens saying "Drop files here"; drop a file on it: it is added; Clear all empties it and it stays on screen
 - [ ] With two or more OCR languages installed: tray › **Text recognition language** lists Automatic and each language; pick one and **Copy text** on a picture in that language reads it; with one language installed the submenu is not there
 
 ### Y. Toasts, more settings, Rename and screen readers

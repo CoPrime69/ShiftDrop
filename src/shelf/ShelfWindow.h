@@ -145,6 +145,7 @@ namespace sd
         void Text(const std::wstring& text, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
         void Glyph(wchar_t glyph, IDWriteTextFormat* format, const shelf::Box& box, const D2D1_COLOR_F& color, float alpha = 1.f);
         void RoundButton(const shelf::Box& box, wchar_t glyph, bool hover, bool danger, float alpha);
+        void PillButton(const shelf::Box& box, const std::wstring& text, bool hover, bool danger, float alpha);
         void DrawThumb(Item& item, const shelf::Box& box, float alpha);
         void DrawPanel(const shelf::Layout& layout, float alpha);
         void DrawDropZone(const shelf::Box& box, float alpha);

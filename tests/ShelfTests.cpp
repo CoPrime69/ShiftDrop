@@ -261,6 +261,43 @@ TEST(Shelf, Texts)
 {
     EXPECT_EQ(CountText(1), L"1 item");
     EXPECT_EQ(CountText(3), L"3 items");
+    // The header's count.
+    EXPECT_EQ(CountText(0, 0), L"");   // empty: the drop box says so
+    EXPECT_EQ(CountText(1, 0), L"1 file");
+    EXPECT_EQ(CountText(3, 0), L"3 files");
+    EXPECT_EQ(CountText(0, 1), L"1 folder");
+    EXPECT_EQ(CountText(0, 2), L"2 folders");
+    EXPECT_EQ(CountText(3, 1), L"4 items");
+}
+
+TEST(Shelf, ClearAllSitsNextToCloseAndKeepsTheFiles)
+{
+    const Metrics m(1.f);
+    const auto l = LayOut(Box{ 0, 0, m.width, PanelHeight(m, 3) }, m, 3, 0);
+    // Next to the ×, as high as it, wide enough for its label.
+    EXPECT_LT(l.clear.right, l.close.left);
+    EXPECT_LE(l.close.left - l.clear.right, 4.f * m.scale);
+    EXPECT_EQ(l.clear.top, l.close.top);
+    EXPECT_EQ(l.clear.Height(), m.button);
+    EXPECT_GE(l.clear.Width(), 2 * m.button);
+    EXPECT_EQ(HitTest(l, (l.clear.left + l.clear.right) / 2, (l.clear.top + l.clear.bottom) / 2), (Hit{ Part::Clear }));
+    // Its tooltip and menu say it: the shelf only forgets its items. The files stay on disk, and the
+    // shelf stays on screen, empty.
+    TempDir dir;
+    WriteText(dir / L"a.png", "a");
+    WriteText(dir / L"b.txt", "b");
+    std::vector<std::wstring> items = { dir / L"a.png", dir / L"b.txt" };
+    Visibility shown;
+    EXPECT_EQ(RemoveIf(items, [](const std::wstring&) { return true; }), 2u);
+    ASSERT_TRUE(Save(dir / L"shelf.json", SavedShelf{ items }));
+    EXPECT_TRUE(Load(dir / L"shelf.json").items.empty());
+    EXPECT_TRUE(std::filesystem::exists(dir / L"a.png"));
+    EXPECT_TRUE(std::filesystem::exists(dir / L"b.txt"));
+    EXPECT_TRUE(shown.On());
+    // With nothing left there is no Clear all, and the pin moves up next to the ×.
+    const auto empty = LayOut(Box{ 0, 0, m.width, PanelHeight(m, 0) }, m, 0, 0);
+    EXPECT_EQ(empty.clear, Box{});
+    EXPECT_LE(empty.close.left - empty.pin.right, 4.f * m.scale);
 }
 
 // ---- Edges -----------------------------------------------------------------------------------------
@@ -371,10 +408,10 @@ TEST(Shelf, HitTestFindsEachPart)
     EXPECT_EQ(at(l.pin), (Hit{ Part::Pin }));
     EXPECT_EQ(at(l.clear), (Hit{ Part::Clear }));
     EXPECT_EQ(at(l.close), (Hit{ Part::Close }));
-    // The header's buttons, left to right, never overlap each other or the title.
-    EXPECT_LE(l.title.right, l.clear.left);
-    EXPECT_LE(l.clear.right, l.pin.left);
-    EXPECT_LE(l.pin.right, l.close.left);
+    // The header's buttons, left to right (pin, Clear all, ×), never overlap each other or the title.
+    EXPECT_LE(l.title.right, l.pin.left);
+    EXPECT_LE(l.pin.right, l.clear.left);
+    EXPECT_LE(l.clear.right, l.close.left);
     EXPECT_LE(l.close.right, l.panel.right);
     EXPECT_EQ(at(l.title), (Hit{ Part::Header }));
     EXPECT_EQ(at(l.footer), (Hit{ Part::Footer }));

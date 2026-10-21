@@ -63,7 +63,6 @@ namespace sd
         // Segoe Fluent Icons / MDL2 Assets.
         constexpr wchar_t kGlyphPin = 0xE718;
         constexpr wchar_t kGlyphUnpin = 0xE77A;
-        constexpr wchar_t kGlyphClear = 0xE74D;    // Delete
         constexpr wchar_t kGlyphReveal = 0xE838;   // FolderOpen
         constexpr wchar_t kGlyphRemove = 0xE711;   // Cancel
         constexpr wchar_t kGlyphClose = 0xE8BB;    // ChromeClose
@@ -73,8 +72,8 @@ namespace sd
 
         enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear, kMenuClose };
 
-        // The header buttons Tab moves through, left to right (Clear only while there are files).
-        constexpr Part kHeaderButtons[] = { Part::Clear, Part::Pin, Part::Close };
+        // The header buttons Tab moves through, left to right (Clear all only while there are files).
+        constexpr Part kHeaderButtons[] = { Part::Pin, Part::Clear, Part::Close };
 
         // The shelf's colours, from the same palette as the wheel and the top panel. Unlike the top
         // panel (a dark island in both themes) the shelf is a window you work in, so it follows the
@@ -1019,7 +1018,7 @@ namespace sd
             AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         }
         AppendMenuW(menu.get(), MF_STRING, kMenuPin, m_edge == Edge::None ? L"&Pin to the nearest edge" : L"Un&pin");
-        AppendMenuW(menu.get(), MF_STRING | (m_items.empty() ? MF_GRAYED : 0), kMenuClear, L"C&lear the shelf");
+        AppendMenuW(menu.get(), MF_STRING | (m_items.empty() ? MF_GRAYED : 0), kMenuClear, L"C&lear all");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, kMenuClose, L"Cl&ose the shelf");
 
@@ -1203,7 +1202,7 @@ namespace sd
             switch (static_cast<Part>(header->idFrom))
             {
             case Part::Pin: info->lpszText = const_cast<wchar_t*>(m_edge == Edge::None ? L"Pin to the nearest edge" : L"Unpin"); break;
-            case Part::Clear: info->lpszText = const_cast<wchar_t*>(L"Clear the shelf"); break;
+            case Part::Clear: info->lpszText = const_cast<wchar_t*>(L"Take everything off the shelf (the files stay where they are)"); break;
             case Part::Close: info->lpszText = const_cast<wchar_t*>(L"Close the shelf (the tray icon brings it back)"); break;
             default: break;
             }
@@ -1311,6 +1310,18 @@ namespace sd
         Glyph(glyph, m_smallIconFont.Get(), box, hover && danger ? colors.onAccent : colors.dim, alpha);
     }
 
+    void Shelf::PillButton(const Box& box, const std::wstring& text, bool hover, bool danger, float alpha)
+    {
+        // RoundButton's look with a label: always shaded so it reads as a button, red under the mouse
+        // for a danger one.
+        const auto colors = ColorsFor(m_palette, m_appearance.style);
+        const float r = box.Height() / 2.f;
+        const bool alarm = hover && danger;
+        m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), r, r),
+                                   Brush(alarm ? colors.danger : hover ? colors.hover : colors.button, (alarm ? 0.9f : 1.f) * alpha).Get());
+        Text(text, m_countFont.Get(), box, alarm ? colors.onAccent : colors.text, alpha);
+    }
+
     void Shelf::DrawThumb(Item& item, const Box& box, float alpha)
     {
         const auto colors = ColorsFor(m_palette, m_appearance.style);
@@ -1350,10 +1361,11 @@ namespace sd
         const float s = m_scale;
         const size_t n = m_items.size();
 
-        // Header: "Float" and the count, then Clear, Pin and Close.
+        // Header: "Float" and the count ("3 files"), then Pin, Clear all and Close.
         const float tw = TextWidth(L"Float", m_titleFont.Get());
         Text(L"Float", m_titleFont.Get(), l.title, c.text, alpha);
-        const auto count = std::to_wstring(n);
+        const size_t folders = static_cast<size_t>(std::count_if(m_items.begin(), m_items.end(), [](const Item& i) { return i.folder; }));
+        const auto count = shelf::CountText(n - folders, folders);
         const float cw = std::max(TextWidth(count, m_countFont.Get()) + 12.f * s, 20.f * s);
         const float cy = (l.header.top + l.header.bottom) / 2.f;
         const Box badge{ l.title.left + tw + 8.f * s, cy - 9.f * s, l.title.left + tw + 8.f * s + cw, cy + 9.f * s };
@@ -1365,15 +1377,15 @@ namespace sd
         }
         RoundButton(l.pin, m_edge == Edge::None ? kGlyphPin : kGlyphUnpin, m_hover.part == Part::Pin, false, alpha);
         if (n > 0)
-            RoundButton(l.clear, kGlyphClear, m_hover.part == Part::Clear, true, alpha);
+            PillButton(l.clear, L"Clear all", m_hover.part == Part::Clear, true, alpha);
         RoundButton(l.close, kGlyphClose, m_hover.part == Part::Close, false, alpha);
         if (m_active && m_keyPart != Part::None)
         {
             // The keyboard's button: a ring just outside it.
-            const Box& b = m_keyPart == Part::Pin ? l.pin : m_keyPart == Part::Clear ? l.clear : l.close;
-            const float r = b.Width() / 2.f + 2.f * s;
-            m_rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F((b.left + b.right) / 2.f, (b.top + b.bottom) / 2.f), r, r), Brush(c.text, 0.8f * alpha).Get(),
-                              std::max(1.f, std::round(1.5f * s)));
+            const Box b = (m_keyPart == Part::Pin ? l.pin : m_keyPart == Part::Clear ? l.clear : l.close).Inflated(2.f * s);
+            const float r = b.Height() / 2.f;
+            m_rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(b.left, b.top, b.right, b.bottom), r, r), Brush(c.text, 0.8f * alpha).Get(),
+                                       std::max(1.f, std::round(1.5f * s)));
         }
         m_rt->DrawLine(D2D1::Point2F(l.panel.left + m_metrics.inset, l.header.bottom - 0.5f), D2D1::Point2F(l.panel.right - m_metrics.inset, l.header.bottom - 0.5f),
                        Brush(c.line, alpha).Get(), 1.f);

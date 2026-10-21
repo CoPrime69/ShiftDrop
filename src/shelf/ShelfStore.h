@@ -90,4 +90,7 @@ namespace sd::shelf
 
     // "1 item", "3 items" (folders can be on the shelf too).
     std::wstring CountText(size_t count);
+    // The header's count: "3 files", "1 folder", "4 items" when both are there; nothing when empty
+    // (the empty shelf's drop box says that).
+    std::wstring CountText(size_t files, size_t folders);
 }
