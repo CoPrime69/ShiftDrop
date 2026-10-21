@@ -191,6 +191,16 @@ namespace sd::mediatools
         return NormalizePoints(points, durationUs);
     }
 
+    std::vector<int64_t> EveryPoints(int64_t durationUs, int64_t everyUs)
+    {
+        std::vector<int64_t> points;
+        if (everyUs < kMinRangeUs || durationUs <= 0)
+            return points;
+        for (int64_t t = everyUs; t < durationUs; t += everyUs)
+            points.push_back(t);
+        return NormalizePoints(points, durationUs);
+    }
+
     int64_t ClampEdge(const std::vector<TimeRange>& ranges, size_t index, bool startEdge, int64_t t, int64_t durationUs)
     {
         if (index >= ranges.size())
