@@ -1,11 +1,13 @@
 #include "HistoryStore.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Recipe.h"
 #include "Utf.h"
 
 #include <sqlite3.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <format>
 
 namespace sd
@@ -165,7 +167,8 @@ namespace sd
         std::vector<RunRecord> runs;
         Statement s(m_db, R"(SELECT r.id, r.started, r.recipe_id, r.recipe_label, r.recipe_json, r.status,
                                     (SELECT COUNT(*) FROM items i WHERE i.run_id = r.id),
-                                    (SELECT COUNT(*) FROM items i WHERE i.run_id = r.id AND i.status = 'done')
+                                    (SELECT COUNT(*) FROM items i WHERE i.run_id = r.id AND i.status = 'done'),
+                                    (SELECT group_concat(i.source, char(10)) FROM items i WHERE i.run_id = r.id)
                              FROM runs r ORDER BY r.id DESC LIMIT ?)");
         s.Bind(1, int64_t{ limit });
         while (s.Step())
@@ -179,6 +182,15 @@ namespace sd
             r.status = s.Text(5);
             r.items = static_cast<int>(s.Int(6));
             r.done = static_cast<int>(s.Int(7));
+            // One path per line: a path never holds a line break.
+            const auto sources = s.WText(8);
+            for (size_t at = 0; at < sources.size();)
+            {
+                const size_t end = std::min(sources.find(L'\n', at), sources.size());
+                if (end > at)
+                    r.files.push_back(FileName(std::wstring_view(sources).substr(at, end - at)));
+                at = end + 1;
+            }
             runs.push_back(std::move(r));
         }
         return runs;
@@ -220,6 +232,30 @@ namespace sd
         std::scoped_lock lock(m_mutex);
         Statement s(m_db, "UPDATE runs SET status=? WHERE id=?");
         s.Bind(1, runStatus).Bind(2, runId).Run();
+    }
+
+    int HistoryStore::Clear()
+    {
+        std::scoped_lock lock(m_mutex);
+        int runs = 0;
+        {
+            Statement count(m_db, "SELECT COUNT(*) FROM runs WHERE status <> 'running'");
+            if (count.Step())
+                runs = static_cast<int>(count.Int(0));
+        }
+        // The items first, by hand: ON DELETE CASCADE would do it, but only while foreign keys are on.
+        if (!Exec("BEGIN;"
+                  "DELETE FROM items WHERE run_id IN (SELECT id FROM runs WHERE status <> 'running');"
+                  "DELETE FROM runs WHERE status <> 'running';"
+                  "COMMIT;"))
+        {
+            Exec("ROLLBACK;");
+            return 0;
+        }
+        // Deleted rows stay in the file's free pages until it is rebuilt; the user asked for them to go.
+        Exec("VACUUM;");
+        log::Info(L"history: cleared {} run(s)", runs);
+        return runs;
     }
 
     std::vector<ItemRecord> HistoryStore::RecoverInterrupted()

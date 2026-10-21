@@ -101,6 +101,13 @@ namespace sd
         ListView_SetTextColor(list, m_colors.text);
     }
 
+    std::wstring DialogWindow::Text(HWND control)
+    {
+        std::wstring text(static_cast<size_t>(GetWindowTextLengthW(control)) + 1, L'\0');
+        text.resize(static_cast<size_t>(GetWindowTextW(control, text.data(), static_cast<int>(text.size()))));
+        return text;
+    }
+
     bool DialogWindow::PreTranslate(MSG& msg)
     {
         if (!m_hwnd || (msg.hwnd != m_hwnd && !IsChild(m_hwnd, msg.hwnd)))

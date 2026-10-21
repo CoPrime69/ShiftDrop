@@ -175,10 +175,17 @@ namespace sd::photo
                 aspect.selected = i;
             ++i;
         }
+        const bool fit = m_params.aspect == kFitToPicture;
+        aspect.options.emplace_back(L"Fit to picture");
+        if (fit)
+            aspect.selected = i;
         out.push_back(aspect);
-        out.push_back(SliderControl("padding", L"Spacing", m_params.padding, 0, 40, L"%"));
+        // Fit to picture adds no margin: no spacing, and no room for a shadow.
+        if (!fit)
+            out.push_back(SliderControl("padding", L"Spacing", m_params.padding, 0, 40, L"%"));
         out.push_back(SliderControl("radius", L"Rounded corners", m_params.radius, 0, 100, L""));
-        out.push_back(SliderControl("shadow", L"Shadow", m_params.shadow, 0, 100, L""));
+        if (!fit)
+            out.push_back(SliderControl("shadow", L"Shadow", m_params.shadow, 0, 100, L""));
 
         if (m_width > 0)
         {
@@ -247,9 +254,10 @@ namespace sd::photo
         if (e.id == "aspect")
         {
             const auto& choices = AspectChoices();
-            if (e.index < 0 || e.index >= static_cast<int>(choices.size()))
+            if (e.index < 0 || e.index > static_cast<int>(choices.size()))
                 return {};
-            m_params.aspect = choices[static_cast<size_t>(e.index)].id;
+            // After the shapes comes Fit to picture.
+            m_params.aspect = e.index == static_cast<int>(choices.size()) ? kFitToPicture : choices[static_cast<size_t>(e.index)].id;
             Touch();
             return kChanged;
         }

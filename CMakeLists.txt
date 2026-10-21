@@ -67,6 +67,7 @@ add_library(shiftdrop_core STATIC
   src/FileMove.cpp
   src/Hash.cpp
   src/HistoryStore.cpp
+  src/HistoryView.cpp   # what the History window shows: search, filters, row states
   src/ImagePipeline.cpp
   src/JobQueue.cpp
   src/Log.cpp

@@ -153,6 +153,10 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] Esc closes the history window; Tab moves between the list and the buttons
 - [ ] Drag the history window to a monitor with another scaling: text and buttons stay crisp and correctly sized
 - [ ] Windows in dark mode: the history window is dark like Settings (title bar, list, its header and buttons); switch Windows to light while it is open and it turns light at once, with its grey face as before
+- [ ] Type part of a file's name in the search box: the list narrows with every letter to the runs with that file; an action's name (`png`) finds its runs; two words (`png holiday`) need both; clearing the box shows everything again
+- [ ] **Action** shows "All actions" and each action used, once; picking one keeps only its runs. **When**: Any time, Today, Last 7 days. All three work together, and the line by the buttons says "N of M runs" (or that nothing matches)
+- [ ] An undone run's row is grey and says "Undone"; a failed run's row (drop a `.txt` renamed to `.png` on PNG) is red and says "Failed"; both in dark mode too
+- [ ] **Clear history** asks first, saying only the list is cleared and cleared runs can no longer be undone. Cancel keeps everything. **Clear history** empties the list ("Cleared N runs. No file was changed."); every output file is still where it was, and the next conversion shows up as before. A run still converting when you clear stays in the list
 
 ### I. Start with Windows, recipes, recovery
 - [ ] First start: tray menu shows **Start with Windows** ticked; `Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run` lists `ShiftDrop` pointing at this exe with `--autostart`
@@ -253,6 +257,8 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 - [ ] Edit PDF > right-click a page > **Fill and sign…**: type into the form's blanks, add a tick, the date and a signature, apply. In the saved PDF at 400 % in Edge the page's own text and the typed text are both sharp; Ctrl+F finds the typed words and copying them pastes the same text; the signature has no white box around it. Edit the page again: the marks come back editable
 - [ ] Fill and sign a sideways (rotated) page and a page with a cropped margin: the marks land exactly where they were placed
 - [ ] Merge two PDFs > **More…**, edit a page, **Back**, **More…** again, edit another page, **Merge and export**: both edited pages are in the output, each with its own edit
+- [ ] Merge two PDFs > **More…** > **Add files…** (bottom left): pick a third PDF (and one already in the merge): the new one's pages appear after the others with their own colour tag and sharp thumbnails, the line above the pages says "Added name.pdf (N pages)" and that the other is already there; Ctrl+Z takes the added pages out again. **Back**: the list shows the new PDF last; **Merge and export** writes all three. A `.txt` renamed to `.pdf` is not added, and the line says why
+- [ ] Drop one PDF on **Edit**, **Add files…** another: the title becomes "Edit 2 PDFs", Save becomes **Merge and export**, and the output has both PDFs' pages
 - [ ] **Back** returns to the list with the page changes kept ("3 of 5 pages"); swap the files: each file's pages follow their file, and pages moved in among the other file's go back to their own (the list says so). Cancel after page changes asks first
 - [ ] Drop `report.pdf` on **Edit** (Tools, next to Organize): the page view opens directly and **Save** writes `report (edited).pdf`. Drop two PDFs on Edit: both in one view, **Back** shows the list, **Merge and export** writes `first (merged).pdf`. A 300-page PDF fills in the pages on screen first and scrolls smoothly. Settings > Tools > PDF lists Edit
 - [ ] Drop `report.pdf` on **Organize**: a grid of page thumbnails. Click a page, Shift+click another (range), Ctrl+click toggles; drag the selection elsewhere; **R** / **Shift+R** rotate; **Ctrl+D** duplicates; **Delete** removes; **Ctrl+Z** undoes; arrows move the focus, Ctrl/Alt+arrows move the pages. **Save** writes `report (organized).pdf` exactly as shown; bookmarks to pages that are kept still work. Cancel after changes asks first
@@ -432,6 +438,7 @@ Add a Background
 - [ ] Drop the PNG with transparency on **Background**: gradient by default with a soft shadow and rounded corners
 - [ ] Solid (pick a custom colour), Gradient (From, To, Direction), Blur (the photo's own blurred copy behind it), Picture (choose any picture; its blur slider)
 - [ ] Shape Auto, 1:1, 4:5, 4:3, 3:2, 16:9, 9:16: the canvas takes the shape with the picture centred; Spacing, Rounded corners and Shadow change live; the panel shows the output size
+- [ ] Shape **Fit to picture** (after 9:16): the canvas is exactly the picture's size, no margin; Spacing and Shadow leave the panel; raise Rounded corners and the background shows only in the corners. Save: the output has the photo's own pixel size
 - [ ] Save: `logo (background).png`; a JPEG source gives a JPEG with its EXIF
 
 Create a Collage
@@ -678,6 +685,8 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] All four settings survive a restart (`[Appearance] Theme`, `[FileActions] Terminal` / `TerminalCommand`, `[Output] Naming` in settings.ini)
 - [ ] Select 12 photos, **File actions › Rename**: a window lists them in Explorer's order; `Holiday {n:000}` previews `Holiday 001.jpg` … `Holiday 012.jpg`; `{date} {name}` puts each file's modified date first; Find `IMG_` Replace `trip-` changes only names that have it
 - [ ] A pattern without `{n}` (two files would get the same name): those rows turn red, the status says why and **Rename** is greyed out; a name with `?` or ending in a dot is refused the same way; a name already taken in the folder is refused
+- [ ] Rename shows **Change: Name / Name and extension**, Name picked. Pick **Name and extension**: the pattern becomes `{name}.{ext}` and the list still shows today's names; type `{name}.png` for a `.jpg`: the note says "the extension changes from .jpg to .png", the status starts with "Careful:", and **Rename** still works. Back to **Name**: `.{ext}` leaves the pattern and the extensions are kept whatever you type
+- [ ] **Name and extension** with Find `.jpeg` Replace `.jpg`: `photo.jpeg` becomes `photo.jpg`; a folder in the selection keeps its name without a stray dot
 - [ ] **Rename**: the top panel says "Renamed 12 items"; tray › **History** › the run › **Undo**: every file has its old name back. Renaming `a.txt` to `A.txt` works
 - [ ] Narrator on: Shift+drag a photo: Narrator says "Convert wheel, 8 actions"; moving over slices reads each one ("PNG, lossless", "TIFF, not available: …"); scrolling to another section says its name; Shift+1–4 the same
 - [ ] Narrator: dropping says what the top panel shows ("Converting 1 file to PNG…"), then its result line and the line under it; a failure is read too. With Accessibility Insights, the wheel shows as a list of list items with the highlighted one selected
@@ -685,8 +694,12 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 
 ### Z. Install, upgrade, uninstall
 1. Run the setup. SmartScreen may warn (unsigned): **More info**, **Run anyway**. No UAC prompt appears.
+   The first page says "Setup will install ShiftDrop <version> on this PC. It runs offline and needs no
+   account. Works on Windows 10 and 11." with this build's version.
 2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
-   sign in to Windows". Finish with "Launch ShiftDrop" ticked: the tray icon appears.
+   sign in to Windows". The last page says "Drag any file and press Shift to open the wheel. ShiftDrop
+   lives in the tray." with "Start ShiftDrop" ticked; Finish: the tray icon appears. Untick it on another
+   install: Finish starts nothing.
 3. Start menu has ShiftDrop. Settings > Apps lists ShiftDrop with its version.
 4. Run the same setup again while ShiftDrop is running: no "close the app" error; the old copy exits
    and the new one starts. The startup checkbox is not shown (your tray-menu choice is kept).

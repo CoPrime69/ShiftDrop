@@ -1,7 +1,8 @@
 // Merge PDFs (and Edit PDF with several files): the dropped PDFs in Explorer's order, top to
 // bottom; drag (or Alt+Up/Down) to change the order, Delete to leave one out, Enter to merge.
 // More... shows every page in the page view (OrganizeWindow.h), whose Back comes back here with the
-// page edits kept. Installs itself into pdf::Editors().
+// page edits kept, and with the PDFs its Add files... brought in at the end of the list. Installs
+// itself into pdf::Editors().
 #include "FormatText.h"
 #include "Log.h"
 #include "PathUtil.h"
@@ -55,11 +56,7 @@ namespace sd::pdf
             MergeWindow(const std::vector<std::wstring>& files, bool edit, Done done) : m_files(files), m_edit(edit), m_done(std::move(done))
             {
                 for (uint32_t i = 0; i < files.size(); ++i)
-                {
-                    std::error_code ec;
-                    const auto size = std::filesystem::file_size(files[i], ec);
-                    m_items.push_back(Item{ i, files[i], ec ? 0 : size });
-                }
+                    m_items.push_back(MakeItem(i, files[i]));
                 m_planOrder = Order();
                 // In ButtonId order.
                 m_buttons.push_back(Button{ L"More…", 0, false, true, {}, [this] { More(); } });
@@ -72,7 +69,7 @@ namespace sd::pdf
             {
                 if (!Create(Title(), 560, 460, 380, 300, !pages))
                     return false;
-                StartCounting();
+                StartCounting(m_items);
                 if (pages && !More())
                     Present();
                 return true;
@@ -92,24 +89,28 @@ namespace sd::pdf
                 return order;
             }
 
-            void StartCounting()
+            static Item MakeItem(uint32_t file, const std::wstring& path)
+            {
+                std::error_code ec;
+                const auto size = std::filesystem::file_size(path, ec);
+                return Item{ file, path, ec ? 0 : size };
+            }
+
+            void StartCounting(const std::vector<Item>& items)
             {
                 // Page counts read on a worker (QPDF opens each file); posted back one by one.
-                std::vector<std::wstring> paths;
-                for (const auto& i : m_items)
-                    paths.push_back(i.path);
-                std::thread([hwnd = Hwnd(), paths, stop = m_stop] {
-                    for (uint32_t f = 0; f < paths.size(); ++f)
+                std::thread([hwnd = Hwnd(), items, stop = m_stop] {
+                    for (const auto& item : items)
                     {
                         if (stop->load())
                             return;
                         std::vector<uint32_t> counts;
                         std::wstring error;
                         auto counted = std::make_unique<Counted>();
-                        counted->file = f;
+                        counted->file = item.file;
                         try
                         {
-                            if (CountPages({ paths[f] }, counts, error) && !counts.empty())
+                            if (CountPages({ item.path }, counts, error) && !counts.empty())
                                 counted->pages = counts.front();
                         }
                         catch (...)
@@ -157,25 +158,20 @@ namespace sd::pdf
                 request.editFolder = m_editFolder;
                 // The list stays (hidden) while the pages are up; it goes only with them.
                 const HWND hwnd = Hwnd();
-                request.save = [this, hwnd](PagePlan plan, std::wstring folder) {
+                request.save = [this, hwnd](PageViewResult result) {
                     if (!IsWindow(hwnd))
                         return;
-                    m_plan = std::move(plan);
-                    m_hasPlan = true;
-                    m_editFolder = std::move(folder);
+                    TakePages(std::move(result));
                     if (!Finish())   // deletes this when it goes ahead
                     {
                         ShowWindow(hwnd, SW_SHOWNORMAL);
                         Invalidate();
                     }
                 };
-                request.back = [this, hwnd](PagePlan plan, std::wstring folder) {
+                request.back = [this, hwnd](PageViewResult result) {
                     if (!IsWindow(hwnd))
                         return;
-                    m_plan = std::move(plan);
-                    m_hasPlan = true;
-                    m_planOrder = Order();
-                    m_editFolder = std::move(folder);
+                    TakePages(std::move(result));
                     m_notice.clear();
                     Present();
                     Invalidate();
@@ -194,6 +190,27 @@ namespace sd::pdf
                 }
                 ShowWindow(hwnd, SW_HIDE);
                 return true;
+            }
+
+            // The page view's plan and edits, and the files its Add files... brought in: they join
+            // the list at the end, in the order they were added (as the page view shows them).
+            void TakePages(PageViewResult result)
+            {
+                m_plan = std::move(result.plan);
+                m_hasPlan = true;
+                m_editFolder = std::move(result.editFolder);
+                const size_t known = m_files.size();
+                if (result.files.size() > known)
+                {
+                    m_files = std::move(result.files);
+                    std::vector<Item> added;
+                    for (const auto f : result.order)
+                        if (f >= known && f < m_files.size())
+                            added.push_back(MakeItem(f, m_files[f]));
+                    m_items.insert(m_items.end(), added.begin(), added.end());
+                    StartCounting(added);
+                }
+                m_planOrder = Order();
             }
 
             // ---- The list -----------------------------------------------------------------------
@@ -511,7 +528,13 @@ namespace sd::pdf
                 PageViewRequest request;
                 request.kind = PageViewKind::Edit;
                 request.files = files;
-                request.save = [files, done = std::move(done)](PagePlan plan, std::wstring) { done(files, std::move(plan)); };
+                // Files added there come after it, in the page view's order.
+                request.save = [done = std::move(done)](PageViewResult result) {
+                    std::vector<std::wstring> ordered;
+                    for (const auto f : result.order)
+                        ordered.push_back(result.files[f]);
+                    done(std::move(ordered), InListOrder(result.plan, result.order));
+                };
                 if (!OpenPageView(std::move(request)))
                     log::Warn(L"edit: the window could not open");
                 return;

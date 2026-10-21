@@ -658,6 +658,47 @@ TEST(Photo, BackgroundToolGrowsTheCanvas)
     EXPECT_EQ(tool.Params().value("aspect", std::string()), "1:1");
 }
 
+TEST(Photo, BackgroundFitToPicture)
+{
+    // The canvas is the picture: no margin, so no spacing and no shadow; the corners still round.
+    BackgroundParams p;
+    p.aspect = kFitToPicture;
+    p.padding = 20;
+    p.shadow = 100;
+    const auto l = LayoutBackground(1000, 500, p);
+    EXPECT_EQ(l.width, 1000);
+    EXPECT_EQ(l.height, 500);
+    EXPECT_EQ(l.picture, (RectI{ 0, 0, 1000, 500 }));
+    EXPECT_DOUBLE_EQ(l.shadowSigma, 0);
+    EXPECT_DOUBLE_EQ(l.radius, 500 * 0.25 * 0.12);
+    EXPECT_EQ(ParseBackground(ToJson(p)).aspect, kFitToPicture);   // kept in recipes
+    EXPECT_EQ(ParseBackground({ { "aspect", "nonsense" } }).aspect, "auto");
+
+    // In the tool it comes after the shapes, and the sliders it makes pointless go.
+    BackgroundTool tool({ L"C:\\a.png" }, { { "padding", 10 }, { "aspect", "auto" } });
+    tool.SetPicture(0, std::make_shared<Raster>(Solid(400, 200, 1, 2, 3)));
+    std::vector<canvas::Control> before;
+    tool.BuildPanel(before);
+    EXPECT_TRUE(std::any_of(before.begin(), before.end(), [](const canvas::Control& c) { return c.id == "padding"; }));
+    const int fit = static_cast<int>(AspectChoices().size());
+    tool.OnControl(canvas::ControlEvent{ "aspect", fit });
+    EXPECT_DOUBLE_EQ(tool.Size().w, 400);
+    EXPECT_DOUBLE_EQ(tool.Size().h, 200);
+    EXPECT_EQ(tool.Params().value("aspect", std::string()), kFitToPicture);
+    std::vector<canvas::Control> controls;
+    tool.BuildPanel(controls);
+    const auto aspect = std::find_if(controls.begin(), controls.end(), [](const canvas::Control& c) { return c.id == "aspect"; });
+    ASSERT_NE(aspect, controls.end());
+    EXPECT_EQ(aspect->selected, fit);
+    EXPECT_EQ(aspect->options.back(), L"Fit to picture");
+    const auto has = [&](const char* id) { return std::any_of(controls.begin(), controls.end(), [&](const canvas::Control& c) { return c.id == id; }); };
+    EXPECT_FALSE(has("padding"));
+    EXPECT_FALSE(has("shadow"));
+    EXPECT_TRUE(has("radius"));
+    tool.OnControl(canvas::ControlEvent{ "aspect", 0 });   // back to Auto: the margin returns
+    EXPECT_DOUBLE_EQ(tool.Size().w, 480);
+}
+
 TEST(Photo, CollageToolSwapsByDragging)
 {
     CollageTool tool({ L"C:\\a.png", L"C:\\b.png", L"C:\\c.png", L"C:\\d.png" }, {});

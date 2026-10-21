@@ -255,14 +255,7 @@ namespace sd::inspect
                     Fill();
             }
 
-            std::wstring Query() const
-            {
-                const int n = GetWindowTextLengthW(m_search);
-                std::wstring text(static_cast<size_t>(n) + 1, L'\0');
-                GetWindowTextW(m_search, text.data(), n + 1);
-                text.resize(static_cast<size_t>(n));
-                return text;
-            }
+            std::wstring Query() const { return Text(m_search); }
 
             // Rebuilds the list for the current tab and search text.
             void Fill()

@@ -18,6 +18,11 @@ namespace sd
     // `verb` names what happens there ("Move 2 items to", "Move here"; "Save" for dropped files).
     bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder, std::wstring_view verb = L"Move");
 
+    // The Open dialog for one or more existing files of one kind: `typeName` ("PDF files") with its
+    // `patterns` ("*.pdf"). UI thread, modal over `owner`. False when the user cancels.
+    bool PickFiles(HWND owner, std::wstring_view title, std::wstring_view typeName, std::wstring_view patterns,
+                   std::vector<std::wstring>& files);
+
     struct MoveOutcome
     {
         std::wstring source;

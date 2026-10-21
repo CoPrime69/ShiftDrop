@@ -80,7 +80,7 @@ folder:
 | `PipelineRunner`, `ImagePipeline`, `ImageHooks.h` | Running a recipe on a file; the fused image pipeline |
 | `Media`, `Ffmpeg` | Video and audio formats and their ffmpeg arguments; the ffmpeg child process |
 | `StagedOutput`, `OutputPath` | Staging, naming and the no-replace commit |
-| `HistoryStore`, `Hash`, `Undo`, `HistoryWindow` | SQLite history, SHA-256, undo, the History window |
+| `HistoryStore`, `HistoryView`, `Hash`, `Undo`, `HistoryWindow` | SQLite history, what the History window shows, SHA-256, undo, the History window |
 | `JobQueue` | The worker threads |
 | `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to folder |
 | `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
@@ -454,7 +454,12 @@ can read the file. If the database can't be opened, conversions still work, with
 - **Rename** gives each item its old name back, refused if another file has that name now.
 - Outputs the user already deleted are skipped and reported.
 
-The History window (tray menu > History…) lists runs newest first, with Undo and Show files.
+The History window (tray menu > History…) lists runs newest first, with Undo and Show files. A
+search box (file names and actions) and the Action and When filters narrow the list as you type
+([HistoryView.h](../src/HistoryView.h), pure and unit-tested); undone runs show grey and failed ones
+red. Clear history, after a TaskDialog, deletes the finished runs' rows and nothing else: every file
+stays, and a cleared run can no longer be undone. Runs still going keep their rows, which crash
+recovery needs.
 
 ## Settings, data and logs
 

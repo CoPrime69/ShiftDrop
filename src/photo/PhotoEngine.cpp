@@ -94,11 +94,13 @@ namespace sd::photo
             return specs;
         }
 
-        std::vector<std::string> AspectIds()
+        std::vector<std::string> AspectIds(bool fitToPicture = false)
         {
             std::vector<std::string> ids;
             for (const auto& c : AspectChoices())
                 ids.push_back(c.id);
+            if (fitToPicture)
+                ids.push_back(kFitToPicture);   // the Background tool's own
             return ids;
         }
     }
@@ -213,7 +215,7 @@ namespace sd::photo
                 ParamSpec{ "color2", ParamType::Int, 0, 0xFFFFFF, {}, 0xF08A5D },
                 ParamSpec{ "angle", ParamType::Number, 0, 360, {}, 135 },
                 ParamSpec{ "blur", ParamType::Number, 0, 100, {}, 40 },
-                ParamSpec{ "aspect", ParamType::Enum, 0, 0, AspectIds(), "auto" },
+                ParamSpec{ "aspect", ParamType::Enum, 0, 0, AspectIds(true), "auto" },
                 ParamSpec{ "padding", ParamType::Number, 0, 40, {}, 8 },
                 ParamSpec{ "radius", ParamType::Number, 0, 100, {}, 12 },
                 ParamSpec{ "shadow", ParamType::Number, 0, 100, {}, 50 },

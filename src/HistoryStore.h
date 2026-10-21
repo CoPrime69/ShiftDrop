@@ -47,6 +47,7 @@ namespace sd
         std::string status;
         int items = 0;
         int done = 0;
+        std::vector<std::wstring> files;   // the sources' names (no folder), for History's search
     };
 
     // Run history in SQLite (%LOCALAPPDATA%\ShiftDrop\history.db). Thread-safe: workers record item
@@ -71,6 +72,12 @@ namespace sd
         std::vector<ItemRecord> Items(int64_t runId);
         void SetItemStatus(int64_t itemId, const char* itemStatus);
         void SetRunStatus(int64_t runId, const char* runStatus);
+
+        // History's Clear history: every finished run and its items leave the list (and the file).
+        // Only the records go: no file is touched, and outputs that exist stay. A cleared run can no
+        // longer be undone from History. Runs still going keep their rows, as a crash mid-run needs
+        // them to remove its staging files at the next start. Returns how many runs went.
+        int Clear();
 
         // Items still "running" from a previous session: marks them (and their runs) interrupted and
         // returns them so the caller can delete leftover staging files.
