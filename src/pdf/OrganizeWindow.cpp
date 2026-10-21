@@ -10,7 +10,7 @@
 #include "UiThread.h"
 #include "Utf.h"
 #include "canvas/Editor.h"
-#include "pdf/EditorWindow.h"
+#include "EditorFrame.h"
 #include "pdf/OrganizeWindow.h"
 #include "pdf/PageEdits.h"
 #include "pdf/PageRenderer.h"
@@ -340,7 +340,7 @@ namespace sd::pdf
 
         // ---- The window ---------------------------------------------------------------------------
 
-        class PageView final : public EditorWindow
+        class PageView final : public EditorFrame
         {
         public:
             explicit PageView(PageViewRequest request) : m_request(std::move(request))
@@ -840,7 +840,7 @@ namespace sd::pdf
                 const auto& ref = m_plan[i];
                 const bool selected = i < m_selected.size() && m_selected[i];
                 if (selected)
-                    if (auto* b = Brush(m_drag.dragging ? theme::WithAlpha(c.selection, 0.5f) : c.selection))
+                    if (auto* b = Brush(m_drag.dragging ? theme::WithAlpha(c.accentSoft, 0.5f) : c.accentSoft))
                         rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(cell.left + 4.f, cell.top + 4.f, cell.right - 4.f, cell.bottom - 4.f), 6.f, 6.f), b);
                 if (i == m_focus && m_showFocus)
                     if (auto* b = Brush(c.textDim))
@@ -855,7 +855,7 @@ namespace sd::pdf
                     if (auto* b = Brush(c.accent))
                         rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(page.right - 2.f, page.top + 2.f), 10.f, 10.f), b);
                     const wchar_t pencil[2] = { 0xE70F, 0 };
-                    DrawText(pencil, IconFormat(11.f), D2D1::RectF(page.right - 12.f, page.top - 8.f, page.right + 8.f, page.top + 12.f), c.textOnAccent);
+                    DrawText(pencil, IconFormat(11.f), D2D1::RectF(page.right - 12.f, page.top - 8.f, page.right + 8.f, page.top + 12.f), c.onAccent);
                 }
 
                 std::wstring from = std::format(L"page {}", ref.page + 1);
@@ -891,21 +891,10 @@ namespace sd::pdf
                 DrawText(from, TextFormat(12.f), D2D1::RectF(tag.right + 6.f, lineTop, cell.right - 6.f, lineBottom), c.textDim);
             }
 
-            float TextWidth(std::wstring_view text, float size)
-            {
-                Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-                auto* format = TextFormat(size);
-                if (!format || !DWrite() || FAILED(DWrite()->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), format, 1000.f, 40.f, &layout)))
-                    return 0;
-                DWRITE_TEXT_METRICS m{};
-                layout->GetMetrics(&m);
-                return m.widthIncludingTrailingWhitespace;
-            }
-
             void PaintGrid(ID2D1RenderTarget* rt)
             {
                 const auto& c = Theme();
-                if (auto* b = Brush(c.surface))
+                if (auto* b = Brush(c.panel))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(m_grid, 6.f, 6.f), b);
                 rt->PushAxisAlignedClip(m_grid, D2D1_ANTIALIAS_MODE_ALIASED);
                 // Only the rows on screen are drawn: a 1,000-page plan paints as fast as a short one.
@@ -970,7 +959,7 @@ namespace sd::pdf
             {
                 const auto& c = Theme();
                 const auto& r = m_previewRect;
-                if (auto* b = Brush(c.surface))
+                if (auto* b = Brush(c.panel))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(r, 6.f, 6.f), b);
                 if (m_plan.empty())
                     return;

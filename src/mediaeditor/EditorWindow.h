@@ -1,4 +1,5 @@
 #pragma once
+#include "EditorFrame.h"
 #include "mediaeditor/EditorApi.h"
 #include "mediaeditor/EditorLayout.h"
 #include "mediaeditor/EditorUi.h"
@@ -11,7 +12,6 @@
 #include <windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
-#include <wil/resource.h>
 #include <wrl/client.h>
 
 #include <map>
@@ -23,17 +23,15 @@
 // A preview (the frame at the playhead, with crop and redaction boxes drawn on it) or a waveform, a
 // zoomable timeline with a filmstrip, range handles and markers, and the tool's options on the right.
 // Everything slow (probing, frames, the waveform, decoding sound) happens on MediaLoader / Playback
-// threads; the window only draws what has arrived.
+// threads; the window only draws what has arrived. On the editors' frame (EditorFrame.h).
 namespace sd::mediatools
 {
-    class EditorWindow
+    class EditorWindow final : public EditorFrame
     {
     public:
         static void Open(HWND owner, EditorRequest request, EditorDone done);
         EditorWindow(EditorRequest request, EditorDone done);   // use Open
-        ~EditorWindow();
-        EditorWindow(const EditorWindow&) = delete;
-        EditorWindow& operator=(const EditorWindow&) = delete;
+        ~EditorWindow() override;
 
     private:
         using Bitmap = Microsoft::WRL::ComPtr<ID2D1Bitmap>;
@@ -100,9 +98,15 @@ namespace sd::mediatools
             int64_t first = 0, last = 0;
         };
 
-        bool Create();
-        static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam);
+        bool Start();   // the window, the loader and the first layout
+
+        // ---- The frame (EditorWindow.cpp) ----
+        bool OnMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result) override;
+        void Layout(D2D1_SIZE_F size) override;
+        void Paint(ID2D1RenderTarget* rt, D2D1_SIZE_F size) override;
+        void OnDpiChanged() override;
+        // Posted, so no handler of this editor is still running when it goes.
+        void RequestClose() override;
 
         // ---- Tool traits ----
         bool Video() const { return IsVideoTool(m_req.tool); }
@@ -129,7 +133,6 @@ namespace sd::mediatools
         void RequestWaveform(int index);
         void Advance(bool skip);
         void Finish();
-        void Close();
 
         // ---- Layout, controls and painting ----
         void Layout();
@@ -142,11 +145,8 @@ namespace sd::mediatools
         std::wstring PrimaryLabel() const;  // EditorTools.cpp
         bool PrimaryEnabled() const;        // EditorTools.cpp
         std::wstring Hint() const;          // keyboard help for the footer (EditorTools.cpp)
-        void Invalidate();
 
-        bool EnsureTarget();
-        void DiscardDevice();
-        void Paint();
+        void DropBitmaps();                 // made on a device that is gone
         void PaintHeader(ui::Painter& p);
         void PaintStage(ui::Painter& p);
         void PaintCropOverlay(ui::Painter& p, const PreviewMap& map);
@@ -163,7 +163,7 @@ namespace sd::mediatools
         void Handles(ui::Painter& p, const RectF& r, bool edges);
 
         // ---- Input (EditorWindow.cpp; tool-specific parts in EditorTools.cpp) ----
-        float Dip(int px) const { return static_cast<float>(px) * 96.f / static_cast<float>(m_dpi); }
+        float Dip(int px) const { return static_cast<float>(px) / Scale(); }
         void OnMouseDown(float x, float y, bool doubleClick);
         void OnMouseMove(float x, float y);
         void OnMouseUp(float x, float y);
@@ -218,15 +218,10 @@ namespace sd::mediatools
         std::vector<FileState> m_files;
         int m_current = 0;
 
-        wil::unique_hwnd m_hwnd;
-        UINT m_dpi = 96;
         float m_w = 0, m_h = 0;   // client size in DIPs
-        Microsoft::WRL::ComPtr<ID2D1Factory> m_d2d;
-        Microsoft::WRL::ComPtr<IDWriteFactory> m_dwrite;
-        Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> m_rt;
+        unsigned m_device = 0;    // the DeviceGeneration the bitmaps were made on
         Microsoft::WRL::ComPtr<ID2D1StrokeStyle> m_dash;
         ui::Painter m_painter;
-        ui::Colors m_colors;
 
         TempFolder m_temp;
         std::unique_ptr<MediaLoader> m_loader;

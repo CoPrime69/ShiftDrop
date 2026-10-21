@@ -1,6 +1,6 @@
 // The image canvas window: the picture, fit to the window, with zoom and pan; the tool's overlay;
 // a side panel with the tool's options; Apply and Cancel; undo and redo. Drawn with Direct2D in DIPs
-// on the PDF editors' frame (pdf/EditorWindow.h), so every editor has the same look, follows the
+// on the editors' frame (EditorFrame.h), so every editor has the same look, follows the
 // light/dark setting and the accent colour, and is sharp at every DPI.
 //
 // The window only previews. The output is rendered by the tool's engine on a worker, from the
@@ -13,7 +13,7 @@
 #include "UiThread.h"
 #include "Utf.h"
 #include "canvas/Covers.h"
-#include "pdf/EditorWindow.h"
+#include "EditorFrame.h"
 
 #include <commdlg.h>
 #include <d2d1_1.h>
@@ -151,14 +151,13 @@ namespace sd::canvas
             return std::format(L"{:.{}f}", value, std::max(0, decimals));
         }
 
-        class CanvasWindow final : public pdf::EditorWindow, public ICanvasHost
+        class CanvasWindow final : public EditorFrame, public ICanvasHost
         {
         public:
             explicit CanvasWindow(EditorRequest request)
                 : m_files(std::move(request.files)), m_tool(std::move(request.tool)), m_apply(std::move(request.apply)),
                   m_closed(std::move(request.closed)), m_alive(std::make_shared<std::atomic<bool>>(true))
             {
-                DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.GetAddressOf()));
                 m_tool->Attach(this);
             }
 
@@ -660,7 +659,7 @@ namespace sd::canvas
                     return;
                 const std::wstring text = std::format(L"{}{:.0f}%", m_view.IsFit() ? L"Fit · " : L"", m_view.Zoom() * 100);
                 m_zoomChip = D2D1::RectF(canvas.left + 12, canvas.bottom - 40, canvas.left + 12 + (m_view.IsFit() ? 96.f : 64.f), canvas.bottom - 12);
-                if (auto* b = Brush(theme::WithAlpha(Theme().surface, 0.92f)))
+                if (auto* b = Brush(theme::WithAlpha(Theme().panel, 0.92f)))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(m_zoomChip, 6, 6), b);
                 if (auto* b = Brush(Theme().line))
                     rt->DrawRoundedRectangle(D2D1::RoundedRect(m_zoomChip, 6, 6), b);
@@ -677,32 +676,21 @@ namespace sd::canvas
 
             float TextHeight(const std::wstring& text, float width, float sizeDip)
             {
-                if (!m_dwrite)
+                if (!DWrite())
                     return sizeDip * 1.4f;
                 if (!m_wrapped || m_wrappedSize != sizeDip)
                 {
                     m_wrapped.Reset();
-                    m_dwrite->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                    DWrite()->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
                                                sizeDip, L"", &m_wrapped);
                     m_wrappedSize = sizeDip;
                 }
                 ComPtr<IDWriteTextLayout> layout;
-                if (!m_wrapped || FAILED(m_dwrite->CreateTextLayout(text.c_str(), UINT32(text.size()), m_wrapped.Get(), width, 1000.f, &layout)))
+                if (!m_wrapped || FAILED(DWrite()->CreateTextLayout(text.c_str(), UINT32(text.size()), m_wrapped.Get(), width, 1000.f, &layout)))
                     return sizeDip * 1.4f;
                 DWRITE_TEXT_METRICS m{};
                 layout->GetMetrics(&m);
                 return m.height;
-            }
-
-            float TextWidth(const std::wstring& text, float sizeDip)
-            {
-                ComPtr<IDWriteTextLayout> layout;
-                auto* format = TextFormat(sizeDip);
-                if (!m_dwrite || !format || FAILED(m_dwrite->CreateTextLayout(text.c_str(), UINT32(text.size()), format, 2000.f, 100.f, &layout)))
-                    return sizeDip * 0.6f * text.size();
-                DWRITE_TEXT_METRICS m{};
-                layout->GetMetrics(&m);
-                return m.widthIncludingTrailingWhitespace;
             }
 
             void LayoutPanel(const D2D1_RECT_F& panel)
@@ -796,7 +784,7 @@ namespace sd::canvas
             {
                 const auto& c = Theme();
                 const auto panel = PanelRect(size);
-                if (auto* b = Brush(c.surface))
+                if (auto* b = Brush(c.panel))
                     rt->FillRectangle(panel, b);
                 if (auto* b = Brush(c.line))
                     rt->DrawLine(D2D1::Point2F(panel.left + 0.5f, 0), D2D1::Point2F(panel.left + 0.5f, size.height), b);
@@ -891,7 +879,7 @@ namespace sd::canvas
                     }
                     else
                         box(item.rect, false, hot);
-                    const auto fore = c.primary ? theme::WithAlpha(t.textOnAccent, alpha) : ink;
+                    const auto fore = c.primary ? theme::WithAlpha(t.onAccent, alpha) : ink;
                     const float tw = TextWidth(c.label, 13.f) + (c.icon ? 22.f : 0.f);
                     const float x = (item.rect.left + item.rect.right - tw) / 2;
                     if (c.icon)
@@ -915,7 +903,7 @@ namespace sd::canvas
                     else if (auto* b = Brush(dim))
                         rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(track.left + 0.5f, track.top + 0.5f, track.right - 0.5f, track.bottom - 0.5f), 10, 10), b);
                     const float knob = c.on ? track.right - 10 : track.left + 10;
-                    if (auto* b = Brush(c.on ? t.textOnAccent : dim))
+                    if (auto* b = Brush(c.on ? t.onAccent : dim))
                         rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(knob, cy), hot ? 7.f : 6.f, hot ? 7.f : 6.f), b);
                     break;
                 }
@@ -926,7 +914,7 @@ namespace sd::canvas
                         const bool over = c.enabled && m_hotControl == c.id && m_hotPart == static_cast<int>(i);
                         box(item.parts[i], selected, over);
                         DrawText(c.options[i], TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), item.parts[i],
-                                 selected ? t.textOnAccent : ink);
+                                 selected ? t.onAccent : ink);
                     }
                     break;
                 case ControlKind::Number:
@@ -985,7 +973,7 @@ namespace sd::canvas
                         {
                             // The colour picker chip: a small "+" badge.
                             const auto badge = D2D1::Point2F(r.right - 4, r.bottom - 4);
-                            if (auto* b = Brush(t.surface))
+                            if (auto* b = Brush(t.panel))
                                 rt->FillEllipse(D2D1::Ellipse(badge, 6.f, 6.f), b);
                             DrawText(L"+", TextFormat(11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
                                      D2D1::RectF(badge.x - 6, badge.y - 7, badge.x + 6, badge.y + 6), t.text);
@@ -1623,7 +1611,7 @@ namespace sd::canvas
                     const auto& t = w.Theme();
                     m_colors.dark = t.dark;
                     m_colors.accent = FromD2(t.accent);
-                    m_colors.onAccent = FromD2(t.textOnAccent);
+                    m_colors.onAccent = FromD2(t.onAccent);
                     m_colors.text = FromD2(t.text);
                     m_colors.textDim = FromD2(t.textDim);
                     m_colors.shade = Color{ 0, 0, 0, t.dark ? 0.6f : 0.5f };
@@ -1731,7 +1719,6 @@ namespace sd::canvas
             std::function<void()> m_closed;   // still set when the window closes without applying
             std::shared_ptr<std::atomic<bool>> m_alive;
             std::stop_source m_stop;
-            ComPtr<IDWriteFactory> m_dwrite;
             ComPtr<IDWriteTextFormat> m_wrapped;
             float m_wrappedSize = 0;
 

@@ -3,11 +3,8 @@
 #include "Log.h"
 #include "PathUtil.h"
 #include "Utf.h"
-#include "resource.h"
 #include "videotools/VideoTools.h"
 
-#include <dwmapi.h>
-#include <shellscalingapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -18,11 +15,10 @@ using Microsoft::WRL::ComPtr;
 
 namespace sd::mediatools
 {
-    using ui::Alpha;
+    using theme::WithAlpha;
 
     namespace
     {
-        constexpr wchar_t kClass[] = L"ShiftDropMediaEditor";
         constexpr UINT kLoadedMsg = WM_APP + 41;
         constexpr UINT kCloseMsg = WM_APP + 42;   // closing is posted, so no handler runs on a deleted editor
         constexpr UINT_PTR kTimerThumbs = 2, kTimerPlay = 3;
@@ -33,12 +29,6 @@ namespace sd::mediatools
 
         // Control ids shared by every tool (tool controls use 100 and up).
         enum : int { kIdPlay = 1, kIdTime, kIdBack, kIdForward, kIdZoomOut, kIdZoomIn, kIdFit, kIdSkip, kIdCancel, kIdPrimary, kIdTools = 50 };
-
-        std::vector<std::unique_ptr<EditorWindow>>& OpenWindows()
-        {
-            static std::vector<std::unique_ptr<EditorWindow>> windows;
-            return windows;
-        }
 
         void OpenEditorWindow(HWND owner, EditorRequest request, EditorDone done) { EditorWindow::Open(owner, std::move(request), std::move(done)); }
 
@@ -52,15 +42,16 @@ namespace sd::mediatools
     {
         (void)kRegistered;
         auto window = std::make_unique<EditorWindow>(std::move(request), std::move(done));
-        if (!window->Create())
+        if (!window->Start())
         {
             log::Error(L"media editor: could not open the window for '{}'", window->m_req.title);
             return;
         }
-        OpenWindows().push_back(std::move(window));
+        window.release();   // owns itself now: deleted when its window goes
     }
 
-    EditorWindow::EditorWindow(EditorRequest request, EditorDone done) : m_req(std::move(request)), m_done(std::move(done))
+    // An opaque target: text in ClearType like the rest of Windows, and frames shown without alpha.
+    EditorWindow::EditorWindow(EditorRequest request, EditorDone done) : EditorFrame(true), m_req(std::move(request)), m_done(std::move(done))
     {
         m_startTool = m_req.tool;
         for (const auto& path : m_req.files)
@@ -103,64 +94,30 @@ namespace sd::mediatools
         m_loader.reset();
     }
 
-    bool EditorWindow::Create()
+    bool EditorWindow::Start()
     {
-        const HINSTANCE instance = GetModuleHandleW(nullptr);
-        static const bool registered = [instance] {
-            WNDCLASSEXW wc{ sizeof(wc) };
-            wc.style = CS_DBLCLKS;
-            wc.lpfnWndProc = WndProc;
-            wc.hInstance = instance;
-            wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-            wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APPICON));
-            wc.lpszClassName = kClass;
-            return RegisterClassExW(&wc) != 0;
-        }();
-        if (!registered)
-            return false;
-        if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_d2d.ReleaseAndGetAddressOf())) ||
-            FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(m_dwrite.ReleaseAndGetAddressOf()))) ||
-            !m_painter.Init(m_dwrite.Get()))
+        if (!m_painter.Init(DWrite(), [this](float size, DWRITE_FONT_WEIGHT weight, bool icon) { return icon ? IconFormat(size) : TextFormat(size, weight); }))
             return false;
         const float dashes[] = { 4.f, 3.f };
-        m_d2d->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_LINE_JOIN_MITER, 10.f,
-                                                             D2D1_DASH_STYLE_CUSTOM, 0.f),
-                                 dashes, 2, &m_dash);
-        m_colors = ui::CurrentColors();
+        Factory()->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_LINE_JOIN_MITER, 10.f,
+                                                                 D2D1_DASH_STYLE_CUSTOM, 0.f),
+                                     dashes, 2, &m_dash);
 
-        // On the monitor under the cursor (where the files were dropped), centred, sized for the tool.
-        POINT cursor{};
-        GetCursorPos(&cursor);
-        const HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi{ sizeof(mi) };
-        GetMonitorInfoW(monitor, &mi);
-        UINT dpiX = 96, dpiY = 96;
-        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-        const float scale = static_cast<float>(dpiX) / 96.f;
-        const RECT work = mi.rcWork;
+        // Sized for the tool, within 94% x 92% of the work area of the monitor it opens on.
+        const auto monitor = CursorMonitor();
+        const float scale = static_cast<float>(monitor.dpi) / 96.f;
         float wantW = Video() ? 1200.f : 1080.f, wantH = Video() ? 780.f : 660.f;
         if (m_req.tool == EditorTool::JoinVideos)
             wantW = 960, wantH = 640;
         if (m_req.tool == EditorTool::AudioVisualizer)
             wantW = 1040, wantH = 660;
-        const int cw = std::min(static_cast<int>(wantW * scale), static_cast<int>((work.right - work.left) * 0.94));
-        const int ch = std::min(static_cast<int>(wantH * scale), static_cast<int>((work.bottom - work.top) * 0.92));
-        RECT r{ 0, 0, cw, ch };
-        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW, dpiX);
-        const int ww = r.right - r.left, wh = r.bottom - r.top;
-        const int x = work.left + (work.right - work.left - ww) / 2, y = work.top + (work.bottom - work.top - wh) / 2;
-        const std::wstring title = m_req.title + L" \u2013 " SD_NAME;
-        // WM_NCCREATE stores the handle in m_hwnd (messages arrive before CreateWindowEx returns).
-        if (!CreateWindowExW(WS_EX_APPWINDOW, kClass, title.c_str(), WS_OVERLAPPEDWINDOW, x, y, ww, wh, nullptr, nullptr, instance, this) || !m_hwnd)
+        const auto& work = monitor.work;
+        const int w = static_cast<int>(std::min(wantW, static_cast<float>(work.right - work.left) * 0.94f / scale));
+        const int h = static_cast<int>(std::min(wantH, static_cast<float>(work.bottom - work.top) * 0.92f / scale));
+        if (!Create(m_req.title + L" \u2013 " SD_NAME, w, h, 820, 540, false))
             return false;
-        m_dpi = GetDpiForWindow(m_hwnd.get());
-        // Title bar in the app's theme (Windows 11 also takes the caption colour).
-        const BOOL dark = m_colors.dark;
-        DwmSetWindowAttribute(m_hwnd.get(), 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-        const COLORREF caption = RGB(static_cast<int>(m_colors.window.r * 255), static_cast<int>(m_colors.window.g * 255), static_cast<int>(m_colors.window.b * 255));
-        DwmSetWindowAttribute(m_hwnd.get(), 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
 
-        m_loader = std::make_unique<MediaLoader>(m_req.ffmpeg, &m_temp, m_hwnd.get(), kLoadedMsg);
+        m_loader = std::make_unique<MediaLoader>(m_req.ffmpeg, &m_temp, Hwnd(), kLoadedMsg);
         if (HasTimeline())
             m_playback = std::make_unique<Playback>(m_req.ffmpeg, &m_temp);
         // Probe the first file first: it is the one shown.
@@ -168,120 +125,61 @@ namespace sd::mediatools
             if (!m_files[static_cast<size_t>(i)].path.empty())
                 m_loader->Probe(i, m_files[static_cast<size_t>(i)].path);
 
-        RECT client{};
-        GetClientRect(m_hwnd.get(), &client);
-        m_w = Dip(client.right);
-        m_h = Dip(client.bottom);
-        Layout();
-        Rebuild();
-        ShowWindow(m_hwnd.get(), SW_SHOWNORMAL);
-        SetForegroundWindow(m_hwnd.get());
+        Layout(ClientDip());
+        Present();
         log::Info(L"media editor: {} with {} file(s)", m_req.title, m_req.files.size());
         return true;
     }
 
-    void EditorWindow::Close()
+    void EditorWindow::RequestClose()
     {
-        if (m_hwnd)
-            PostMessageW(m_hwnd.get(), kCloseMsg, 0, 0);
+        if (Hwnd())
+            PostMessageW(Hwnd(), kCloseMsg, 0, 0);
     }
 
-    LRESULT CALLBACK EditorWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    void EditorWindow::Layout(D2D1_SIZE_F size)
     {
-        if (msg == WM_NCCREATE)
-        {
-            auto* self = static_cast<EditorWindow*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-            self->m_hwnd.reset(hwnd);
-        }
-        auto* self = reinterpret_cast<EditorWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (!self)
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        if (msg == WM_NCDESTROY)
-        {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            self->m_hwnd.release();
-            auto& windows = OpenWindows();
-            // Deletes the editor; nothing of it is touched after this.
-            std::erase_if(windows, [self](const auto& w) { return w.get() == self; });
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
-        return self->Handle(msg, wParam, lParam);
+        m_w = size.width;
+        m_h = size.height;
+        Layout();
+        Rebuild();
     }
 
-    LRESULT EditorWindow::Handle(UINT msg, WPARAM wParam, LPARAM lParam)
+    void EditorWindow::OnDpiChanged()
     {
-        const HWND hwnd = m_hwnd.get();
+        m_thumbs.clear();   // thumbnails were sized for the old DPI
+        if (Cur().ready)
+            FileReady();
+    }
+
+    bool EditorWindow::OnMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result)
+    {
+        const HWND hwnd = Hwnd();
+        result = 0;
         switch (msg)
         {
-        case WM_PAINT:
-            Paint();
-            ValidateRect(hwnd, nullptr);
-            return 0;
-        case WM_ERASEBKGND:
-            return 1;
-        case WM_SIZE:
-            if (m_rt)
-                m_rt->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
-            m_w = Dip(LOWORD(lParam));
-            m_h = Dip(HIWORD(lParam));
-            Layout();
-            Rebuild();
-            Invalidate();
-            return 0;
-        case WM_DPICHANGED:
-        {
-            m_dpi = HIWORD(wParam);
-            if (m_rt)
-                m_rt->SetDpi(static_cast<float>(m_dpi), static_cast<float>(m_dpi));
-            const auto* suggested = reinterpret_cast<const RECT*>(lParam);
-            SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left, suggested->bottom - suggested->top,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
-            m_thumbs.clear();   // thumbnails were sized for the old DPI
-            if (Cur().ready)
-                FileReady();
-            return 0;
-        }
-        case WM_GETMINMAXINFO:
-        {
-            auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
-            mmi->ptMinTrackSize = { MulDiv(820, static_cast<int>(m_dpi), 96), MulDiv(540, static_cast<int>(m_dpi), 96) };
-            return 0;
-        }
-        case WM_SETTINGCHANGE:
-        case WM_THEMECHANGED:
-        case WM_DWMCOLORIZATIONCOLORCHANGED:
-        {
-            m_colors = ui::CurrentColors();
-            const BOOL dark = m_colors.dark;
-            DwmSetWindowAttribute(hwnd, 20, &dark, sizeof(dark));
-            const COLORREF caption = RGB(static_cast<int>(m_colors.window.r * 255), static_cast<int>(m_colors.window.g * 255), static_cast<int>(m_colors.window.b * 255));
-            DwmSetWindowAttribute(hwnd, 35, &caption, sizeof(caption));
-            Invalidate();
-            break;
-        }
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK:
             SetFocus(hwnd);
             SetCapture(hwnd);
             OnMouseDown(Dip(GET_X_LPARAM(lParam)), Dip(GET_Y_LPARAM(lParam)), msg == WM_LBUTTONDBLCLK);
-            return 0;
+            return true;
         case WM_MOUSEMOVE:
         {
             TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, hwnd, 0 };
             TrackMouseEvent(&tme);
             OnMouseMove(Dip(GET_X_LPARAM(lParam)), Dip(GET_Y_LPARAM(lParam)));
-            return 0;
+            return true;
         }
         case WM_LBUTTONUP:
             OnMouseUp(Dip(GET_X_LPARAM(lParam)), Dip(GET_Y_LPARAM(lParam)));
             if (GetCapture() == hwnd)
                 ReleaseCapture();
-            return 0;
+            return true;
         case WM_CAPTURECHANGED:
             if (m_drag != Drag::None && reinterpret_cast<HWND>(lParam) != hwnd)
                 EndDrag();
-            return 0;
+            return true;
         case WM_MOUSELEAVE:
             if (m_hover || m_hoverX >= 0)
             {
@@ -289,14 +187,14 @@ namespace sd::mediatools
                 m_hoverX = -1;
                 Invalidate();
             }
-            return 0;
+            return true;
         case WM_MOUSEWHEEL:
         case WM_MOUSEHWHEEL:
         {
             POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ScreenToClient(hwnd, &pt);
             OnWheel(Dip(pt.x), Dip(pt.y), GET_WHEEL_DELTA_WPARAM(wParam), msg == WM_MOUSEHWHEEL);
-            return 0;
+            return true;
         }
         case WM_SETCURSOR:
             if (LOWORD(lParam) == HTCLIENT)
@@ -305,17 +203,18 @@ namespace sd::mediatools
                 GetCursorPos(&pt);
                 ScreenToClient(hwnd, &pt);
                 SetCursor(LoadCursorW(nullptr, CursorAt(Dip(pt.x), Dip(pt.y))));
-                return TRUE;
+                result = TRUE;
+                return true;
             }
             break;
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             if (OnKey(static_cast<UINT>(wParam)))
-                return 0;
+                return true;
             break;
         case WM_CHAR:
             OnChar(static_cast<wchar_t>(wParam));
-            return 0;
+            return true;
         case WM_TIMER:
             if (wParam == kTimerThumbs)
             {
@@ -324,27 +223,24 @@ namespace sd::mediatools
             }
             else if (wParam == kTimerPlay)
                 OnPlayTick();
-            return 0;
+            return true;
         case kLoadedMsg:
             OnLoaded();
-            return 0;
+            return true;
         case kCloseMsg:
-            DestroyWindow(hwnd);   // deletes this editor (WM_NCDESTROY)
-            return 0;
+            Close();   // deletes this editor
+            return true;
         case WM_ACTIVATE:
             if (LOWORD(wParam) == WA_INACTIVE && m_drag != Drag::None)
                 EndDrag();
             break;
-        case WM_CLOSE:
-            Close();
-            return 0;
         case WM_DESTROY:
             StopPlay();
             m_playback.reset();
             m_loader.reset();   // stops ffmpeg and waits for the threads
-            return 0;
+            return true;
         }
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
+        return false;
     }
 
     // ---- Tool traits ----------------------------------------------------------------------------------
@@ -392,7 +288,7 @@ namespace sd::mediatools
                 if (m_req.tool == EditorTool::JoinVideos && f.ready && !f.joinThumbRequested)
                 {
                     f.joinThumbRequested = true;
-                    const int h = MulDiv(54, static_cast<int>(m_dpi), 96);
+                    const int h = MulDiv(54, static_cast<int>(Dpi()), 96);
                     m_loader->Thumbs(r.file, f.path, f.info, h * 2, h, { { std::min<int64_t>(500'000, f.info.DurationUs() / 3), 0, true } }, false);
                 }
                 if (m_req.tool == EditorTool::AudioVisualizer && r.file == 0 && f.ready)
@@ -488,7 +384,7 @@ namespace sd::mediatools
         if (Video())
         {
             const double aspect = f.info.height > 0 ? f.info.width * f.info.sar / f.info.height : 16.0 / 9;
-            m_thumbH = MulDiv(static_cast<int>(kFilmH), static_cast<int>(m_dpi), 96);
+            m_thumbH = MulDiv(static_cast<int>(kFilmH), static_cast<int>(Dpi()), 96);
             m_thumbW = std::clamp(static_cast<int>(std::lround(m_thumbH * aspect)), m_thumbH / 2, m_thumbH * 3);
             RequestThumbs();
             RequestPreview();
@@ -530,7 +426,7 @@ namespace sd::mediatools
         }
         m_previewWanted = false;
         m_previewInFlight = true;
-        const float scale = static_cast<float>(m_dpi) / 96.f;
+        const float scale = static_cast<float>(Dpi()) / 96.f;
         const int maxW = std::clamp(static_cast<int>(m_rcStage.w * scale), 64, 2560);
         const int maxH = std::clamp(static_cast<int>(m_rcStage.h * scale), 64, 1600);
         m_loader->Preview(m_current, Cur().path, Cur().info, m_playhead, maxW, maxH, ++m_previewSerial);
@@ -542,7 +438,7 @@ namespace sd::mediatools
         const int64_t dur = Duration();
         if (dur <= 0 || m_thumbW <= 0 || m_rcTrack.w <= 0)
             return s;
-        const float thumbDip = std::max(24.f, static_cast<float>(m_thumbW) * 96.f / static_cast<float>(m_dpi));
+        const float thumbDip = std::max(24.f, static_cast<float>(m_thumbW) * 96.f / static_cast<float>(Dpi()));
         const int fitSlots = FilmstripSlots(m_rcTrack.w, thumbDip);
         const double zoom = m_view.usPerPx > 0 ? m_view.FitUsPerPx() / m_view.usPerPx : 1.0;
         s.level = std::clamp(static_cast<int>(std::floor(std::log2(std::max(1.0, zoom)) + 1e-9)), 0, 16);
@@ -592,7 +488,7 @@ namespace sd::mediatools
         if (!PerFile())
         {
             if (skip)
-                Close();
+                RequestClose();
             else
                 Finish();
             return;
@@ -643,13 +539,13 @@ namespace sd::mediatools
                     files.push_back(f.path);
         }
         auto done = std::move(m_done);
-        ShowWindow(m_hwnd.get(), SW_HIDE);
+        ShowWindow(Hwnd(), SW_HIDE);
         if (!files.empty() && done)
         {
             log::Info(L"media editor: {} confirmed for {} file(s)", m_req.title, files.size());
             done(std::move(params), std::move(files));
         }
-        Close();
+        RequestClose();
     }
 
     // ---- Layout and controls ------------------------------------------------------------------------------
@@ -753,7 +649,7 @@ namespace sd::mediatools
         const bool wasPerFile = PerFile();
         m_req.tool = tool;
         m_req.title = ToolTitle(tool);
-        SetWindowTextW(m_hwnd.get(), (m_req.title + L" \u2013 " SD_NAME).c_str());
+        SetWindowTextW(Hwnd(), (m_req.title + L" \u2013 " SD_NAME).c_str());
         if (HasTimeline() && !m_playback)
             m_playback = std::make_unique<Playback>(m_req.ffmpeg, &m_temp);
         // A fresh pass through the files; choices made so far stay (a trim range is still there on
@@ -774,7 +670,7 @@ namespace sd::mediatools
             if (tool == EditorTool::JoinVideos && f.ready && !f.joinThumbRequested)
             {
                 f.joinThumbRequested = true;
-                const int th = MulDiv(54, static_cast<int>(m_dpi), 96);
+                const int th = MulDiv(54, static_cast<int>(Dpi()), 96);
                 m_loader->Thumbs(i, f.path, f.info, th * 2, th, { { std::min<int64_t>(500'000, f.info.DurationUs() / 3), 0, true } }, false);
             }
         }
@@ -867,7 +763,7 @@ namespace sd::mediatools
         cancel.text = L"Cancel";
         cancel.rect = { right - 96, y, 96, 34 };
         cancel.tip = L"Close without changing anything (Esc)";
-        cancel.click = [this] { Close(); };
+        cancel.click = [this] { RequestClose(); };
         right -= 104;
         m_controls.push_back(std::move(cancel));
         m_controls.push_back(std::move(primary));
@@ -907,29 +803,10 @@ namespace sd::mediatools
         return 0;
     }
 
-    void EditorWindow::Invalidate()
-    {
-        if (m_hwnd)
-            InvalidateRect(m_hwnd.get(), nullptr, FALSE);
-    }
-
     // ---- Painting -----------------------------------------------------------------------------------------
 
-    bool EditorWindow::EnsureTarget()
+    void EditorWindow::DropBitmaps()
     {
-        if (m_rt)
-            return true;
-        RECT rc{};
-        GetClientRect(m_hwnd.get(), &rc);
-        const auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE),
-                                                        static_cast<float>(m_dpi), static_cast<float>(m_dpi));
-        const auto hwndProps = D2D1::HwndRenderTargetProperties(m_hwnd.get(), D2D1::SizeU(static_cast<UINT32>(rc.right), static_cast<UINT32>(rc.bottom)));
-        return SUCCEEDED(m_d2d->CreateHwndRenderTarget(props, hwndProps, &m_rt));
-    }
-
-    void EditorWindow::DiscardDevice()
-    {
-        m_rt.Reset();
         m_preview.bitmap.Reset();
         m_blur.bitmap.Reset();
         m_imagePicture.bitmap.Reset();
@@ -941,8 +818,8 @@ namespace sd::mediatools
 
     ID2D1Bitmap* EditorWindow::BitmapOf(Picture& picture)
     {
-        if (!picture.bitmap && picture.frame.w > 0 && m_rt)
-            m_rt->CreateBitmap(D2D1::SizeU(static_cast<UINT32>(picture.frame.w), static_cast<UINT32>(picture.frame.h)), picture.frame.bgra.data(),
+        if (!picture.bitmap && picture.frame.w > 0 && Target())
+            Target()->CreateBitmap(D2D1::SizeU(static_cast<UINT32>(picture.frame.w), static_cast<UINT32>(picture.frame.h)), picture.frame.bgra.data(),
                                static_cast<UINT32>(picture.frame.w) * 4,
                                D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)), &picture.bitmap);
         return picture.bitmap.Get();
@@ -960,18 +837,18 @@ namespace sd::mediatools
         p.Rt()->DrawBitmap(bitmap, ui::ToD2D(slot), opacity, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
     }
 
-    void EditorWindow::Paint()
+    void EditorWindow::Paint(ID2D1RenderTarget* rt, D2D1_SIZE_F)
     {
-        if (!EnsureTarget())
-            return;
+        if (m_device != DeviceGeneration())
+        {
+            DropBitmaps();
+            m_device = DeviceGeneration();
+        }
         auto& p = m_painter;
-        m_rt->BeginDraw();
-        p.Begin(m_rt.Get(), m_colors);
-        m_rt->SetTransform(D2D1::Matrix3x2F::Identity());
-        m_rt->Clear(m_colors.window);
+        p.Begin(rt, Theme(), m_device);
         PaintHeader(p);
-        p.Fill(m_rcPanel, m_colors.panel);
-        p.Line(m_rcPanel.x + 0.5f, m_rcPanel.y, m_rcPanel.x + 0.5f, m_rcPanel.Bottom(), m_colors.line);
+        p.Fill(m_rcPanel, Theme().panel);
+        p.Line(m_rcPanel.x + 0.5f, m_rcPanel.y, m_rcPanel.x + 0.5f, m_rcPanel.Bottom(), Theme().line);
         if (m_req.tool == EditorTool::JoinVideos)
             PaintJoinList(p);
         else if (m_req.tool == EditorTool::AudioVisualizer)
@@ -984,7 +861,7 @@ namespace sd::mediatools
         }
         for (const auto& t : m_texts)
         {
-            const D2D1_COLOR_F color = t.tone == 1 ? m_colors.textDim : t.tone == 2 ? m_colors.textFaint : t.tone == 3 ? m_colors.danger : m_colors.text;
+            const D2D1_COLOR_F color = t.tone == 1 ? Theme().textDim : t.tone == 2 ? Theme().textFaint : t.tone == 3 ? Theme().danger : Theme().text;
             if (t.wrap)
                 p.Paragraph(t.text, t.rect, t.font, color);
             else
@@ -996,7 +873,7 @@ namespace sd::mediatools
             ui::DrawState s;
             s.hover = m_hover == c.id && c.enabled;
             s.pressed = m_pressed == c.id && m_hover == c.id;
-            s.focused = m_focus == c.id && GetFocus() == m_hwnd.get();
+            s.focused = m_focus == c.id && GetFocus() == Hwnd();
             s.invalid = m_invalidId == c.id;
             if (m_editId == c.id)
             {
@@ -1006,8 +883,6 @@ namespace sd::mediatools
             }
             ui::DrawControl(p, c, s);
         }
-        if (m_rt->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
-            DiscardDevice();
     }
 
     void EditorWindow::PaintHeader(ui::Painter& p)
@@ -1036,12 +911,12 @@ namespace sd::mediatools
             const auto counter = std::format(L"File {} of {}", m_current + 1, m_files.size());
             const float cw = p.TextWidth(counter, ui::Font::BodyStrong) + 24;
             const RectF chip{ right - cw, h.y + (h.h - 26) / 2, cw, 26 };
-            p.Fill(chip, m_colors.accentSoft, 13);
-            p.Text(counter, chip, ui::Font::BodyStrong, m_colors.accent, 1);
+            p.Fill(chip, Theme().accentSoft, 13);
+            p.Text(counter, chip, ui::Font::BodyStrong, Theme().accent, 1);
             right -= cw + 12;
         }
-        p.Text(sub, { m_toolBarRight, h.y, std::max(0.f, right - m_toolBarRight), h.h }, ui::Font::Body, m_colors.textDim);
-        p.Line(0, h.Bottom() - 0.5f, h.Right(), h.Bottom() - 0.5f, m_colors.line);
+        p.Text(sub, { m_toolBarRight, h.y, std::max(0.f, right - m_toolBarRight), h.h }, ui::Font::Body, Theme().textDim);
+        p.Line(0, h.Bottom() - 0.5f, h.Right(), h.Bottom() - 0.5f, Theme().line);
     }
 
     PreviewMap EditorWindow::StageMap() const
@@ -1059,25 +934,25 @@ namespace sd::mediatools
     void EditorWindow::PaintStage(ui::Painter& p)
     {
         const auto& f = Cur();
-        p.Fill(m_rcStage, m_colors.stage, 8);
+        p.Fill(m_rcStage, Theme().stage, 8);
         if (!f.error.empty() || !f.ready)
         {
             const RectF mid{ m_rcStage.x, m_rcStage.y + m_rcStage.h / 2 - 40, m_rcStage.w, 80 };
             if (!f.error.empty())
             {
-                p.Text(ui::icon::Warning, { mid.x, mid.y, mid.w, 32 }, ui::Font::Icon, m_colors.danger, 1);
-                p.Text(f.error, { mid.x, mid.y + 36, mid.w, 24 }, ui::Font::Body, m_colors.text, 1);
+                p.Text(ui::icon::Warning, { mid.x, mid.y, mid.w, 32 }, ui::Font::Icon, Theme().danger, 1);
+                p.Text(f.error, { mid.x, mid.y + 36, mid.w, 24 }, ui::Font::Body, Theme().text, 1);
                 if (PerFile() && m_files.size() > 1)
-                    p.Text(L"Skip it to go on with the other files.", { mid.x, mid.y + 60, mid.w, 22 }, ui::Font::Small, m_colors.textDim, 1);
+                    p.Text(L"Skip it to go on with the other files.", { mid.x, mid.y + 60, mid.w, 22 }, ui::Font::Small, Theme().textDim, 1);
             }
             else
-                p.Text(L"Opening\u2026", mid, ui::Font::Body, m_colors.textFaint, 1);
+                p.Text(L"Opening\u2026", mid, ui::Font::Body, Theme().textFaint, 1);
             return;
         }
         const auto map = StageMap();
         const D2D1_RECT_F shown = ui::ToD2D(map.shown);
         if (ID2D1Bitmap* bmp = BitmapOf(m_preview))
-            m_rt->DrawBitmap(bmp, shown, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            Target()->DrawBitmap(bmp, shown, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         else
         {
             p.Fill(map.shown, D2D1::ColorF(0, 0, 0, 1));
@@ -1088,7 +963,7 @@ namespace sd::mediatools
                     best = &t;
             if (best)
                 if (ID2D1Bitmap* bmp = BitmapOf(*best))
-                    m_rt->DrawBitmap(bmp, shown, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    Target()->DrawBitmap(bmp, shown, 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         }
         if (m_req.tool == EditorTool::CropVideo)
             PaintCropOverlay(p, map);
@@ -1116,56 +991,56 @@ namespace sd::mediatools
         const auto& f = Cur();
         const RectF& ruler = m_rcRuler;
         const RectF& track = m_rcTrack;
-        p.Fill(track, m_colors.track, 6);
+        p.Fill(track, Theme().track, 6);
         if (!f.ready)
         {
             if (!HasStage())
-                p.Text(f.error.empty() ? L"Opening\u2026" : f.error, track, ui::Font::Body, f.error.empty() ? m_colors.textFaint : m_colors.danger, 1);
+                p.Text(f.error.empty() ? L"Opening\u2026" : f.error, track, ui::Font::Body, f.error.empty() ? Theme().textFaint : Theme().danger, 1);
             return;
         }
         // Ruler: labelled ticks at a round step, minor ticks between.
         const int64_t step = TickStepUs(m_view.usPerPx, 92);
         const int64_t minor = step / 5 >= 1000 ? step / 5 : step;
-        m_rt->PushAxisAlignedClip(ui::ToD2D(ruler), D2D1_ANTIALIAS_MODE_ALIASED);
+        Target()->PushAxisAlignedClip(ui::ToD2D(ruler), D2D1_ANTIALIAS_MODE_ALIASED);
         for (int64_t t = (m_view.startUs / minor) * minor; t <= m_view.EndUs(); t += minor)
         {
             const float x = TX(t);
             const bool major = t % step == 0;
-            p.Line(x, ruler.Bottom() - (major ? 8.f : 4.f), x, ruler.Bottom(), major ? m_colors.textDim : m_colors.textFaint);
+            p.Line(x, ruler.Bottom() - (major ? 8.f : 4.f), x, ruler.Bottom(), major ? Theme().textDim : Theme().textFaint);
             if (major)
-                p.Text(FormatRulerLabel(t, step), { x + 4, ruler.y, 90, ruler.h - 6 }, ui::Font::Small, m_colors.textDim);
+                p.Text(FormatRulerLabel(t, step), { x + 4, ruler.y, 90, ruler.h - 6 }, ui::Font::Small, Theme().textDim);
         }
-        m_rt->PopAxisAlignedClip();
+        Target()->PopAxisAlignedClip();
 
-        m_rt->PushAxisAlignedClip(ui::ToD2D(track), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        Target()->PushAxisAlignedClip(ui::ToD2D(track), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         if (UsesWaveform())
             PaintWaveform(p);
         else
             PaintFilmstrip(p);
         PaintTrackOverlay(p);
-        m_rt->PopAxisAlignedClip();
+        Target()->PopAxisAlignedClip();
 
         // Hover line and playhead.
         if (m_hoverX >= track.x && m_hoverX <= track.Right() && m_drag == Drag::None)
-            p.Line(m_hoverX, ruler.y + 4, m_hoverX, track.Bottom(), Alpha(m_colors.text, 0.25f), 1.f);
+            p.Line(m_hoverX, ruler.y + 4, m_hoverX, track.Bottom(), WithAlpha(Theme().text, 0.25f), 1.f);
         const float px = TX(m_playhead);
         if (px >= track.x - 1 && px <= track.Right() + 1)
         {
-            p.Line(px, ruler.y + 6, px, track.Bottom(), m_colors.text, 1.5f);
+            p.Line(px, ruler.y + 6, px, track.Bottom(), Theme().text, 1.5f);
             const RectF knob{ px - 6, ruler.y + 2, 12, 12 };
-            p.Fill(knob, m_colors.text, 3);
+            p.Fill(knob, Theme().text, 3);
         }
         // Scroll bar while zoomed in.
         if (m_view.Zoomed() && m_view.durationUs > 0)
         {
-            p.Fill(m_rcScroll, m_colors.track, kScrollH / 2);
+            p.Fill(m_rcScroll, Theme().track, kScrollH / 2);
             const float x0 = m_rcScroll.x + static_cast<float>(static_cast<double>(m_view.startUs) / m_view.durationUs) * m_rcScroll.w;
             const float x1 = m_rcScroll.x + static_cast<float>(static_cast<double>(m_view.EndUs()) / m_view.durationUs) * m_rcScroll.w;
             const float w = std::max(24.f, x1 - x0);
-            p.Fill({ std::min(x0, m_rcScroll.Right() - w), m_rcScroll.y + 1, w, kScrollH - 2 }, m_drag == Drag::Scroll ? m_colors.textDim : m_colors.textFaint,
+            p.Fill({ std::min(x0, m_rcScroll.Right() - w), m_rcScroll.y + 1, w, kScrollH - 2 }, m_drag == Drag::Scroll ? Theme().textDim : Theme().textFaint,
                    (kScrollH - 2) / 2);
             const float ph = m_rcScroll.x + static_cast<float>(static_cast<double>(m_playhead) / m_view.durationUs) * m_rcScroll.w;
-            p.Line(ph, m_rcScroll.y, ph, m_rcScroll.Bottom(), m_colors.text, 1.f);
+            p.Line(ph, m_rcScroll.y, ph, m_rcScroll.Bottom(), Theme().text, 1.f);
         }
     }
 
@@ -1191,7 +1066,7 @@ namespace sd::mediatools
             if (pic)
                 DrawCover(p, BitmapOf(*pic), slot);
             else
-                p.Fill(slot.Inset(1), Alpha(m_colors.text, 0.04f));
+                p.Fill(slot.Inset(1), WithAlpha(Theme().text, 0.04f));
         }
     }
 
@@ -1202,17 +1077,17 @@ namespace sd::mediatools
         if (!f.peaks)
         {
             const std::wstring text = f.waveFailed ? L"Could not read the sound of this file." : std::format(L"Reading the sound\u2026 {}%", static_cast<int>(f.waveProgress * 100));
-            p.Text(text, track, ui::Font::Body, f.waveFailed ? m_colors.danger : m_colors.textFaint, 1);
+            p.Text(text, track, ui::Font::Body, f.waveFailed ? Theme().danger : Theme().textFaint, 1);
             if (!f.waveFailed)
-                p.Fill({ track.x + track.w * 0.3f, track.y + track.h / 2 + 18, track.w * 0.4f * static_cast<float>(f.waveProgress), 3 }, m_colors.accent, 1.5f);
+                p.Fill({ track.x + track.w * 0.3f, track.y + track.h / 2 + 18, track.w * 0.4f * static_cast<float>(f.waveProgress), 3 }, Theme().accent, 1.5f);
             return;
         }
         const float mid = track.y + track.h / 2, amp = track.h / 2 - 8;
         const float gain = std::clamp(0.92f / std::max(0.01f, f.peaks->Peak()), 1.f, 8.f);
-        p.Line(track.x, mid, track.Right(), mid, Alpha(m_colors.text, 0.12f));
+        p.Line(track.x, mid, track.Right(), mid, WithAlpha(Theme().text, 0.12f));
         ComPtr<ID2D1PathGeometry> path;
         ComPtr<ID2D1GeometrySink> sink;
-        if (FAILED(m_d2d->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
+        if (FAILED(Factory()->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
             return;
         const int cols = static_cast<int>(std::ceil(track.w));
         std::vector<std::pair<float, float>> env(static_cast<size_t>(cols));
@@ -1231,15 +1106,15 @@ namespace sd::mediatools
         // Tools colour the waveform by range: the kept part of a trim, the bleeped parts.
         const auto ranges = EditableRanges();
         const bool keep = m_req.tool == EditorTool::TrimAudio;
-        m_rt->FillGeometry(path.Get(), p.Brush(keep ? Alpha(m_colors.text, 0.28f) : m_req.tool == EditorTool::BleepAudio ? m_colors.textDim : m_colors.accent));
+        Target()->FillGeometry(path.Get(), p.Brush(keep ? WithAlpha(Theme().text, 0.28f) : m_req.tool == EditorTool::BleepAudio ? Theme().textDim : Theme().accent));
         for (const auto& r : ranges)
         {
             const float x0 = std::max(track.x, TX(r.start)), x1 = std::min(track.Right(), TX(r.end));
             if (x1 <= x0)
                 continue;
-            m_rt->PushAxisAlignedClip(D2D1::RectF(x0, track.y, x1, track.Bottom()), D2D1_ANTIALIAS_MODE_ALIASED);
-            m_rt->FillGeometry(path.Get(), p.Brush(keep ? m_colors.accent : m_colors.danger));
-            m_rt->PopAxisAlignedClip();
+            Target()->PushAxisAlignedClip(D2D1::RectF(x0, track.y, x1, track.Bottom()), D2D1_ANTIALIAS_MODE_ALIASED);
+            Target()->FillGeometry(path.Get(), p.Brush(keep ? Theme().accent : Theme().danger));
+            Target()->PopAxisAlignedClip();
         }
     }
 
@@ -1279,8 +1154,8 @@ namespace sd::mediatools
 
     void EditorWindow::ViewChanged()
     {
-        if (m_hwnd && Video())
-            SetTimer(m_hwnd.get(), kTimerThumbs, 120, nullptr);
+        if (Hwnd() && Video())
+            SetTimer(Hwnd(), kTimerThumbs, 120, nullptr);
         Invalidate();
     }
 
@@ -1597,7 +1472,7 @@ namespace sd::mediatools
             case 'V':
                 if (!ctrl)
                     return false;
-                if (OpenClipboard(m_hwnd.get()))
+                if (OpenClipboard(Hwnd()))
                 {
                     if (HANDLE data = GetClipboardData(CF_UNICODETEXT))
                         if (const auto* text = static_cast<const wchar_t*>(GlobalLock(data)))
@@ -1647,7 +1522,7 @@ namespace sd::mediatools
             else if (m_focus)
                 Focus(0);
             else
-                Close();
+                RequestClose();
             return true;
         case VK_RETURN:
             if (focused && focused->click && focused->enabled)
@@ -1730,7 +1605,7 @@ namespace sd::mediatools
         m_dragHandle = -1;
         m_pressed = 0;
         m_joinDropAt = -1;
-        if (GetCapture() == m_hwnd.get())
+        if (GetCapture() == Hwnd())
             ReleaseCapture();
         ToolDragEnd(was);
         // Changes heard while playing: restart from where we are so they apply.
@@ -1782,7 +1657,7 @@ namespace sd::mediatools
         if (!m_playing)
         {
             m_playing = true;
-            SetTimer(m_hwnd.get(), kTimerPlay, 15, nullptr);
+            SetTimer(Hwnd(), kTimerPlay, 15, nullptr);
         }
         m_playEnd = to;
         Rebuild();
@@ -1795,8 +1670,8 @@ namespace sd::mediatools
         m_playing = false;
         if (m_playback)
             m_playback->Stop();
-        if (m_hwnd)
-            KillTimer(m_hwnd.get(), kTimerPlay);
+        if (Hwnd())
+            KillTimer(Hwnd(), kTimerPlay);
         Rebuild();
     }
 
@@ -1819,7 +1694,7 @@ namespace sd::mediatools
 
     void EditorWindow::PaintFooter(ui::Painter& p)
     {
-        p.Line(0, m_rcFooter.y + 0.5f, m_rcFooter.Right(), m_rcFooter.y + 0.5f, m_colors.line);
+        p.Line(0, m_rcFooter.y + 0.5f, m_rcFooter.Right(), m_rcFooter.y + 0.5f, Theme().line);
         // The hovered control's hint, else the keys for this tool.
         std::wstring hint;
         if (const auto* c = m_hover ? ControlById(m_hover) : nullptr)
@@ -1832,6 +1707,6 @@ namespace sd::mediatools
         for (const auto& c : m_controls)
             if (c.rect.y >= m_rcFooter.y)
                 right = std::min(right, c.rect.x);
-        p.Text(hint, { kPad, m_rcFooter.y, right - kPad - 16, m_rcFooter.h }, ui::Font::Small, m_colors.textDim);
+        p.Text(hint, { kPad, m_rcFooter.y, right - kPad - 16, m_rcFooter.h }, ui::Font::Small, Theme().textDim);
     }
 }
