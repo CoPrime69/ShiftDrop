@@ -1,0 +1,10 @@
+# Text files are stored with LF in the repository; Git picks the line endings on checkout.
+* text=auto
+
+# Binary files.
+*.ico binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.zip binary

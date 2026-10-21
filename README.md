@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml/badge.svg)](https://github.com/CoPrime69/ShiftDrop/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/CoPrime69/ShiftDrop)](https://github.com/CoPrime69/ShiftDrop/releases)
 
 Convert and edit files without opening an app. Start dragging a file, press **Shift**, and a wheel
 of actions opens under the cursor. Drop the file on a slice: a photo becomes a WebP, a video shrinks
@@ -184,6 +185,7 @@ the presets, the tests and the installer.
 - [docs/TESTING.md](docs/TESTING.md): the manual test checklist
 - [docs/plugins.md](docs/plugins.md): the plugin design
 - [docs/adr/](docs/adr/): records of the main design decisions
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release
 
 ## Contributing
 
