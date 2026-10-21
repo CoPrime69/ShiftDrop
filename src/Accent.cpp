@@ -94,11 +94,11 @@ namespace sd::accent
             s.custom = rgb;
         else if (custom[0])
             log::Warn(L"settings: [Appearance] AccentCustom='{}' is not a colour like #12A58E; ignoring it", custom);
-        s.choice = static_cast<Choice>(IniChoice(path, L"Appearance", L"Accent", kIds, 0));
+        s.choice = static_cast<Choice>(IniChoice(path, L"Appearance", L"Accent", kIds, static_cast<int>(Choice::Windows)));
         if (s.choice == Choice::Custom && s.custom == kNoColour)
         {
-            log::Warn(L"settings: [Appearance] Accent=custom without an AccentCustom colour; using tide");
-            s.choice = Choice::Tide;
+            log::Warn(L"settings: [Appearance] Accent=custom without an AccentCustom colour; using windows");
+            s.choice = Choice::Windows;
         }
         return s;
     }
