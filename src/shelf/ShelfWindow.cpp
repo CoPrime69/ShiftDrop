@@ -1319,7 +1319,7 @@ namespace sd
         const bool alarm = hover && danger;
         m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(box.left, box.top, box.right, box.bottom), r, r),
                                    Brush(alarm ? colors.danger : hover ? colors.hover : colors.button, (alarm ? 0.9f : 1.f) * alpha).Get());
-        Text(text, m_countFont.Get(), box, alarm ? colors.onAccent : colors.text, alpha);
+        Text(text, m_countFont.Get(), box, alarm ? colors.onDanger : colors.text, alpha);
     }
 
     void Shelf::DrawThumb(Item& item, const Box& box, float alpha)
