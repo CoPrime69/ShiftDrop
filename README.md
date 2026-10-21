@@ -61,7 +61,8 @@ takes a second or two.
   Share-safe removes metadata, checks that the result really is clean, and shows you what it found
   first. Share-safe also works on video and audio.
 - **Text:** Copy text (OCR from pictures and scanned PDFs, to the clipboard) and Searchable PDF.
-- **PDF:** Merge, Organize (reorder, rotate, duplicate and delete pages), Compress, Smallest.
+- **PDF:** Merge (More… shows every page to reorder, turn and edit), Organize (reorder, rotate,
+  duplicate and delete pages), Edit (redact, annotate, crop or adjust pages), Compress, Smallest.
 - **Video:** Compress, 50% size, Under 10 MB, Under 25 MB, and a timeline editor for Trim, Crop,
   Speed, Join, Frames, Split and Redact.
 - **Audio:** the same Compress slices, Normalize, and a waveform editor for Trim, Channels, Bleep

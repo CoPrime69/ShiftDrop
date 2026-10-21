@@ -1,6 +1,7 @@
 #include "pdf/PdfDoc.h"
 #include "Utf.h"
 
+#include <qpdf/QPDFAcroFormDocumentHelper.hh>
 #include <qpdf/QPDFExc.hh>
 #include <qpdf/QPDFPageDocumentHelper.hh>
 #include <qpdf/QPDFPageObjectHelper.hh>
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <format>
 #include <map>
+#include <set>
 
 namespace sd::pdf
 {
@@ -30,6 +32,49 @@ namespace sd::pdf
             auto rotate = page.getAttribute("/Rotate", false);
             const int r = rotate.isInteger() ? static_cast<int>(rotate.getIntValue()) : 0;
             return ((r % 360) + 360) % 360 / 90 * 90;
+        }
+
+        // The base's pages that are not in the output stay in its object table, and its outline,
+        // named destinations or form fields can still point at them, which would carry their content
+        // into the new file. So each one left out (deleted, or replaced by an edited copy such as a
+        // redaction) is emptied, and the form fields on it are removed. When an edited copy replaced
+        // one, the tag tree goes as well: its alternate texts may quote what was removed.
+        template <class Placed>
+        void EmptyLeftOutPages(QPDF& base, std::vector<QPDFPageObjectHelper>& basePages,
+                               const std::map<std::pair<uint32_t, uint32_t>, Placed>& placed, bool replacedBasePage)
+        {
+            std::vector<QPDFPageObjectHelper> leftOut;
+            for (uint32_t p = 0; p < basePages.size(); ++p)
+                if (!placed.contains({ 0u, p }))
+                    leftOut.push_back(basePages[p]);
+            if (leftOut.empty())
+                return;
+            QPDFAcroFormDocumentHelper forms(base);
+            std::set<QPDFObjGen> fields;
+            if (forms.hasAcroForm())
+                for (auto& page : leftOut)
+                    for (auto& widget : forms.getWidgetAnnotationsForPage(page))
+                    {
+                        auto field = forms.getFieldForAnnotation(widget);
+                        if (!field.isNull())
+                            fields.insert(field.getObjectHandle().getObjGen());
+                    }
+            if (!fields.empty())
+                forms.removeFormFields(fields);
+            for (auto& page : leftOut)
+            {
+                auto dict = page.getObjectHandle();
+                for (const char* key : { "/Annots", "/Thumb", "/B", "/PieceInfo", "/Metadata", "/AA", "/StructParents", "/Group" })
+                    dict.removeKey(key);
+                dict.replaceKey("/Contents", base.newStream(std::string()));
+                dict.replaceKey("/Resources", QPDFObjectHandle::newDictionary());
+            }
+            if (replacedBasePage)
+            {
+                auto root = base.getRoot();
+                root.removeKey("/StructTreeRoot");
+                root.removeKey("/MarkInfo");
+            }
         }
     }
 
@@ -145,6 +190,9 @@ namespace sd::pdf
         // Every source stays open until the output is written: copied pages read their streams lazily.
         std::vector<std::unique_ptr<QPDF>> docs(sources.size());
         std::vector<std::vector<QPDFPageObjectHelper>> pages(sources.size());
+        // Edited pages: each a one-page PDF of its own (PageEdits.h), opened once.
+        std::map<std::wstring, std::unique_ptr<QPDF>> editedDocs;
+        std::map<std::wstring, QPDFPageObjectHelper> editedPages;
         try
         {
             for (const auto& ref : plan)
@@ -153,6 +201,26 @@ namespace sd::pdf
                 {
                     error = L"the page list names a file that was not dropped";
                     return false;
+                }
+                if (!ref.edited.empty())
+                {
+                    if (editedDocs.contains(ref.edited))
+                        continue;
+                    auto doc = OpenPdf(ref.edited, error);
+                    if (!doc)
+                    {
+                        error = std::format(L"an edited page of {} is gone: {}", std::filesystem::path(sources[ref.file]).filename().wstring(), error);
+                        return false;
+                    }
+                    auto all = QPDFPageDocumentHelper(*doc).getAllPages();
+                    if (all.empty())
+                    {
+                        error = L"an edited page is empty";
+                        return false;
+                    }
+                    editedPages.emplace(ref.edited, all.front());
+                    editedDocs.emplace(ref.edited, std::move(doc));
+                    continue;
                 }
                 if (!docs[ref.file])
                 {
@@ -192,6 +260,8 @@ namespace sd::pdf
                 int rotation = 0;        // its own /Rotate before we touched it
             };
             std::map<std::pair<uint32_t, uint32_t>, Placed> placed;
+            std::map<std::wstring, Placed> placedEdits;
+            bool replacedBasePage = false;
             for (size_t i = 0; i < plan.size(); ++i)
             {
                 if (stop.stop_requested())
@@ -200,29 +270,39 @@ namespace sd::pdf
                     return false;
                 }
                 const auto& ref = plan[i];
-                const auto key = std::make_pair(ref.file, ref.page);
-                QPDFPageObjectHelper source = pages[ref.file][ref.page];
-                auto it = placed.find(key);
-                if (it == placed.end())
+                const bool edited = !ref.edited.empty();
+                replacedBasePage |= edited && ref.file == 0;
+                QPDFPageObjectHelper source = edited ? editedPages.at(ref.edited) : pages[ref.file][ref.page];
+                Placed* already = nullptr;
+                if (edited)
+                {
+                    if (auto it = placedEdits.find(ref.edited); it != placedEdits.end())
+                        already = &it->second;
+                }
+                else if (auto it = placed.find({ ref.file, ref.page }); it != placed.end())
+                    already = &it->second;
+                if (!already)
                 {
                     const int own = RotationOf(source);
                     // A foreign page passed to addPage is copied in (resources and all) by QPDF.
                     tree.addPage(source, false);
-                    QPDFObjectHandle local = ref.file == 0 ? source.getObjectHandle() : base.getAllPages().back();
-                    it = placed.emplace(key, Placed{ local, own }).first;
+                    QPDFObjectHandle local = !edited && ref.file == 0 ? source.getObjectHandle() : base.getAllPages().back();
+                    already = edited ? &placedEdits.emplace(ref.edited, Placed{ local, own }).first->second
+                                     : &placed.emplace(std::make_pair(ref.file, ref.page), Placed{ local, own }).first->second;
                     if (ref.rotation)
                         QPDFPageObjectHelper(local).rotatePage((own + ref.rotation) % 360, false);
                 }
                 else
                 {
                     // The same page again: a shallow copy shares its content streams and resources.
-                    QPDFPageObjectHelper copy = QPDFPageObjectHelper(it->second.page).shallowCopyPage();
-                    copy.rotatePage((it->second.rotation + ref.rotation) % 360, false);
+                    QPDFPageObjectHelper copy = QPDFPageObjectHelper(already->page).shallowCopyPage();
+                    copy.rotatePage((already->rotation + ref.rotation) % 360, false);
                     tree.addPage(copy, false);
                 }
                 if (progress)
                     progress(0.1 + 0.3 * static_cast<double>(i + 1) / static_cast<double>(plan.size()));
             }
+            EmptyLeftOutPages(base, pages[0], placed, replacedBasePage);
             return WritePdf(base, out, WriteOptions{}, error, stop, [&](double f) {
                 if (progress)
                     progress(0.4 + 0.6 * f);

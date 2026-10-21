@@ -34,6 +34,8 @@ namespace sd::pdf
             registry.Add(ActionDescriptor{ "pdf.merge", L"Merge PDFs", StepKind::Engine, {} });
             // The page plan is added by the Organize window, not written in recipes.
             registry.Add(ActionDescriptor{ "pdf.organize", L"Organize PDF pages", StepKind::Engine, {} });
+            // The page plan (with any edited pages) is added by the page view.
+            registry.Add(ActionDescriptor{ "pdf.edit", L"Edit PDF", StepKind::Engine, {} });
             registry.Add(ActionDescriptor{ "pdf.compress", L"Compress PDF", StepKind::Engine,
                                            { ParamSpec{ "dpi", ParamType::Int, 36, 600, {}, 150 },
                                              ParamSpec{ "quality", ParamType::Int, 10, 100, {}, 70 },
@@ -48,7 +50,7 @@ namespace sd::pdf
         const char* BuiltInRecipes()
         {
             // Icons are Segoe Fluent Icons / MDL2 code points: Photo2, Document, Code, PDF, Page,
-            // ViewAll, BackToWindow, Font, Search, Share.
+            // ViewAll, Edit, BackToWindow, Font, Search, Share.
             return R"([
   { "id": "pdf-to-jpg", "label": "JPG", "description": "Every page as a JPEG, 300 dpi", "icon": "E91B",
     "steps": [ { "action": "pdf.to_images", "params": { "format": "jpg" } } ] },
@@ -65,6 +67,8 @@ namespace sd::pdf
     "steps": [ { "action": "pdf.merge" } ] },
   { "id": "pdf-organize", "label": "Organize", "description": "Reorder, turn, copy or remove pages", "ring": "tools", "suffix": "organized", "icon": "E8A9",
     "steps": [ { "action": "pdf.organize" } ] },
+  { "id": "pdf-edit", "label": "Edit", "description": "Edit pages: redact, annotate, reorder, turn", "ring": "tools", "suffix": "edited", "icon": "E70F",
+    "steps": [ { "action": "pdf.edit" } ] },
   { "id": "pdf-compress", "label": "Compress", "description": "Smaller PDF, pictures at 150 dpi", "ring": "tools", "suffix": "compressed", "icon": "E73F",
     "steps": [ { "action": "pdf.compress", "params": { "dpi": 150, "quality": 70 } } ] },
   { "id": "pdf-compress-max", "label": "Smallest", "description": "Smallest PDF, pictures at 96 dpi", "ring": "tools", "suffix": "compressed", "icon": "E73F",
