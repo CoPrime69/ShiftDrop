@@ -64,7 +64,7 @@ jobs:
           done
           echo "No passed pull-request run of tree $tree: building in full." | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.find.outputs.run-id != ''
         with:
           pattern: ShiftDrop-*
@@ -72,14 +72,14 @@ jobs:
           github-token: ${{ github.token }}
           path: reused
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.find.outputs.run-id != ''
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
           path: reused/ShiftDrop-Setup-*/*.exe
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.find.outputs.run-id != ''
         with:
           name: ShiftDrop-${{ github.sha }}
@@ -87,7 +87,7 @@ jobs:
           if-no-files-found: error
 
       # Our ffmpeg build and its source tarball, for the release (absent when that run used BtbN's).
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.find.outputs.run-id != ''
         continue-on-error: true
         with:
@@ -97,7 +97,7 @@ jobs:
           path: reused-ffmpeg
           merge-multiple: true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.find.outputs.run-id != ''
         with:
           name: ffmpeg-custom-${{ github.sha }}
@@ -113,9 +113,9 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' && vars.SHIFTDROP_FFMPEG != 'btbn' }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: cache
         with:
           path: build/ffmpeg-custom
@@ -135,7 +135,7 @@ jobs:
         run: cat build/ffmpeg-custom/FFMPEG-SOURCE.txt && ls -l build/ffmpeg-custom
 
       # The build job takes ffmpeg.exe from here; the source tarball goes into a release.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-custom-${{ github.sha }}
           path: build/ffmpeg-custom
@@ -149,7 +149,7 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/configure
         with:
@@ -167,7 +167,7 @@ jobs:
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !inputs.cache-only }}
         with:
           name: app-bundle
@@ -183,7 +183,7 @@ jobs:
         run: cmake --build --preset ci
 
       # The test exe and CTest's files for it (the shards run it from build/ci).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !inputs.cache-only }}
         with:
           name: tests-bundle
@@ -204,7 +204,7 @@ jobs:
           "SD_TREE=$tree" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Force build/marker | Out-Null
           "tree $tree, commit $env:GITHUB_SHA, run $env:GITHUB_RUN_ID" | Set-Content build/marker/tested-tree.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'pull_request'
         with:
           name: tested-tree-${{ env.SD_TREE }}
@@ -231,15 +231,15 @@ jobs:
       SHIFTDROP_FFMPEG: ${{ github.workspace }}\build\engines\ffmpeg.exe
     steps:
       # Some tests read the sources (FfmpegComponentsTests scans tests/ and src/).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         if: needs.ffmpeg.result != 'success'
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.ffmpeg.result == 'success'
         with:
           name: ffmpeg-custom-${{ github.sha }}
@@ -250,7 +250,7 @@ jobs:
         run: ./scripts/get-ffmpeg.ps1
 
       # Each test's time from the last run, so ctest starts the slowest ones first.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: build/ci/Testing/Temporary/CTestCostData.txt
           key: ctest-costs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -262,7 +262,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/wait-for-artifact.ps1 -Name tests-bundle -Job build
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tests-bundle
           path: build/ci
@@ -294,17 +294,17 @@ jobs:
       actions: read   # scripts/wait-for-artifact.ps1
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
       # that pins its URL and hash. Only needed without our own build.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         if: needs.ffmpeg.result != 'success'
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.ffmpeg.result == 'success'
         with:
           name: ffmpeg-custom-${{ github.sha }}
@@ -327,7 +327,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/wait-for-artifact.ps1 -Name app-bundle -Job build
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: app-bundle
           path: build
@@ -359,19 +359,19 @@ jobs:
         shell: pwsh
         run: ./scripts/test-installer.ps1 -Setup $env:SD_SETUP
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: installer-logs-${{ github.sha }}
           path: ${{ runner.temp }}/installer-logs
           if-no-files-found: ignore
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
           path: ${{ env.SD_SETUP }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ShiftDrop-${{ github.sha }}
           path: build/ci/ShiftDrop.exe
@@ -383,19 +383,19 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && !inputs.cache-only && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || contains(github.event.pull_request.labels.*.name, 'bench')) }}
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tests-bundle
           path: build/ci
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: build/downloads
           key: ffmpeg-${{ hashFiles('scripts/get-ffmpeg.ps1') }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.ffmpeg.result == 'success'
         with:
           name: ffmpeg-custom-${{ github.sha }}
@@ -438,7 +438,7 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/configure
         with:
@@ -461,7 +461,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Is there a release for this version?
         id: version
@@ -479,14 +479,14 @@ jobs:
           }
           exit 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.version.outputs.publish == 'true'
         with:
           name: ShiftDrop-Setup-${{ github.sha }}
           path: build/installer
 
       # Absent when the build shipped the BtbN ffmpeg (SHIFTDROP_FFMPEG=btbn).
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.version.outputs.publish == 'true'
         continue-on-error: true
         with:
