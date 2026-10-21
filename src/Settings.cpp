@@ -27,6 +27,14 @@ namespace sd
         }
     }
 
+    Ring RingFromId(std::string_view id)
+    {
+        for (int i = 0; i < kRingCount; ++i)
+            if (id == RingId(static_cast<Ring>(i)))
+                return static_cast<Ring>(i);
+        return Ring::Convert;
+    }
+
     std::wstring SettingsPath()
     {
         return log::AppDataFolder() + L"\\settings.ini";

@@ -54,6 +54,7 @@ namespace sd
 
         void ShowSwitcher(int ring, HMONITOR monitor);   // a wheel opened on `monitor`
         void SetRing(int ring);
+        void SetRings(std::vector<WheelRing> rings);   // the tray's Features menu changed the sections
         void HideSwitcher();                             // the wheel closed and nothing was dropped
         // "Converting 4 files…". With `onCancel`, the panel shows a × that calls it (once).
         void ShowProgress(const std::wstring& title, size_t total, std::function<void()> onCancel = {});
