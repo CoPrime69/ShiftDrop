@@ -468,7 +468,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 |---|---|
 | `[Gesture]` | `Convert`, `Tools`, `Reduce`, `Files`: the key that opens each section (`Shift`, `Ctrl`, `Alt` or `None`; never the Win key). Only Shift by default |
 | `[Keyboard]` | `ExplorerHotkey`, for example `Ctrl+Shift+Space` |
-| `[Appearance]` | `Size` (auto, small, medium, large), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 100 to 300 in steps of 10; Settings › Top panel size). An older `HideCursor` key is ignored and removed |
+| `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size). An older `HideCursor` key is ignored and removed |
 | `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`) |
 | `[Output]` | `Naming` (output name style), `VirtualFiles` (desktop, downloads, ask) |
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |

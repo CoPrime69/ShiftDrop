@@ -23,18 +23,12 @@
 #include <windowsx.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
-#include <condition_variable>
-#include <deque>
 #include <filesystem>
 #include <format>
 #include <map>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <set>
-#include <thread>
 
 namespace sd::pdf
 {
@@ -72,162 +66,6 @@ namespace sd::pdf
             bool ok = false;
             std::vector<uint32_t> counts;   // per file of the request; 0 for files not shown
             std::wstring error;
-        };
-
-        // ---- Rendering ----------------------------------------------------------------------------
-
-        // A page to render: page `page` of `path` (a source file, or an edited page's one-page PDF),
-        // fitted in `maxSide` pixels.
-        struct RenderJob
-        {
-            std::wstring path;
-            uint32_t page = 0;
-            uint32_t maxSide = 0;
-            bool preview = false;
-        };
-
-        struct RenderedPage
-        {
-            RenderJob job;
-            Bitmap pixels;   // empty when it failed
-            double widthPt = 0, heightPt = 0;
-        };
-
-        // One worker renders what the window asks for, the preview before any thumbnail, and posts
-        // each page back as kRendered. The window never waits for it.
-        class RenderQueue
-        {
-        public:
-            ~RenderQueue()
-            {
-                std::vector<std::wstring> remove;
-                {
-                    std::scoped_lock lock(m_state->mutex);
-                    m_state->stop = true;
-                    if (!m_state->started)
-                        remove = std::move(m_state->removeOnExit);
-                }
-                m_state->wake.notify_all();
-                for (const auto& folder : remove)
-                    RemoveEditFolder(folder);
-            }
-
-            // The thumbnails still needed, most wanted first; replaces the previous list.
-            void Thumbnails(HWND hwnd, std::vector<RenderJob> wanted)
-            {
-                {
-                    std::scoped_lock lock(m_state->mutex);
-                    m_state->thumbs.assign(wanted.begin(), wanted.end());
-                }
-                Start(hwnd);
-            }
-
-            // The preview to render next; replaces one not started yet.
-            void Preview(HWND hwnd, RenderJob job)
-            {
-                job.preview = true;
-                {
-                    std::scoped_lock lock(m_state->mutex);
-                    m_state->preview = std::move(job);
-                }
-                Start(hwnd);
-            }
-
-            // A folder (PageEdits.h) to remove once the worker has let go of the pages in it.
-            void RemoveWhenDone(std::wstring folder)
-            {
-                std::scoped_lock lock(m_state->mutex);
-                m_state->removeOnExit.push_back(std::move(folder));
-            }
-
-        private:
-            struct State
-            {
-                std::mutex mutex;
-                std::condition_variable wake;
-                bool stop = false, started = false;
-                std::deque<RenderJob> thumbs;
-                std::optional<RenderJob> preview;
-                HWND hwnd = nullptr;
-                std::vector<std::wstring> removeOnExit;
-            };
-
-            static void Work(const std::shared_ptr<State>& state)
-            {
-                std::map<std::wstring, std::unique_ptr<IRenderedPdf>> docs;
-                std::set<std::wstring> broken;
-                for (;;)
-                {
-                    RenderJob job;
-                    HWND target = nullptr;
-                    {
-                        std::unique_lock lock(state->mutex);
-                        state->wake.wait(lock, [&] { return state->stop || state->preview || !state->thumbs.empty(); });
-                        if (state->stop)
-                            break;
-                        if (state->preview)
-                        {
-                            job = std::move(*state->preview);
-                            state->preview.reset();
-                        }
-                        else
-                        {
-                            job = std::move(state->thumbs.front());
-                            state->thumbs.pop_front();
-                        }
-                        target = state->hwnd;
-                    }
-                    auto out = std::make_unique<RenderedPage>();
-                    out->job = job;
-                    auto& doc = docs[job.path];
-                    if (!doc && !broken.contains(job.path))
-                    {
-                        std::wstring error;
-                        doc = OpenForRendering(job.path, error);
-                        if (!doc)
-                        {
-                            broken.insert(job.path);
-                            log::Warn(L"pages: no pictures of {}: {}", job.path, error);
-                        }
-                    }
-                    double w = 0, h = 0;
-                    if (doc && job.page < doc->PageCount() && doc->PageSize(job.page, w, h) && w > 0 && h > 0)
-                    {
-                        out->widthPt = w;
-                        out->heightPt = h;
-                        uint32_t pw = 0, ph = 0;
-                        PixelSize(w, h, 1e6, std::max<uint32_t>(job.maxSide, 1), pw, ph);   // fitted in maxSide
-                        std::wstring error;
-                        if (!doc->Render(job.page, pw, ph, out->pixels, error))
-                            out->pixels = {};
-                    }
-                    if (!PostOwned(target, kRendered, std::move(out)) && !IsWindow(target))
-                        break;   // the window is gone
-                }
-                docs.clear();   // lets go of the files before their folder is removed
-                std::vector<std::wstring> remove;
-                {
-                    std::scoped_lock lock(state->mutex);
-                    remove = std::move(state->removeOnExit);
-                }
-                for (const auto& folder : remove)
-                    RemoveEditFolder(folder);
-            }
-
-            void Start(HWND hwnd)
-            {
-                {
-                    std::scoped_lock lock(m_state->mutex);
-                    m_state->hwnd = hwnd;
-                    if (m_state->started || !RenderingAvailable())
-                        return;
-                    m_state->started = true;
-                }
-                m_state->wake.notify_all();
-                RunMtaDetached([state = m_state] { Work(state); });   // WinRT rendering blocks: MTA
-            }
-
-            std::shared_ptr<State> m_state = std::make_shared<State>();
         };
 
         // Rendered pixels and their device bitmap, rebuilt when the window's device changes.
@@ -297,7 +135,7 @@ namespace sd::pdf
                     return;
                 }
                 item.pointsPerPixel = w / pw;
-                item.picture = (std::filesystem::path(batch.folder) / std::format(L"page {}-{}.png", batch.serial, n + 1)).wstring();
+                item.picture = EditFileStem(batch.folder, false, batch.serial, n + 1) + L".png";
                 item.rendered = true;
                 if (FAILED(EncodeImageFile(pixels, item.picture, false, 0, 72.0 / item.pointsPerPixel)))
                     batch.error = L"the page could not be saved for editing";
@@ -310,7 +148,7 @@ namespace sd::pdf
             for (size_t n = 0; n < batch.items.size(); ++n)
             {
                 auto& item = batch.items[n];
-                const auto stem = (std::filesystem::path(batch.folder) / std::format(L"edit {}-{}", batch.serial, n + 1)).wstring();
+                const auto stem = EditFileStem(batch.folder, true, batch.serial, n + 1);
                 const std::wstring picture = stem + L".png", page = stem + L".pdf";
                 bool changed = false;
                 std::wstring error;
@@ -387,6 +225,9 @@ namespace sd::pdf
                 }
                 if (!(Organizing() ? Create(title, 900, 640, 560, 400) : Create(title, 1240, 820, 760, 500)))
                     return false;
+                m_queue.SetTarget([hwnd = Hwnd()](std::unique_ptr<RenderedPage> page) {
+                    return PostOwned(hwnd, kRendered, std::move(page)) || IsWindow(hwnd);
+                });
                 StartCounting();
                 return true;
             }
@@ -459,7 +300,7 @@ namespace sd::pdf
                     return;
                 // Closed without saving or going back: nothing will read the edited pages now.
                 if (!m_editFolder.empty())
-                    m_queue.RemoveWhenDone(m_editFolder);
+                    m_queue.WhenDone([folder = m_editFolder] { RemoveEditFolder(folder); });
                 if (auto cancelled = std::move(m_request.cancelled))
                     cancelled();
             }
@@ -480,7 +321,7 @@ namespace sd::pdf
                 }
                 if (!m_editFolder.empty() && EditedPages(m_plan) == 0)
                 {
-                    m_queue.RemoveWhenDone(m_editFolder);   // every edit was reverted: nothing will read them
+                    m_queue.WhenDone([folder = m_editFolder] { RemoveEditFolder(folder); });   // every edit was reverted: nothing will read them
                     m_editFolder.clear();
                 }
                 Leave(std::move(m_request.save));
@@ -722,25 +563,24 @@ namespace sd::pdf
 
             // ---- Thumbnails ---------------------------------------------------------------------
 
-            std::wstring PathOf(const PageRef& ref) const
-            {
-                if (!ref.edited.empty())
-                    return ref.edited;
-                return ref.file < m_request.files.size() ? m_request.files[ref.file] : std::wstring();
-            }
-            static uint32_t PageOf(const PageRef& ref) { return ref.edited.empty() ? ref.page : 0; }
+            PageKey KeyFor(const PageRef& ref) const { return KeyOf(ref, m_request.files); }
 
             PagePicture* Thumbnail(const PageRef& ref)
             {
-                const auto it = m_thumbs.find({ PathOf(ref), PageOf(ref) });
+                const auto it = m_thumbs.find(KeyFor(ref));
                 return it == m_thumbs.end() ? nullptr : &it->second;
             }
 
             float Aspect(const PageRef& ref) const
             {
-                const auto it = m_thumbs.find({ PathOf(ref), PageOf(ref) });
+                const auto key = KeyFor(ref);
+                const auto it = m_thumbs.find(key);
                 if (it != m_thumbs.end() && it->second.heightPt > 0)
                     return static_cast<float>(it->second.widthPt / it->second.heightPt);
+                // The preview can arrive first (it renders before any thumbnail, and the large view
+                // hides the grid): its page size counts as well.
+                if (key == m_previewKey && m_preview.heightPt > 0)
+                    return static_cast<float>(m_preview.widthPt / m_preview.heightPt);
                 return 0.773f;   // A4/Letter-ish until the page arrives
             }
 
@@ -757,13 +597,13 @@ namespace sd::pdf
                 m_requestedEnd = end;
                 m_requestedRevision = m_revision;
                 std::vector<RenderJob> jobs;
-                std::set<std::pair<std::wstring, uint32_t>> queued;
+                std::set<PageKey> queued;
                 const auto px = static_cast<uint32_t>(std::lround(kThumbBox * Scale()));
                 const auto want = [&](size_t i) {
-                    auto key = std::make_pair(PathOf(m_plan[i]), PageOf(m_plan[i]));
-                    if (key.first.empty() || m_thumbs.contains(key) || !queued.insert(key).second)
+                    auto key = KeyFor(m_plan[i]);
+                    if (key.path.empty() || m_thumbs.contains(key) || !queued.insert(key).second)
                         return;
-                    jobs.push_back(RenderJob{ key.first, key.second, px, false });
+                    jobs.push_back(RenderJob{ std::move(key), px, false });
                 };
                 for (size_t i = first; i < end; ++i)
                     want(i);
@@ -774,7 +614,7 @@ namespace sd::pdf
                     if (first >= d)
                         want(first - d);
                 }
-                m_queue.Thumbnails(Hwnd(), std::move(jobs));
+                m_queue.Thumbnails(std::move(jobs));
             }
 
             // ---- Drawing ------------------------------------------------------------------------
@@ -807,9 +647,19 @@ namespace sd::pdf
                     bw = static_cast<float>(s.width);
                     bh = static_cast<float>(s.height);
                 }
-                const auto centre = D2D1::Point2F((box.left + box.right) / 2.f, (box.top + box.bottom) / 2.f);
+                auto centre = D2D1::Point2F((box.left + box.right) / 2.f, (box.top + box.bottom) / 2.f);
                 const bool sideways = rotation == 90 || rotation == 270;
-                const float fit = std::min((box.right - box.left) / (sideways ? bh : bw), (box.bottom - box.top) / (sideways ? bw : bh));
+                float fit = std::min((box.right - box.left) / (sideways ? bh : bw), (box.bottom - box.top) / (sideways ? bw : bh));
+                const float s = Scale();
+                if (bitmap && std::abs(fit * s - 1.f) < 0.02f)
+                {
+                    // A render made for this size (the preview, a thumbnail): one picture pixel per
+                    // screen pixel, its corner on a whole screen pixel, so nothing is resampled.
+                    fit = 1.f / s;
+                    const float dx = (sideways ? bh : bw) * fit / 2.f, dy = (sideways ? bw : bh) * fit / 2.f;
+                    centre.x += (std::round((centre.x - dx) * s) - (centre.x - dx) * s) / s;
+                    centre.y += (std::round((centre.y - dy) * s) - (centre.y - dy) * s) / s;
+                }
                 const float hw = bw * fit / 2.f, hh = bh * fit / 2.f;
                 const auto page = D2D1::RectF(centre.x - hw, centre.y - hh, centre.x + hw, centre.y + hh);
                 D2D1_MATRIX_3X2_F old;
@@ -943,16 +793,13 @@ namespace sd::pdf
                     return;
                 const auto& ref = m_plan[m_focus];
                 const auto box = PreviewPageBox();
-                const bool sideways = ref.rotation == 90 || ref.rotation == 270;
-                const float aspect = Aspect(ref);   // width / height of the page as it is
-                const float w = sideways ? 1.f : aspect, h = sideways ? aspect : 1.f;
-                const float fit = std::min(std::max(1.f, box.right - box.left) / w, std::max(1.f, box.bottom - box.top) / h);
-                const auto side = static_cast<uint32_t>(std::clamp<long>(std::lround(std::max(w, h) * fit * Scale()), 64, 4096));
-                RenderJob job{ PathOf(ref), PageOf(ref), side, true };
-                if (job.path == m_previewWanted.path && job.page == m_previewWanted.page && job.maxSide == m_previewWanted.maxSide)
+                // As many pixels as the preview covers on this screen; a new size (DPI, window, the
+                // page's real shape once known) asks again.
+                RenderJob job{ KeyFor(ref), PreviewSide(Aspect(ref), ref.rotation, box.right - box.left, box.bottom - box.top, Scale()), true };
+                if (job.key.path.empty() || (job.key == m_previewWanted.key && job.maxSide == m_previewWanted.maxSide))
                     return;
                 m_previewWanted = job;
-                m_queue.Preview(Hwnd(), std::move(job));
+                m_queue.Preview(std::move(job));
             }
 
             void PaintPreview(ID2D1RenderTarget* rt)
@@ -982,8 +829,7 @@ namespace sd::pdf
                 DrawText(from, TextFormat(12.f), D2D1::RectF(textLeft, r.top + 2.f, r.right - 16.f, r.top + kCaptionH), c.textDim);
 
                 // The large render once it is in; the thumbnail, scaled up, until then.
-                const std::pair<std::wstring, uint32_t> key{ PathOf(ref), PageOf(ref) };
-                DrawPage(rt, key == m_previewKey ? &m_preview : Thumbnail(ref), Aspect(ref), ref.rotation, PreviewPageBox(), std::format(L"{}", k + 1), false);
+                DrawPage(rt, KeyFor(ref) == m_previewKey && !m_preview.pixels.Empty() ? &m_preview : Thumbnail(ref), Aspect(ref), ref.rotation, PreviewPageBox(), std::format(L"{}", k + 1), false);
                 // Previous · k of N · Next
                 DrawText(std::format(L"{} of {}", k + 1, m_plan.size()), TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
                          D2D1::RectF(m_buttons[kPrev].rect.right, m_buttons[kPrev].rect.top, m_buttons[kNext].rect.left, m_buttons[kNext].rect.bottom), c.text);
@@ -1161,7 +1007,9 @@ namespace sd::pdf
                     return;
                 }
                 auto batch = std::make_unique<EditBatch>();
-                batch->serial = ++m_serialCounter;
+                // Past every serial the folder's files use: after Back and More... the same folder holds
+                // the edits the plan points at, and a new edit must not write over them.
+                batch->serial = m_serialCounter = FreeEditSerial(m_editFolder, m_serialCounter);
                 batch->tool = tool;
                 batch->folder = m_editFolder;
                 for (const auto i : Selection())
@@ -1169,8 +1017,9 @@ namespace sd::pdf
                     const auto& ref = m_plan[i];
                     EditItem item;
                     item.index = i;
-                    item.source = PathOf(ref);
-                    item.page = PageOf(ref);
+                    const auto key = KeyFor(ref);
+                    item.source = key.path;
+                    item.page = key.page;
                     if (!ref.edited.empty())
                         item.picture = PictureOf(ref.edited);   // builds on the earlier edit
                     batch->items.push_back(std::move(item));
@@ -1480,13 +1329,15 @@ namespace sd::pdf
                     std::unique_ptr<RenderedPage> page(reinterpret_cast<RenderedPage*>(lParam));
                     if (page->job.preview)
                     {
-                        if (page->job.path != m_previewWanted.path || page->job.page != m_previewWanted.page || page->pixels.Empty())
+                        if (page->job.key != m_previewWanted.key || page->pixels.Empty())
                             return true;   // the selection moved on meanwhile
-                        m_previewKey = { page->job.path, page->job.page };
+                        // An earlier size of the wanted page is still sharper than the thumbnail; the
+                        // wanted size follows it.
+                        m_previewKey = page->job.key;
                         m_preview = PagePicture{ std::move(page->pixels), page->widthPt, page->heightPt, nullptr, 0, 0 };
                     }
                     else
-                        m_thumbs[{ page->job.path, page->job.page }] = PagePicture{ std::move(page->pixels), page->widthPt, page->heightPt, nullptr, 0, 0 };
+                        m_thumbs[page->job.key] = PagePicture{ std::move(page->pixels), page->widthPt, page->heightPt, nullptr, 0, 0 };
                     Invalidate();
                     return true;
                 }
@@ -1645,7 +1496,7 @@ namespace sd::pdf
             std::vector<std::pair<PagePlan, std::vector<bool>>> m_undo;
             uint64_t m_revision = 0;
 
-            std::map<std::pair<std::wstring, uint32_t>, PagePicture> m_thumbs;
+            std::map<PageKey, PagePicture> m_thumbs;
             uint64_t m_paint = 0;
             size_t m_requestedFirst = SIZE_MAX, m_requestedEnd = 0;
             uint64_t m_requestedRevision = ~0ull;
@@ -1660,7 +1511,7 @@ namespace sd::pdf
             D2D1_RECT_F m_previewRect{};
             RenderJob m_previewWanted;
             PagePicture m_preview;
-            std::pair<std::wstring, uint32_t> m_previewKey;
+            PageKey m_previewKey;
 
             std::wstring m_editFolder;
             unsigned m_serialCounter = 0, m_editSerial = 0;
