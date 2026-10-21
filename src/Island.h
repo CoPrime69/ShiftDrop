@@ -100,7 +100,7 @@ namespace sd
         std::vector<WheelRing> m_rings;
         std::function<void()> m_onClick;
         Appearance m_appearance;
-        int m_panelSize = panel::kSizeMinPercent;
+        int m_panelSize = panel::kSizeDefaultPercent;
 
         wil::unique_hwnd m_hwnd;
         std::unique_ptr<a11y::TextElement> m_a11y;   // after m_hwnd: goes first
