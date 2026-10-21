@@ -375,9 +375,14 @@ TEST(MediaEngine, ConvertNeverComesOutBigger)
     ASSERT_TRUE(engine->Run({ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"testsrc=s=640x360:r=25:d=4", L"-c:v", L"mpeg4",
                               L"-q:v", L"31", L"-y", L"-f", L"avi", source }, nullptr, never.get_token()).ok);
     const auto sourceBytes = std::filesystem::file_size(source);
-    const auto r = runner.Run(recipes.Get("to-mp4"), 0, source, std::stop_token{}, nullptr);
-    ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_LE(r.size, sourceBytes);
+    // MP4 aims at a quality and retries when too big; WebM is held to the source's bitrate from the
+    // first run. (Not WMV here: its encoder can't go below this source's q31 floor, so it errors out.)
+    for (const char* id : { "to-mp4", "to-webm" })
+    {
+        const auto r = runner.Run(recipes.Get(id), 0, source, std::stop_token{}, nullptr);
+        ASSERT_TRUE(r.ok) << id << ": " << Narrow(r.error);
+        EXPECT_LE(r.size, sourceBytes) << id;
+    }
 }
 
 TEST(MediaEngine, CancelStopsFfmpegAndLeavesNothing)

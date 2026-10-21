@@ -336,7 +336,21 @@ namespace sd
         if (const auto* format = recipe.MediaFormat())
         {
             extension = format->extension;
-            const MediaPlan plan = PlanConversion(*format, info, h264);
+            MediaPlan plan = PlanConversion(*format, info, h264);
+            const std::string_view id(format->id);
+            std::error_code ec;
+            const auto sourceBytes = static_cast<int64_t>(std::filesystem::file_size(source, ec));
+            const bool reencodesVideo = video && format->fromVideo && id != "gif" && id != "mp3" && !plan.copyAll && !plan.copyVideo;
+            // WebM, AVI and WMV encoders aim at a quality, and from an H.264 or HEVC source they
+            // usually land above it: hold them to the source's bitrate from the first run, so a
+            // second encode is the exception. (VP9 keeps its quality setting under the cap.)
+            double capShare = 0;
+            if (reencodesVideo && (id == "webm" || id == "avi" || id == "wmv"))
+            {
+                plan.videoBps = CapVideoBps(sourceBytes, info.durationUs, 0.9, !info.audioCodec.empty());
+                if (plan.videoBps > 0)
+                    capShare = 0.9;
+            }
             log::Info(L"media: {} -> {} ({} video {}, audio {}{})", source, format->label, Widen(info.videoCodec.empty() ? "no" : info.videoCodec),
                       plan.copyAll || plan.copyVideo ? L"copied" : L"encoded", plan.copyAll || plan.copyAudio ? L"copied" : L"encoded",
                       plan.hwDecode ? L", GPU decode" : L"");
@@ -351,16 +365,15 @@ namespace sd
             }
             // A re-encoded video never comes out bigger than its source (Reduce size is for smaller
             // still): over the source's size, it runs again at the source's own bitrate, then lower.
-            const std::string_view id(format->id);
             if (run.ok && video && format->fromVideo && id != "gif" && id != "mp3" && !used.copyAll && !used.copyVideo)
             {
-                std::error_code ec;
-                const auto sourceBytes = static_cast<int64_t>(std::filesystem::file_size(source, ec));
                 const auto size = [&] { return static_cast<int64_t>(std::filesystem::file_size(staging, ec)); };
                 for (const double share : { 0.9, 0.6 })
                 {
                     if (!run.ok || sourceBytes <= 0 || size() <= sourceBytes)
                         break;
+                    if (capShare > 0 && share >= capShare)
+                        continue;   // already ran at this cap
                     used.videoBps = CapVideoBps(sourceBytes, info.durationUs, share, !info.audioCodec.empty());
                     if (used.videoBps <= 0)
                         break;
