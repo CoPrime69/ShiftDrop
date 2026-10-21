@@ -171,7 +171,7 @@ Each milestone, at a glance:
 | M2 | Recipes + Undo (S3) | Tools and File-actions wheels; Copy, Move, Copy Path, Terminal; start with Windows |
 | M3 (three PRs: M3a, M3b, M3c) | Fit to… (S2), media engine | M3a: all audio/video formats, progress and cancel. M3b: Compress, Fit to…, carry, clipboard. M3c: Float shelf |
 | M4 (delivered, except DirectComposition) | Know before you drop (S1) | Keyboard model, metadata inspector |
-| M5 (delivered; AVIF/HEIC/SVG still open) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
+| M5 (delivered) | Text from anything (S4), PDF engine | PDF ↔ images, Merge PDFs, Organize PDF Pages, AVIF/HEIC/SVG, Share |
 | M6 | Share-safe (S5), image canvas | Edit Metadata, Redact Photos, Crop Images |
 | M7 (delivered; WASM plugins designed only, see docs/plugins.md) | Sealed engines + plugins (S6) | Archives (ZIP/TAR/GZIP, RAR input) |
 | **M8 (new, done)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
@@ -222,7 +222,7 @@ The full list:
   - A "ShiftDrop…" entry in the right-click menu does the same.
 - **(parity)** Tool 2, **Edit Metadata**, part 1: an inspector that reads metadata and groups fields by file, track and chapter, with search.
 
-**M5. Text from anything (S4) and the PDF engine** (delivered, except AVIF, HEIC and SVG)
+**M5. Text from anything (S4) and the PDF engine** (delivered)
 - [x] Windows OCR to the clipboard; searchable PDF.
 - [x] PDF engine:
   - Windows.Data.Pdf renders pages.
@@ -233,7 +233,8 @@ The full list:
 - [x] **(parity)** Tool 21, **Merge PDFs**: starts in the order Explorer gave us; drag to reorder.
 - [x] **(parity)** Tool 22, **Organize PDF Pages**: a page grid to reorder, rotate, duplicate and remove pages.
 - [x] **(parity)** Compress for PDF.
-- [ ] **(parity)** AVIF in and out (libavif with aom/dav1d, BSD). HEIC (see exclusions). SVG input via lunasvg (MIT). Not done in M5; still open.
+- [x] **(parity)** AVIF in and out (libavif: dav1d decodes, aom encodes; BSD). HEIC in and out through Windows' own HEIF codec when it is installed, otherwise the slices are dimmed with what to install (see exclusions). SVG and SVGZ input via lunasvg (MIT), drawn at the SVG's own size or 1024 px on the long side, transparency kept. Code in `src/formats`, plugged into the image pipeline through `ImageHooks.h`.
+- [x] **(parity)** Converting an animated GIF or a multi-page TIFF keeps every frame: a GIF to WebP or AVIF stays animated, a GIF to TIFF becomes a multi-page TIFF, Images → PDF gives every TIFF page its own page, and anything else gives a folder "name (frames)" with "name frame 01.png" (or "page 01" for a TIFF) and so on.
 - [x] **(parity)** File action **AirDrop** becomes **Share**: the Windows share sheet (Nearby Share, Phone Link, mail, apps). This is the closest Windows equivalent of a recipient picker.
 
 **M6. Share-safe (S5) and the image canvas**
@@ -330,9 +331,9 @@ All our own code on small permissively licensed libraries: miniz (ZIP), pugixml 
 |---|---|---|---|
 | Images | JPG, PNG, TIFF, BMP | WIC | Done (M1) |
 | | WebP | libwebp | M2 |
-| | AVIF | libavif + aom/dav1d | M5 (not done yet) |
-| | HEIC | Windows' HEIF codec when installed; see exclusions | M5 (not done yet) |
-| | SVG (input only) | lunasvg | M5 (not done yet) |
+| | AVIF | libavif: dav1d decodes, aom encodes | Done (M5) |
+| | HEIC | Windows' HEIF codec when installed; see exclusions | Done (M5) |
+| | SVG (input only) | lunasvg | Done (M5) |
 | | PDF export | our PDF writer | Done (M5) |
 | Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | LGPL ffmpeg (LAME, native AAC, Vorbis, Opus) | M3 |
 | Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 export | LGPL ffmpeg. H.264/HEVC via the GPU encoder or Windows' Media Foundation encoder; WebM via libvpx/AV1 | M3 |
@@ -415,7 +416,7 @@ question 1).
 | PDF → XLSX | **Deferred** | No offline library extracts tables reliably; a wrong table is worse than none. Revisit after M11 |
 | PPT/PPTX rendering | Only with PowerPoint or LibreOffice installed | Rendering slides needs a full layout engine; we use the user's own Office instead of bundling one |
 | Text clippings input | **Excluded** | macOS-only format, never found on Windows |
-| HEIC output | Only when Windows' HEIF and HEVC extensions are installed | The open HEVC encoder (x265) is GPL. HEIC input also works through libheif + libde265 (LGPL, shipped as a separate DLL) |
+| HEIC input and output | Only when Windows' "HEIF Image Extensions" (and, for HEVC pictures, "HEVC Video Extensions") are installed; otherwise the slices are dimmed and say what to install | The open HEVC encoder (x265) is GPL; libheif + libde265 (LGPL) would mean shipping and maintaining another DLL for something Windows does itself |
 | H.264 / HEVC video | GPU encoder or Windows' Media Foundation encoder | x264/x265 are GPL and can't go in the LGPL build |
 | RAR | Extract only | Creating RAR files needs RARLAB's tools |
 | AirDrop | Windows share sheet | AirDrop doesn't exist on Windows |
@@ -428,7 +429,7 @@ question 1).
 | Original spec item | Status |
 |---|---|
 | Shift during a drag shows a wheel at the cursor; drop on a slice; Esc or release elsewhere cancels | Done (M0/M1) |
-| Convert: PNG / JPG / BMP / TIFF | Done (M1); WebP in M2; AVIF / HEIC in M5 |
+| Convert: PNG / JPG / BMP / TIFF | Done (M1); WebP in M2; AVIF, HEIC and SVG input done (M5) |
 | Convert: MP4 / MOV / WEBM / GIF, MP3 / WAV / M4A / FLAC | M3 |
 | Convert: PDF ↔ images | M5 |
 | Ctrl = Edit: resize, rotate | M2 |
@@ -557,6 +558,13 @@ question 1).
 | 2026-10-20 | Shift is the only key that opens the wheel during a drag; Ctrl and Alt no longer do (they keep Explorer's own meaning), and every section is reached by scrolling. Old settings.ini files with Tools=Ctrl / Files=Alt are switched to None once (KeysVersion=2); a later hand edit stays | Prakhar: one key to remember, and sections will outgrow the keys. Alt also lit up the source window's menu bar |
 | 2026-10-20 | A wheel moved in from a screen edge treats the spot where it opened as the centre until the cursor moves 6 DIP, and keeps the mouse pointer visible | The cursor sits on a slice after the move; dropping without moving must still run nothing, and the user has to see where the pointer is |
 | 2026-10-20 | A fourth section, Reduce size (between Tools and File actions): eight slices, 90% to 20% smaller, as image.compress / media.compress with `percent` (the result is at most that share of the source) and pdf.compress with `percent`, which steps the pictures down (150 dpi q70 to 48 dpi q25) until it fits. The centre shows the files' total size; a hovered slice's `headline` replaces it with the size it comes out at, over "was …" | Prakhar (23:30): websites often need files under a size, and seeing both sizes before dropping saves trial and error. Fit-to-size already guaranteed the target for images and media |
+| 2026-10-20 | M5: AVIF is libavif with dav1d decoding and aom encoding, linked statically; aom is built as an 8-bit encoder only and libavif without aom's decoder (overlay triplet in `triplets/`). No rav1e (needs a Rust toolchain in the build) and no SVT-AV1 (larger, and slower than aom on small pictures) | All BSD; dav1d is the fastest AV1 decoder; one encoder keeps the exe smaller. The exe still grows by about 5 MB: the Release zip went from 2.4 MB to 7.7 MB and the installer from 44.2 MB to 46.5 MB; the 8-bit-only aom build then took 0.3 MB off the zip (8.17 MB to 7.86 MB with M6 merged) and made encoding about 20% faster |
+| 2026-10-20 | M5: AVIF output defaults to quality 60 (Convert) and 80 (after an edit in Crop or Redact), aom speed 8, every core (`autoTiling`), 4:2:0 chroma below quality 90 and 4:4:4 from 90; alpha gets at least quality 80. Measured on a 12 MP photo-like picture at quality 60 on the Windows CI runner (4 vCPU, 8-bit aom): speed 6 1.01 s, 7 0.93 s, 8 0.28 s, 9 0.23 s; decoding under 0.1 s. Under Wine (4 threads): 2.70 s / 586 KB, 2.39 s / 639 KB, 0.96 s / 634 KB, 0.86 s / 614 KB | Speed 8 is about 3x faster than libavif's default 6 for about 8% more bytes; 9 saves little more. |
+| 2026-10-20 | M5: HEIC goes only through Windows' own HEIF codec (WIC). Whether it can save is checked once at start, off the UI thread, by encoding a 64 × 64 picture; until then and when it can't, HEIC slices are dimmed with the Store extension to install ("HEIF Image Extensions", plus "HEVC Video Extensions" for output). "Same format" on a HEIC (Resize, Rotate…) writes JPG, and an edited HEIC (Crop, Redact) is saved as JPG | No libheif or x265 (GPL, or LGPL as another DLL). Windows can have the HEIF reader without the HEVC encoder, so only a real encode tells; JPG keeps tools working on PCs without the encoder |
+| 2026-10-20 | M5: Compress keeps WebP and AVIF as they are (everything else becomes JPEG, as before) | Both are already smaller than JPEG at the same look; turning them into JPEG would usually make them bigger |
+| 2026-10-20 | M5: SVG is drawn at its own size when the root has a width or height that is a length (a number with or without a unit, not a percentage or "auto"), otherwise 1024 px on the long side in the viewBox's shape (or the drawing's, or square), at most 16384 px a side, transparency kept. For `<text>`, a few common Windows fonts (Arial, Times New Roman, Courier New, Segoe UI, Verdana…) are given to lunasvg the first time an SVG with text is drawn; SVGZ is unzipped with zlib. An edited SVG is saved as PNG | Icons stay crisp at their size; "100%" or no size has no pixel size, and 1024 is big enough to use and small enough to be quick. lunasvg has no font lookup of its own; reading a handful of files once is cheap, scanning the whole Fonts folder is not |
+| 2026-10-20 | M5: the formats plug in through one small interface (`ImageHooks.h`: decode, read size, encode, can-encode with a reason, a hint for a file WIC can't open); the image pipeline, the PDF builder, the canvas (Crop, Redact, Share-safe) and the preview's size reader ask it first | New formats need no changes to the core's callers; the reason for a dimmed slice comes from the format itself |
+| 2026-10-21 | M5: converting an animated GIF or a multi-page TIFF keeps every frame (Prakhar). GIF frames are drawn onto the GIF's canvas in turn (place, disposal 2 and 3, delays; a delay under 20 ms shows for 100 ms, as in browsers). GIF → WebP is an animated WebP (libwebp's WebPAnimEncoder), GIF → AVIF an AVIF image sequence, GIF → TIFF one multi-page TIFF, TIFF → PDF one page per TIFF page; everything else (and TIFF → WebP or AVIF, since pages aren't an animation) is a folder "name (frames)" holding "name frame 01.png" or "name page 01.png" | Nothing in the file is lost, and each target holds frames the way it can. The folder follows PDF → images ("name (pages)") |
 | 2026-10-20 | M11: XLSX is written by our own small writer on miniz, not libxlsxwriter; XLS is read by our own BIFF8 reader over Windows' structured storage (StgOpenStorageOnILockBytes), not libxls | libxls is not in the vcpkg baseline we pin. libxlsxwriter would add zlib-on-minizip and temp files for a format we only need values and dates in |
 | 2026-10-20 | M11: documents to PDF keep the planned Microsoft Print to PDF route (our layout, DirectWrite measuring, GDI drawing, DOCINFO.lpszOutput to a temp file, then the bytes into our staging file); M5's PdfWriter is not used for text | PdfWriter has no font embedding or text shaping; the printer embeds the fonts and keeps the text selectable. If the printer is missing (it can be turned off in Windows Features) the slice says so |
 | 2026-10-20 | M11: paper is US Letter when the region's LOCALE_IPAPERSIZE says Letter, else A4; 2 cm margins and a page number at the bottom | Matches what Word picks for a new document in that region |
@@ -603,6 +611,10 @@ question 1).
 11. M7: Password-protected archives are refused. Should Extract ask for the password (the worker would get it over its pipe), or is refusing fine?
 12. M7: Zip on several files from different folders is named after the first item's parent folder. Good, or always "Archive.zip"?
 13. M7: Should the Convert wheel also offer TAR (no compression) and TAR.XZ, or are ZIP / TAR.GZ / 7z enough?
+14. M5: AVIF output is quality 60 at aom speed 8 (about 0.3 s for a 12 MP photo). Fine, or should Convert offer a "smaller, slower" AVIF (speed 6, about 3.5x the time for about 8% less)?
+15. M5: a HEIC through Resize or Rotate comes out as JPG, because Windows' HEIC encoder is optional and slow. Keep that, or write HEIC when the encoder is there?
+16. M5: SVGs with no size of their own come out 1024 px on the long side. Is 1024 right, or should it be 2048 (sharper on 4K screens, about 4x the pixels)?
+17. M5: a converted animated GIF that becomes a folder of frames can hold hundreds of files. Should there be a limit, or a question first above, say, 100 frames?
 
 ## Sources
 

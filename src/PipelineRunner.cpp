@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "formats/Frames.h"
 
 #include <windows.h>
 #include <wrl/client.h>
@@ -63,7 +64,7 @@ namespace sd
             return MediaFormatAccepts(*media, MediaKindOfExtension(ext));
         if (recipe.IsMediaCompress())
             return MediaKindOfExtension(ext) != MediaKind::None;
-        return m_codecs->CanDecode(ext);
+        return m_codecs->IsImage(ext);   // HEIC without Windows' codec too: its slices show dimmed, with the reason
     }
 
     bool PipelineRunner::Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const
@@ -120,14 +121,20 @@ namespace sd
         if (!m_codecs->CanDecode(ext))
         {
             if (why)
-                *why = std::format(L"no image decoder for '{}' on this PC", ext);
+                *why = m_codecs->WhyNotDecodable(ext);
             return false;
         }
         const auto* format = recipe.OutputFormatFor(ext);
-        if (!format || !m_codecs->CanEncode(*format))
+        if (!format)
         {
             if (why)
                 *why = L"output format unavailable";
+            return false;
+        }
+        if (std::wstring missing; !m_codecs->CanEncode(*format, &missing))
+        {
+            if (why)
+                *why = missing.empty() ? L"output format unavailable" : missing;
             return false;
         }
         return true;
@@ -187,6 +194,9 @@ namespace sd
             return RunDuplicate(recipe, runId, source, elapsedMs);
         if (recipe.IsMedia())
             return RunMedia(recipe, runId, source, stop, progress, elapsedMs);
+        // An animated GIF or a multi-page TIFF keeps every frame (src/formats/Frames.h).
+        if (recipe.IsSingleEncode() && formats::FrameCount(source) > 1)
+            return formats::ConvertFrames(recipe, *recipe.OutputFormatFor(LowerExtension(source)), m_history, runId, source, stop, progress);
 
         std::wstring staging;
         Microsoft::WRL::ComPtr<IStream> stream;
