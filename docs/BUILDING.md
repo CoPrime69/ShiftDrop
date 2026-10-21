@@ -104,7 +104,7 @@ and the tests that need ffmpeg skip themselves.
 |---|---|---|
 | `x64-release` | configure, build, test | Visual Studio 2022 generator, x64, triplet `x64-windows-static`, output in `build\x64-release`, Release configuration |
 | `x64-release-m0` | configure, build | The same with `SHIFTDROP_M0=ON`: a placeholder build that draws a plain circle and only logs each drop. Useful when you work on the mouse hook or the drop target alone. Output in `build\x64-release-m0` |
-| `ci` | configure, build, test | What CI uses: the Ninja generator, Release, every compile through [sccache](https://github.com/mozilla/sccache) (it must be on `PATH`), vcpkg's ports in `build\vcpkg_installed`, output in `build\ci`, tests six at a time. Run it from a Developer PowerShell |
+| `ci` | configure, build, test | What CI uses: the Ninja generator, Release, every compile through [sccache](https://github.com/mozilla/sccache) (it must be on `PATH`), vcpkg's ports in `build\vcpkg_installed`, output in `build\ci`, tests four at a time. Run it from a Developer PowerShell |
 
 ```powershell
 cmake --preset x64-release
@@ -282,7 +282,7 @@ request and every `v*` tag. Its jobs:
    preset, builds the app, runs the offline check, builds the installer, runs the installer smoke
    test and uploads the installer and the exe.
 3. **tests** (Windows Server 2022, at the same time as build): builds the unit tests with the same
-   ffmpeg and runs them all, six at a time.
+   ffmpeg and runs them all, four at a time.
 4. **placeholder** (Windows Server 2022, at the same time): builds the placeholder gesture build
    (`SHIFTDROP_M0=ON`), the app target only.
 5. **release** (tags only): publishes the installer once the three jobs above passed.
