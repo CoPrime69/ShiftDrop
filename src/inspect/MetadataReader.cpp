@@ -3,6 +3,7 @@
 #include "Media.h"
 #include "OutputPath.h"
 #include "Utf.h"
+#include "Wic.h"
 
 #include <windows.h>
 #include <propsys.h>
@@ -271,9 +272,9 @@ namespace sd::inspect
     std::vector<Field> ImageFields(const std::wstring& path)
     {
         std::vector<Field> f;
-        ComPtr<IWICImagingFactory> factory;
+        const auto factory = wic::Factory();
         ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+        if (!factory ||
             FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)))
             return f;
         ComPtr<IWICBitmapDecoderInfo> info;

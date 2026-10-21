@@ -1,4 +1,5 @@
 #include "pdf/PdfImages.h"
+#include "pdf/PdfDoc.h"
 #include "pdf/Wic.h"
 
 #include <qpdf/Buffer.hh>
@@ -29,26 +30,6 @@ namespace sd::pdf
             int Components() const { return indexed ? 1 : Channels(model); }
             int OutChannels() const { return model == Model::Gray ? 1 : 3; }
         };
-
-        std::vector<std::string> Filters(QPDFObjectHandle filter)
-        {
-            std::vector<std::string> out;
-            if (filter.isName())
-                out.push_back(filter.getName());
-            else if (filter.isArray())
-                for (int i = 0; i < filter.getArrayNItems(); ++i)
-                    if (filter.getArrayItem(i).isName())
-                        out.push_back(filter.getArrayItem(i).getName());
-            return out;
-        }
-
-        bool IsDct(const std::string& f) { return f == "/DCTDecode" || f == "/DCT"; }
-
-        bool Lossless(const std::string& f)
-        {
-            return f == "/FlateDecode" || f == "/Fl" || f == "/LZWDecode" || f == "/LZW" || f == "/RunLengthDecode" || f == "/RL" ||
-                   f == "/ASCII85Decode" || f == "/A85" || f == "/ASCIIHexDecode" || f == "/AHx";
-        }
 
         // Device, calibrated and ICC-based spaces (an ICC profile is read as the device space with
         // its number of components).
@@ -260,9 +241,9 @@ namespace sd::pdf
                 why = "an unusual sample size";
                 return false;
             }
-            const auto filters = Filters(dict.getKey("/Filter"));
+            const auto filters = StreamFilters(dict.getKey("/Filter"));
             const auto decode = dict.getKey("/Decode");
-            if (filters.size() == 1 && IsDct(filters[0]))
+            if (filters.size() == 1 && IsDctFilter(filters[0]))
             {
                 if (space.indexed || space.model == Model::Cmyk)
                 {
@@ -298,7 +279,7 @@ namespace sd::pdf
                 out = std::move(s);
                 return true;
             }
-            if (!std::all_of(filters.begin(), filters.end(), Lossless))
+            if (!std::all_of(filters.begin(), filters.end(), IsLosslessFilter))
             {
                 why = "JPEG 2000, JBIG2 or fax compression";
                 return false;

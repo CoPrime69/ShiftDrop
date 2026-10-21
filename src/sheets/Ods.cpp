@@ -1,8 +1,7 @@
 #include "sheets/Workbook.h"
 #include "docs/Bytes.h"
+#include "docs/Xml.h"
 #include "docs/Zip.h"
-
-#include <pugixml.hpp>
 
 #include <cmath>
 #include <format>
@@ -16,21 +15,8 @@ namespace sd::sheets
     namespace
     {
         using docs::XmlEscape;
-
-        std::string_view Local(const char* name)
-        {
-            const std::string_view n(name);
-            const auto colon = n.find(':');
-            return colon == std::string_view::npos ? n : n.substr(colon + 1);
-        }
-
-        std::string Attr(pugi::xml_node node, std::string_view local)
-        {
-            for (auto a = node.first_attribute(); a; a = a.next_attribute())
-                if (Local(a.name()) == local)
-                    return a.value();
-            return {};
-        }
+        using docs::Local;
+        using docs::Attr;
 
         // The text of a <text:p>, with <text:s> (spaces), <text:tab>, <text:line-break> and spans.
         void ParagraphText(pugi::xml_node node, std::string& out)

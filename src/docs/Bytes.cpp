@@ -260,6 +260,7 @@ namespace sd::docs
             { "ouml", 0xF6 }, { "auml", 0xE4 }, { "szlig", 0xDF }, { "ccedil", 0xE7 }, { "ntilde", 0xF1 },
             { "larr", 0x2190 }, { "rarr", 0x2192 }, { "uarr", 0x2191 }, { "darr", 0x2193 }, { "shy", 0xAD },
             { "zwj", 0x200D }, { "zwnj", 0x200C }, { "ensp", 0x2002 }, { "emsp", 0x2003 }, { "thinsp", 0x2009 },
+            { "lrm", 0x200E }, { "rlm", 0x200F },   // direction marks, common in Arabic and Hebrew subtitles
         };
         for (const auto& e : kNamed)
             if (name == e.name)
@@ -268,6 +269,31 @@ namespace sd::docs
                 return out;
             }
         return {};
+    }
+
+    std::string DecodeEntities(std::string_view s)
+    {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            if (s[i] == '&')
+            {
+                const auto semi = s.find(';', i + 1);
+                if (semi != std::string_view::npos && semi - i <= 12)
+                {
+                    const auto decoded = DecodeEntity(s.substr(i + 1, semi - i - 1));
+                    if (!decoded.empty())
+                    {
+                        out += decoded;
+                        i = semi;
+                        continue;
+                    }
+                }
+            }
+            out.push_back(s[i]);
+        }
+        return out;
     }
 
     std::string AsciiLower(std::string_view s)

@@ -1,4 +1,5 @@
 #pragma once
+#include "OutputPath.h"
 #include "RecipeStore.h"
 
 #include <windows.h>
@@ -41,6 +42,15 @@ namespace sd::test
     private:
         static std::wstring Widen(const char* s) { return std::wstring(s, s + strlen(s)); }
         std::filesystem::path m_path;
+    };
+
+    // Sets the output naming style for one test and puts the default back afterwards.
+    struct NamingScope
+    {
+        explicit NamingScope(OutputNaming naming) { SetOutputNaming(naming); }
+        ~NamingScope() { SetOutputNaming(OutputNaming::Parentheses); }
+        NamingScope(const NamingScope&) = delete;
+        NamingScope& operator=(const NamingScope&) = delete;
     };
 
     inline void WriteText(const std::wstring& path, const std::string& text)

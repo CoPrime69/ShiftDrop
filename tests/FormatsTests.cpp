@@ -2,6 +2,7 @@
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
+#include "Wic.h"
 #include "canvas/Raster.h"
 #include "formats/Avif.h"
 #include "formats/Heic.h"
@@ -40,7 +41,7 @@ namespace
         ComPtr<IWICBitmapFrameDecode> frame;
         return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
                SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(formats::FromWicSource(factory.Get(), frame.Get(), out));
+               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(wic::CopyBgra(factory.Get(), frame.Get(), out.width, out.height, out.bgra));
     }
 
     bool ReadAvifFile(const std::wstring& path, formats::Image& out)

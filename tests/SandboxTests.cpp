@@ -338,6 +338,38 @@ TEST(Sandbox, JobKillsTheWorkerWhenClosed)
     EXPECT_EQ(WaitForSingleObject(child.process.get(), 5000), static_cast<DWORD>(WAIT_OBJECT_0));
 }
 
+// A plain child can start in a folder of our choosing (LibreOffice needs its program folder) with
+// its windows hidden, and a child may start children of its own when allowed (soffice.exe starts
+// soffice.bin): cmd.exe here writes a file into its current folder through a second cmd.exe.
+TEST(Sandbox, PlainChildStartsInItsFolder)
+{
+    TempDir dir;
+    wchar_t system[MAX_PATH]{};
+    GetSystemDirectoryW(system, MAX_PATH);
+    sandbox::LaunchSpec spec;
+    spec.exe = std::wstring(system) + L"\\cmd.exe";
+    spec.commandLine = L"cmd.exe /d /c cmd.exe /d /c echo here> here.txt";
+    spec.appContainer = false;
+    spec.limits.noChildren = false;
+    spec.limits.noUi = false;
+    spec.workingDir = dir.path().wstring();
+    spec.hideWindow = true;
+    auto child = sandbox::Launch(spec);
+    ASSERT_TRUE(child) << Narrow(child.error);
+    EXPECT_FALSE(child.sandboxed);
+    ASSERT_EQ(WaitForSingleObject(child.process.get(), 20000), static_cast<DWORD>(WAIT_OBJECT_0));
+    // The inner cmd.exe may still be closing its file: wait for the job to empty.
+    for (int i = 0; i < 200; ++i)
+    {
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION info{};
+        if (!QueryInformationJobObject(child.job.get(), JobObjectBasicAccountingInformation, &info, sizeof(info), nullptr) ||
+            info.ActiveProcesses == 0)
+            break;
+        Sleep(50);
+    }
+    EXPECT_EQ(ReadAll(dir / L"here.txt").substr(0, 4), "here");
+}
+
 TEST(Sandbox, WorkerExtractsInsideTheAppContainer)
 {
     TempDir dir;

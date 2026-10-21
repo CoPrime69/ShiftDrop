@@ -1,6 +1,5 @@
 #pragma once
-#include "Engine.h"
-#include "ImagePipeline.h"
+#include "canvas/PictureEngine.h"
 #include "photo/Compose.h"
 
 #include <cstdint>
@@ -39,15 +38,13 @@ namespace sd::photo
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();
 
-    class PhotoEngine final : public IEngine
+    class PhotoEngine final : public canvas::PictureEngine
     {
     public:
         explicit PhotoEngine(const EngineServices& services);
 
         bool Handles(const Recipe& recipe) const override;
-        bool Applies(const Recipe& recipe, const std::wstring& path) const override;
         bool AppliesToDrop(const Recipe& recipe, size_t fileCount) const override;
-        bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override;
         ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                        const ProgressFn& progress) const override;
         bool IsBatch(const Recipe& recipe) const override;
@@ -56,9 +53,5 @@ namespace sd::photo
         bool NeedsEditor(const Recipe& recipe) const override;
         void OpenEditor(HWND owner, const Recipe& recipe, const std::vector<std::wstring>& files,
                         std::function<void(Recipe adjusted, std::vector<std::wstring> files)> done) const override;
-
-    private:
-        EngineServices m_services;
-        std::shared_ptr<const ImageCodecs> m_codecs;
     };
 }

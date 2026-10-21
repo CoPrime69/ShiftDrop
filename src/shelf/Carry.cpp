@@ -1,9 +1,12 @@
 #include "shelf/Carry.h"
+#include "Clipboard.h"
 #include "FileActions.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "Recipe.h"
+#include "Wic.h"
+#include "formats/Pixels.h"
 
 #include <shellapi.h>
 #include <shlobj.h>
@@ -31,17 +34,6 @@ namespace sd::shelf
             if (FAILED(SHParseDisplayName(path.c_str(), nullptr, &raw, 0, nullptr)))
                 return Pidl();
             return Pidl(raw);
-        }
-
-        // Copies `bytes` into a movable HGLOBAL, as SetClipboardData wants it.
-        wil::unique_hglobal ToGlobal(const std::vector<uint8_t>& bytes)
-        {
-            wil::unique_hglobal mem(GlobalAlloc(GMEM_MOVEABLE, bytes.size()));
-            if (!mem)
-                return mem;
-            memcpy(GlobalLock(mem.get()), bytes.data(), bytes.size());
-            GlobalUnlock(mem.get());
-            return mem;
         }
 
         HRESULT StreamBytes(IStream* stream, std::vector<uint8_t>& bytes)
@@ -177,12 +169,12 @@ namespace sd::shelf
             return hr;
 
         // 2. The same pixels as a DIB for apps that only read CF_DIB.
-        ComPtr<IWICImagingFactory> factory;
+        const auto factory = wic::Factory();
         ComPtr<IWICStream> wicStream;
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> frame;
         ComPtr<IWICFormatConverter> converter;
-        if (FAILED(hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+        if (FAILED(hr = factory ? S_OK : REGDB_E_CLASSNOTREG) ||
             FAILED(hr = factory->CreateStream(&wicStream)) ||
             FAILED(hr = wicStream->InitializeFromMemory(out.png.data(), static_cast<DWORD>(out.png.size()))) ||
             FAILED(hr = factory->CreateDecoderFromStream(wicStream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) ||
@@ -229,7 +221,7 @@ namespace sd::shelf
                 // Straight alpha over white; CF_DIB readers mostly ignore the alpha byte.
                 const unsigned a = src[x * 4 + 3];
                 for (int c = 0; c < 3; ++c)
-                    row[x * 4 + c] = static_cast<uint8_t>((src[x * 4 + c] * a + 255u * (255u - a) + 127u) / 255u);
+                    row[x * 4 + c] = formats::OnWhite(src[x * 4 + c], a);
                 row[x * 4 + 3] = 255;
             }
         }
@@ -240,39 +232,8 @@ namespace sd::shelf
 
     bool PutOnClipboard(HWND owner, const std::vector<std::wstring>& files, const ClipboardImage* image)
     {
-        wil::unique_hglobal drop = MakeDropFiles(files);
-        wil::unique_hglobal effect(GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD)));
-        if (!drop || !effect)
-            return false;
-        *static_cast<DWORD*>(GlobalLock(effect.get())) = DROPEFFECT_COPY;
-        GlobalUnlock(effect.get());
-        wil::unique_hglobal dib, png;
-        if (image && !image->dib.empty())
-        {
-            dib = ToGlobal(image->dib);
-            png = ToGlobal(image->png);
-        }
-
-        // Another app may have the clipboard open for a moment; try a few times.
-        bool open = false;
-        for (int attempt = 0; attempt < 4 && !(open = OpenClipboard(owner) != FALSE); ++attempt)
-            Sleep(15);
-        if (!open)
-            return false;
-        auto close = wil::scope_exit([] { CloseClipboard(); });
-        EmptyClipboard();
-        static const UINT kPreferredEffect = RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT);
-        static const UINT kPng = RegisterClipboardFormatW(L"PNG");
-        // On success the clipboard owns each block, so release ours only then.
-        if (!SetClipboardData(CF_HDROP, drop.get()))
-            return false;
-        drop.release();
-        if (SetClipboardData(kPreferredEffect, effect.get()))
-            effect.release();
-        if (dib && SetClipboardData(CF_DIB, dib.get()))
-            dib.release();
-        if (png && SetClipboardData(kPng, png.get()))
-            png.release();
-        return true;
+        if (!image)
+            return clipboard::SetFiles(owner, files, DROPEFFECT_COPY);
+        return clipboard::SetFiles(owner, files, DROPEFFECT_COPY, image->png, image->dib);
     }
 }

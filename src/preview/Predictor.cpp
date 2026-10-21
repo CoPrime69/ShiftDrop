@@ -5,6 +5,7 @@
 #include "OutputPath.h"
 #include "Utf.h"
 #include "VirtualDrop.h"
+#include "Wic.h"
 #include "formats/Frames.h"
 #include "inspect/MetadataReader.h"
 
@@ -47,21 +48,17 @@ namespace sd::preview
         constexpr uint32_t kSmallSample = 512, kLargeSample = 1024;
         constexpr size_t kCacheLimit = 2000;
 
-        bool Found(IWICMetadataQueryReader* reader, std::initializer_list<const wchar_t*> names, PROPVARIANT* out = nullptr)
+        // Whether any of `names` holds a value.
+        bool Found(IWICMetadataQueryReader* reader, std::initializer_list<const wchar_t*> names)
         {
             for (const wchar_t* name : names)
             {
                 PROPVARIANT v;
                 PropVariantInit(&v);
-                if (SUCCEEDED(reader->GetMetadataByName(name, &v)) && v.vt != VT_EMPTY)
-                {
-                    if (out)
-                        *out = v;   // the caller clears it
-                    else
-                        PropVariantClear(&v);
-                    return true;
-                }
+                const bool found = SUCCEEDED(reader->GetMetadataByName(name, &v)) && v.vt != VT_EMPTY;
                 PropVariantClear(&v);
+                if (found)
+                    return true;
             }
             return false;
         }
@@ -89,24 +86,19 @@ namespace sd::preview
                 upright = Size2{ static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
                 return true;
             }
-            ComPtr<IWICImagingFactory> factory;
+            const auto factory = wic::Factory();
             ComPtr<IWICBitmapDecoder> decoder;
             ComPtr<IWICBitmapFrameDecode> frame;
-            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+            if (!factory ||
                 FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) ||
                 FAILED(decoder->GetFrame(0, &frame)))
                 return false;
             UINT w = 0, h = 0;
             frame->GetSize(&w, &h);
-            int orientation = 1;
+            const int orientation = wic::ExifOrientation(frame.Get());
             ComPtr<IWICMetadataQueryReader> reader;
             if (SUCCEEDED(frame->GetMetadataQueryReader(&reader)))
             {
-                PROPVARIANT v;
-                PropVariantInit(&v);
-                if (Found(reader.Get(), { L"System.Photo.Orientation", L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}" }, &v) && v.vt == VT_UI2)
-                    orientation = v.uiVal;
-                PropVariantClear(&v);
                 // Metadata policy names first (WIC maps them to the container), then the raw EXIF and XMP paths.
                 meta.gps = Found(reader.Get(), { L"System.GPS.Latitude", L"/app1/ifd/gps/{ushort=2}", L"/ifd/gps/{ushort=2}", L"/xmp/exif:GPSLatitude" });
                 meta.camera = Found(reader.Get(), { L"System.Photo.CameraModel", L"System.Photo.CameraManufacturer", L"/app1/ifd/{ushort=272}",

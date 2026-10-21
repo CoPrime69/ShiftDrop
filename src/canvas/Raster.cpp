@@ -2,6 +2,8 @@
 #include "ImageHooks.h"
 #include "ImagePipeline.h"
 #include "OutputPath.h"
+#include "Wic.h"
+#include "formats/Pixels.h"
 
 #include <shlwapi.h>
 #include <wincodec.h>
@@ -22,45 +24,6 @@ namespace sd::canvas
 {
     namespace
     {
-        ComPtr<IWICImagingFactory> Factory()
-        {
-            ComPtr<IWICImagingFactory> factory;
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            return factory;
-        }
-
-        // EXIF orientation (1..8) as a WIC transform. Read through the metadata policy name first, then
-        // the raw tag 274 paths for codecs that don't implement the policy.
-        WICBitmapTransformOptions Orientation(IWICBitmapFrameDecode* frame)
-        {
-            ComPtr<IWICMetadataQueryReader> reader;
-            if (!frame || FAILED(frame->GetMetadataQueryReader(&reader)))
-                return WICBitmapTransformRotate0;
-            USHORT orientation = 1;
-            for (const wchar_t* query : { L"System.Photo.Orientation", L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}" })
-            {
-                PROPVARIANT value;
-                PropVariantInit(&value);
-                const bool found = SUCCEEDED(reader->GetMetadataByName(query, &value)) && value.vt == VT_UI2;
-                if (found)
-                    orientation = value.uiVal;
-                PropVariantClear(&value);
-                if (found)
-                    break;
-            }
-            switch (orientation)
-            {
-            case 2: return WICBitmapTransformFlipHorizontal;
-            case 3: return WICBitmapTransformRotate180;
-            case 4: return WICBitmapTransformFlipVertical;
-            case 5: return static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
-            case 6: return WICBitmapTransformRotate90;
-            case 7: return static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
-            case 8: return WICBitmapTransformRotate270;
-            default: return WICBitmapTransformRotate0;
-            }
-        }
-
         std::vector<uint8_t> ReadIcc(IWICImagingFactory* factory, IWICBitmapFrameDecode* frame)
         {
             std::vector<uint8_t> bytes;
@@ -109,50 +72,16 @@ namespace sd::canvas
             return S_OK;
         }
 
-        HRESULT CopyOut(IWICImagingFactory* factory, IWICBitmapSource* source, Raster& out)
-        {
-            ComPtr<IWICFormatConverter> bgra;
-            RETURN_IF_FAILED(factory->CreateFormatConverter(&bgra));
-            RETURN_IF_FAILED(bgra->Initialize(source, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeMedianCut));
-            UINT w = 0, h = 0;
-            RETURN_IF_FAILED(bgra->GetSize(&w, &h));
-            if (!out.Allocate(w, h))
-                return E_OUTOFMEMORY;
-            return bgra->CopyPixels(nullptr, w * 4, static_cast<UINT>(out.px.size()), out.px.data());
-        }
-
         HRESULT Fail(std::wstring& error, std::wstring_view what, HRESULT hr)
         {
             error = std::format(L"{}: {}", what, HResultText(hr));
             return hr;
         }
 
-        // Straight BGRA -> 24 bpp BGR on white, rows padded to 4 bytes, for JPEG and BMP.
+        // Straight BGRA -> 24 bpp BGR on white, rows padded to 4 bytes, for JPEG, BMP and HEIC.
         std::vector<uint8_t> FlattenOnWhite(const Raster& image, UINT& stride)
         {
-            stride = (image.width * 3 + 3) & ~3u;
-            std::vector<uint8_t> out(static_cast<size_t>(stride) * image.height);
-            for (UINT y = 0; y < image.height; ++y)
-            {
-                const uint8_t* s = image.At(0, y);
-                uint8_t* d = out.data() + static_cast<size_t>(y) * stride;
-                for (UINT x = 0; x < image.width; ++x, s += 4, d += 3)
-                {
-                    const unsigned a = s[3];
-                    for (int c = 0; c < 3; ++c)
-                        d[c] = static_cast<uint8_t>((s[c] * a + 255 * (255 - a) + 127) / 255);
-                }
-            }
-            return out;
-        }
-
-        GUID ContainerFor(std::string_view id)
-        {
-            if (id == "png") return GUID_ContainerFormatPng;
-            if (id == "jpg") return GUID_ContainerFormatJpeg;
-            if (id == "tiff") return GUID_ContainerFormatTiff;
-            if (id == "bmp") return GUID_ContainerFormatBmp;
-            return GUID_NULL;
+            return formats::FlattenToBgr(image.px.data(), image.width, image.height, stride);
         }
     }
 
@@ -174,10 +103,10 @@ namespace sd::canvas
         return true;
     }
 
-    HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge)
+    HRESULT LoadRaster(const std::wstring& path, Raster& out, std::wstring& error, UINT maxEdge, uint64_t maxPixels)
     {
         out = {};
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory)
             return Fail(error, L"WIC", REGDB_E_CLASSNOTREG);
 
@@ -233,7 +162,7 @@ namespace sd::canvas
                                              WICBitmapInterpolationModeHighQualityCubic)))
                 pixels = scaler;
         }
-        if (const auto t = Orientation(frame.Get()); t != WICBitmapTransformRotate0)
+        if (const auto t = wic::ExifTransform(frame.Get()); t != WICBitmapTransformRotate0)
         {
             // The flip-rotator needs random access to its source; a scaler streams, so cache it first.
             ComPtr<IWICBitmap> cached;
@@ -242,13 +171,11 @@ namespace sd::canvas
                 SUCCEEDED(factory->CreateBitmapFlipRotator(&rotator)) && SUCCEEDED(rotator->Initialize(cached.Get(), t)))
                 pixels = rotator;
         }
-        const double dpiX = out.dpiX, dpiY = out.dpiY;
-        auto icc = std::move(out.icc);
-        if (const HRESULT hr = CopyOut(factory.Get(), pixels.Get(), out); FAILED(hr))
+        if (const HRESULT hr = wic::CopyBgra(factory.Get(), pixels.Get(), out.width, out.height, out.px, maxPixels); FAILED(hr))
+        {
+            out = {};
             return Fail(error, L"decode", hr);
-        out.dpiX = dpiX;
-        out.dpiY = dpiY;
-        out.icc = std::move(icc);
+        }
         return S_OK;
     }
 
@@ -276,7 +203,7 @@ namespace sd::canvas
             return Fail(error, L"encode", E_INVALIDARG);
         if (const auto* hook = EncodeHookFor(format.id))   // AVIF, HEIC (src/formats)
         {
-            auto factory = Factory();
+            auto factory = wic::Factory();
             ComPtr<IWICBitmap> bitmap;
             if (!factory)
                 return Fail(error, L"WIC", REGDB_E_CLASSNOTREG);
@@ -313,13 +240,13 @@ namespace sd::canvas
             return out->Commit(STGC_DEFAULT);
         }
 
-        auto factory = Factory();
+        auto factory = wic::Factory();
         if (!factory)
             return Fail(error, L"WIC", REGDB_E_CLASSNOTREG);
         ComPtr<IWICBitmapEncoder> encoder;
         ComPtr<IWICBitmapFrameEncode> frame;
         ComPtr<IPropertyBag2> options;
-        if (const HRESULT hr = factory->CreateEncoder(ContainerFor(format.id), nullptr, &encoder); FAILED(hr))
+        if (const HRESULT hr = factory->CreateEncoder(wic::ContainerFor(format.id), nullptr, &encoder); FAILED(hr))
             return Fail(error, L"encode", hr);
         if (const HRESULT hr = encoder->Initialize(out, WICBitmapEncoderNoCache); FAILED(hr))
             return Fail(error, L"encode", hr);
@@ -417,5 +344,22 @@ namespace sd::canvas
         bytes.assign(data, data + static_cast<size_t>(end.QuadPart));
         GlobalUnlock(memory);
         return S_OK;
+    }
+
+    HRESULT SaveEdited(const Raster& image, const std::wstring& source, const std::wstring& target, std::wstring& error, const ImageFormatInfo** format)
+    {
+        const auto& edited = EditedFormatFor(LowerExtension(source));
+        if (format)
+            *format = &edited;
+        return SaveRasterToFile(image, edited, EditedQuality(edited), target, error);
+    }
+
+    HRESULT EncodeEdited(const Raster& image, const std::wstring& source, std::vector<uint8_t>& bytes, std::wstring& error,
+                         const ImageFormatInfo** format)
+    {
+        const auto& edited = EditedFormatFor(LowerExtension(source));
+        if (format)
+            *format = &edited;
+        return EncodeRaster(image, edited, EditedQuality(edited), bytes, error);
     }
 }

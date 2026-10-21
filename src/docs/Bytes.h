@@ -34,6 +34,9 @@ namespace sd::docs
 
     // Decodes one HTML character reference body ("amp", "#233", "#x1F600") to UTF-8, or empty if unknown.
     std::string DecodeEntity(std::string_view name);
+    // Every character reference in `s` decoded ("&amp;" -> "&"); an "&" that starts no known
+    // reference stays as written.
+    std::string DecodeEntities(std::string_view s);
     // Appends a code point as UTF-8.
     void AppendUtf8(std::string& out, char32_t cp);
 

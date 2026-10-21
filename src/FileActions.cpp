@@ -1,4 +1,5 @@
 #include "FileActions.h"
+#include "Clipboard.h"
 #include "Log.h"
 
 #include <shellapi.h>
@@ -14,48 +15,6 @@ namespace sd
 {
     namespace
     {
-        // Puts files on the clipboard the way Explorer does: CF_HDROP plus "Preferred DropEffect", which
-        // tells Explorer's Paste whether to copy or move. We always say copy.
-        bool PutFilesOnClipboard(const std::vector<std::wstring>& files, HWND owner, DWORD effect)
-        {
-            wil::unique_hglobal drop = MakeDropFiles(files);
-            wil::unique_hglobal effectMem(GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD)));
-            if (!drop || !effectMem)
-                return false;
-            *static_cast<DWORD*>(GlobalLock(effectMem.get())) = effect;
-            GlobalUnlock(effectMem.get());
-
-            if (!OpenClipboard(owner))
-                return false;
-            auto close = wil::scope_exit([] { CloseClipboard(); });
-            EmptyClipboard();
-            static const UINT kPreferredEffect = RegisterClipboardFormatW(CFSTR_PREFERREDDROPEFFECT);
-            // On success the clipboard owns the memory, so release our ownership only then.
-            if (!SetClipboardData(CF_HDROP, drop.get()))
-                return false;
-            drop.release();
-            if (SetClipboardData(kPreferredEffect, effectMem.get()))
-                effectMem.release();
-            return true;
-        }
-
-        bool PutTextOnClipboard(const std::wstring& text, HWND owner)
-        {
-            wil::unique_hglobal mem(GlobalAlloc(GMEM_MOVEABLE, (text.size() + 1) * sizeof(wchar_t)));
-            if (!mem)
-                return false;
-            memcpy(GlobalLock(mem.get()), text.c_str(), (text.size() + 1) * sizeof(wchar_t));
-            GlobalUnlock(mem.get());
-            if (!OpenClipboard(owner))
-                return false;
-            auto close = wil::scope_exit([] { CloseClipboard(); });
-            EmptyClipboard();
-            if (!SetClipboardData(CF_UNICODETEXT, mem.get()))
-                return false;
-            mem.release();
-            return true;
-        }
-
         std::wstring FolderOf(const std::wstring& path)
         {
             if (GetFileAttributesW(path.c_str()) & FILE_ATTRIBUTE_DIRECTORY)
@@ -210,7 +169,7 @@ namespace sd
         }
         else if (actionId == "file.copy")
         {
-            r.ok = PutFilesOnClipboard(files, owner, DROPEFFECT_COPY);
+            r.ok = clipboard::SetFiles(owner, files, DROPEFFECT_COPY);
             r.message = r.ok ? std::format(L"Copied {}. Paste in Explorer.", count) : L"Could not open the clipboard.";
         }
         else if (actionId == "file.copy_path")
@@ -219,7 +178,7 @@ namespace sd
             std::wstring text;
             for (const auto& f : files)
                 text += (text.empty() ? L"" : L"\r\n") + std::format(L"\"{}\"", f);
-            r.ok = PutTextOnClipboard(text, owner);
+            r.ok = clipboard::SetText(owner, text);
             r.message = r.ok ? std::format(L"Copied the path of {}.", count) : L"Could not open the clipboard.";
         }
         else if (actionId == "file.terminal")

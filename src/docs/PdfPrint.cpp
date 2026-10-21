@@ -3,6 +3,7 @@
 #include "docs/Paper.h"
 #include "Log.h"
 #include "Utf.h"
+#include "Wic.h"
 
 #include <windows.h>
 #include <dwrite.h>
@@ -126,12 +127,12 @@ namespace sd::docs
         // `maxW` x `maxH` (the printed size at 200 DPI: sharp on paper, small in the PDF).
         bool DecodeForPrint(const std::string& data, UINT maxW, UINT maxH, UINT& w, UINT& h, std::vector<BYTE>& pixels)
         {
-            ComPtr<IWICImagingFactory> wic;
+            const auto wic = wic::Factory();
             ComPtr<IWICStream> stream;
             ComPtr<IWICBitmapDecoder> decoder;
             ComPtr<IWICBitmapFrameDecode> frame;
             ComPtr<IWICFormatConverter> converter;
-            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))) ||
+            if (!wic ||
                 FAILED(wic->CreateStream(&stream)) ||
                 FAILED(stream->InitializeFromMemory(reinterpret_cast<BYTE*>(const_cast<char*>(data.data())), static_cast<DWORD>(data.size()))) ||
                 FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) ||

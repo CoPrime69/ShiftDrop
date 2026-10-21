@@ -2,8 +2,9 @@
 #include "ImageHooks.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "Wic.h"
+#include "formats/Pixels.h"
 
-#include <propvarutil.h>
 #include <shlwapi.h>
 #include <wincodec.h>
 #include <wil/resource.h>
@@ -29,56 +30,6 @@ namespace sd
 {
     namespace
     {
-        ComPtr<IWICImagingFactory> CreateFactory()
-        {
-            ComPtr<IWICImagingFactory> factory;
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-            return factory;
-        }
-
-        GUID ContainerFor(std::string_view format)
-        {
-            if (format == "png") return GUID_ContainerFormatPng;
-            if (format == "jpg") return GUID_ContainerFormatJpeg;
-            if (format == "tiff") return GUID_ContainerFormatTiff;
-            if (format == "bmp") return GUID_ContainerFormatBmp;
-            return GUID_NULL;   // webp: encoded with libwebp, not WIC
-        }
-
-        // EXIF orientation (1..8). Cameras store pixels unrotated and set this tag; since metadata is
-        // not carried to the output, the rotation must be applied to the pixels or the result looks sideways.
-        WICBitmapTransformOptions OrientationTransform(IWICBitmapFrameDecode* frame)
-        {
-            ComPtr<IWICMetadataQueryReader> reader;
-            if (!frame || FAILED(frame->GetMetadataQueryReader(&reader)))   // e.g. BMP has no metadata
-                return WICBitmapTransformRotate0;
-            // The metadata *policy* name first (WIC maps it to the container's EXIF/XMP location), then the
-            // raw EXIF tag 274 paths for JPEG and TIFF in case a codec does not implement the policy.
-            USHORT orientation = 1;
-            for (const wchar_t* query : { L"System.Photo.Orientation", L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}" })
-            {
-                PROPVARIANT value;
-                PropVariantInit(&value);
-                const bool found = SUCCEEDED(reader->GetMetadataByName(query, &value)) && value.vt == VT_UI2;
-                if (found)
-                    orientation = value.uiVal;
-                PropVariantClear(&value);
-                if (found)
-                    break;
-            }
-            switch (orientation)
-            {
-            case 2: return WICBitmapTransformFlipHorizontal;
-            case 3: return WICBitmapTransformRotate180;
-            case 4: return WICBitmapTransformFlipVertical;
-            case 5: return static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
-            case 6: return WICBitmapTransformRotate90;
-            case 7: return static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
-            case 8: return WICBitmapTransformRotate270;
-            default: return WICBitmapTransformRotate0;
-            }
-        }
-
         HRESULT ReadWholeFile(const std::wstring& path, std::vector<uint8_t>& bytes)
         {
             wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
@@ -259,39 +210,16 @@ namespace sd
             return S_FALSE;
         }
 
-        // Pulls BGRA pixels out of the chain. This is where the lazy IWICBitmapSource chain actually runs.
-        HRESULT CopyBgra(IWICBitmapSource* bgra, UINT& w, UINT& h, std::vector<BYTE>& pixels)
-        {
-            RETURN_IF_FAILED(bgra->GetSize(&w, &h));
-            const UINT64 stride = UINT64{ w } * 4;
-            if (stride * h > 0xFFFFFFFFull)
-                return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);   // > 4 GB of pixels
-            pixels.resize(static_cast<size_t>(stride * h));
-            return bgra->CopyPixels(nullptr, static_cast<UINT>(stride), static_cast<UINT>(pixels.size()), pixels.data());
-        }
-
         // 32bpp BGRA (straight alpha) -> 24bpp BGR composited over white, for formats without alpha.
         HRESULT FlattenOnWhite(IWICImagingFactory* factory, IWICBitmapSource* bgra, ComPtr<IWICBitmapSource>& out)
         {
-            UINT w = 0, h = 0;
-            std::vector<BYTE> src;
-            RETURN_IF_FAILED(CopyBgra(bgra, w, h, src));
-            const UINT64 dstStride = (UINT64{ w } * 3 + 3) & ~UINT64{ 3 };
-            std::vector<BYTE> dst(static_cast<size_t>(dstStride * h));
-            for (UINT y = 0; y < h; ++y)
-            {
-                const BYTE* s = src.data() + size_t{ y } * w * 4;
-                BYTE* d = dst.data() + size_t{ y } * dstStride;
-                for (UINT x = 0; x < w; ++x, s += 4, d += 3)
-                {
-                    const UINT a = s[3];
-                    for (int c = 0; c < 3; ++c)
-                        d[c] = static_cast<BYTE>((s[c] * a + 255 * (255 - a) + 127) / 255);
-                }
-            }
+            uint32_t w = 0, h = 0, stride = 0;
+            std::vector<uint8_t> src;
+            RETURN_IF_FAILED(wic::CopyBgra(factory, bgra, w, h, src));
+            const auto dst = formats::FlattenToBgr(src.data(), w, h, stride);
             ComPtr<IWICBitmap> bitmap;   // CreateBitmapFromMemory copies the buffer
-            RETURN_IF_FAILED(factory->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat24bppBGR, static_cast<UINT>(dstStride),
-                                                             static_cast<UINT>(dst.size()), dst.data(), &bitmap));
+            RETURN_IF_FAILED(factory->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat24bppBGR, stride, static_cast<UINT>(dst.size()),
+                                                             const_cast<BYTE*>(dst.data()), &bitmap));
             out = bitmap;
             return S_OK;
         }
@@ -340,7 +268,7 @@ namespace sd
                           double dpiX, double dpiY, IStream* out)
         {
             ComPtr<IWICBitmapEncoder> encoder;
-            RETURN_IF_FAILED(factory->CreateEncoder(ContainerFor(format.id), nullptr, &encoder));
+            RETURN_IF_FAILED(factory->CreateEncoder(wic::ContainerFor(format.id), nullptr, &encoder));
             RETURN_IF_FAILED(encoder->Initialize(out, WICBitmapEncoderNoCache));
             ComPtr<IWICBitmapFrameEncode> frame;
             ComPtr<IPropertyBag2> options;
@@ -507,7 +435,7 @@ namespace sd
     ImageCodecs::ImageCodecs()
     {
         m_decodable.insert(L".webp");   // libwebp
-        auto factory = CreateFactory();
+        auto factory = wic::Factory();
         if (!factory)
         {
             m_summary = L"WIC unavailable";
@@ -637,7 +565,7 @@ namespace sd
             error = L"recipe has no image.encode step";
             return E_INVALIDARG;
         }
-        auto factory = CreateFactory();
+        auto factory = wic::Factory();
         if (!factory)
             return fail(REGDB_E_CLASSNOTREG, L"WIC");
 
@@ -689,7 +617,7 @@ namespace sd
         // 2. Orientation. When the recipe shrinks the picture anyway, a JPEG is decoded straight at a
         // smaller size that still covers the first shrink (DecodeScaled); every step below still
         // works from the full upright size (`w` x `h`), so the result has exactly the same size.
-        const auto orientation = OrientationTransform(frame.Get());
+        const auto orientation = wic::ExifTransform(frame.Get());
         UINT w = 0, h = 0;
         pixels->GetSize(&w, &h);
         if (Turns(orientation))
@@ -749,7 +677,7 @@ namespace sd
         // libwebp as 24-bit BGR: nothing to flatten, and no alpha channel in a PNG or TIFF of it. The
         // format hooks (AVIF, HEIC) still get BGRA, as they always have.
         const auto* encodeHook = EncodeHookFor(format->id);
-        if (!encodeHook && (ContainerFor(format->id) != GUID_NULL || std::string_view(format->id) == "webp") &&
+        if (!encodeHook && (wic::ContainerFor(format->id) != GUID_NULL || std::string_view(format->id) == "webp") &&
             IsOpaque(factory.Get(), pixels.Get()))
         {
             if (const HRESULT hr = ToBgr(factory.Get(), pixels.Get(), pixels); FAILED(hr))
@@ -802,7 +730,7 @@ namespace sd
 
     HRESULT EncodePicture(IWICBitmapSource* pixels, const ImageFormatInfo& format, int quality, IStream* out, std::wstring& error)
     {
-        auto factory = CreateFactory();
+        auto factory = wic::Factory();
         if (!factory)
         {
             error = L"WIC unavailable";
