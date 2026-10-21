@@ -15,6 +15,8 @@ namespace sd::theme
     {
         D2D1_COLOR_F Rgba(UINT rgb, float a) { return D2D1::ColorF(rgb, a); }
 
+        ThemeChoice g_choice = ThemeChoice::System;
+
         bool AppsUseLightTheme()
         {
             DWORD value = 0, size = sizeof(value);
@@ -81,10 +83,15 @@ namespace sd::theme
         }
     }
 
+    void SetChoice(ThemeChoice choice)
+    {
+        g_choice = choice;
+    }
+
     Palette Current(Style style)
     {
         Palette p{};
-        p.dark = !AppsUseLightTheme();
+        p.dark = g_choice == ThemeChoice::System ? !AppsUseLightTheme() : g_choice == ThemeChoice::Dark;
         p.accent = Rgba(AccentRgb(), 1.f);
         p.textOnAccent = D2D1::ColorF(1, 1, 1, 1);
         p.ok = Rgba(0x6CCB5F, 1.f);

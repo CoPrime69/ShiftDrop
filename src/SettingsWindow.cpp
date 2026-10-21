@@ -18,6 +18,7 @@ namespace sd
         constexpr wchar_t kClass[] = L"" SD_NAME L".Settings";
         constexpr int kIdTree = 100;
         constexpr int kIdAllOn = 101;
+        constexpr int kIdTerminal = 102, kIdCommand = 103, kIdTheme = 104, kIdNaming = 105;
 
         // What an item's lParam holds: a tag plus the section's Ring or the slice's index.
         constexpr LPARAM kSectionTag = 0x10000, kGroupTag = 0x20000, kSliceTag = 0x30000;
@@ -27,23 +28,32 @@ namespace sd
         constexpr int kOff = 1, kOn = 2, kSome = 3;
 
         // Window and control sizes in DIPs; scaled by the window's DPI in Layout().
-        constexpr int kWidth = 460, kHeight = 620, kMinWidth = 340, kMinHeight = 360;
+        constexpr int kWidth = 480, kHeight = 740, kMinWidth = 360, kMinHeight = 480;
         constexpr int kMargin = 14, kGap = 8, kButtonW = 150, kButtonH = 30, kIntroH = 40;
+        constexpr int kLabelW = 118, kRowH = 26, kRowGap = 6;   // the choices above the tree
+
+        // Combo box items, in the order of the enums in Settings.h and OutputPath.h.
+        constexpr const wchar_t* kTerminals[] = { L"Windows Terminal", L"PowerShell", L"Command Prompt", L"Custom command" };
+        constexpr const wchar_t* kThemes[] = { L"Follow Windows", L"Light", L"Dark" };
+        constexpr const wchar_t* kNamings[] = { L"photo (converted).png", L"photo-converted.png", L"photo_converted.png",
+                                                L"photo.png in a \u201cShiftDrop\u201d folder" };
 
         constexpr wchar_t kIntro[] = L"Choose what the wheel offers. Untick a slice, a kind of file or a whole section to "
                                      L"hide it; changes apply right away.";
     }
 
-    SettingsWindow::SettingsWindow(HINSTANCE instance, Change onChange) : m_instance(instance), m_onChange(std::move(onChange))
+    SettingsWindow::SettingsWindow(HINSTANCE instance, Change onChange, PreferencesChange onPreferences)
+        : m_instance(instance), m_onChange(std::move(onChange)), m_onPreferences(std::move(onPreferences))
     {
     }
 
     SettingsWindow::~SettingsWindow() = default;
 
-    void SettingsWindow::Show(SettingsTree tree, const Features& current)
+    void SettingsWindow::Show(SettingsTree tree, const Features& current, const Preferences& preferences)
     {
         m_tree = std::move(tree);
         m_features = current;
+        m_preferences = preferences;
         if (!m_hwnd)
         {
             static const bool registered = [this] {
@@ -70,15 +80,42 @@ namespace sd
             ApplyDpi(dpi);
         }
         ApplyTheme();
+        FillPreferences();
         Fill();
         ShowWindow(m_hwnd.get(), IsIconic(m_hwnd.get()) ? SW_RESTORE : SW_SHOWNORMAL);
         SetForegroundWindow(m_hwnd.get());   // allowed: we are handling the user's tray-menu click
-        SetFocus(m_list);
+        SetFocus(m_terminal);
     }
 
     void SettingsWindow::CreateChildren()
     {
         const HWND parent = m_hwnd.get();
+        const auto id = [](int value) { return reinterpret_cast<HMENU>(static_cast<INT_PTR>(value)); };
+        // Each label is created just before its control: screen readers name a control after the
+        // static text in front of it, and Tab visits the controls in this order.
+        const auto label = [&](const wchar_t* text) {
+            return CreateWindowExW(0, WC_STATICW, text, WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE, 0, 0, 0, 0, parent, nullptr, m_instance, nullptr);
+        };
+        const auto combo = [&](int controlId, const auto& items) {
+            HWND h = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST, 0, 0, 0, 0,
+                                     parent, id(controlId), m_instance, nullptr);
+            for (const wchar_t* item : items)
+                SendMessageW(h, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item));
+            return h;
+        };
+        m_terminalLabel = label(L"&Terminal");
+        m_terminal = combo(kIdTerminal, kTerminals);
+        m_commandLabel = label(L"&Command line");
+        m_command = CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, parent,
+                                    id(kIdCommand), m_instance, nullptr);
+        // TRUE: the hint stays while the box has the focus and is empty.
+        SendMessageW(m_command, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"e.g. wezterm start --cwd {folder}"));
+        SendMessageW(m_command, EM_LIMITTEXT, 1024, 0);
+        m_themeLabel = label(L"T&heme");
+        m_theme = combo(kIdTheme, kThemes);
+        m_namingLabel = label(L"&Output names");
+        m_naming = combo(kIdNaming, kNamings);
+
         m_intro = CreateWindowExW(0, WC_STATICW, kIntro, WS_CHILD | WS_VISIBLE | SS_LEFT, 0, 0, 0, 0, parent, nullptr, m_instance, nullptr);
         m_list = CreateWindowExW(0, WC_TREEVIEWW, L"",
                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS |
@@ -102,7 +139,8 @@ namespace sd
         NONCLIENTMETRICSW metrics{ sizeof(metrics) };
         if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0, dpi))
             m_font.reset(CreateFontIndirectW(&metrics.lfMessageFont));
-        for (HWND child : { m_intro, m_list, m_allOn, m_close })
+        for (HWND child : { m_terminalLabel, m_terminal, m_commandLabel, m_command, m_themeLabel, m_theme, m_namingLabel, m_naming, m_intro,
+                            m_list, m_allOn, m_close })
             SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(m_font.get()), TRUE);
         TreeView_SetItemHeight(m_list, MulDiv(24, static_cast<int>(dpi), 96));
         Layout();
@@ -116,12 +154,17 @@ namespace sd
         DwmSetWindowAttribute(m_hwnd.get(), 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
         const COLORREF back = m_dark ? RGB(32, 32, 32) : GetSysColor(COLOR_WINDOW);
         m_textColour = m_dark ? RGB(240, 240, 240) : GetSysColor(COLOR_WINDOWTEXT);
+        m_fieldColour = RGB(45, 45, 45);
         m_background.reset(CreateSolidBrush(back));
+        m_field.reset(CreateSolidBrush(m_fieldColour));
         // "DarkMode_Explorer" is the theme Explorer's own tree and buttons use in dark mode; an empty
-        // name goes back to the normal one.
+        // name goes back to the normal one. Combo and edit boxes have theirs in "DarkMode_CFD" (the
+        // common file dialog's).
         const wchar_t* themeName = m_dark ? L"DarkMode_Explorer" : L"Explorer";
         for (HWND child : { m_list, m_allOn, m_close })
             SetWindowTheme(child, themeName, nullptr);
+        for (HWND child : { m_terminal, m_command, m_theme, m_naming })
+            SetWindowTheme(child, m_dark ? L"DarkMode_CFD" : nullptr, nullptr);
         TreeView_SetBkColor(m_list, back);
         TreeView_SetTextColor(m_list, m_textColour);
         InvalidateRect(m_hwnd.get(), nullptr, TRUE);
@@ -134,11 +177,66 @@ namespace sd
         auto px = [this](int dip) { return MulDiv(dip, static_cast<int>(m_dpi), 96); };
         const int margin = px(kMargin), gap = px(kGap), bw = px(kButtonW), bh = px(kButtonH), ih = px(kIntroH);
         const int buttonsY = rc.bottom - margin - bh;
-        MoveWindow(m_intro, margin, margin, rc.right - 2 * margin, ih, TRUE);
-        const int listTop = margin + ih + gap;
+        // The choices: a label column, then the control filling the rest of the row.
+        const int lw = px(kLabelW), rh = px(kRowH), fieldX = margin + lw, fieldW = std::max(0, static_cast<int>(rc.right) - margin - fieldX);
+        int y = margin;
+        const auto row = [&](HWND labelHwnd, HWND control, bool isCombo) {
+            MoveWindow(labelHwnd, margin, y, lw - gap, rh, TRUE);
+            // A drop-down list's height includes its open list.
+            MoveWindow(control, fieldX, y, fieldW, isCombo ? px(200) : rh, TRUE);
+            y += rh + px(kRowGap);
+        };
+        row(m_terminalLabel, m_terminal, true);
+        row(m_commandLabel, m_command, false);
+        row(m_themeLabel, m_theme, true);
+        row(m_namingLabel, m_naming, true);
+        MoveWindow(m_intro, margin, y + gap, rc.right - 2 * margin, ih, TRUE);
+        const int listTop = y + gap + ih + gap;
         MoveWindow(m_list, margin, listTop, rc.right - 2 * margin, std::max(0, buttonsY - gap - listTop), TRUE);
         MoveWindow(m_allOn, margin, buttonsY, bw, bh, TRUE);
         MoveWindow(m_close, rc.right - margin - px(96), buttonsY, px(96), bh, TRUE);
+    }
+
+    // ---- The choices -----------------------------------------------------------------------------
+
+    void SettingsWindow::FillPreferences()
+    {
+        m_updating = true;
+        SendMessageW(m_terminal, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.terminal), 0);
+        SendMessageW(m_theme, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.theme), 0);
+        SendMessageW(m_naming, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.naming), 0);
+        SetWindowTextW(m_command, m_preferences.terminalCommand.c_str());
+        EnableWindow(m_command, m_preferences.terminal == TerminalChoice::Custom);
+        m_updating = false;
+    }
+
+    void SettingsWindow::OnPreferenceChanged()
+    {
+        if (m_updating)
+            return;
+        Preferences p = m_preferences;
+        const auto pick = [](HWND combo, size_t count, int fallback) {
+            const auto i = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+            return i >= 0 && static_cast<size_t>(i) < count ? i : fallback;
+        };
+        p.terminal = static_cast<TerminalChoice>(pick(m_terminal, ARRAYSIZE(kTerminals), static_cast<int>(p.terminal)));
+        p.theme = static_cast<ThemeChoice>(pick(m_theme, ARRAYSIZE(kThemes), static_cast<int>(p.theme)));
+        p.naming = static_cast<OutputNaming>(pick(m_naming, ARRAYSIZE(kNamings), static_cast<int>(p.naming)));
+        std::wstring command(static_cast<size_t>(GetWindowTextLengthW(m_command)) + 1, L'\0');
+        command.resize(static_cast<size_t>(GetWindowTextW(m_command, command.data(), static_cast<int>(command.size()))));
+        p.terminalCommand = std::move(command);
+        EnableWindow(m_command, p.terminal == TerminalChoice::Custom);
+        if (p == m_preferences)
+            return;
+        const bool themeChanged = p.theme != m_preferences.theme;
+        if (p.terminal != m_preferences.terminal || themeChanged || p.naming != m_preferences.naming)
+            log::Info(L"settings: terminal {}, theme {}, output names {}", kTerminals[static_cast<int>(p.terminal)],
+                      kThemes[static_cast<int>(p.theme)], kNamings[static_cast<int>(p.naming)]);
+        m_preferences = std::move(p);
+        if (m_onPreferences)
+            m_onPreferences(m_preferences);
+        if (themeChanged)
+            ApplyTheme();   // the callback has set the new theme
     }
 
     // ---- The tree --------------------------------------------------------------------------------
@@ -373,15 +471,36 @@ namespace sd
         case WM_CTLCOLORBTN:
         {
             const HDC dc = reinterpret_cast<HDC>(wParam);
-            SetTextColor(dc, m_textColour);
+            // The command box when it is turned off is drawn as a static: dimmed text.
+            SetTextColor(dc, reinterpret_cast<HWND>(lParam) == m_command ? GetSysColor(COLOR_GRAYTEXT) : m_textColour);
             SetBkMode(dc, TRANSPARENT);
             return reinterpret_cast<LRESULT>(m_background.get());
         }
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+            if (m_dark)
+            {
+                const HDC dc = reinterpret_cast<HDC>(wParam);
+                SetTextColor(dc, m_textColour);
+                SetBkColor(dc, m_fieldColour);
+                return reinterpret_cast<LRESULT>(m_field.get());
+            }
+            break;
         case WM_COMMAND:
             switch (LOWORD(wParam))
             {
             case kIdAllOn: EverythingOn(); break;
             case IDCANCEL: ShowWindow(m_hwnd.get(), SW_HIDE); break;
+            case kIdTerminal:
+            case kIdTheme:
+            case kIdNaming:
+                if (HIWORD(wParam) == CBN_SELCHANGE)
+                    OnPreferenceChanged();
+                break;
+            case kIdCommand:
+                if (HIWORD(wParam) == EN_CHANGE)
+                    OnPreferenceChanged();
+                break;
             default: break;
             }
             return 0;

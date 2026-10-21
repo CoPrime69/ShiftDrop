@@ -232,6 +232,8 @@ namespace sd
         bool Init()
         {
             m_settings = LoadSettings();
+            m_preferences = LoadPreferences();
+            ApplyPreferences();
             startup::ApplyAtLaunch();
             m_icon.reset(static_cast<HICON>(LoadImageW(m_instance, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
                                                        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR)));
@@ -323,7 +325,13 @@ namespace sd
             if (!m_overlay->Create())
                 return false;
             m_overlay->SetAppearance(m_appearance);
-            m_settingsWindow = std::make_unique<SettingsWindow>(m_instance, [this](const Features& f) { ApplyFeatures(f); });
+            m_settingsWindow = std::make_unique<SettingsWindow>(
+                m_instance, [this](const Features& f) { ApplyFeatures(f); },
+                [this](const Preferences& p) {
+                    m_preferences = p;
+                    SavePreferences(m_preferences);
+                    ApplyPreferences();
+                });
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
 
@@ -563,7 +571,7 @@ namespace sd
                 break;
             case IDM_SETTINGS:
                 if (m_settingsWindow)
-                    m_settingsWindow->Show(BuildSettingsTree(), m_features);
+                    m_settingsWindow->Show(BuildSettingsTree(), m_features, m_preferences);
                 break;
             case IDM_SHOW_SHELF:
                 if (m_shelf)
@@ -904,6 +912,24 @@ namespace sd
                 m_overlay->SetRings(std::move(rings));
             if (m_keyboard)
                 m_keyboard->SetRingKeys(SectionKeys());
+        }
+
+        // The Settings window's other choices: the theme takes effect the next time a window opens,
+        // output names with the next output, the terminal with the next Terminal slice.
+        void ApplyPreferences()
+        {
+            theme::SetChoice(m_preferences.theme);
+            SetOutputNaming(m_preferences.naming);
+            SetTerminalChoice(m_preferences.terminal, m_preferences.terminalCommand);
+        }
+
+        // Where outputs went, for the result's second line: "next to the originals", "to Desktop".
+        std::wstring SavedWhere(const std::wstring& savedTo) const
+        {
+            const bool subfolder = m_preferences.naming == OutputNaming::Subfolder;
+            if (savedTo.empty())
+                return subfolder ? std::format(L"in a \u201c{}\u201d folder next to the originals", kOutputSubfolder) : L"next to the originals";
+            return subfolder ? std::format(L"to {}\\{}", FolderName(savedTo), kOutputSubfolder) : std::format(L"to {}", FolderName(savedTo));
         }
 
         // Every slice, by section and by the kind of file it is for, for the Settings window.
@@ -1360,17 +1386,14 @@ namespace sd
                 else if (batch->kind == BatchKind::Move)
                     sub = L"Undo from History in the tray menu";
                 else if (!outputs.empty())
-                    sub = batch->savedTo.empty() ? std::wstring(L"Saved next to the originals \u00b7 Undo from History")
-                                                 : std::format(L"Saved to {} \u00b7 Undo from History", FolderName(batch->savedTo));
+                    sub = std::format(L"Saved {} \u00b7 Undo from History", SavedWhere(batch->savedTo));
                 auto outcome = ok == 0 ? Island::Outcome::Failure : (failed || skipped) ? Island::Outcome::Partial : Island::Outcome::Success;
                 if (batch->cancelled)
                 {
                     // Asked for, so not a failure: say what is left on disk.
                     outcome = Island::Outcome::Partial;
                     title = ok == 0 ? std::wstring(L"Cancelled") : std::format(L"Cancelled after {} of {}", ok, total);
-                    sub = ok == 0                  ? std::wstring(L"Nothing was saved")
-                          : batch->savedTo.empty() ? std::wstring(L"Finished files are saved next to the originals")
-                                                   : std::format(L"Finished files are saved to {}", FolderName(batch->savedTo));
+                    sub = ok == 0 ? std::wstring(L"Nothing was saved") : L"Finished files are saved " + SavedWhere(batch->savedTo);
                 }
                 // Outputs can be carried on from the panel: dragged into an app, floated, copied.
                 const bool carry = m_shelf && !outputs.empty();
@@ -1439,6 +1462,7 @@ namespace sd
         HINSTANCE m_instance;
         bool m_autostart;   // launched by the Run key at login
         Settings m_settings;
+        Preferences m_preferences;           // the Settings window's choices besides the slices
         wil::unique_hicon m_icon;
         wil::unique_hwnd m_hwnd;
         UINT m_taskbarCreated = 0;
