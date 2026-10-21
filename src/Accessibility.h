@@ -1,9 +1,12 @@
 #pragma once
 #include <windows.h>
-#include <uiautomation.h>
 #include <wrl/client.h>
 
 #include <string>
+
+// The UI Automation headers stay in Accessibility.cpp: they need the COM headers that
+// WIN32_LEAN_AND_MEAN leaves out of windows.h, and every file that includes Overlay.h would pull them in.
+struct IRawElementProviderSimple;
 
 // Screen reader support for the windows ShiftDrop draws itself (the wheel and the top panel), through
 // UI Automation. Everything built from standard controls (Settings, History, Rename, the editors'
