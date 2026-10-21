@@ -20,5 +20,4 @@ namespace sd::shellverb
     bool Unregister(HKEY classes = nullptr);
     bool IsRegistered(HKEY classes = nullptr);
     std::wstring CommandFor(const std::wstring& exe);
-    std::wstring CurrentExe();
 }

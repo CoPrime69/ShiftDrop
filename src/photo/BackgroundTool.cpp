@@ -1,8 +1,8 @@
 #include "photo/PhotoTools.h"
+#include "PathUtil.h"
 
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 
 namespace sd::photo
 {
@@ -154,7 +154,7 @@ namespace sd::photo
             out.push_back(pick);
             Control name;
             name.kind = ControlKind::Note;
-            name.text = std::filesystem::path(m_params.image).filename().wstring();
+            name.text = FileName(m_params.image);
             out.push_back(name);
             out.push_back(SliderControl("blur", L"Blur", m_params.blur, 0, 100, L""));
             break;

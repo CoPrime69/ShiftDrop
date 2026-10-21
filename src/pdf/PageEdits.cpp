@@ -1,6 +1,8 @@
 #include "pdf/PageEdits.h"
 #include "Brand.h"
 #include "Log.h"
+#include "Recipe.h"
+#include "TempPath.h"
 #include "canvas/Raster.h"
 #include "crop/CropMath.h"
 #include "crop/CropTool.h"
@@ -24,11 +26,8 @@ namespace sd::pdf
     {
         std::filesystem::path Root()
         {
-            wchar_t temp[MAX_PATH + 1] = {};
-            const DWORD n = GetTempPathW(MAX_PATH + 1, temp);
-            if (n == 0 || n > MAX_PATH)
-                return {};
-            return std::filesystem::path(temp) / (SD_NAME L" pages");
+            const auto temp = TempDirectory();
+            return temp.empty() ? std::filesystem::path() : std::filesystem::path(temp) / (SD_NAME L" pages");
         }
     }
 
@@ -120,7 +119,7 @@ namespace sd::pdf
             return true;
         }
 
-        const nlohmann::json own = photo::ParamsForFile(params, picture);
+        const nlohmann::json own = ParamsForFile(params, picture);
         photo::Annotations marks;
         photo::Adjustments adjust;
         crop::CropParams cropping;

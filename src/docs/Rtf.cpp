@@ -1,4 +1,7 @@
 #include "docs/Rtf.h"
+#include "FileIo.h"
+#include "PathUtil.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "Utf.h"
 
@@ -658,7 +661,7 @@ namespace sd::docs
     {
         // Mac TextEdit packages: TXT.rtf next to the attachments (some writers use other names).
         std::wstring rtfPath = (std::filesystem::path(folder) / L"TXT.rtf").wstring();
-        if (GetFileAttributesW(rtfPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+        if (!PathExists(rtfPath))
         {
             rtfPath.clear();
             std::error_code ec;

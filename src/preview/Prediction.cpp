@@ -1,5 +1,6 @@
 #include "preview/Prediction.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 
 #include <windows.h>
 
@@ -100,19 +101,6 @@ namespace sd::preview
         return static_cast<uint64_t>(std::llround(bytes * std::pow(target / pixels, k)));
     }
 
-    std::wstring SizeText(uint64_t bytes)
-    {
-        if (bytes < 1024)
-            return std::format(L"{} bytes", bytes);
-        const double kb = static_cast<double>(bytes) / 1024.0;
-        if (kb < 1000.0)
-            return std::format(L"{:.0f} KB", kb);
-        const double mb = kb / 1024.0;
-        if (mb < 1000.0)
-            return mb < 10.0 ? std::format(L"{:.1f} MB", mb) : std::format(L"{:.0f} MB", mb);
-        return std::format(L"{:.1f} GB", mb / 1024.0);
-    }
-
     std::wstring DimensionsChange(Size2 from, Size2 to)
     {
         if (from == to || from.w == 0 || to.w == 0)
@@ -146,7 +134,7 @@ namespace sd::preview
         for (int n = 1; n < 1000; ++n)
         {
             const auto name = OutputName(stem, suffix, n, extension);
-            if (GetFileAttributesW((folder / name).c_str()) == INVALID_FILE_ATTRIBUTES)
+            if (!PathExists(folder / name))
                 return prefix + name;
         }
         return prefix + OutputName(stem, suffix, 1000, extension);

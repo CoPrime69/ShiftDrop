@@ -4,6 +4,8 @@
 #include "share/Share.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "WinRtError.h"
 
 #include <shobjidl_core.h>
 #include <unknwn.h>
@@ -13,7 +15,6 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 
-#include <filesystem>
 #include <format>
 
 namespace sd::share
@@ -44,10 +45,7 @@ namespace sd::share
 
         std::wstring Message(const winrt::hresult_error& e)
         {
-            std::wstring text(e.message());
-            while (!text.empty() && (text.back() == L'\n' || text.back() == L'\r' || text.back() == L' '))
-                text.pop_back();
-            return text.empty() ? std::format(L"the share sheet could not open (0x{:08X})", static_cast<uint32_t>(e.code().value)) : text;
+            return WinRtMessage(e, L"the share sheet could not open");
         }
 
         void HideOwner()
@@ -77,7 +75,7 @@ namespace sd::share
         std::wstring TitleFor(const std::vector<std::wstring>& items)
         {
             if (items.size() == 1)
-                return std::filesystem::path(items.front()).filename().wstring();
+                return FileName(items.front());
             return std::format(L"{} items", items.size());
         }
 
@@ -92,8 +90,7 @@ namespace sd::share
             {
                 for (const auto& path : items)
                 {
-                    const DWORD attributes = GetFileAttributesW(path.c_str());
-                    if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY))
+                    if (IsFolder(path))
                         resolved.push_back(co_await storage::StorageFolder::GetFolderFromPathAsync(path));
                     else
                         resolved.push_back(co_await storage::StorageFile::GetFileFromPathAsync(path));

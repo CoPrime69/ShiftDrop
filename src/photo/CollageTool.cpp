@@ -1,8 +1,8 @@
 #include "photo/PhotoTools.h"
 #include "Log.h"
+#include "PathUtil.h"
 
 #include <algorithm>
-#include <filesystem>
 #include <format>
 #include <random>
 
@@ -68,7 +68,7 @@ namespace sd::photo
                     {
                         log::Warn(L"collage: cannot open {}: {}", files[i], errors[i]);
                         if (problem.empty())
-                            problem = std::filesystem::path(files[i]).filename().wstring() + L": " + errors[i];
+                            problem = FileName(files[i]) + L": " + errors[i];
                     }
                 SetPictures(pictures);
                 m_host->SetStatus(problem);

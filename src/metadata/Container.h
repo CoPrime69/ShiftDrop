@@ -57,7 +57,4 @@ namespace sd::metadata
     bool ReplaceExif(std::span<const uint8_t> bytes, std::span<const uint8_t> tiff, std::vector<uint8_t>& out, std::wstring* error);
     // Removes the blocks for which `drop` returns true, keeping everything else byte for byte.
     bool RemoveBlocks(std::span<const uint8_t> bytes, const std::vector<Block>& drop, std::vector<uint8_t>& out, std::wstring* error);
-
-    bool ReadFileBytes(const std::wstring& path, std::vector<uint8_t>& bytes);
-    bool WriteFileBytes(const std::wstring& path, std::span<const uint8_t> bytes);   // the path must exist (a staging file) or be new
 }

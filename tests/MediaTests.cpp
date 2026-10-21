@@ -1,6 +1,8 @@
 #include "Ffmpeg.h"
 #include "JobQueue.h"
 #include "Media.h"
+#include "MediaTestUtil.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -8,8 +10,6 @@
 #include <shellapi.h>
 
 #include <algorithm>
-#include <atomic>
-#include <chrono>
 #include <thread>
 
 using namespace sd;
@@ -17,14 +17,6 @@ using namespace sd::test;
 
 namespace
 {
-    bool Has(const std::vector<std::wstring>& args, std::wstring_view a, std::wstring_view b)
-    {
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == a && args[i + 1] == b)
-                return true;
-        return false;
-    }
-
     // Splits a command line the way the child process will (CommandLineToArgvW).
     std::vector<std::wstring> Split(const std::wstring& commandLine)
     {
@@ -33,14 +25,6 @@ namespace
         std::vector<std::wstring> out(argv, argv + argc);
         LocalFree(argv);
         return out;
-    }
-
-    // The real engine when CI (or a developer) points SHIFTDROP_FFMPEG at ffmpeg.exe; the tests that
-    // need it are skipped otherwise.
-    std::shared_ptr<const FfmpegEngine> Engine()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
     }
 }
 
@@ -334,7 +318,7 @@ namespace
 
 TEST(MediaEngine, ConvertsThroughThePipeline)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
@@ -353,7 +337,7 @@ TEST(MediaEngine, ConvertsThroughThePipeline)
         const auto r = runner.Run(recipe, runId, source, std::stop_token{}, [&](double p) { last = std::max(last, p); });
         history->FinishRun(runId);
         ASSERT_TRUE(r.ok) << id << ": " << Narrow(r.error);
-        EXPECT_EQ(std::filesystem::path(r.output).filename(), L"my clip (converted)" + recipe.OutputExtensionFor(L".avi")) << id;
+        EXPECT_EQ(FileName(r.output), L"my clip (converted)" + recipe.OutputExtensionFor(L".avi")) << id;
         EXPECT_GT(r.size, 0u) << id;
         EXPECT_GT(last, 0.5) << id << ": progress was reported";
         EXPECT_EQ(history->RecentRuns(1).at(0).status, status::Done) << id;
@@ -363,7 +347,7 @@ TEST(MediaEngine, ConvertsThroughThePipeline)
 
 TEST(MediaEngine, ConvertNeverComesOutBigger)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
@@ -387,37 +371,18 @@ TEST(MediaEngine, ConvertNeverComesOutBigger)
 
 TEST(MediaEngine, CancelStopsFfmpegAndLeavesNothing)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
-    Recipes recipes(dir);
-    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr, engine);
-    // Long enough that it is still running when the stop comes.
-    const auto source = dir / L"long.avi";
-    std::stop_source never;
-    ASSERT_TRUE(engine->Run({ L"-hide_banner", L"-nostdin", L"-f", L"lavfi", L"-i", L"testsrc=s=640x360:r=30:d=60", L"-c:v", L"mpeg4",
-                              L"-q:v", L"31", L"-y", L"-f", L"avi", source }, nullptr, never.get_token()).ok);
-
-    std::stop_source stop;
-    std::atomic<bool> started{ false };
-    std::jthread canceller([&](std::stop_token own) {   // `own` ends the wait if Run returns first
-        while (!started && !own.stop_requested())
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        stop.request_stop();
-    });
-    const auto r = runner.Run(recipes.Get("to-webm"), 0, source, stop.get_token(), [&](double) { started = true; });
-    EXPECT_FALSE(r.ok);
-    EXPECT_TRUE(r.skipped);
-    EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
-    EXPECT_EQ(CountFiles(dir, L".webm"), 0u);
+    ExpectCancelLeavesNothing(engine, dir);
 }
 
 // Media outputs go through StagedOutput too: a failed conversion removes the "ShiftDrop" folder made
 // for it, and an output that cannot start is still a failed row in history.
 TEST(MediaEngine, FailuresLeaveNoOutputFolderAndAreInHistory)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
@@ -453,7 +418,7 @@ TEST(MediaEngine, FailuresLeaveNoOutputFolderAndAreInHistory)
 
 TEST(MediaEngine, CompressKeepsUnderTheTarget)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
@@ -469,7 +434,7 @@ TEST(MediaEngine, CompressKeepsUnderTheTarget)
 
     const auto half = runner.Run(recipes.Get("media-half"), 0, source, std::stop_token{});
     ASSERT_TRUE(half.ok) << Narrow(half.error);
-    EXPECT_EQ(std::filesystem::path(half.output).filename(), L"big (compressed).mp4");
+    EXPECT_EQ(FileName(half.output), L"big (compressed).mp4");
     EXPECT_LE(std::filesystem::file_size(half.output), sourceBytes / 2);
 
     const auto preset = runner.Run(recipes.Get("compress-media"), 0, source, std::stop_token{});

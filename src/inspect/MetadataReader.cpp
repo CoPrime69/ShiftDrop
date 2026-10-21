@@ -1,7 +1,9 @@
 #include "inspect/MetadataReader.h"
+#include "FormatText.h"
 #include "Log.h"
 #include "Media.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "Wic.h"
 
@@ -200,7 +202,7 @@ namespace sd::inspect
         Add(f, L"File", L"Name", p.filename().wstring());
         Add(f, L"File", L"Folder", p.parent_path().wstring());
         if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-            Add(f, L"File", L"Size", FileSizeText((static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow));
+            Add(f, L"File", L"Size", ExactSizeText(FileSizeOf(data)));
         Add(f, L"File", L"Created", TimeText(data.ftCreationTime));
         Add(f, L"File", L"Modified", TimeText(data.ftLastWriteTime));
         Add(f, L"File", L"Accessed", TimeText(data.ftLastAccessTime));

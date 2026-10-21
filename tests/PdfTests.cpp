@@ -1,3 +1,4 @@
+#include "PathUtil.h"
 #include "PdfTestUtil.h"
 #include "PipelineRunner.h"
 #include "canvas/Covers.h"
@@ -65,16 +66,6 @@ namespace
         EXPECT_TRUE(b.Finish(error)) << Narrow(error);
         return path;
     }
-
-    std::wstring Text(const PageLines& lines)
-    {
-        std::wstring s;
-        for (const auto& l : lines)
-            s += l.text + L"|";
-        return s;
-    }
-
-    uint64_t SizeOf(const std::wstring& path) { return std::filesystem::file_size(path); }
 }
 
 // ---- Writer -----------------------------------------------------------------------------------
@@ -243,7 +234,7 @@ TEST(ImagePdf, RunnerMakesOnePdfFromSeveralImages)
     ASSERT_TRUE(engine->IsBatch(recipe));
     const auto result = runner.RunBatch(recipe, 0, { a, b }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"a (converted).pdf");
+    EXPECT_EQ(FileName(result.output), L"a (converted).pdf");
     auto pdf = Open(result.output);
     ASSERT_TRUE(pdf);
     EXPECT_EQ(pdf->getAllPages().size(), 2u);
@@ -383,7 +374,7 @@ TEST(PdfPages, RunnerMergeNeedsTwoAndNamesTheOutput)
     EXPECT_FALSE(runner.RunBatch(merge, 0, { a }, {}).ok);
     const auto result = runner.RunBatch(merge, 0, { b, a }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"second (merged).pdf");
+    EXPECT_EQ(FileName(result.output), L"second (merged).pdf");
     EXPECT_EQ(result.message, L"Merged 2 PDFs into 3 pages");
     auto pdf = Open(result.output);
     EXPECT_EQ(pdf->getAllPages().size(), 3u);
@@ -406,7 +397,7 @@ TEST(PdfPages, OrganizeUsesThePlanFromTheEditor)
     organize.steps[0].params["plan"] = PlanToJson({ { 0, 2, 0 }, { 0, 0, 270 } });
     const auto result = runner.RunBatch(organize, 0, { a }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"doc (organized).pdf");
+    EXPECT_EQ(FileName(result.output), L"doc (organized).pdf");
     auto pdf = Open(result.output);
     auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
     ASSERT_EQ(pages.size(), 2u);
@@ -637,7 +628,7 @@ TEST(PdfPages, MergeFollowsAPagePlanAcrossFiles)
     merge.steps[0].params["plan"] = PlanToJson({ { 1, 2, 90 }, { 0, 1, 0 }, { 1, 0, 180 } });
     const auto result = runner.RunBatch(merge, 0, { a, b }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"a (merged).pdf");
+    EXPECT_EQ(FileName(result.output), L"a (merged).pdf");
     EXPECT_EQ(result.message, L"Merged 2 PDFs into 3 pages");
     auto pdf = Open(result.output);
     auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
@@ -722,7 +713,7 @@ TEST(PdfPages, EditSliceSavesOneAndMergesSeveral)
     edit.steps[0].params["plan"] = PlanToJson({ { 0, 1, 0, page }, { 0, 0, 0 } });
     auto result = runner.RunBatch(edit, 0, { a }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"report (edited).pdf");
+    EXPECT_EQ(FileName(result.output), L"report (edited).pdf");
     EXPECT_EQ(result.message, L"Saved 2 pages, 1 edited");
     {
         auto pdf = Open(result.output);
@@ -737,7 +728,7 @@ TEST(PdfPages, EditSliceSavesOneAndMergesSeveral)
     edit.steps[0].params["plan"] = PlanToJson({ { 1, 2, 0 }, { 0, 1, 0 } });   // report's page 3, then extra's page 2
     result = runner.RunBatch(edit, 0, { b, a }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"extra (merged).pdf");
+    EXPECT_EQ(FileName(result.output), L"extra (merged).pdf");
     auto pdf = Open(result.output);
     auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
     ASSERT_EQ(pages.size(), 2u);
@@ -816,8 +807,8 @@ TEST(PdfCompress, ShrinksPicturesAndNeverKeepsABiggerFile)
     }
     const auto result = runner.Run(compress, 0, big, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"big (compressed).pdf");
-    EXPECT_LT(SizeOf(result.output), SizeOf(big) / 2);
+    EXPECT_EQ(FileName(result.output), L"big (compressed).pdf");
+    EXPECT_LT(FileSize(result.output), FileSize(big) / 2);
     {
         auto pdf = Open(result.output);
         auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
@@ -856,8 +847,8 @@ TEST(PdfCompress, ReduceSizeStepsDownToTheTarget)
     EXPECT_EQ(reduce.ring, "reduce");
     const auto result = runner.Run(reduce, 0, big, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"big (reduced).pdf");
-    EXPECT_LE(SizeOf(result.output), SizeOf(big) / 10);
+    EXPECT_EQ(FileName(result.output), L"big (reduced).pdf");
+    EXPECT_LE(FileSize(result.output), FileSize(big) / 10);
     for (const auto& e : std::filesystem::directory_iterator(dir.path()))
         EXPECT_FALSE(e.path().wstring().ends_with(L".sdpart")) << e.path();
 }
@@ -914,7 +905,7 @@ TEST(PdfText, ExtractsLinesWithSpacesAndSizes)
     ASSERT_TRUE(pdf);
     auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
     const auto lines = ExtractPageLines(pages[0]);
-    EXPECT_EQ(Text(lines), L"Big Title|Hello world|sep arated|café|");
+    EXPECT_EQ(Joined(lines), L"Big Title|Hello world|sep arated|café|");
     ASSERT_EQ(lines.size(), 4u);
     EXPECT_NEAR(lines[0].size, 24, 0.01);
     EXPECT_NEAR(lines[1].size, 12, 0.01);
@@ -931,7 +922,7 @@ TEST(PdfText, SidewaysTextIsTurnedToReadingOrder)
     auto pdf = Open(path);
     auto pages = QPDFPageDocumentHelper(*pdf).getAllPages();
     const auto lines = ExtractPageLines(pages[0]);
-    EXPECT_EQ(Text(lines), L"First line|Second line|");
+    EXPECT_EQ(Joined(lines), L"First line|Second line|");
     ASSERT_EQ(lines.size(), 2u);
     EXPECT_GT(lines[0].y, lines[1].y);   // the second line is below the first in reading order
 }
@@ -945,7 +936,7 @@ TEST(PdfText, ReadPdfTextWithoutOcr)
     std::wstring error;
     ASSERT_TRUE(ReadPdfText(path, false, {}, {}, text, error)) << Narrow(error);
     ASSERT_EQ(text.pages.size(), 2u);
-    EXPECT_EQ(Text(text.pages[0]), L"Page one text|");
+    EXPECT_EQ(Joined(text.pages[0]), L"Page one text|");
     EXPECT_TRUE(text.pages[1].empty());
     EXPECT_EQ(text.ocrPages, 0u);
 }
@@ -961,7 +952,7 @@ TEST(PdfText, RunnerWritesTxtAndMarkdown)
     PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
     const auto md = runner.Run(recipes.Get("pdf-to-md"), 0, path, {});
     ASSERT_TRUE(md.ok) << Narrow(md.error);
-    EXPECT_EQ(std::filesystem::path(md.output).filename().wstring(), L"notes (converted).md");
+    EXPECT_EQ(FileName(md.output), L"notes (converted).md");
     EXPECT_EQ(ReadAll(md.output), "# Notes\n\nA first paragraph here.\n\n- One item\n");
     const auto txt = runner.Run(recipes.Get("pdf-to-txt"), 0, path, {});
     ASSERT_TRUE(txt.ok) << Narrow(txt.error);
@@ -1356,7 +1347,7 @@ TEST(PdfRender, RunnerSavesEveryPageInAFolder)
     ItemResult result;
     RunMta([&] { result = runner.Run(recipes.Get("pdf-to-png"), 0, path, {}); });
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename().wstring(), L"deck (pages)");
+    EXPECT_EQ(FileName(result.output), L"deck (pages)");
     UINT w = 0, h = 0;
     ASSERT_TRUE(ImageSize(result.output + L"\\deck page 02.png", w, h));
     EXPECT_EQ(w, 2550u);   // 8.5 in at 300 dpi

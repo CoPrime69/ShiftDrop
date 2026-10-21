@@ -1,6 +1,7 @@
 #include "Brand.h"
 #include "Overlay.h"
 #include "DropDescription.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "PanelLayout.h"
 
@@ -80,7 +81,7 @@ namespace sd
         const HRESULT hr = RegisterDragDrop(m_hwnd.get(), m_dropTarget.Get());
         if (FAILED(hr))
         {
-            log::Error(L"overlay: RegisterDragDrop failed (0x{:08X})", static_cast<unsigned>(hr));
+            log::Error(L"overlay: RegisterDragDrop failed ({})", HexCode(hr));
             return false;
         }
         m_registered = true;

@@ -1,3 +1,4 @@
+#include "FormatText.h"
 #include "ImagePipeline.h"
 #include "Media.h"
 #include "TestUtil.h"
@@ -15,12 +16,6 @@ using namespace sd::test;
 
 namespace
 {
-    std::shared_ptr<const FfmpegEngine> Engine()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
     uint64_t ActualBytes(const Recipe& recipe, const std::wstring& path)
     {
         Microsoft::WRL::ComPtr<IStream> memory;
@@ -38,8 +33,8 @@ namespace
     HRESULT WritePhoto(const std::wstring& path, UINT width, UINT height)
     {
         using Microsoft::WRL::ComPtr;
-        ComPtr<IWICImagingFactory> factory;
-        HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+        const auto factory = wic::Factory();
+        HRESULT hr = factory ? S_OK : REGDB_E_CLASSNOTREG;
         ComPtr<IWICStream> stream;
         ComPtr<IWICBitmapEncoder> encoder;
         ComPtr<IWICBitmapFrameEncode> frame;
@@ -135,11 +130,6 @@ TEST(Prediction, PowerLawFitAndExtrapolation)
 
 TEST(Prediction, Texts)
 {
-    EXPECT_EQ(SizeText(512), L"512 bytes");
-    EXPECT_EQ(SizeText(860 * 1024), L"860 KB");
-    EXPECT_EQ(SizeText(1258291), L"1.2 MB");
-    EXPECT_EQ(SizeText(48ull * 1024 * 1024), L"48 MB");
-    EXPECT_EQ(SizeText(3ull * 1024 * 1024 * 1024), L"3.0 GB");
     EXPECT_EQ(DimensionsChange({ 4032, 3024 }, { 1920, 1440 }), L"4032×3024 → 1920×1440");
     EXPECT_EQ(DimensionsChange({ 10, 10 }, { 10, 10 }), L"");
     EXPECT_EQ(MetadataLoss({}), L"");
@@ -359,7 +349,7 @@ TEST(Predictor, WorkerDeliversTheLatestRequest)
 
 TEST(PredictorMedia, ProbesAndPredictsFromThePlan)
 {
-    const auto engine = Engine();
+    const auto engine = TestFfmpeg();
     if (!engine->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;

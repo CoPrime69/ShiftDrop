@@ -1,10 +1,11 @@
 #include "OutputPath.h"
+#include "PathUtil.h"
+#include "Strings.h"
 
 #include <shlwapi.h>
 
 #include <algorithm>
 #include <atomic>
-#include <cwctype>
 #include <filesystem>
 #include <format>
 #include <mutex>
@@ -15,20 +16,12 @@ namespace sd
 {
     std::wstring LowerExtension(std::wstring_view path)
     {
-        auto ext = std::filesystem::path(path).extension().wstring();
-        for (auto& c : ext)
-            c = static_cast<wchar_t>(std::towlower(c));
-        return ext;
+        return Lower(std::filesystem::path(path).extension().wstring());
     }
 
     namespace
     {
         std::atomic<OutputNaming> g_naming{ OutputNaming::Parentheses };
-
-        bool SameName(std::wstring_view a, std::wstring_view b)
-        {
-            return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
-        }
     }
 
     void SetOutputNaming(OutputNaming naming)
@@ -94,16 +87,6 @@ namespace sd
                 path.pop_back();
             return path;
         }
-
-        // `path` is `folder` or inside it, ignoring case as NTFS does.
-        bool IsWithin(const std::wstring& path, const std::wstring& folder)
-        {
-            const int n = static_cast<int>(folder.size());
-            if (folder.empty() || path.size() < folder.size() ||
-                CompareStringOrdinal(path.c_str(), n, folder.c_str(), n, TRUE) != CSTR_EQUAL)
-                return false;
-            return path.size() == folder.size() || path[folder.size()] == L'\\' || path[folder.size()] == L'/';
-        }
     }
 
     void RedirectOutputs(const std::wstring& folder, const std::wstring& outputFolder)
@@ -111,7 +94,7 @@ namespace sd
         const auto key = TrimSlash(folder);
         std::scoped_lock lock(g_redirectMutex);
         std::erase_if(g_redirects, [&](const Redirect& r) {
-            return CompareStringOrdinal(r.folder.c_str(), -1, key.c_str(), -1, TRUE) == CSTR_EQUAL;
+            return EqualsNoCase(r.folder, key);
         });
         if (!outputFolder.empty())
             g_redirects.push_back(Redirect{ key, TrimSlash(outputFolder) });
@@ -128,13 +111,13 @@ namespace sd
         {
             std::scoped_lock lock(g_redirectMutex);
             for (const auto& r : g_redirects)
-                if (IsWithin(folder, r.folder))
+                if (IsWithin(folder, r.folder, true))   // the folder itself or anything inside it
                 {
                     folder = r.output;
                     break;
                 }
         }
-        if (naming != OutputNaming::Subfolder || SameName(std::filesystem::path(folder).filename().wstring(), kOutputSubfolder))
+        if (naming != OutputNaming::Subfolder || EqualsNoCase(FileName(folder), kOutputSubfolder))
             return folder;
         return (std::filesystem::path(folder) / kOutputSubfolder).wstring();
     }
@@ -147,8 +130,7 @@ namespace sd
         if (err != ERROR_ALREADY_EXISTS)
             return HRESULT_FROM_WIN32(err);
         // A file of that name is in the way: it is never replaced.
-        const DWORD attributes = GetFileAttributesW(folder.c_str());
-        return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) ? S_OK : HRESULT_FROM_WIN32(ERROR_DIRECTORY);
+        return IsFolder(folder) ? S_OK : HRESULT_FROM_WIN32(ERROR_DIRECTORY);
     }
 
     HRESULT CreateStaging(const std::wstring& source, std::wstring& stagingPath, Microsoft::WRL::ComPtr<IStream>& stream)
@@ -158,11 +140,9 @@ namespace sd
         if (CurrentOutputNaming() == OutputNaming::Subfolder)
             if (const HRESULT hr = MakeOutputFolder(folder.wstring()); FAILED(hr))
                 return hr;
-        thread_local std::mt19937 rng{ std::random_device{}() };
         for (int attempt = 0; attempt < 16; ++attempt)
         {
-            const auto name = std::format(L"~{}.{:08x}.sdpart", src.stem().wstring(), static_cast<unsigned>(rng()));
-            const auto candidate = (folder / name).wstring();
+            const auto candidate = (folder / StagingName(src.stem().wstring())).wstring();
             // fCreate=TRUE + STGM_FAILIFTHERE: only ever creates a new file.
             const HRESULT hr = SHCreateStreamOnFileEx(candidate.c_str(), STGM_WRITE | STGM_SHARE_DENY_WRITE | STGM_FAILIFTHERE,
                                                       FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, stream.ReleaseAndGetAddressOf());
@@ -177,17 +157,27 @@ namespace sd
         return HRESULT_FROM_WIN32(ERROR_FILE_EXISTS);
     }
 
+    std::wstring StagingName(std::wstring_view stem)
+    {
+        thread_local std::mt19937 rng{ std::random_device{}() };
+        return std::format(L"~{}.{:08x}.sdpart", stem, static_cast<unsigned>(rng()));
+    }
+
     HRESULT CommitStaging(const std::wstring& stagingPath, const std::wstring& source, std::wstring_view suffix,
                           std::wstring_view extension, std::wstring& finalPath)
     {
-        const std::filesystem::path src(source);
-        const auto stem = src.stem().wstring();
+        return RenameToFreeName(stagingPath, CurrentOutputNaming(), std::filesystem::path(source).stem().wstring(), suffix, extension, finalPath);
+    }
+
+    HRESULT RenameToFreeName(const std::wstring& stagingPath, OutputNaming naming, std::wstring_view stem, std::wstring_view suffix,
+                             std::wstring_view extension, std::wstring& finalPath)
+    {
         // The staging file's folder, not OutputFolder again: the rename must stay in one folder even
         // if the naming style changed while the output was being written.
         const auto folder = std::filesystem::path(stagingPath).parent_path();
         for (int n = 1; n < 1000; ++n)
         {
-            const auto candidate = (folder / OutputName(stem, suffix, n, extension)).wstring();
+            const auto candidate = (folder / OutputName(naming, stem, suffix, n, extension)).wstring();
             if (MoveFileExW(stagingPath.c_str(), candidate.c_str(), MOVEFILE_WRITE_THROUGH))
             {
                 finalPath = candidate;

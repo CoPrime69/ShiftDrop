@@ -1,4 +1,5 @@
 #include "docs/Bytes.h"
+#include "Strings.h"
 #include "docs/Formats.h"
 
 #include <md4c.h>

@@ -1,5 +1,6 @@
 #include "FileActions.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "StagedOutput.h"
 #include "TestUtil.h"
@@ -140,17 +141,6 @@ namespace
         ComPtr<IDataObject> data = Microsoft::WRL::Make<FakeDrag>(std::move(files), realFiles);
         return data;
     }
-
-    std::string PngBytes(const TempDir& dir, UINT w = 64, UINT h = 48)
-    {
-        const auto path = dir / L"made.png";
-        EXPECT_HRESULT_SUCCEEDED(WritePng(path, w, h));
-        auto bytes = ReadAll(path);
-        DeleteFileW(path.c_str());
-        return bytes;
-    }
-
-    bool Exists(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
 }
 
 TEST(VirtualDrop, SafeFileNameKeepsOneHarmlessName)
@@ -261,7 +251,7 @@ TEST(VirtualDrop, FallsBackToThePathTheDragAlsoGave)
     const auto saved = drop->Save({}, error);
     drop->Detach();
     ASSERT_EQ(saved.size(), 1u) << Narrow(error);
-    EXPECT_EQ(std::filesystem::path(saved[0]).filename(), L"cat.png");
+    EXPECT_EQ(FileName(saved[0]), L"cat.png");
     EXPECT_EQ(ReadAll(saved[0]), "from the path");
 }
 
@@ -332,9 +322,9 @@ TEST(VirtualDrop, SavesEveryMediumAndConvertsIntoTheChosenFolder)
     auto drop = VirtualDrop::Create(ReadVirtualItems(drag.Get()), root, desktop, false);
     ASSERT_TRUE(drop);
     ASSERT_EQ(drop->Paths().size(), 5u);
-    EXPECT_FALSE(Exists(drop->Folder()));   // nothing on disk during the drag
-    EXPECT_EQ(std::filesystem::path(drop->Paths()[2]).filename(), L"Re_ lunch_.msg");
-    EXPECT_EQ(std::filesystem::path(drop->Paths()[3]).filename(), L"notes (2).txt");
+    EXPECT_FALSE(PathExists(drop->Folder()));   // nothing on disk during the drag
+    EXPECT_EQ(FileName(drop->Paths()[2]), L"Re_ lunch_.msg");
+    EXPECT_EQ(FileName(drop->Paths()[3]), L"notes (2).txt");
     EXPECT_EQ(VirtualDrop::Find(drop->Paths()[0]), drop);
     EXPECT_FALSE(VirtualDrop::Find(dir / L"elsewhere.png"));
 
@@ -346,7 +336,7 @@ TEST(VirtualDrop, SavesEveryMediumAndConvertsIntoTheChosenFolder)
     ASSERT_EQ(saved.size(), 4u) << Narrow(error);
     EXPECT_TRUE(drop->Saved());
     EXPECT_NE(error.find(L"gone.jpg"), std::wstring::npos);
-    EXPECT_FALSE(Exists(drop->Paths()[4]));
+    EXPECT_FALSE(PathExists(drop->Paths()[4]));
     EXPECT_EQ(ReadAll(saved[0]), png);
     EXPECT_EQ(ReadAll(saved[1]), "hello");   // the descriptor's size, not the rounded-up memory's
     EXPECT_EQ(ReadAll(saved[3]), "second");
@@ -379,8 +369,8 @@ TEST(VirtualDrop, SavesEveryMediumAndConvertsIntoTheChosenFolder)
     // The job is over: the copies go, the output stays.
     const auto folder = drop->Folder();
     drop.reset();
-    EXPECT_FALSE(Exists(folder));
-    EXPECT_TRUE(Exists(result.output));
+    EXPECT_FALSE(PathExists(folder));
+    EXPECT_TRUE(PathExists(result.output));
     EXPECT_EQ(OutputFolder(saved[0]), std::filesystem::path(saved[0]).parent_path().wstring());   // redirect gone
     EXPECT_FALSE(VirtualDrop::Find(saved[0]));
 }
@@ -411,7 +401,7 @@ TEST(VirtualDrop, KeptCopiesNeverReplaceAnything)
     EXPECT_EQ(kept, out + L"\\photo (2).png");
     EXPECT_EQ(ReadAll(kept), "dragged");
     EXPECT_EQ(ReadAll(out + L"\\photo.png"), "already here");
-    EXPECT_FALSE(Exists(dir / L"photo.png"));
+    EXPECT_FALSE(PathExists(dir / L"photo.png"));
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
 }
 
@@ -423,9 +413,9 @@ TEST(VirtualDrop, StaleDropFoldersAreRemoved)
     std::filesystem::create_directories(dir / L"keep-me");
     WriteText(dir / L"notes.txt", "x");
     RemoveStaleVirtualDrops(dir.path().wstring());
-    EXPECT_FALSE(Exists(dir / L"1a2b3c4d"));
-    EXPECT_TRUE(Exists(dir / L"keep-me"));
-    EXPECT_TRUE(Exists(dir / L"notes.txt"));
+    EXPECT_FALSE(PathExists(dir / L"1a2b3c4d"));
+    EXPECT_TRUE(PathExists(dir / L"keep-me"));
+    EXPECT_TRUE(PathExists(dir / L"notes.txt"));
     RemoveStaleVirtualDrops(dir / L"missing");   // no folder yet: nothing to do
 }
 

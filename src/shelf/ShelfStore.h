@@ -67,6 +67,4 @@ namespace sd::shelf
 
     // "1 item", "3 items" (folders can be on the shelf too).
     std::wstring CountText(size_t count);
-    // "1.4 MB", "820 KB", "12 bytes".
-    std::wstring SizeText(unsigned long long bytes);
 }

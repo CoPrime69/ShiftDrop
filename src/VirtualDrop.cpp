@@ -1,6 +1,10 @@
 #include "VirtualDrop.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
+#include "Strings.h"
+#include "TempPath.h"
 #include "Utf.h"
 
 #include <shlobj.h>
@@ -31,21 +35,9 @@ namespace sd
         std::mutex g_dropsMutex;
         std::vector<std::weak_ptr<VirtualDrop>> g_drops;
 
-        bool IsWithin(const std::wstring& path, const std::wstring& folder)
-        {
-            const int n = static_cast<int>(folder.size());
-            return !folder.empty() && path.size() > folder.size() && (path[folder.size()] == L'\\' || path[folder.size()] == L'/') &&
-                   CompareStringOrdinal(path.c_str(), n, folder.c_str(), n, TRUE) == CSTR_EQUAL;
-        }
-
         bool IsDropFolderName(const std::wstring& name)
         {
             return name.size() == 8 && std::all_of(name.begin(), name.end(), [](wchar_t c) { return std::iswxdigit(c) != 0; });
-        }
-
-        bool SameName(const std::wstring& a, const std::wstring& b)
-        {
-            return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL;
         }
 
         std::wstring FromAnsi(const char* text, size_t max)
@@ -72,7 +64,7 @@ namespace sd
             if (d.dwFlags & FD_FILESIZE)
             {
                 item.hasSize = true;
-                item.size = (static_cast<uint64_t>(d.nFileSizeHigh) << 32) | d.nFileSizeLow;
+                item.size = FileSizeOf(d);
             }
             items.push_back(std::move(item));
         }
@@ -161,12 +153,12 @@ namespace sd
         // Device names stay devices with any extension ("nul.txt"): prefix them.
         const auto base = safe.substr(0, safe.find(L'.'));
         static constexpr const wchar_t* kDevices[] = { L"CON", L"PRN", L"AUX", L"NUL", L"CONIN$", L"CONOUT$" };
-        bool device = std::any_of(std::begin(kDevices), std::end(kDevices), [&](const wchar_t* d) { return SameName(base, d); });
+        bool device = std::any_of(std::begin(kDevices), std::end(kDevices), [&](const wchar_t* d) { return EqualsNoCase(base, d); });
         const auto digit = [](wchar_t c) { return (c >= L'0' && c <= L'9') || c == L'¹' || c == L'²' || c == L'³'; };
         if (base.size() == 4 && digit(base[3]))
         {
             const auto prefix = base.substr(0, 3);
-            device |= SameName(prefix, L"COM") || SameName(prefix, L"LPT");
+            device |= EqualsNoCase(prefix, L"COM") || EqualsNoCase(prefix, L"LPT");
         }
         if (device)
             safe = L"_" + safe;
@@ -244,11 +236,9 @@ namespace sd
 
     bool PreferVirtualFiles(const std::vector<std::wstring>& paths)
     {
-        wchar_t temp[MAX_PATH + 1]{};
-        const DWORD n = GetTempPathW(ARRAYSIZE(temp), temp);
-        if (n == 0 || n > MAX_PATH)
+        std::wstring folder = TempDirectory();
+        if (folder.empty())
             return paths.empty();
-        std::wstring folder(temp, n);
         while (!folder.empty() && folder.back() == L'\\')
             folder.pop_back();
         // TEMP often holds the short 8.3 form of the profile folder (RUNNER~1); a drag may give
@@ -318,7 +308,7 @@ namespace sd
             auto unique = name;
             const std::filesystem::path p(name);
             for (int n = 2; std::any_of(drop->m_paths.begin(), drop->m_paths.end(),
-                                        [&](const std::wstring& taken) { return SameName(std::filesystem::path(taken).filename().wstring(), unique); });
+                                        [&](const std::wstring& taken) { return EqualsNoCase(FileName(taken), unique); });
                  ++n)
                 unique = std::format(L"{} ({}){}", p.stem().wstring(), n, p.extension().wstring());
             drop->m_paths.push_back((itemsFolder / unique).wstring());
@@ -438,10 +428,9 @@ namespace sd
                 continue;
             }
             DeleteFileW(path.c_str());   // whatever part was written
-            log::Warn(L"dropped: could not save '{}' (0x{:08X})", item.name, static_cast<unsigned>(hr));
+            log::Warn(L"dropped: could not save '{}' ({})", item.name, HexCode(hr));
             if (error.empty())
-                error = std::format(L"{}: the app it came from did not hand it over (0x{:08X})", std::filesystem::path(path).filename().wstring(),
-                                    static_cast<unsigned>(hr));
+                error = std::format(L"{}: the app it came from did not hand it over ({})", FileName(path), HexCode(hr));
         }
         return m_savedPaths;
     }
@@ -452,27 +441,13 @@ namespace sd
         const std::filesystem::path dir(folder);
         // First under a new "~name.xxxxxxxx.sdpart" there (a copy when it is on another drive), then
         // renamed to the first free name, so a half-copied file never has a final name.
-        thread_local std::mt19937 rng{ std::random_device{}() };
-        const auto staging = (dir / std::format(L"~{}.{:08x}.sdpart", src.stem().wstring(), static_cast<unsigned>(rng()))).wstring();
+        const auto staging = (dir / StagingName(src.stem().wstring())).wstring();
         if (!MoveFileExW(file.c_str(), staging.c_str(), MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH))
             return HRESULT_FROM_WIN32(GetLastError());
-        for (int n = 1; n < 1000; ++n)
-        {
-            const auto name = n == 1 ? src.filename().wstring() : std::format(L"{} ({}){}", src.stem().wstring(), n, src.extension().wstring());
-            const auto candidate = (dir / name).wstring();
-            if (MoveFileExW(staging.c_str(), candidate.c_str(), MOVEFILE_WRITE_THROUGH))   // no REPLACE_EXISTING: never overwrites
-            {
-                kept = candidate;
-                return S_OK;
-            }
-            const DWORD err = GetLastError();
-            if (err != ERROR_ALREADY_EXISTS && err != ERROR_FILE_EXISTS)
-            {
-                DeleteFileW(staging.c_str());
-                return HRESULT_FROM_WIN32(err);
-            }
-        }
-        DeleteFileW(staging.c_str());
-        return HRESULT_FROM_WIN32(ERROR_FILE_EXISTS);
+        // Always "name (2).ext", whatever the output naming style: this is the user's own file.
+        const HRESULT hr = RenameToFreeName(staging, OutputNaming::Parentheses, src.stem().wstring(), L"", src.extension().wstring(), kept);
+        if (FAILED(hr))
+            DeleteFileW(staging.c_str());
+        return hr;
     }
 }

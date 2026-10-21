@@ -1,4 +1,5 @@
 #include "sheets/Workbook.h"
+#include "Strings.h"
 #include "docs/Bytes.h"
 #include "docs/Xml.h"
 #include "docs/Zip.h"
@@ -60,7 +61,7 @@ namespace sd::sheets
                 else if (c == '\\' || c == '_' || c == '*')
                     ++i;
                 else if (c == 'd' || c == 'D' || c == 'm' || c == 'M' || c == 'y' || c == 'Y' || c == 'h' || c == 'H' || c == 's' || c == 'S')
-                    return docs::AsciiLower(code) != "general";
+                    return AsciiLower(code) != "general";
             }
             return false;
         }
@@ -94,7 +95,7 @@ namespace sd::sheets
             return false;
         }
         const bool date1904 = [&] {
-            const auto v = docs::AsciiLower(Attr(Child(wb.document_element(), "workbookPr"), "date1904"));
+            const auto v = AsciiLower(Attr(Child(wb.document_element(), "workbookPr"), "date1904"));
             return v == "1" || v == "true";
         }();
 

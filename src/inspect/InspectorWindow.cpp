@@ -4,6 +4,7 @@
 #include "DialogWindow.h"
 #include "Ffmpeg.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "inspect/InspectModule.h"
 #include "inspect/Metadata.h"
 #include "inspect/MetadataReader.h"
@@ -33,12 +34,6 @@ namespace sd::inspect
 
         // DIPs, scaled by the window's DPI.
         constexpr int kMargin = 10, kGap = 6, kSearchH = 24, kStatusH = 18, kTabsH = 28;
-
-        std::wstring FileName(const std::wstring& path)
-        {
-            const auto slash = path.find_last_of(L"\\/");
-            return slash == std::wstring::npos ? path : path.substr(slash + 1);
-        }
 
         // A ListView row is one line: line breaks in a value (comments, XMP) show as a return mark.
         std::wstring OneLine(const std::wstring& value)

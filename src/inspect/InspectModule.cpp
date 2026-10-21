@@ -1,5 +1,6 @@
 #include "inspect/InspectModule.h"
 #include "Log.h"
+#include "PathUtil.h"
 
 #include <atomic>
 
@@ -21,8 +22,7 @@ namespace sd::inspect
             // Every file has metadata (folders are left to the File-actions wheel).
             bool Applies(const Recipe&, const std::wstring& path) const override
             {
-                const DWORD attrs = GetFileAttributesW(path.c_str());
-                return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+                return IsFile(path);
             }
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
             {

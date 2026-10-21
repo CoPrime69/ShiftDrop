@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "Media.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "Utf.h"
 #include "audiotools/AudioEngine.h"
 #include "mediaeditor/EditorApi.h"
@@ -60,7 +61,7 @@ namespace sd
                     return say(L"the media engine is missing; reinstall to edit video and audio");
                 if (!Applies(recipe, path))
                     return say(IsVideoAction(recipe) ? L"not a video" : L"not an audio file");
-                if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                if (!PathExists(path))
                     return say(L"file not found");
                 return true;
             }
@@ -75,7 +76,7 @@ namespace sd
             {
                 // A per-file editor's choices (each file's trim range or boxes) are keyed by path.
                 Recipe forFile = recipe;
-                forFile.steps[0].params = mediatools::ParamsForFile(recipe.steps[0].params, source);
+                forFile.steps[0].params = ParamsForFile(recipe.steps[0].params, source);
                 return IsVideoAction(forFile) ? videotools::Run(m_s, forFile, runId, source, stop, progress)
                                               : audiotools::Run(m_s, forFile, runId, source, stop, progress);
             }

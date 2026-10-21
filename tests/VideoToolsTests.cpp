@@ -1,4 +1,6 @@
 #include "Ffmpeg.h"
+#include "MediaTestUtil.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -21,43 +23,9 @@ using namespace sd::test;
 
 namespace
 {
-    // A video tool's recipe by id, whether it has a slice or is reached from the editor's tool bar.
-    Recipe ToolById(const Recipes& recipes, std::string_view id)
-    {
-        if (const auto* r = recipes.store.Find(id))
-            return *r;
-        for (const auto tool : SiblingTools(EditorTool::TrimVideo))
-            if (const auto j = ToolRecipe(tool); j.value("id", std::string()) == id)
-            {
-                Recipe r;
-                std::string error;
-                EXPECT_TRUE(ParseRecipe(j.dump(), recipes.registry, r, error)) << error;
-                return r;
-            }
-        ADD_FAILURE() << "no recipe " << std::string(id);
-        return {};
-    }
-
-    bool Has(const std::vector<std::wstring>& args, std::wstring_view a, std::wstring_view b)
-    {
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == a && args[i + 1] == b)
-                return true;
-        return false;
-    }
-
     bool Contains(const std::vector<std::wstring>& args, std::wstring_view part)
     {
         return std::any_of(args.begin(), args.end(), [&](const std::wstring& a) { return a.find(part) != std::wstring::npos; });
-    }
-
-    // The value after `key`, or empty.
-    std::wstring After(const std::vector<std::wstring>& args, std::wstring_view key)
-    {
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == key)
-                return args[i + 1];
-        return {};
     }
 
     ProbeInfo Clip(int w = 1920, int h = 1080, double fps = 30, const char* video = "h264", const char* audio = "aac", int64_t us = 10'000'000)
@@ -645,20 +613,6 @@ TEST(VideoTools, ToolBarSwitchRunsTheChosenTool)
 
 namespace
 {
-    std::shared_ptr<const FfmpegEngine> Ffmpeg()
-    {
-        static const auto engine = std::make_shared<const FfmpegEngine>(FfmpegEngine::Locate());
-        return engine;
-    }
-
-    bool Make(const std::vector<std::wstring>& args)
-    {
-        std::stop_source never;
-        std::vector<std::wstring> a{ L"-hide_banner", L"-nostdin", L"-y" };
-        a.insert(a.end(), args.begin(), args.end());
-        return Ffmpeg()->Run(a, nullptr, never.get_token()).ok;
-    }
-
     // 4 s of 320x240 test pattern at 25 fps with a tone, H.264 (OpenH264) + AAC in MP4.
     bool MakeH264(const std::wstring& path, const wchar_t* size = L"320x240", double seconds = 4)
     {
@@ -674,55 +628,28 @@ namespace
                       L"-f", L"avi", path });
     }
 
-    struct Fixture
-    {
-        TempDir dir;
-        Recipes recipes{ dir };
-        std::unique_ptr<HistoryStore> history;
-        std::unique_ptr<IEngine> engine;
-        Fixture()
-        {
-            std::wstring error;
-            history = HistoryStore::Open(dir / L"history.db", error);
-            engine = MediaToolsModule().makeEngine(EngineServices{ history.get(), Ffmpeg() });
-        }
-        ItemResult Run(std::string_view id, nlohmann::json params, const std::wstring& source, double* lastProgress = nullptr)
-        {
-            Recipe r = ToolById(recipes, id);
-            for (auto& [k, v] : params.items())
-                r.steps[0].params[k] = v;
-            const auto run = history->BeginRun(r, 1);
-            double last = 0;
-            auto out = engine->Run(r, run, source, std::stop_token{}, [&](double p) { last = std::max(last, p); });
-            history->FinishRun(run);
-            if (lastProgress)
-                *lastProgress = last;
-            return out;
-        }
-    };
-
     double Seconds(const ProbeInfo& p) { return static_cast<double>(p.DurationUs()) / 1e6; }
 }
 
 TEST(VideoToolsEngine, TrimExactAndFast)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto clip = f.dir / L"my clip.mp4";
     ASSERT_TRUE(MakeH264(clip));
     double progress = 0;
     const auto exact = f.Run("video-trim", { { "start", 1.0 }, { "end", 3.0 }, { "mode", "exact" } }, clip, &progress);
     ASSERT_TRUE(exact.ok) << Narrow(exact.error);
-    EXPECT_EQ(std::filesystem::path(exact.output).filename(), L"my clip (trimmed).mp4");
-    const auto e = Probe(*Ffmpeg(), exact.output);
+    EXPECT_EQ(FileName(exact.output), L"my clip (trimmed).mp4");
+    const auto e = Probe(*TestFfmpeg(), exact.output);
     EXPECT_NEAR(Seconds(e), 2.0, 0.1);
     EXPECT_TRUE(e.HasAudio());
     EXPECT_GT(progress, 0.5);
     const auto fast = f.Run("video-trim", { { "start", 1.0 }, { "end", 3.0 }, { "mode", "fast" } }, clip);
     ASSERT_TRUE(fast.ok) << Narrow(fast.error);
-    EXPECT_EQ(std::filesystem::path(fast.output).filename(), L"my clip (trimmed 2).mp4");   // never overwrites
-    const auto c = Probe(*Ffmpeg(), fast.output);
+    EXPECT_EQ(FileName(fast.output), L"my clip (trimmed 2).mp4");   // never overwrites
+    const auto c = Probe(*TestFfmpeg(), fast.output);
     EXPECT_EQ(c.media.videoCodec, "h264");
     EXPECT_GE(Seconds(c), 1.9);   // from the keyframe at 1 s (one every 25 frames)
     EXPECT_LE(Seconds(c), 2.2);
@@ -734,14 +661,14 @@ TEST(VideoToolsEngine, TrimExactAndFast)
 
 TEST(VideoToolsEngine, CropSpeedAndRedact)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto clip = f.dir / L"clip.mp4";
     ASSERT_TRUE(MakeH264(clip));
     const auto crop = f.Run("video-crop", { { "box", { 10, 20, 100, 100 } }, { "width", 200 }, { "height", 200 } }, clip);
     ASSERT_TRUE(crop.ok) << Narrow(crop.error);
-    const auto c = Probe(*Ffmpeg(), crop.output);
+    const auto c = Probe(*TestFfmpeg(), crop.output);
     EXPECT_EQ(c.width, 200);
     EXPECT_EQ(c.height, 200);
     EXPECT_TRUE(c.HasAudio());
@@ -749,12 +676,12 @@ TEST(VideoToolsEngine, CropSpeedAndRedact)
     // A one-click centred crop from the aspect alone.
     const auto square = f.Run("video-crop", { { "aspect", "1:1" }, { "ask", false } }, clip);
     ASSERT_TRUE(square.ok) << Narrow(square.error);
-    EXPECT_EQ(Probe(*Ffmpeg(), square.output).width, 240);
+    EXPECT_EQ(Probe(*TestFfmpeg(), square.output).width, 240);
 
     const auto fast = f.Run("video-speed", { { "factor", 2 }, { "ask", false } }, clip);
     ASSERT_TRUE(fast.ok) << Narrow(fast.error);
-    EXPECT_EQ(std::filesystem::path(fast.output).filename(), L"clip (2x).mp4");
-    const auto s = Probe(*Ffmpeg(), fast.output);
+    EXPECT_EQ(FileName(fast.output), L"clip (2x).mp4");
+    const auto s = Probe(*TestFfmpeg(), fast.output);
     EXPECT_NEAR(Seconds(s), 2.0, 0.15);
     EXPECT_NEAR(s.media.fps, 25, 0.5);   // the source's rate, not 50
     EXPECT_TRUE(s.HasAudio());
@@ -763,8 +690,8 @@ TEST(VideoToolsEngine, CropSpeedAndRedact)
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"testsrc=s=160x120:r=25:d=2", L"-c:v", L"mpeg4", L"-f", L"avi", silent }));
     const auto slow = f.Run("video-speed", { { "factor", 0.5 } }, silent);
     ASSERT_TRUE(slow.ok) << Narrow(slow.error);
-    EXPECT_NEAR(Seconds(Probe(*Ffmpeg(), slow.output)), 4.0, 0.2);
-    EXPECT_FALSE(Probe(*Ffmpeg(), slow.output).HasAudio());
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), slow.output)), 4.0, 0.2);
+    EXPECT_FALSE(Probe(*TestFfmpeg(), slow.output).HasAudio());
 
     // Redact: a solid box is black inside its time range and the picture outside it is untouched.
     nlohmann::json boxes = nlohmann::json::array();
@@ -773,10 +700,10 @@ TEST(VideoToolsEngine, CropSpeedAndRedact)
     const auto redacted = f.Run("video-redact", { { "boxes", boxes } }, clip);
     ASSERT_TRUE(redacted.ok) << Narrow(redacted.error);
     TempFolder temp;
-    const auto info = Probe(*Ffmpeg(), redacted.output);
+    const auto info = Probe(*TestFfmpeg(), redacted.output);
     Frame inside, outside;
-    ASSERT_TRUE(ExtractFrame(*Ffmpeg(), redacted.output, info, 1'500'000, 320, 240, false, temp, {}, inside));
-    ASSERT_TRUE(ExtractFrame(*Ffmpeg(), redacted.output, info, 3'000'000, 320, 240, false, temp, {}, outside));
+    ASSERT_TRUE(ExtractFrame(*TestFfmpeg(), redacted.output, info, 1'500'000, 320, 240, false, temp, {}, inside));
+    ASSERT_TRUE(ExtractFrame(*TestFfmpeg(), redacted.output, info, 3'000'000, 320, 240, false, temp, {}, outside));
     ASSERT_EQ(inside.w, 320);
     const auto luma = [](uint32_t p) { return ((p >> 16 & 0xFF) + (p >> 8 & 0xFF) + (p & 0xFF)) / 3; };
     EXPECT_LT(luma(inside.bgra[40 * 320 + 40]), 24u);
@@ -786,9 +713,9 @@ TEST(VideoToolsEngine, CropSpeedAndRedact)
 
 TEST(VideoToolsEngine, JoinCopiesOrEncodes)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto a = f.dir / L"a.mp4", b = f.dir / L"b's clip.mp4";   // a quote in the name: the concat list escapes it
     ASSERT_TRUE(MakeH264(a, L"320x240", 2));
     ASSERT_TRUE(MakeH264(b, L"320x240", 3));
@@ -796,8 +723,8 @@ TEST(VideoToolsEngine, JoinCopiesOrEncodes)
     double progress = 0;
     const auto copied = f.engine->RunBatch(join, 0, { a, b }, {}, [&](double p) { progress = std::max(progress, p); });
     ASSERT_TRUE(copied.ok) << Narrow(copied.error);
-    EXPECT_EQ(std::filesystem::path(copied.output).filename(), L"a (joined).mp4");
-    const auto j = Probe(*Ffmpeg(), copied.output);
+    EXPECT_EQ(FileName(copied.output), L"a (joined).mp4");
+    const auto j = Probe(*TestFfmpeg(), copied.output);
     EXPECT_NEAR(Seconds(j), 5.0, 0.2);
     EXPECT_EQ(j.media.videoCodec, "h264");
     EXPECT_GT(progress, 0.5);
@@ -806,7 +733,7 @@ TEST(VideoToolsEngine, JoinCopiesOrEncodes)
     ASSERT_TRUE(Make({ L"-f", L"lavfi", L"-i", L"testsrc=s=200x300:r=30:d=2", L"-c:v", L"mpeg4", L"-f", L"avi", c }));
     const auto encoded = f.engine->RunBatch(join, 0, { a, c, b }, {}, nullptr);
     ASSERT_TRUE(encoded.ok) << Narrow(encoded.error);
-    const auto e = Probe(*Ffmpeg(), encoded.output);
+    const auto e = Probe(*TestFfmpeg(), encoded.output);
     EXPECT_EQ(e.width, 320);
     EXPECT_EQ(e.height, 240);
     EXPECT_NEAR(Seconds(e), 7.0, 0.3);
@@ -816,14 +743,14 @@ TEST(VideoToolsEngine, JoinCopiesOrEncodes)
 
 TEST(VideoToolsEngine, SavesExactFramesAndSplits)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
-    Fixture f;
+    MediaToolsFixture f;
     const auto numbered = f.dir / L"numbered.avi";
     ASSERT_TRUE(MakeNumbered(numbered));
     const auto frames = f.Run("video-frames", { { "frames", { 1.2, 0.0, 2.5 } } }, numbered);
     ASSERT_TRUE(frames.ok) << Narrow(frames.error);
-    EXPECT_EQ(std::filesystem::path(frames.output).filename(), L"numbered (frames)");
+    EXPECT_EQ(FileName(frames.output), L"numbered (frames)");
     std::vector<std::wstring> names;
     for (const auto& e : std::filesystem::directory_iterator(frames.output))
         names.push_back(e.path().filename().wstring());
@@ -835,9 +762,9 @@ TEST(VideoToolsEngine, SavesExactFramesAndSplits)
     EXPECT_EQ(w, 64u);   // full size
     // Frame 12 (1.2 s at 10 fps) is grey 96: exactly that frame, not its neighbour (88 or 104).
     TempFolder temp;
-    const auto info = Probe(*Ffmpeg(), numbered);
+    const auto info = Probe(*TestFfmpeg(), numbered);
     Frame frame;
-    ASSERT_TRUE(ExtractFrame(*Ffmpeg(), numbered, info, 1'200'000, 64, 64, false, temp, {}, frame));
+    ASSERT_TRUE(ExtractFrame(*TestFfmpeg(), numbered, info, 1'200'000, 64, 64, false, temp, {}, frame));
     const int grey = static_cast<int>(frame.bgra[32 * 64 + 32] >> 8 & 0xFF);
     EXPECT_NEAR(grey, 96 * 255 / 219 - 16 * 255 / 219, 4) << "the preview shows frame 12";
 
@@ -845,10 +772,10 @@ TEST(VideoToolsEngine, SavesExactFramesAndSplits)
     ASSERT_TRUE(MakeH264(clip));
     const auto exact = f.Run("video-split", { { "parts", 2 }, { "mode", "exact" } }, clip);
     ASSERT_TRUE(exact.ok) << Narrow(exact.error);
-    EXPECT_EQ(std::filesystem::path(exact.output).filename(), L"long (parts)");
+    EXPECT_EQ(FileName(exact.output), L"long (parts)");
     const auto part2 = exact.output + L"\\long part 2.mp4";
-    ASSERT_NE(GetFileAttributesW(part2.c_str()), INVALID_FILE_ATTRIBUTES);
-    EXPECT_NEAR(Seconds(Probe(*Ffmpeg(), part2)), 2.0, 0.1);
+    ASSERT_TRUE(PathExists(part2));
+    EXPECT_NEAR(Seconds(Probe(*TestFfmpeg(), part2)), 2.0, 0.1);
     const auto fast = f.Run("video-split", { { "points", { 1.0, 3.0 } }, { "mode", "fast" } }, clip);
     ASSERT_TRUE(fast.ok) << Narrow(fast.error);
     size_t parts = 0;
@@ -860,20 +787,20 @@ TEST(VideoToolsEngine, SavesExactFramesAndSplits)
 
 TEST(VideoToolsEngine, EditorExtractsFramesAndWaveform)
 {
-    if (!Ffmpeg()->Available())
+    if (!TestFfmpeg()->Available())
         GTEST_SKIP() << "SHIFTDROP_FFMPEG is not set";
     TempDir dir;
     const auto clip = dir / L"clip.mp4";
     ASSERT_TRUE(MakeH264(clip, L"320x240", 2));
-    const auto info = Probe(*Ffmpeg(), clip);
+    const auto info = Probe(*TestFfmpeg(), clip);
     TempFolder temp;
     ASSERT_TRUE(temp.Ok());
     Frame thumb;
-    ASSERT_TRUE(ExtractFrame(*Ffmpeg(), clip, info, 1'000'000, 96, 96, true, temp, {}, thumb));
+    ASSERT_TRUE(ExtractFrame(*TestFfmpeg(), clip, info, 1'000'000, 96, 96, true, temp, {}, thumb));
     EXPECT_EQ(thumb.w, 96);
     EXPECT_EQ(thumb.h, 72);
     std::vector<int16_t> pcm;
-    ASSERT_TRUE(ExtractMonoPcm(*Ffmpeg(), clip, 8000, temp, {}, pcm));
+    ASSERT_TRUE(ExtractMonoPcm(*TestFfmpeg(), clip, 8000, temp, {}, pcm));
     EXPECT_NEAR(static_cast<double>(pcm.size()), 16000, 800);
     PeakPyramid peaks;
     peaks.Build(std::move(pcm), 8000);
@@ -886,5 +813,5 @@ TEST(VideoToolsEngine, EditorExtractsFramesAndWaveform)
         gonePath = gone.Path();
         test::WriteText(gone.File(L"x.raw"), "x");
     }
-    EXPECT_EQ(GetFileAttributesW(gonePath.c_str()), INVALID_FILE_ATTRIBUTES);
+    EXPECT_FALSE(PathExists(gonePath));
 }

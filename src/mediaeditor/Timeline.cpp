@@ -1,4 +1,6 @@
 #include "mediaeditor/Timeline.h"
+#include "FormatText.h"
+#include "Strings.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,10 +13,7 @@ namespace sd::mediatools
 
     std::wstring FormatTimecode(int64_t us)
     {
-        if (us < 0)
-            us = 0;
-        const int64_t ms = (us + 500) / 1000;
-        return std::format(L"{:02}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
+        return Timecode(us, true);
     }
 
     std::wstring FormatRulerLabel(int64_t us, int64_t stepUs)
@@ -34,11 +33,7 @@ namespace sd::mediatools
 
     bool ParseTimecode(std::wstring_view text, int64_t& us)
     {
-        // Trim spaces.
-        while (!text.empty() && iswspace(text.front()))
-            text.remove_prefix(1);
-        while (!text.empty() && iswspace(text.back()))
-            text.remove_suffix(1);
+        text = Trim(text);
         if (text.empty())
             return false;
         // Up to three ':'-separated fields; only the last may have a fraction.

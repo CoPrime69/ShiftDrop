@@ -1,9 +1,7 @@
 #include "metadata/Container.h"
 
-#include <windows.h>
-#include <wil/resource.h>
+#include <zlib.h>
 
-#include <array>
 #include <cstring>
 #include <format>
 #include <string_view>
@@ -35,25 +33,6 @@ namespace sd::metadata
         bool StartsWith(std::span<const uint8_t> b, size_t at, std::string_view s)
         {
             return at + s.size() <= b.size() && std::memcmp(b.data() + at, s.data(), s.size()) == 0;
-        }
-
-        uint32_t Crc32(std::span<const uint8_t> data)
-        {
-            static const auto table = [] {
-                std::array<uint32_t, 256> t{};
-                for (uint32_t n = 0; n < 256; ++n)
-                {
-                    uint32_t c = n;
-                    for (int k = 0; k < 8; ++k)
-                        c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-                    t[n] = c;
-                }
-                return t;
-            }();
-            uint32_t c = 0xFFFFFFFFu;
-            for (const uint8_t byte : data)
-                c = table[(c ^ byte) & 0xFF] ^ (c >> 8);
-            return c ^ 0xFFFFFFFFu;
         }
 
         Block Make(BlockKind kind, size_t offset, size_t size, size_t payload, size_t payloadSize, std::string name)
@@ -522,7 +501,7 @@ namespace sd::metadata
                 const size_t typeAt = block.size();
                 block.insert(block.end(), { 'e', 'X', 'I', 'f' });
                 block.insert(block.end(), tiff.begin(), tiff.end());
-                AppendBe32(block, Crc32(std::span<const uint8_t>(block).subspan(typeAt)));
+                AppendBe32(block, static_cast<uint32_t>(crc32(0, block.data() + typeAt, static_cast<uInt>(block.size() - typeAt))));
                 break;
             }
             case Container::WebP:
@@ -590,30 +569,5 @@ namespace sd::metadata
         if (container == Container::WebP)
             FixWebP(out);
         return true;
-    }
-
-    bool ReadFileBytes(const std::wstring& path, std::vector<uint8_t>& bytes)
-    {
-        wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-        LARGE_INTEGER size{};
-        if (!file || !GetFileSizeEx(file.get(), &size) || size.QuadPart > (1ll << 31))
-            return false;
-        bytes.resize(static_cast<size_t>(size.QuadPart));
-        DWORD read = 0;
-        if (!bytes.empty() && !ReadFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr))
-            return false;
-        bytes.resize(read);
-        return true;
-    }
-
-    bool WriteFileBytes(const std::wstring& path, std::span<const uint8_t> bytes)
-    {
-        wil::unique_hfile file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
-        if (!file)
-            return false;
-        DWORD written = 0;
-        if (!bytes.empty() && (!WriteFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) || written != bytes.size()))
-            return false;
-        return SetEndOfFile(file.get()) != FALSE && FlushFileBuffers(file.get()) != FALSE;
     }
 }

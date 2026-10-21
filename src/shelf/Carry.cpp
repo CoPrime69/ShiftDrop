@@ -1,10 +1,12 @@
 #include "shelf/Carry.h"
 #include "Clipboard.h"
+#include "ErrorText.h"
 #include "FileActions.h"
 #include "ImagePipeline.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "Recipe.h"
+#include "Strings.h"
 #include "Wic.h"
 #include "formats/Pixels.h"
 
@@ -71,7 +73,7 @@ namespace sd::shelf
         // folder; files from several use the desktop as the parent with absolute IDs as "children".
         const auto folderOf = [](const std::wstring& p) { return std::filesystem::path(p).parent_path().wstring(); };
         const bool oneFolder = std::all_of(parsed.begin(), parsed.end(), [&](const std::wstring& p) {
-            return CompareStringOrdinal(folderOf(p).c_str(), -1, folderOf(parsed.front()).c_str(), -1, TRUE) == CSTR_EQUAL;
+            return EqualsNoCase(folderOf(p), folderOf(parsed.front()));
         });
         Pidl parent;
         if (oneFolder)

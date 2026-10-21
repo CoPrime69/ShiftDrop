@@ -40,16 +40,6 @@ namespace sd::mediatools
         const wchar_t* const kAspectLabels[] = { L"Free", L"Original", L"16:9", L"9:16", L"1:1", L"4:5" };
         const char* const kShapes[] = { "landscape", "portrait", "square" };
 
-        std::vector<int64_t> TimesFrom(const nlohmann::json& params, const char* key)
-        {
-            std::vector<int64_t> out;
-            if (const auto it = params.find(key); it != params.end() && it->is_array())
-                for (const auto& v : *it)
-                    if (v.is_number())
-                        out.push_back(FromSeconds(v.get<double>()));
-            return out;
-        }
-
         nlohmann::json SecondsList(const std::vector<int64_t>& times)
         {
             nlohmann::json a = nlohmann::json::array();

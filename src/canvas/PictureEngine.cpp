@@ -1,7 +1,7 @@
 #include "canvas/PictureEngine.h"
+#include "FileIo.h"
 #include "Media.h"
 #include "OutputPath.h"
-#include "metadata/Container.h"
 #include "metadata/Metadata.h"
 
 #include <format>
@@ -36,9 +36,9 @@ namespace sd::canvas
         if (FAILED(EncodeEdited(image, source, bytes, error, &format)))
             return out.Fail(error);
         std::vector<uint8_t> original;
-        if (carryExif && metadata::ReadFileBytes(source, original))
+        if (carryExif && ReadFileBytes(source, original))
             metadata::CarryEditedExif(original, bytes, static_cast<int>(image.width), static_cast<int>(image.height));
-        if (!metadata::WriteFileBytes(out.Path(), bytes))
+        if (!WriteFileBytes(out.Path(), bytes, WriteMode::Any))
             return out.Fail(L"cannot write next to the source");
         return out.Commit(suffix, format->extension);
     }

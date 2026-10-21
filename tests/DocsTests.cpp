@@ -81,14 +81,6 @@ namespace
         return out;
     }
 
-    // A 4x3 PNG as bytes.
-    std::string PngBytes(const TempDir& dir)
-    {
-        const auto path = dir / L"pic.png";
-        EXPECT_HRESULT_SUCCEEDED(WritePng(path, 4, 3));
-        return ReadAll(path);
-    }
-
     // Everything the model holds, built by hand.
     Document Sample(const std::string& png)
     {
@@ -195,7 +187,7 @@ TEST(Docs, HelpersDecodeAndSniff)
     EXPECT_EQ(NormalizeNewlines("a\r\nb\rc\n"), "a\nb\nc\n");
 
     TempDir dir;
-    const auto png = PngBytes(dir);
+    const auto png = PngBytes(dir, 4, 3);
     std::string ext;
     EXPECT_EQ(SniffImage(png, &ext), "image/png");
     EXPECT_EQ(ext, ".png");
@@ -226,7 +218,7 @@ TEST(Docs, ZipRoundTrip)
 TEST(Docs, MarkdownReadsEveryBlock)
 {
     TempDir dir;
-    const auto png = PngBytes(dir);
+    const auto png = PngBytes(dir, 4, 3);
     const std::string md =
         "# Title\n\nSome **bold**, *italic*, ~~gone~~ and `code` with a [link](https://example.com).\n\n"
         "- one\n  - nested\n- two\n\n3. third\n4. fourth\n\n- [x] done\n- [ ] todo\n\n> quoted\n\n"
@@ -253,7 +245,7 @@ TEST(Docs, MarkdownReadsEveryBlock)
 TEST(Docs, MarkdownToHtmlAndBack)
 {
     TempDir dir;
-    const auto doc = Sample(PngBytes(dir));
+    const auto doc = Sample(PngBytes(dir, 4, 3));
     HtmlOptions o;
     const auto html = WriteHtml(doc, o);
     EXPECT_NE(html.find("<!DOCTYPE html>"), std::string::npos);
@@ -322,7 +314,7 @@ TEST(Docs, HtmlReaderToleratesRealPages)
 TEST(Docs, DocxRoundTrip)
 {
     TempDir dir;
-    const auto doc = Sample(PngBytes(dir));
+    const auto doc = Sample(PngBytes(dir, 4, 3));
     std::string bytes;
     ASSERT_TRUE(WriteDocx(doc, bytes));
     ZipReader zip;
@@ -379,7 +371,7 @@ TEST(Docs, DocxFromAnotherWriter)
 TEST(Docs, EpubContainerIsValid)
 {
     TempDir dir;
-    auto doc = Sample(PngBytes(dir));
+    auto doc = Sample(PngBytes(dir, 4, 3));
     Block h;
     h.kind = BlockKind::Heading;
     h.level = 1;
@@ -442,7 +434,7 @@ TEST(Docs, EpubContainerIsValid)
 TEST(Docs, PlainTextBothWays)
 {
     TempDir dir;
-    const auto text = WritePlainText(Sample(PngBytes(dir)));
+    const auto text = WritePlainText(Sample(PngBytes(dir, 4, 3)));
     EXPECT_NE(text.find("Title & more\r\n"), std::string::npos);
     EXPECT_NE(text.find("See a link (https://example.com/a?b=c&d=e) <now>.\r\n"), std::string::npos) << text;
     EXPECT_NE(text.find("\xE2\x80\xA2 one\r\n  \xE2\x80\xA2 nested\r\n"), std::string::npos) << text;
@@ -457,7 +449,7 @@ TEST(Docs, PlainTextBothWays)
 TEST(Docs, RtfPrepareSwapsPicturesAndLinks)
 {
     TempDir dir;
-    const auto png = PngBytes(dir);
+    const auto png = PngBytes(dir, 4, 3);
     std::string hex;
     for (const unsigned char c : png)
         hex += std::format("{:02x}", c);
@@ -691,7 +683,7 @@ TEST(Docs, PrintsToPdfWhenThePrinterIsThere)
     if (!FindPdfPrinter(nullptr, &why))
         GTEST_SKIP() << "no Microsoft Print to PDF here: " << Narrow(why);
     TempDir dir;
-    const auto doc = Sample(PngBytes(dir));
+    const auto doc = Sample(PngBytes(dir, 4, 3));
     std::string pdf;
     std::wstring error;
     ASSERT_TRUE(DocumentToPdf(doc, L"Sample", false, 11, {}, {}, pdf, error)) << Narrow(error);
@@ -706,7 +698,7 @@ TEST(Docs, EngineConversions)
     PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
 
     std::string docx;
-    ASSERT_TRUE(WriteDocx(Sample(PngBytes(dir)), docx));
+    ASSERT_TRUE(WriteDocx(Sample(PngBytes(dir, 4, 3)), docx));
     const auto source = dir / L"report.docx";
     WriteText(source, docx);
     EXPECT_FALSE(runner.Applies(recipes.Get("docs-to-docx"), source));

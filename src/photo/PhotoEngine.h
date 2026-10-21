@@ -35,9 +35,6 @@ namespace sd::photo
     // that can't be opened is logged and left out.
     std::map<std::wstring, Picture> LoadInsertedPictures(const Annotations& marks);
 
-    // One file's params of a per-file tool: the shared ones with params["perFile"][path] over them.
-    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path);
-
     // For tests and the module: the actions and the built-in recipes.
     void RegisterActions(ActionRegistry& registry);
     const char* BuiltInRecipes();

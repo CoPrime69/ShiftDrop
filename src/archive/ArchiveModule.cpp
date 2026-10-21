@@ -1,4 +1,5 @@
 #include "archive/ArchiveModule.h"
+#include "PathUtil.h"
 #include "archive/ArchiveSource.h"
 #include "archive/ArchiveWriter.h"
 #include "archive/Sinks.h"
@@ -46,12 +47,6 @@ namespace sd::archive
   { "id": "archive-folder-7z", "label": "7z", "description": "Pack into one 7z (LZMA2)", "suffix": "archived", "icon": "E7B8",
     "steps": [ { "action": "archive.compress", "params": { "format": "7z" } } ] }
 ])json";
-        }
-
-        bool IsFolder(const std::wstring& path)
-        {
-            const DWORD a = GetFileAttributesW(path.c_str());
-            return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
         }
 
         const wchar_t* ModeText(ReadMode mode)
@@ -148,8 +143,8 @@ namespace sd::archive
                 if (sources.empty() || !format)
                     return ItemResult{ false, false, {}, L"nothing to pack", 0, {} };
                 for (const auto& s : sources)
-                    if (GetFileAttributesW(s.c_str()) == INVALID_FILE_ATTRIBUTES)
-                        return ItemResult{ false, false, {}, std::format(L"{} is gone", std::filesystem::path(s).filename().wstring()), 0, {} };
+                    if (!PathExists(s))
+                        return ItemResult{ false, false, {}, std::format(L"{} is gone", FileName(s)), 0, {} };
 
                 // One item: named after it ("Photos (zipped).zip", "report (zipped).zip"). Several
                 // (loose files, or items from more than one folder): "Archive.zip", in the first one's
@@ -188,7 +183,7 @@ namespace sd::archive
             // (whatever the worker asks).
             static PasswordFn AskPassword(const std::wstring& source, const wchar_t* title, std::stop_token stop, bool& declined)
             {
-                return [name = std::filesystem::path(source).filename().wstring(), title, stop, &declined](bool wrong, Secret& password) {
+                return [name = FileName(source), title, stop, &declined](bool wrong, Secret& password) {
                     if (!declined && ask::Password(ask::PasswordRequest{ title, name, wrong }, password, stop))
                         return true;
                     declined = true;
@@ -289,14 +284,6 @@ namespace sd::archive
                 }
                 log::Info(L"archive: convert {} to {} ({}): {}", source, format->label, ModeText(mode), r.ok() ? L"ok" : r.message);
                 return Finish(out, r, stop, recipe.suffix, format->extension, {}, declined ? L"no password given, so nothing was converted" : nullptr);
-            }
-
-            static uint64_t FileSize(const std::wstring& path)
-            {
-                WIN32_FILE_ATTRIBUTE_DATA info{};
-                if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info))
-                    return 0;
-                return (static_cast<uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
             }
 
             HistoryStore* m_history;

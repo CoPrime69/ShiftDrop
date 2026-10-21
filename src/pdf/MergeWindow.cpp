@@ -2,7 +2,9 @@
 // bottom; drag (or Alt+Up/Down) to change the order, Delete to leave one out, Enter to merge.
 // More... shows every page in the page view (OrganizeWindow.h), whose Back comes back here with the
 // page edits kept. Installs itself into pdf::Editors().
+#include "FormatText.h"
 #include "Log.h"
+#include "PathUtil.h"
 #include "Theme.h"
 #include "UiThread.h"
 #include "EditorFrame.h"
@@ -345,7 +347,7 @@ namespace sd::pdf
                         rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 3.f, 3.f), b);
                     DrawText(letter, TextFormat(10.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
                     const float detailsW = 200.f;
-                    DrawText(FileNameOf(item.path), TextFormat(14.f), D2D1::RectF(tag.right + 8.f, row.top, row.right - detailsW - 8.f, row.bottom), c.text);
+                    DrawText(FileName(item.path), TextFormat(14.f), D2D1::RectF(tag.right + 8.f, row.top, row.right - detailsW - 8.f, row.bottom), c.text);
                     DrawText(Details(item), TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
                              D2D1::RectF(row.right - detailsW, row.top, row.right - 10.f, row.bottom), c.textDim);
                 }

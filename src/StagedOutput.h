@@ -81,4 +81,11 @@ namespace sd
 
     // Deletes a staging file or folder left by a crash (PipelineRunner::RecoverInterrupted).
     bool RemoveStaging(const std::wstring& path);
+
+    // History rows for an item that never got a StagedOutput: a failed (or skipped) one, returned as
+    // its result (`elapsedMs`: how long the checks took), and a finished one that wrote no file (Copy
+    // text: the result is on the clipboard).
+    ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped = false,
+                             int64_t elapsedMs = 0);
+    void RecordDone(HistoryStore* history, int64_t runId, const std::wstring& source);
 }

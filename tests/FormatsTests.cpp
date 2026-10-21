@@ -1,4 +1,5 @@
 #include "ImageHooks.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -32,17 +33,6 @@ namespace
 
         ItemResult Run(std::string_view id, const std::wstring& source) { return runner.Run(recipes.Get(id), 0, source, {}); }
     };
-
-    // Any file WIC reads, as straight BGRA.
-    bool ReadPixels(const std::wstring& path, formats::Image& out)
-    {
-        ComPtr<IWICImagingFactory> factory;
-        ComPtr<IWICBitmapDecoder> decoder;
-        ComPtr<IWICBitmapFrameDecode> frame;
-        return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
-               SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-               SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(wic::CopyBgra(factory.Get(), frame.Get(), out.width, out.height, out.bgra));
-    }
 
     bool ReadAvifFile(const std::wstring& path, formats::Image& out)
     {
@@ -137,7 +127,7 @@ TEST(Formats, SvgToPngKeepsOwnSizeAndTransparency)
 
     const auto result = f.Run("to-png", svg);
     ASSERT_TRUE(result.ok) << Narrow(result.error);
-    EXPECT_EQ(std::filesystem::path(result.output).filename(), L"logo (converted).png");
+    EXPECT_EQ(FileName(result.output), L"logo (converted).png");
     formats::Image png;
     ASSERT_TRUE(ReadPixels(result.output, png));
     EXPECT_EQ(png.width, 200u);
@@ -232,7 +222,7 @@ TEST(Formats, AvifRoundTripKeepsSizeColourAndAlpha)
     EXPECT_EQ(toAvif.steps[0].params["quality"], 60);
     const auto avif = f.Run("to-avif", png);
     ASSERT_TRUE(avif.ok) << Narrow(avif.error);
-    EXPECT_EQ(std::filesystem::path(avif.output).filename(), L"photo (converted).avif");
+    EXPECT_EQ(FileName(avif.output), L"photo (converted).avif");
 
     formats::Image decoded;
     ASSERT_TRUE(ReadAvifFile(avif.output, decoded));

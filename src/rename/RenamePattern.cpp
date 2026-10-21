@@ -1,4 +1,5 @@
 #include "rename/RenamePattern.h"
+#include "PathUtil.h"
 
 #include <windows.h>
 
@@ -53,7 +54,7 @@ namespace sd::rename
 
         bool DiskHas(const std::wstring& path)
         {
-            return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+            return PathExists(path);
         }
     }
 
@@ -183,7 +184,7 @@ namespace sd::rename
             // Taken by something else: never overwritten. The item itself (the same name, or only its
             // case changed) is not in the way.
             if (p.problem.empty() && Key(p.to) != Key(p.from) && has(p.to))
-                p.problem = std::format(L"“{}” is already in this folder", std::filesystem::path(p.to).filename().wstring());
+                p.problem = std::format(L"“{}” is already in this folder", FileName(p.to));
             if (!p.problem.empty())
                 ++plan.problems;
             else if (p.to != p.from)

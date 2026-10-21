@@ -1,6 +1,9 @@
 #include "officebridge/OfficeBridge.h"
+#include "Log.h"
 #include "Media.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
+#include "TempPath.h"
 #include "Utf.h"
 #include "sandbox/Sandbox.h"
 
@@ -18,12 +21,6 @@ namespace sd::office
 {
     namespace
     {
-        bool FileExists(const std::wstring& path)
-        {
-            const DWORD a = GetFileAttributesW(path.c_str());
-            return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-        }
-
         std::wstring RegString(HKEY root, const wchar_t* key, const wchar_t* value, DWORD view)
         {
             wchar_t buffer[MAX_PATH * 2]{};
@@ -62,7 +59,7 @@ namespace sd::office
                     if (!dir.empty())
                     {
                         auto exe = (std::filesystem::path(dir) / L"soffice.exe").wstring();
-                        if (FileExists(exe))
+                        if (IsFile(exe))
                             return exe;
                     }
                 }
@@ -72,7 +69,7 @@ namespace sd::office
                 if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &dir)))
                 {
                     auto exe = (std::filesystem::path(dir.get()) / L"LibreOffice" / L"program" / L"soffice.exe").wstring();
-                    if (FileExists(exe))
+                    if (IsFile(exe))
                         return exe;
                 }
             }
@@ -181,27 +178,22 @@ namespace sd::office
         Outcome result;
         // Our own profile: LibreOffice hands a conversion to an instance already running on the
         // same profile, which then ignores --headless and may never write the file.
-        wil::unique_cotaskmem_string local;
-        if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &local)))
+        if (log::AppDataFolder().empty())
         {
             result.error = L"cannot find the local app data folder";
             return result;
         }
-        const auto profile = std::filesystem::path(local.get()) / L"ShiftDrop" / L"libreoffice";
+        const auto profile = std::filesystem::path(log::AppDataFolder()) / L"libreoffice";
         std::error_code ec;
         std::filesystem::create_directories(profile, ec);
 
-        wchar_t temp[MAX_PATH]{};
-        GetTempPathW(MAX_PATH, temp);
-        GUID g{};
-        CoCreateGuid(&g);
-        const auto outDir = std::filesystem::path(temp) / std::format(L"ShiftDrop-office-{:08x}{:04x}", g.Data1, g.Data2);
-        if (!CreateDirectoryW(outDir.c_str(), nullptr))
+        const TempFolder temp;   // where soffice writes the PDF; removed with it
+        if (!temp.Ok())
         {
             result.error = L"cannot create a temporary folder";
             return result;
         }
-        auto removeOut = wil::scope_exit([&] { std::filesystem::remove_all(outDir, ec); });
+        const std::filesystem::path outDir(temp.Path());
 
         // A plain child (LibreOffice needs its profile and the user's file) in a kill-on-close job, so
         // it never outlives us. soffice.exe starts soffice.bin, and it needs its program folder as the
@@ -257,8 +249,7 @@ namespace sd::office
         }
 
         const auto produced = outDir / (std::filesystem::path(job.source).stem().wstring() + L".pdf");
-        WIN32_FILE_ATTRIBUTE_DATA data{};
-        if (!GetFileAttributesExW(produced.c_str(), GetFileExInfoStandard, &data) || (data.nFileSizeLow == 0 && data.nFileSizeHigh == 0))
+        if (FileSize(produced.wstring()) == 0)   // missing or empty
         {
             DWORD code = 0;
             GetExitCodeProcess(process, &code);

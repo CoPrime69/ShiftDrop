@@ -49,8 +49,6 @@ namespace sd::inspect
 
     // "1/250", "2.8", "72"; WIC hands EXIF rationals over as numerator and denominator.
     std::wstring FormatRational(int64_t numerator, int64_t denominator);
-    // "3.4 MB (3,456,789 bytes)"
-    std::wstring FileSizeText(uint64_t bytes);
     // "0:01:23.450" from microseconds
     std::wstring DurationText(int64_t us);
 }

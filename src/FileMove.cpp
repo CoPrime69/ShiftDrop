@@ -1,5 +1,9 @@
 #include "FileMove.h"
+#include "ErrorText.h"
 #include "Log.h"
+#include "PathUtil.h"
+#include "Strings.h"
+#include "UiThread.h"
 
 #include <shellapi.h>
 #include <shobjidl.h>
@@ -25,20 +29,6 @@ namespace sd
         // The dialog remembers its last folder per client GUID, so "Move to…" reopens where you moved last.
         // {6B1F8E2A-3C47-4D0B-9E55-2A7C1D9F4B63}
         constexpr GUID kMoveDialogGuid = { 0x6b1f8e2a, 0x3c47, 0x4d0b, { 0x9e, 0x55, 0x2a, 0x7c, 0x1d, 0x9f, 0x4b, 0x63 } };
-
-        bool SamePath(const std::wstring& a, const std::wstring& b)
-        {
-            // NTFS names are case-insensitive; ordinal comparison avoids locale surprises.
-            return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()), b.c_str(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
-        }
-
-        bool IsInside(const std::wstring& child, const std::wstring& parent)
-        {
-            auto prefix = parent;
-            if (!prefix.ends_with(L'\\'))
-                prefix += L'\\';
-            return child.size() >= prefix.size() && SamePath(child.substr(0, prefix.size()), prefix);
-        }
 
         // The shell reports long paths ("C:\Users\runneradmin\..."), while a path we were handed can use
         // 8.3 short names ("C:\Users\RUNNER~1\..."); compare in the long form. Only works while the item exists.
@@ -105,33 +95,6 @@ namespace sd
             IFACEMETHODIMP PauseTimer() override { return S_OK; }
             IFACEMETHODIMP ResumeTimer() override { return S_OK; }
         };
-
-        // A process that did not receive the last input event cannot take the foreground, and the drop
-        // came through Explorer's drag loop, not our input queue. Attaching to the foreground thread's
-        // input for a moment lets the folder picker open in front instead of flashing in the taskbar.
-        void BringToFront(HWND hwnd)
-        {
-            const HWND fg = GetForegroundWindow();
-            const DWORD fgThread = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
-            const DWORD self = GetCurrentThreadId();
-            const bool attach = fgThread && fgThread != self && AttachThreadInput(self, fgThread, TRUE);
-            SetForegroundWindow(hwnd);
-            if (attach)
-                AttachThreadInput(self, fgThread, FALSE);
-        }
-
-        std::wstring HrText(HRESULT hr)
-        {
-            if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || hr == COPYENGINE_E_USER_CANCELLED)
-                return L"cancelled";
-            wil::unique_hlocal_string text;
-            FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                           static_cast<DWORD>(hr), 0, reinterpret_cast<LPWSTR>(&text), 0, nullptr);
-            std::wstring s = text ? text.get() : L"";
-            while (!s.empty() && (s.back() == L'\n' || s.back() == L'\r' || s.back() == L'.'))
-                s.pop_back();
-            return s.empty() ? std::format(L"error 0x{:08X}", static_cast<unsigned>(hr)) : s;
-        }
     }
 
     bool PickDestinationFolder(HWND owner, size_t itemCount, std::wstring& folder, std::wstring_view verb)
@@ -190,20 +153,20 @@ namespace sd
                 itemIds[i] = history->BeginItem(runId, out.source, L"");
             longSources[i] = LongPath(out.source);
             const auto parent = std::filesystem::path(longSources[i]).parent_path().wstring();
-            if (SamePath(parent, folder))
+            if (EqualsNoCase(parent, folder))
             {
                 out.skipped = true;
                 out.error = L"already in that folder";
                 continue;
             }
-            if (SamePath(longSources[i], folder) || IsInside(folder, longSources[i]))
+            if (EqualsNoCase(longSources[i], folder) || IsWithin(folder, longSources[i]))
             {
                 out.error = L"a folder can't be moved into itself";
                 continue;
             }
             if (FAILED(hr))
             {
-                out.error = HrText(hr);
+                out.error = HResultMessage(hr);
                 continue;
             }
             ComPtr<IShellItem> item;
@@ -211,7 +174,7 @@ namespace sd
             if (SUCCEEDED(itemHr) && SUCCEEDED(op->MoveItem(item.Get(), destination.Get(), nullptr, nullptr)))
                 ++queued;
             else
-                out.error = HrText(FAILED(itemHr) ? itemHr : E_FAIL);
+                out.error = HResultMessage(FAILED(itemHr) ? itemHr : E_FAIL);
         }
 
         if (queued > 0)
@@ -231,7 +194,7 @@ namespace sd
                 bool reported = false;
                 for (const auto& e : sink ? sink->entries : std::vector<MoveSink::Entry>{})
                 {
-                    if (!SamePath(e.source, longSources[i]))
+                    if (!EqualsNoCase(e.source, longSources[i]))
                         continue;   // a file inside a moved folder
                     reported = true;
                     if (SUCCEEDED(e.hr) && !e.destination.empty())
@@ -241,11 +204,11 @@ namespace sd
                     }
                     else
                     {
-                        out.error = HrText(FAILED(e.hr) ? e.hr : E_FAIL);
+                        out.error = HResultMessage(FAILED(e.hr) ? e.hr : E_FAIL);
                     }
                 }
                 if (!reported)
-                    out.error = HrText(FAILED(performed) ? performed : HRESULT_FROM_WIN32(ERROR_CANCELLED));
+                    out.error = HResultMessage(FAILED(performed) ? performed : HRESULT_FROM_WIN32(ERROR_CANCELLED));
             }
         }
 
@@ -264,7 +227,7 @@ namespace sd
             WIN32_FILE_ATTRIBUTE_DATA data{};
             if (out.ok && GetFileAttributesExW(out.destination.c_str(), GetFileExInfoStandard, &data) &&
                 !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                size = (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+                size = FileSizeOf(data);
             // No hash: undoing a move never deletes anything, so an edited file can safely go back.
             history->FinishItem(itemIds[i], out.ok ? status::Done : out.skipped ? status::Skipped : status::Failed,
                                 out.destination, size, "", out.error, ms);
@@ -325,14 +288,14 @@ namespace sd
                 out.error = L"the name stays the same";
                 continue;
             }
-            if (!SamePath(to.parent_path().wstring(), std::filesystem::path(renames[i].from).parent_path().wstring()))
+            if (!EqualsNoCase(to.parent_path().wstring(), std::filesystem::path(renames[i].from).parent_path().wstring()))
             {
                 out.error = L"a new name can't move it to another folder";
                 continue;
             }
             if (FAILED(hr))
             {
-                out.error = HrText(hr);
+                out.error = HResultMessage(hr);
                 continue;
             }
             ComPtr<IShellItem> item;
@@ -340,7 +303,7 @@ namespace sd
             if (SUCCEEDED(itemHr) && SUCCEEDED(op->RenameItem(item.Get(), to.filename().c_str(), nullptr)))
                 ++queued;
             else
-                out.error = HrText(FAILED(itemHr) ? itemHr : E_FAIL);
+                out.error = HResultMessage(FAILED(itemHr) ? itemHr : E_FAIL);
         }
 
         if (queued > 0)
@@ -359,7 +322,7 @@ namespace sd
                 bool reported = false;
                 for (const auto& e : sink ? sink->entries : std::vector<MoveSink::Entry>{})
                 {
-                    if (!SamePath(e.source, longSources[i]) && !SamePath(e.source, out.source))
+                    if (!EqualsNoCase(e.source, longSources[i]) && !EqualsNoCase(e.source, out.source))
                         continue;
                     reported = true;
                     if (SUCCEEDED(e.hr) && !e.destination.empty())
@@ -369,11 +332,11 @@ namespace sd
                     }
                     else
                     {
-                        out.error = HrText(FAILED(e.hr) ? e.hr : E_FAIL);
+                        out.error = HResultMessage(FAILED(e.hr) ? e.hr : E_FAIL);
                     }
                 }
                 if (!reported)
-                    out.error = HrText(FAILED(performed) ? performed : HRESULT_FROM_WIN32(ERROR_CANCELLED));
+                    out.error = HResultMessage(FAILED(performed) ? performed : HRESULT_FROM_WIN32(ERROR_CANCELLED));
             }
         }
 
@@ -383,7 +346,7 @@ namespace sd
         {
             const auto& out = outcomes[i];
             if (out.ok)
-                log::Info(L"rename: {} -> {}", out.source, std::filesystem::path(out.destination).filename().wstring());
+                log::Info(L"rename: {} -> {}", out.source, FileName(out.destination));
             else
                 log::Warn(L"rename: {} {}: {}", out.source, out.skipped ? L"skipped" : L"failed", out.error);
             // No hash, as for a move: undoing a rename only renames back, so an edited file is fine.

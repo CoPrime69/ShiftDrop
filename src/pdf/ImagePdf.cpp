@@ -1,5 +1,6 @@
 #include "pdf/ImagePdf.h"
 #include "Brand.h"
+#include "FileIo.h"
 #include "OutputPath.h"
 #include "Utf.h"
 #include "ocr/TextLayer.h"
@@ -9,9 +10,7 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <filesystem>
 #include <format>
-#include <fstream>
 
 namespace sd::pdf
 {
@@ -22,12 +21,6 @@ namespace sd::pdf
         bool IsJpegExtension(const std::wstring& ext)
         {
             return ext == L".jpg" || ext == L".jpeg" || ext == L".jpe" || ext == L".jfif";
-        }
-
-        std::string ReadFile(const std::wstring& path)
-        {
-            std::ifstream in(std::filesystem::path(path), std::ios::binary);
-            return std::string(std::istreambuf_iterator<char>(in), {});
         }
 
         std::string Matrix(const std::array<double, 6>& m)
@@ -148,9 +141,9 @@ namespace sd::pdf
         out = ImageSource{};
         if (IsJpegExtension(LowerExtension(path)))
         {
-            std::string bytes = ReadFile(path);
+            std::string bytes;
             JpegInfo info;
-            if (ParseJpeg(bytes, info))
+            if (ReadFileBytes(path, bytes) && ParseJpeg(bytes, info))
             {
                 out.jpeg = std::move(bytes);
                 out.info = info;

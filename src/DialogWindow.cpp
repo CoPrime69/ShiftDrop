@@ -1,4 +1,5 @@
 #include "DialogWindow.h"
+#include "Strings.h"
 #include "resource.h"
 
 #include <commctrl.h>
@@ -147,7 +148,7 @@ namespace sd
         }
         case WM_SETTINGCHANGE:
             // "ImmersiveColorSet": the user switched between light and dark.
-            if (lParam && CompareStringOrdinal(reinterpret_cast<const wchar_t*>(lParam), -1, L"ImmersiveColorSet", -1, TRUE) == CSTR_EQUAL)
+            if (lParam && EqualsNoCase(reinterpret_cast<const wchar_t*>(lParam), L"ImmersiveColorSet"))
                 ApplyTheme();
             break;
         case WM_ERASEBKGND:

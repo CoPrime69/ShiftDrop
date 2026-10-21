@@ -1,4 +1,5 @@
 #include "photo/PhotoEngine.h"
+#include "ErrorText.h"
 #include "Log.h"
 #include "OutputPath.h"
 #include "Utf.h"
@@ -68,7 +69,7 @@ namespace sd::photo
                     continue;
                 }
                 if (FAILED(hr))
-                    error = L"drawing failed (" + gpu::HrText(hr) + L")";
+                    error = L"drawing failed (" + HexCode(hr) + L")";
                 if (device)
                     *device = gpu->Name();
                 return hr;
@@ -194,18 +195,6 @@ namespace sd::photo
         if (info)
             *info = { device, Since(start) };
         return hr;
-    }
-
-    nlohmann::json ParamsForFile(const nlohmann::json& params, const std::wstring& path)
-    {
-        if (!params.is_object() || !params.contains("perFile"))
-            return params;
-        nlohmann::json out = params;
-        out.erase("perFile");
-        const auto& perFile = params["perFile"];
-        if (const auto it = perFile.is_object() ? perFile.find(Narrow(path)) : perFile.end(); it != perFile.end() && it->is_object())
-            out.update(*it);
-        return out;
     }
 
     // ---- Actions and recipes ------------------------------------------------------------------------

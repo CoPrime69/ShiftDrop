@@ -1,5 +1,6 @@
 #include "inspect/ProbeReport.h"
 #include "Media.h"
+#include "Strings.h"
 #include "Utf.h"
 
 #include <charconv>
@@ -11,23 +12,6 @@ namespace sd::inspect
 {
     namespace
     {
-        size_t Indent(std::string_view line)
-        {
-            size_t n = 0;
-            while (n < line.size() && line[n] == ' ')
-                ++n;
-            return n;
-        }
-
-        std::string_view Trim(std::string_view s)
-        {
-            while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
-                s.remove_prefix(1);
-            while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())))
-                s.remove_suffix(1);
-            return s;
-        }
-
         // The number just before `suffix` in `line` ("44100" before " Hz"), or 0.
         double NumberBefore(std::string_view line, std::string_view suffix)
         {

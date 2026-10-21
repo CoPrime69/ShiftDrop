@@ -1,4 +1,6 @@
+#include "FileIo.h"
 #include "OutputPath.h"
+#include "PathUtil.h"
 #include "PipelineRunner.h"
 #include "TestUtil.h"
 #include "Utf.h"
@@ -126,7 +128,7 @@ namespace
                 return E_FAIL;
             bytes = std::move(tagged);
         }
-        return SUCCEEDED(hr) && metadata::WriteFileBytes(path, bytes) ? S_OK : E_FAIL;
+        return SUCCEEDED(hr) && WriteFileBytes(path, bytes, WriteMode::Any) ? S_OK : E_FAIL;
     }
 
     std::wstring FieldValue(const std::wstring& path, const std::string& key)
@@ -838,7 +840,7 @@ TEST(Photo, EngineEditsKeepFormatAndExif)
     const auto r = runner.Run(recipe, runId, source, {});
     history->FinishRun(runId);
     ASSERT_TRUE(r.ok) << Narrow(r.error);
-    EXPECT_EQ(std::filesystem::path(r.output).filename(), L"photo (edited).jpg");
+    EXPECT_EQ(FileName(r.output), L"photo (edited).jpg");
     EXPECT_EQ(FieldValue(r.output, "exif.0th.271"), L"Leica");   // the camera stays with the photo
     Raster in, out;
     ASSERT_HRESULT_SUCCEEDED(canvas::LoadRaster(source, in, error));
@@ -880,7 +882,7 @@ TEST(Photo, EngineAnnotatesBackgroundsAndCollages)
     const auto a2 = runner.Run(annotate, runId, two, {});
     history->FinishRun(runId);
     ASSERT_TRUE(a1.ok) << Narrow(a1.error);
-    EXPECT_EQ(std::filesystem::path(a1.output).filename(), L"one (annotated).png");
+    EXPECT_EQ(FileName(a1.output), L"one (annotated).png");
     EXPECT_FALSE(a2.ok);
 
     // Background, without asking.
@@ -905,7 +907,7 @@ TEST(Photo, EngineAnnotatesBackgroundsAndCollages)
     const auto c = runner.RunBatch(collage, runId, { one, two, three }, {});
     history->FinishRun(runId);
     ASSERT_TRUE(c.ok) << Narrow(c.error);
-    EXPECT_EQ(std::filesystem::path(c.output).filename(), L"three (collage).png");
+    EXPECT_EQ(FileName(c.output), L"three (collage).png");
     ASSERT_TRUE(ImageSize(c.output, w, h));
     EXPECT_EQ(std::max(w, h), 900u);
     EXPECT_EQ(CountFiles(dir, L".sdpart"), 0u);
