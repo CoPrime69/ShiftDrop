@@ -8,122 +8,45 @@ using Microsoft::WRL::ComPtr;
 
 namespace sd::mediatools::ui
 {
-    namespace
-    {
-        D2D1_COLOR_F Rgb(UINT rgb, float a = 1.f) { return D2D1::ColorF(rgb, a); }
-
-        float Luminance(const D2D1_COLOR_F& c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; }
-
-        D2D1_COLOR_F Lighter(D2D1_COLOR_F c, float t) { return theme::Mix(c, D2D1::ColorF(1, 1, 1, 1), t); }
-        D2D1_COLOR_F Darker(D2D1_COLOR_F c, float t) { return theme::Mix(c, D2D1::ColorF(0, 0, 0, 1), t); }
-    }
-
-    D2D1_COLOR_F Alpha(D2D1_COLOR_F c, float a)
-    {
-        c.a *= a;
-        return c;
-    }
-
     D2D1_RECT_F ToD2D(const RectF& r) { return D2D1::RectF(r.x, r.y, r.x + r.w, r.y + r.h); }
-
-    Colors CurrentColors()
-    {
-        const auto t = theme::Current(Style::Solid);
-        Colors c{};
-        c.dark = t.dark;
-        if (c.dark)
-        {
-            c.window = Rgb(0x202023);
-            c.panel = Rgb(0x28282C);
-            c.stage = Rgb(0x141416);
-            c.track = Rgb(0x18181B);
-            c.line = Rgb(0xFFFFFF, 0.08f);
-            c.text = Rgb(0xF3F3F5);
-            c.textDim = Rgb(0xF3F3F5, 0.66f);
-            c.textFaint = Rgb(0xF3F3F5, 0.38f);
-            c.control = Rgb(0x36363C);
-            c.controlHover = Rgb(0x404047);
-            c.controlDown = Rgb(0x2E2E33);
-            c.controlLine = Rgb(0xFFFFFF, 0.07f);
-            // Windows draws accent fills lighter in dark mode, with dark text when they get bright.
-            c.accent = Lighter(t.accent, 0.22f);
-            c.accentHover = Lighter(t.accent, 0.34f);
-            c.danger = Rgb(0xFF7A7A);
-            c.shadow = Rgb(0x000000, 0.5f);
-        }
-        else
-        {
-            c.window = Rgb(0xF3F3F5);
-            c.panel = Rgb(0xFBFBFC);
-            c.stage = Rgb(0xE2E2E7);
-            c.track = Rgb(0xE9E9ED);
-            c.line = Rgb(0x000000, 0.09f);
-            c.text = Rgb(0x1A1A1E);
-            c.textDim = Rgb(0x1A1A1E, 0.66f);
-            c.textFaint = Rgb(0x1A1A1E, 0.40f);
-            c.control = Rgb(0xFFFFFF);
-            c.controlHover = Rgb(0xF5F5F7);
-            c.controlDown = Rgb(0xEBEBEF);
-            c.controlLine = Rgb(0x000000, 0.12f);
-            c.accent = Luminance(t.accent) > 0.55f ? Darker(t.accent, 0.3f) : t.accent;
-            c.accentHover = Lighter(c.accent, 0.12f);
-            c.danger = Rgb(0xC42B1C);
-            c.shadow = Rgb(0x000000, 0.18f);
-        }
-        c.onAccent = Luminance(c.accent) > 0.6f ? Rgb(0x111114) : Rgb(0xFFFFFF);
-        c.accentSoft = Alpha(c.accent, c.dark ? 0.22f : 0.16f);
-        c.dangerSoft = Alpha(c.danger, 0.24f);
-        c.focus = c.text;
-        return c;
-    }
 
     // ---- Painter -------------------------------------------------------------------------------------
 
-    bool Painter::Init(IDWriteFactory* dwrite)
+    bool Painter::Init(IDWriteFactory* dwrite, const FormatFn& format)
     {
         m_dwrite = dwrite;
-        const auto family = theme::TextFamily(dwrite);
-        const auto icons = theme::IconFamily(dwrite);
         struct Spec
         {
-            const std::wstring* family;
             float size;
             DWRITE_FONT_WEIGHT weight;
+            bool icon;
         };
         const Spec specs[9] = {
-            { &family, 15.f, DWRITE_FONT_WEIGHT_SEMI_BOLD },   // Title
-            { &family, 13.f, DWRITE_FONT_WEIGHT_NORMAL },      // Body
-            { &family, 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD },   // BodyStrong
-            { &family, 12.f, DWRITE_FONT_WEIGHT_NORMAL },      // Small
-            { &family, 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD },   // Caption
-            { &icons, 16.f, DWRITE_FONT_WEIGHT_NORMAL },       // Icon
-            { &icons, 12.f, DWRITE_FONT_WEIGHT_NORMAL },       // IconSmall
-            { &family, 13.f, DWRITE_FONT_WEIGHT_NORMAL },      // Number
-            { &family, 15.f, DWRITE_FONT_WEIGHT_SEMI_BOLD },   // NumberLarge
+            { 15.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // Title
+            { 13.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Body
+            { 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // BodyStrong
+            { 12.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Small
+            { 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // Caption
+            { 16.f, DWRITE_FONT_WEIGHT_NORMAL, true },       // Icon
+            { 12.f, DWRITE_FONT_WEIGHT_NORMAL, true },       // IconSmall
+            { 13.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Number
+            { 15.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // NumberLarge
         };
         for (int i = 0; i < 9; ++i)
-        {
-            if (FAILED(dwrite->CreateTextFormat(specs[i].family->c_str(), nullptr, specs[i].weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                                specs[i].size, L"", &m_formats[i])))
+            if (!(m_formats[i] = format(specs[i].size, specs[i].weight, specs[i].icon)))
                 return false;
-            m_formats[i]->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-            m_formats[i]->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            const DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
-            ComPtr<IDWriteInlineObject> ellipsis;
-            if (SUCCEEDED(dwrite->CreateEllipsisTrimmingSign(m_formats[i].Get(), &ellipsis)))
-                m_formats[i]->SetTrimming(&trimming, ellipsis.Get());
-        }
         // Timecodes use tabular figures so they do not shuffle while playing.
         if (SUCCEEDED(dwrite->CreateTypography(&m_tabular)))
             m_tabular->AddFontFeature({ DWRITE_FONT_FEATURE_TAG_TABULAR_FIGURES, 1 });
         return true;
     }
 
-    void Painter::Begin(ID2D1RenderTarget* rt, const Colors& colors)
+    void Painter::Begin(ID2D1RenderTarget* rt, const theme::EditorPalette& colors, unsigned device)
     {
-        if (rt != m_rt)
+        if (rt != m_rt || device != m_device)
             m_brush.Reset();
         m_rt = rt;
+        m_device = device;
         m_c = colors;
     }
 
@@ -211,12 +134,8 @@ namespace sd::mediatools::ui
 
     float Painter::TextWidth(const std::wstring& text, Font font)
     {
-        const auto layout = text.empty() ? nullptr : Layout(text, font, 10000.f, 100.f);
-        if (!layout)
-            return 0;
-        DWRITE_TEXT_METRICS m{};
-        layout->GetMetrics(&m);
-        return m.widthIncludingTrailingWhitespace;
+        const bool number = font == Font::Number || font == Font::NumberLarge;
+        return theme::TextWidth(m_dwrite, text, Format(font), number ? m_tabular.Get() : nullptr);
     }
 
     float Painter::CaretX(const std::wstring& text, size_t chars, Font font)
@@ -257,12 +176,12 @@ namespace sd::mediatools::ui
             const auto& k = p.C();
             D2D1_COLOR_F fill = primary ? (s.hover ? k.accentHover : k.accent) : (s.pressed ? k.controlDown : s.hover ? k.controlHover : k.control);
             if (primary && s.pressed)
-                fill = Alpha(k.accent, 0.85f);
+                fill = theme::WithAlpha(k.accent, 0.85f);
             const float a = c.enabled ? 1.f : 0.42f;
-            p.Fill(c.rect, Alpha(fill, a), kRadius);
+            p.Fill(c.rect, theme::WithAlpha(fill, a), kRadius);
             if (!primary)
                 p.Stroke(c.rect, k.controlLine, 1.f, kRadius);
-            const auto ink = Alpha(primary ? k.onAccent : k.text, a);
+            const auto ink = theme::WithAlpha(primary ? k.onAccent : k.text, a);
             if (c.glyph && !c.text.empty())
             {
                 const float tw = p.TextWidth(c.text, primary ? Font::BodyStrong : Font::Body);
@@ -285,7 +204,7 @@ namespace sd::mediatools::ui
                 p.Fill(c.rect, k.controlDown, kRadius);
             else if (s.hover && c.enabled)
                 p.Fill(c.rect, k.controlHover, kRadius);
-            p.Text(c.glyph ? c.glyph : L"", c.rect, c.rect.h < 26 ? Font::IconSmall : Font::Icon, Alpha(c.on ? k.accent : k.text, a), 1);
+            p.Text(c.glyph ? c.glyph : L"", c.rect, c.rect.h < 26 ? Font::IconSmall : Font::Icon, theme::WithAlpha(c.on ? k.accent : k.text, a), 1);
         }
 
         void DrawSegment(Painter& p, const Control& c, const DrawState& s)
@@ -293,13 +212,13 @@ namespace sd::mediatools::ui
             const auto& k = p.C();
             const float a = c.enabled ? 1.f : 0.42f;
             if (c.on)
-                p.Fill(c.rect, Alpha(k.accent, a), kRadius);
+                p.Fill(c.rect, theme::WithAlpha(k.accent, a), kRadius);
             else
             {
-                p.Fill(c.rect, Alpha(s.pressed ? k.controlDown : s.hover ? k.controlHover : k.control, a), kRadius);
+                p.Fill(c.rect, theme::WithAlpha(s.pressed ? k.controlDown : s.hover ? k.controlHover : k.control, a), kRadius);
                 p.Stroke(c.rect, k.controlLine, 1.f, kRadius);
             }
-            p.Text(c.text, c.rect.Inset(2), c.on ? Font::BodyStrong : Font::Body, Alpha(c.on ? k.onAccent : k.text, a), 1);
+            p.Text(c.text, c.rect.Inset(2), c.on ? Font::BodyStrong : Font::Body, theme::WithAlpha(c.on ? k.onAccent : k.text, a), 1);
         }
 
         void DrawToggle(Painter& p, const Control& c, const DrawState& s)
@@ -308,17 +227,17 @@ namespace sd::mediatools::ui
             const float a = c.enabled ? 1.f : 0.42f;
             const RectF sw{ c.rect.Right() - 40, c.rect.y + (c.rect.h - 20) / 2, 40, 20 };
             p.Paragraph(c.text, { c.rect.x, c.rect.y + std::max(0.f, (c.rect.h - p.ParagraphHeight(c.text, c.rect.w - 52, Font::Body)) / 2), c.rect.w - 52, c.rect.h },
-                        Font::Body, Alpha(k.text, a));
+                        Font::Body, theme::WithAlpha(k.text, a));
             if (c.on)
-                p.Fill(sw, Alpha(s.hover ? k.accentHover : k.accent, a), 10);
+                p.Fill(sw, theme::WithAlpha(s.hover ? k.accentHover : k.accent, a), 10);
             else
             {
-                p.Fill(sw, Alpha(s.hover ? k.controlHover : k.control, a), 10);
-                p.Stroke(sw, Alpha(k.textDim, a), 1.f, 10);
+                p.Fill(sw, theme::WithAlpha(s.hover ? k.controlHover : k.control, a), 10);
+                p.Stroke(sw, theme::WithAlpha(k.textDim, a), 1.f, 10);
             }
             const float knob = c.on ? 14.f : 12.f;
             const float cx = c.on ? sw.Right() - 10 : sw.x + 10;
-            p.Rt()->FillEllipse(D2D1::Ellipse({ cx, sw.y + 10 }, knob / 2, knob / 2), p.Brush(Alpha(c.on ? k.onAccent : k.textDim, a)));
+            p.Rt()->FillEllipse(D2D1::Ellipse({ cx, sw.y + 10 }, knob / 2, knob / 2), p.Brush(theme::WithAlpha(c.on ? k.onAccent : k.textDim, a)));
             if (s.focused)
                 FocusRing(p, sw, 10);
         }
@@ -329,7 +248,7 @@ namespace sd::mediatools::ui
             RectF box = c.rect;
             if (!c.detail.empty())
             {
-                p.Text(c.detail, { c.rect.x, c.rect.y, 64, c.rect.h }, Font::Body, Alpha(k.textDim, c.enabled ? 1.f : 0.5f));
+                p.Text(c.detail, { c.rect.x, c.rect.y, 64, c.rect.h }, Font::Body, theme::WithAlpha(k.textDim, c.enabled ? 1.f : 0.5f));
                 box = { c.rect.x + 64, c.rect.y, c.rect.w - 64, c.rect.h };
             }
             const bool editing = s.editText != nullptr;
@@ -341,7 +260,7 @@ namespace sd::mediatools::ui
             const RectF inner{ box.x + 10, box.y, box.w - 20, box.h };
             if (editing && s.selectAll && !text.empty())
                 p.Fill({ inner.x - 1, box.y + 6, p.TextWidth(text, Font::Number) + 2, box.h - 12 }, k.accentSoft, 2);
-            p.Text(text, inner, Font::Number, Alpha(k.text, c.enabled ? 1.f : 0.45f));
+            p.Text(text, inner, Font::Number, theme::WithAlpha(k.text, c.enabled ? 1.f : 0.45f));
             if (editing && !s.selectAll)
             {
                 const float x = inner.x + p.CaretX(text, s.caret, Font::Number);
@@ -355,17 +274,17 @@ namespace sd::mediatools::ui
         {
             const auto& k = p.C();
             const float a = c.enabled ? 1.f : 0.42f;
-            p.Text(c.text, { c.rect.x, c.rect.y, c.rect.w - 70, 20 }, Font::Body, Alpha(k.text, a));
-            p.Text(c.detail, { c.rect.Right() - 70, c.rect.y, 70, 20 }, Font::Number, Alpha(k.textDim, a), 2);
+            p.Text(c.text, { c.rect.x, c.rect.y, c.rect.w - 70, 20 }, Font::Body, theme::WithAlpha(k.text, a));
+            p.Text(c.detail, { c.rect.Right() - 70, c.rect.y, 70, 20 }, Font::Number, theme::WithAlpha(k.textDim, a), 2);
             const float y = c.rect.y + 32;
             const float x0 = c.rect.x + 7, x1 = c.rect.Right() - 7;
             const float x = x0 + static_cast<float>(std::clamp(c.value, 0.0, 1.0)) * (x1 - x0);
-            p.Fill({ x0, y - 2, x1 - x0, 4 }, Alpha(k.dark ? k.controlHover : k.controlDown, a), 2);
-            p.Fill({ x0, y - 2, x - x0, 4 }, Alpha(k.accent, a), 2);
+            p.Fill({ x0, y - 2, x1 - x0, 4 }, theme::WithAlpha(k.dark ? k.controlHover : k.controlDown, a), 2);
+            p.Fill({ x0, y - 2, x - x0, 4 }, theme::WithAlpha(k.accent, a), 2);
             const float r = s.pressed ? 8.f : s.hover ? 7.5f : 7.f;
-            p.Rt()->FillEllipse(D2D1::Ellipse({ x, y }, r, r), p.Brush(Alpha(k.dark ? D2D1::ColorF(0x45454C) : D2D1::ColorF(1, 1, 1, 1), a)));
-            p.Rt()->DrawEllipse(D2D1::Ellipse({ x, y }, r, r), p.Brush(Alpha(k.controlLine, a)), 1.f);
-            p.Rt()->FillEllipse(D2D1::Ellipse({ x, y }, r - 3.5f, r - 3.5f), p.Brush(Alpha(k.accent, a)));
+            p.Rt()->FillEllipse(D2D1::Ellipse({ x, y }, r, r), p.Brush(theme::WithAlpha(k.dark ? D2D1::ColorF(0x45454C) : D2D1::ColorF(1, 1, 1, 1), a)));
+            p.Rt()->DrawEllipse(D2D1::Ellipse({ x, y }, r, r), p.Brush(theme::WithAlpha(k.controlLine, a)), 1.f);
+            p.Rt()->FillEllipse(D2D1::Ellipse({ x, y }, r - 3.5f, r - 3.5f), p.Brush(theme::WithAlpha(k.accent, a)));
             if (s.focused)
                 FocusRing(p, { x - r, y - r, 2 * r, 2 * r }, r);
         }

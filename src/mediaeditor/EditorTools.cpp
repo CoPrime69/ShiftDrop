@@ -9,6 +9,7 @@
 
 #include <shobjidl.h>
 #include <wincodec.h>
+#include <wil/resource.h>
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +19,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace sd::mediatools
 {
-    using ui::Alpha;
+    using theme::WithAlpha;
 
     namespace
     {
@@ -1546,12 +1547,12 @@ namespace sd::mediatools
         dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
         ComPtr<IShellItem> item;
         wil::unique_cotaskmem_string path;
-        if (FAILED(dialog->Show(m_hwnd.get())) || FAILED(dialog->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
+        if (FAILED(dialog->Show(Hwnd())) || FAILED(dialog->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
             return;
         Frame picture;
         if (!LoadPicture(path.get(), 1600, picture))
         {
-            MessageBoxW(m_hwnd.get(), L"This picture could not be opened.", m_req.title.c_str(), MB_ICONWARNING);
+            MessageBoxW(Hwnd(), L"This picture could not be opened.", m_req.title.c_str(), MB_ICONWARNING);
             return;
         }
         m_image = path.get();
@@ -1565,13 +1566,13 @@ namespace sd::mediatools
     {
         const auto& f = Cur();
         const RectF& track = m_rcTrack;
-        const auto& k = m_colors;
+        const auto& k = Theme();
         const auto rangeHandles = [&](float x0, float x1, const D2D1_COLOR_F& color, float width) {
             p.Fill({ x0, track.y, width, track.h }, color, 3);
             p.Fill({ x1 - width, track.y, width, track.h }, color, 3);
             const D2D1_COLOR_F grip = k.onAccent;
             for (const float gx : { x0 + width / 2, x1 - width / 2 })
-                p.Line(gx, track.y + track.h / 2 - 6, gx, track.y + track.h / 2 + 6, Alpha(grip, 0.8f), 1.f);
+                p.Line(gx, track.y + track.h / 2 - 6, gx, track.y + track.h / 2 + 6, WithAlpha(grip, 0.8f), 1.f);
         };
         switch (m_req.tool)
         {
@@ -1592,7 +1593,7 @@ namespace sd::mediatools
             {
                 const float x0 = TX(f.ranges[i].start), x1 = TX(f.ranges[i].end);
                 const bool sel = static_cast<int>(i) == m_selected;
-                p.Fill({ x0, track.y, x1 - x0, track.h }, Alpha(k.danger, sel ? 0.30f : 0.18f));
+                p.Fill({ x0, track.y, x1 - x0, track.h }, WithAlpha(k.danger, sel ? 0.30f : 0.18f));
                 if (sel)
                 {
                     p.Stroke({ x0, track.y, x1 - x0, track.h }, k.danger, 1.5f, 3);
@@ -1600,8 +1601,8 @@ namespace sd::mediatools
                 }
                 else
                 {
-                    p.Line(x0, track.y, x0, track.Bottom(), Alpha(k.danger, 0.8f));
-                    p.Line(x1, track.y, x1, track.Bottom(), Alpha(k.danger, 0.8f));
+                    p.Line(x0, track.y, x0, track.Bottom(), WithAlpha(k.danger, 0.8f));
+                    p.Line(x1, track.y, x1, track.Bottom(), WithAlpha(k.danger, 0.8f));
                 }
                 if (x1 - x0 > 18)
                     p.Text(std::to_wstring(i + 1), { x0 + (sel ? 8.f : 4.f), track.y + 4, 24, 16 }, ui::Font::Caption, k.text);
@@ -1612,7 +1613,7 @@ namespace sd::mediatools
             {
                 const float by = track.Bottom() - 7 - static_cast<float>(i) * 6;
                 p.Fill({ TX(f.areas[i].range.start), by, TX(f.areas[i].range.end) - TX(f.areas[i].range.start), 4 },
-                       static_cast<int>(i) == m_selected ? k.accent : Alpha(D2D1::ColorF(1, 1, 1, 1), 0.55f), 2);
+                       static_cast<int>(i) == m_selected ? k.accent : WithAlpha(D2D1::ColorF(1, 1, 1, 1), 0.55f), 2);
             }
             if (m_selected >= 0 && m_selected < static_cast<int>(f.areas.size()))
             {
@@ -1652,7 +1653,7 @@ namespace sd::mediatools
                 const float x = TX(points[i]);
                 const bool sel = !m_equalParts && static_cast<int>(i) == m_selected;
                 if (m_equalParts)
-                    m_rt->DrawLine({ x, track.y }, { x, track.Bottom() }, p.Brush(k.text), 2.f, m_dash.Get());
+                    Target()->DrawLine({ x, track.y }, { x, track.Bottom() }, p.Brush(k.text), 2.f, m_dash.Get());
                 else
                 {
                     p.Line(x, track.y, x, track.Bottom(), sel ? k.accent : k.text, 2.f);
@@ -1681,8 +1682,8 @@ namespace sd::mediatools
         if (m_drag == Drag::CropHandle || m_drag == Drag::CropNew)
             for (int i = 1; i < 3; ++i)
             {
-                p.Line(b.x + b.w * i / 3, b.y, b.x + b.w * i / 3, b.Bottom(), Alpha(white, 0.35f));
-                p.Line(b.x, b.y + b.h * i / 3, b.Right(), b.y + b.h * i / 3, Alpha(white, 0.35f));
+                p.Line(b.x + b.w * i / 3, b.y, b.x + b.w * i / 3, b.Bottom(), WithAlpha(white, 0.35f));
+                p.Line(b.x, b.y + b.h * i / 3, b.Right(), b.y + b.h * i / 3, WithAlpha(white, 0.35f));
             }
         p.Stroke({ b.x - 1, b.y - 1, b.w + 2, b.h + 2 }, white, 1.5f);
         Handles(p, b, true);
@@ -1719,7 +1720,7 @@ namespace sd::mediatools
                 {
                     const float sx = static_cast<float>(m_blur.frame.w) / map.frameW, sy = static_cast<float>(m_blur.frame.h) / map.frameH;
                     const D2D1_RECT_F src{ a.box.x * sx, a.box.y * sy, (a.box.x + a.box.w) * sx, (a.box.y + a.box.h) * sy };
-                    m_rt->DrawBitmap(blur, ui::ToD2D(r), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
+                    Target()->DrawBitmap(blur, ui::ToD2D(r), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
                 }
                 else
                     p.Fill(r, D2D1::ColorF(0.5f, 0.5f, 0.5f, 0.85f));
@@ -1727,13 +1728,13 @@ namespace sd::mediatools
             if (sel)
             {
                 if (showing)
-                    p.Stroke({ r.x - 1, r.y - 1, r.w + 2, r.h + 2 }, m_colors.accent, 2.f);
+                    p.Stroke({ r.x - 1, r.y - 1, r.w + 2, r.h + 2 }, Theme().accent, 2.f);
                 else
-                    m_rt->DrawRectangle(ui::ToD2D(r), p.Brush(Alpha(white, 0.8f)), 1.5f, m_dash.Get());
+                    Target()->DrawRectangle(ui::ToD2D(r), p.Brush(WithAlpha(white, 0.8f)), 1.5f, m_dash.Get());
                 Handles(p, r, true);
             }
             else if (showing)
-                p.Stroke(r, Alpha(white, 0.45f), 1.f);
+                p.Stroke(r, WithAlpha(white, 0.45f), 1.f);
             if (showing || sel)
             {
                 const RectF chip{ r.x + 4, r.y + 4, 20, 18 };
@@ -1752,14 +1753,14 @@ namespace sd::mediatools
     void EditorWindow::PaintVisualizer(ui::Painter& p)
     {
         const auto& first = m_files.front();
-        p.Fill(m_rcStage, m_colors.stage, 8);
+        p.Fill(m_rcStage, Theme().stage, 8);
         int vw = 0, vh = 0;
         audiotools::ShapeSize(audiotools::ShapeByName(m_shape), vw, vh);
         const RectF area{ m_rcStage.x + 24, m_rcStage.y + 24, m_rcStage.w - 48, m_rcStage.h - 76 };
         const RectF frame = FitInside(static_cast<float>(vw), static_cast<float>(vh), area);
         p.Fill(frame, D2D1::ColorF(0x0E0F13));
         p.Text(std::format(L"{}  \u00B7  {} \u00D7 {}", first.name, vw, vh), { m_rcStage.x, frame.Bottom() + 12, m_rcStage.w, 22 }, ui::Font::Small,
-               m_colors.textDim, 1);
+               Theme().textDim, 1);
         const D2D1_COLOR_F white = D2D1::ColorF(1, 1, 1, 0.75f);
         if (m_imageStyle)
         {
@@ -1768,7 +1769,7 @@ namespace sd::mediatools
                 const auto size = bmp->GetPixelSize();
                 const RectF fit = FitInside(static_cast<float>(size.width), static_cast<float>(size.height), frame);
                 p.Fill(frame, D2D1::ColorF(0, 0, 0, 1));
-                m_rt->DrawBitmap(bmp, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                Target()->DrawBitmap(bmp, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             }
             else
             {
@@ -1804,7 +1805,7 @@ namespace sd::mediatools
                 const float t = static_cast<float>(c) / cols;
                 const float v = 0.15f + 0.35f * std::abs(std::sin(t * 23.f) * std::sin(t * 5.f + 1.f));
                 const float x = frame.x + (static_cast<float>(c) + 0.5f) * frame.w / cols;
-                p.Line(x, mid - v * band, x, mid + v * band, Alpha(wave, 0.5f), 1.2f);
+                p.Line(x, mid - v * band, x, mid + v * band, WithAlpha(wave, 0.5f), 1.2f);
             }
         }
     }
@@ -1812,10 +1813,10 @@ namespace sd::mediatools
     void EditorWindow::PaintJoinList(ui::Painter& p)
     {
         const RectF& list = m_rcList;
-        const auto& k = m_colors;
+        const auto& k = Theme();
         const float maxScroll = std::max(0.f, static_cast<float>(m_order.size()) * kJoinRowH - list.h);
         m_listScroll = std::clamp(m_listScroll, 0.f, maxScroll);
-        m_rt->PushAxisAlignedClip(ui::ToD2D(list), D2D1_ANTIALIAS_MODE_ALIASED);
+        Target()->PushAxisAlignedClip(ui::ToD2D(list), D2D1_ANTIALIAS_MODE_ALIASED);
         for (size_t pos = 0; pos < m_order.size(); ++pos)
         {
             auto& f = m_files[static_cast<size_t>(m_order[pos])];
@@ -1825,7 +1826,7 @@ namespace sd::mediatools
             const bool sel = static_cast<int>(pos) == m_selected;
             p.Fill(row, sel ? k.accentSoft : k.stage, 8);
             if (sel)
-                p.Stroke(row, Alpha(k.accent, 0.7f), 1.f, 8);
+                p.Stroke(row, WithAlpha(k.accent, 0.7f), 1.f, 8);
             const RectF num{ row.x + 12, row.y + row.h / 2 - 12, 24, 24 };
             p.Fill(num, sel ? k.accent : k.control, 12);
             p.Text(std::to_wstring(pos + 1), num, ui::Font::Caption, sel ? k.onAccent : k.text, 1);
@@ -1835,7 +1836,7 @@ namespace sd::mediatools
             {
                 const auto size = bmp->GetPixelSize();
                 const RectF fit = FitInside(static_cast<float>(size.width), static_cast<float>(size.height), thumb);
-                m_rt->DrawBitmap(bmp, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                Target()->DrawBitmap(bmp, ui::ToD2D(fit), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
             }
             const float tx = thumb.Right() + 16;
             p.Text(f.name, { tx, row.y + 12, row.Right() - tx - 16, 22 }, ui::Font::BodyStrong, k.text);
@@ -1860,6 +1861,6 @@ namespace sd::mediatools
             const float y = list.y + static_cast<float>(m_joinDropAt) * kJoinRowH - m_listScroll - 4;
             p.Fill({ list.x, y - 1.5f, list.w, 3 }, k.accent, 1.5f);
         }
-        m_rt->PopAxisAlignedClip();
+        Target()->PopAxisAlignedClip();
     }
 }

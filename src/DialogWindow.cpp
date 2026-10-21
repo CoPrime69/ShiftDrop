@@ -2,7 +2,6 @@
 #include "resource.h"
 
 #include <commctrl.h>
-#include <dwmapi.h>
 #include <uxtheme.h>
 
 namespace sd
@@ -79,8 +78,7 @@ namespace sd
     void DialogWindow::ApplyTheme()
     {
         m_colors = theme::Dialog(m_frame.lightBackground);
-        const BOOL dark = m_colors.dark;
-        DwmSetWindowAttribute(m_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+        theme::ApplyDarkCaption(m_hwnd, m_colors.dark);
         m_background.reset(CreateSolidBrush(m_colors.background));
         m_field.reset(CreateSolidBrush(m_colors.field));
         OnThemeChanged();

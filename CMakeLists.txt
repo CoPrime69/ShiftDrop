@@ -239,9 +239,8 @@ add_library(shiftdrop_winrt OBJECT
 target_compile_options(shiftdrop_winrt PRIVATE ${SHIFTDROP_OPTIONS} /bigobj)
 target_link_libraries(shiftdrop_winrt PUBLIC shiftdrop_core windowsapp)
 
-# The PDF editor windows (Merge, Organize): app-only UI, drawn with Direct2D like the wheel.
+# The PDF editor windows (Merge, Organize): app-only UI on the editors' frame (src/EditorFrame.cpp).
 add_library(shiftdrop_pdf_ui OBJECT
-  src/pdf/EditorWindow.cpp
   src/pdf/MergeWindow.cpp
   src/pdf/OrganizeWindow.cpp
 )
@@ -259,6 +258,7 @@ add_executable(ShiftDrop WIN32
   src/Theme.cpp
   src/Tray.cpp
   src/DialogWindow.cpp   # the frame of Settings, History, Rename and the inspector
+  src/EditorFrame.cpp    # the frame of the PDF, picture and video/audio editors
   src/HistoryWindow.cpp
   src/SettingsWindow.cpp
   src/rename/RenameWindow.cpp
