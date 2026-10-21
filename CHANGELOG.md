@@ -5,6 +5,12 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- Merge PDFs has More…: every page in one view to reorder across files, turn, leave out, preview
+  and edit (Redact, Annotate, Crop, Light and colour) before Merge and export.
+- An Edit slice next to Organize opens the same page view for one or more PDFs.
+
 ### Changed
 
 - The top panel is about 1.4 times larger, so it reads at a glance on large screens; it follows the
