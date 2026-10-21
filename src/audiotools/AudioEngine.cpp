@@ -99,7 +99,7 @@ namespace sd::audiotools
             const auto measured = s.ffmpeg->Run(MeasureArgs(source, target), half(0), stop, &log, info.DurationUs());
             if (!measured.ok)
                 return FailItem(s.history, runId, source, measured.error, measured.cancelled);
-            const auto loudness = ParseLoudnorm(log);
+            const auto loudness = ParseEbur128(log);
             if (!loudness)
                 return FailItem(s.history, runId, source, L"could not measure the loudness");
             if (loudness->silent)
@@ -110,9 +110,9 @@ namespace sd::audiotools
                 level.erase(0, level.find(L'\u2192') + 2);   // just "-16.0 LUFS"
                 return FailItem(s.history, runId, source, L"already at " + level, true);
             }
-            log::Info(L"audio: {} measured {:.1f} LUFS, {:.1f} dBTP, LRA {:.1f}; target {}", source, loudness->inputI, loudness->inputTP,
-                      loudness->inputLRA, Num(target.integrated));
-            // Pass 2: apply, and read loudnorm's own measurement of the result.
+            log::Info(L"audio: {} measured {:.1f} LUFS, {:.1f} dBTP, LRA {:.1f}; target {} ({})", source, loudness->inputI, loudness->inputTP,
+                      loudness->inputLRA, Num(target.integrated), IsLinear(target, *loudness) ? L"one gain" : L"peaks limited");
+            // Pass 2: apply; when loudnorm limits the peaks, read its own measurement of the result.
             const auto ext = LowerExtension(source);
             log.clear();
             auto result = RunToStaged(*s.ffmpeg, s.history, runId, source,
