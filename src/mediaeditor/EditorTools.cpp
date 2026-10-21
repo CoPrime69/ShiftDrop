@@ -28,7 +28,7 @@ namespace sd::mediatools
             kIdStart = 100, kIdEnd, kIdStartHere, kIdEndHere, kIdPlaySel, kIdMode = 110, kIdSilence = 120, kIdAspect = 130, kIdOutW = 140, kIdOutH,
             kIdOutReset, kIdSpeed = 150, kIdSpeedCustom = 170, kIdUp = 180, kIdDown, kIdRemove, kIdAdd = 190, kIdSplitKind = 200, kIdParts = 210,
             kIdStyle = 220, kIdWhole = 230, kIdTone = 240, kIdListen = 250, kIdMono = 260, kIdSwap = 270, kIdLeft, kIdRight, kIdResetVol,
-            kIdPicStyle = 280, kIdChoose = 290, kIdClear, kIdShape = 300, kIdRows = 400, kIdRowDelete = 600,
+            kIdPicStyle = 280, kIdChoose = 290, kIdClear, kIdShape = 300, kIdJoinFit = 310, kIdRows = 400, kIdRowDelete = 600,
         };
 
         constexpr float kGrip = 7.f;        // how near an edge or marker the mouse must be (DIPs)
@@ -536,6 +536,10 @@ namespace sd::mediatools
             button(kIdRemove, L"Remove", nullptr, [this] { ToolKey(VK_DELETE, false, false); }, sel && m_order.size() > 1,
                    L"Leave this clip out (Delete)", x + 2 * third + 8, third);
             y += 6;
+            // Clips of another shape than the first: whole with black bars, or cropped to fill the frame.
+            caption(L"OTHER SHAPES");
+            segments(kIdJoinFit, { L"Fit", L"Fill" }, m_joinFill ? 1 : 0, [this](int i) { m_joinFill = i == 1; Rebuild(); }, 2);
+            y += 6;
             caption(L"RESULT");
             std::vector<ProbeInfo> clips;
             bool allProbed = true;
@@ -568,7 +572,8 @@ namespace sd::mediatools
             else if (videotools::CanJoinByCopy(clips))
                 note(L"The clips match, so they are joined without re-encoding: quick, and nothing is lost.");
             else
-                note(L"The clips differ, so they are re-encoded to the first clip's size and frame rate. Other shapes get black bars.");
+                note(m_joinFill ? L"The clips differ, so they are re-encoded to the first clip's size and frame rate. Other shapes are cropped to fill the frame."
+                                : L"The clips differ, so they are re-encoded to the first clip's size and frame rate. Other shapes get black bars.");
             break;
         }
         case EditorTool::SaveFrames:
@@ -1465,6 +1470,7 @@ namespace sd::mediatools
         case EditorTool::TrimVideo: p["mode"] = m_fast ? "fast" : "exact"; break;
         case EditorTool::CropVideo: p["aspect"] = m_aspect; break;
         case EditorTool::SpeedVideo: p["factor"] = m_factor; break;
+        case EditorTool::JoinVideos: p["fit"] = m_joinFill ? "fill" : "fit"; break;
         case EditorTool::SplitVideo:
             p["mode"] = m_fast ? "fast" : "exact";
             p["parts"] = m_equalParts ? m_parts : 0;

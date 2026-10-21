@@ -135,7 +135,7 @@ target_link_libraries(shiftdrop_core PUBLIC
   WebP::webp
   qpdf::libqpdf
   ZLIB::ZLIB
-  windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys
+  windowscodecs bcrypt shlwapi ole32 oleaut32 shell32 user32 advapi32 propsys comctl32
 )
 
 # Windows Runtime parts of the PDF module: Windows.Data.Pdf rendering, Windows.Media.Ocr and the

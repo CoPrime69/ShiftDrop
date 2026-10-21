@@ -443,6 +443,10 @@ TEST(VideoTools, JoinCopiesMatchingClipsAndEncodesTheRest)
     EXPECT_NE(graph.find(L"[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]"), std::wstring::npos);
     EXPECT_TRUE(Has(enc, L"-map", L"[a]"));
     EXPECT_EQ(std::count(enc.begin(), enc.end(), L"-i"), 2);
+    // Fill: other shapes are scaled up and cropped to the canvas, no black bars.
+    const auto filled = After(JoinEncodeArgs({ L"a.mp4", L"b.avi" }, { first, quiet }, H264Encoder::Nvenc, L"out", true), L"-filter_complex");
+    EXPECT_NE(filled.find(L"[1:v:0]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"), std::wstring::npos) << Narrow(filled);
+    EXPECT_EQ(filled.find(L"pad="), std::wstring::npos);
     // Nobody has sound: no audio at all.
     const auto mute = JoinEncodeArgs({ L"a.mp4", L"b.mp4" }, { Clip(640, 480, 30, "h264", ""), Clip(640, 480, 30, "h264", "") }, H264Encoder::OpenH264, L"out");
     EXPECT_NE(After(mute, L"-filter_complex").find(L"concat=n=2:v=1:a=0[v]"), std::wstring::npos);

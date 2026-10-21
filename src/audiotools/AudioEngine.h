@@ -4,6 +4,8 @@
 #include "Recipe.h"
 #include "mediaeditor/EditorApi.h"
 
+#include <windows.h>
+
 #include <stop_token>
 #include <string>
 
@@ -17,6 +19,8 @@ namespace sd::audiotools
     nlohmann::json ToolRecipe(mediatools::EditorTool tool);
 
     bool NeedsEditor(const RecipeStep& step);
+    // Normalize's chooser: Speech (-16), Music (-14) or Broadcast (-23 LUFS). False when cancelled.
+    bool ChooseLoudness(HWND owner, size_t files, double& target);
 
     ItemResult Run(const EngineServices& services, const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                    const ProgressFn& progress);
