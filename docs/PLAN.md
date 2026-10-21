@@ -177,7 +177,7 @@ Each milestone, at a glance:
 | **M8 (new)** | — | Photo tools: Edit Photos, Annotate, Add a Background, Collage |
 | **M9 (new)** | — | Video tools: Trim, Crop, Speed, Join, Save Frames, Split, Redact Video |
 | **M10 (new)** | — | Audio tools: Normalize, Visualizer, Trim Audio, Channels, Bleep |
-| **M11 (new)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/PPTX/TXT/MD |
+| **M11 (delivered, except PDF → PPTX)** | — | Documents, spreadsheets, presentations, subtitles, PDF → DOCX/EPUB/HTML, Office bridge |
 | M12 (was M8) | Polish, release and showcase | Settings window, real toasts, winget and a portable zip (the installer itself shipped with M2) |
 
 Each milestone in detail:
@@ -284,18 +284,18 @@ One waveform window with playback through Windows (XAudio2), and A/B compare.
 - Tool 19, **Convert Audio Channels**: mono or stereo, separate left and right volumes, and per-channel preview.
 - Tool 20, **Bleep Audio**: movable bleep ranges, with a compare against the original.
 
-**M11. Documents, spreadsheets, presentations, subtitles (new)**
+**M11. Documents, spreadsheets, presentations, subtitles** (delivered, except PDF → PPTX)
 
-All our own code on small permissively licensed libraries: miniz, pugixml, md4c, libxlsxwriter and libxls. Formats:
-- Documents: DOCX ↔ Markdown, TXT, HTML and EPUB. RTF input (Windows' RichEdit). HTML export.
-- Documents to PDF: our own layout, drawn with DirectWrite, through Windows' built-in "Microsoft Print to PDF".
-- Spreadsheets:
-  - XLSX, ODS, CSV and TSV convert into each other.
-  - XLS input.
-  - PDF export as a plain table layout.
-- Subtitles: SRT ↔ VTT, and either to TXT.
-- PDF → DOCX and EPUB as reflowed text and images. PDF → PPTX with one page image per slide.
-- **Office bridge:** when Microsoft Office or LibreOffice is *already installed*, we drive it for layout-faithful results. This covers PPT/PPTX → PDF/JPG/PNG, DOCX/XLSX → PDF and PDF → DOCX. Nothing is bundled, and those slices only appear when the app is found.
+All our own code on small permissively licensed libraries: miniz (ZIP), pugixml (XML) and md4c (Markdown), all MIT. libxlsxwriter and libxls were planned; see the decisions log for why we write XLSX and read XLS ourselves. Four modules: `src/docs`, `src/sheets`, `src/subtitles`, `src/officebridge`.
+- [x] Documents: DOCX → Markdown, TXT, HTML and EPUB; Markdown, TXT and HTML → DOCX; Markdown ↔ HTML. Headings, bold, italic, strikethrough, inline code, lists, links, tables, quotes, code blocks and pictures survive the trip. Markdown or HTML with pictures becomes a folder holding the page and an `images` folder.
+- [x] RTF input through Windows' RichEdit; RTFD input (the package folder: its TXT.rtf plus its pictures).
+- [x] PAGES input, best effort, from the preview PDF that older .pages files carry.
+- [x] Documents to PDF: our own layout (PageLayout.cpp: line breaking, tables with a repeated header row, pictures, keep-with-next headings, page numbers), measured with DirectWrite and printed silently to Windows' "Microsoft Print to PDF". A4 or Letter from the region settings.
+- [x] Spreadsheets: XLSX, ODS, CSV and TSV convert into each other; XLS input; PDF export as plain tables (landscape when wide). Values only for CSV/TSV, and a workbook with several sheets becomes a folder of CSV files.
+- [x] Subtitles: SRT ↔ VTT, and either to TXT.
+- [x] PDF → DOCX, EPUB and HTML as reflowed text, through M5's text reader (OCR for scanned pages). Pictures in the PDF are not kept.
+- [ ] PDF → PPTX with one page image per slide. Not done in M11; still open.
+- [x] **Office bridge:** when Microsoft Office or LibreOffice is *already installed*, we drive it for layout-faithful results: PPT/PPTX → PDF, and with PowerPoint → PNG or JPG slides in a folder; Word and Excel files → an exact PDF. Nothing is bundled, the apps are found once at startup, and those slices only appear when an app is found.
 
 **M12. Polish, release and showcase (was M8)**
 - Signed build (if a certificate is chosen), winget, screen reader support, benchmarks, README.
@@ -333,19 +333,19 @@ All our own code on small permissively licensed libraries: miniz, pugixml, md4c,
 | Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 export | LGPL ffmpeg. H.264/HEVC via the GPU encoder or Windows' Media Foundation encoder; WebM via libvpx/AV1 | M3 |
 | PDF | JPG, PNG (all pages, 300 DPI) | Windows.Data.Pdf | Done (M5) |
 | | TXT, MD | text layer (QPDF content-stream parser), Windows OCR fallback | Done (M5) |
-| | EPUB, DOCX | reflowed text and images (our writer); faithful DOCX via Word if installed | M11 |
-| | PPTX | one page image per slide (our writer) | M11 |
+| | EPUB, DOCX, HTML | reflowed text (M5's text reader, our writers); pictures not kept | Done (M11) |
+| | PPTX | one page image per slide (our writer) | M11 (not done yet) |
 | | XLSX | **Deferred** (see exclusions) | — |
 | | PAGES | **Excluded** (see exclusions) | — |
-| Documents | DOCX, MD, TXT, EPUB; HTML export | our converters (miniz, pugixml, md4c) | M11 |
-| | RTF input | Windows RichEdit | M11 |
-| | RTFD input | read as the folder it is (its RTF and pictures) | M11 |
+| Documents | DOCX, MD, TXT, HTML, EPUB; PDF export | our converters (miniz, pugixml, md4c); PDF through Microsoft Print to PDF | Done (M11) |
+| | RTF input | Windows RichEdit | Done (M11) |
+| | RTFD input | read as the folder it is (its RTF and pictures) | Done (M11) |
 | | Text clippings input | **Excluded** (macOS-only) | — |
-| | PAGES | **Excluded** for output; input best-effort from its embedded preview PDF | M11 (input) |
-| Presentations | PPT/PPTX → PDF, JPG, PNG | Office bridge only (PowerPoint or LibreOffice installed) | M11 |
-| | PDF → PPTX | one page image per slide | M11 |
-| Spreadsheets | XLSX, ODS, CSV, TSV; PDF export; XLS input | libxlsxwriter, pugixml, libxls; plain-table PDF; Office bridge for faithful PDF | M11 |
-| Subtitles | SRT, VTT; TXT export | our code | M11 |
+| | PAGES | **Excluded** for output; input best-effort from its embedded preview PDF | Done (M11, input) |
+| Presentations | PPT/PPTX → PDF, JPG, PNG | Office bridge only: PDF with PowerPoint or LibreOffice, slide pictures with PowerPoint | Done (M11) |
+| | PDF → PPTX | one page image per slide | M11 (not done yet) |
+| Spreadsheets | XLSX, ODS, CSV, TSV; PDF export; XLS input | our readers and writers (miniz, pugixml; XLS through Windows structured storage); plain-table PDF; Office bridge for faithful PDF | Done (M11) |
+| Subtitles | SRT, VTT; TXT export | our code | Done (M11) |
 | Archives | ZIP, TAR, GZIP; RAR input | libarchive (reads RAR/RAR5 under BSD, no unRAR licence) | M7 |
 
 "275 conversion paths" is a count of input × output pairs, not a list we can check item by item; the
@@ -552,6 +552,17 @@ question 1).
 | 2026-10-20 | Shift is the only key that opens the wheel during a drag; Ctrl and Alt no longer do (they keep Explorer's own meaning), and every section is reached by scrolling. Old settings.ini files with Tools=Ctrl / Files=Alt are switched to None once (KeysVersion=2); a later hand edit stays | Prakhar: one key to remember, and sections will outgrow the keys. Alt also lit up the source window's menu bar |
 | 2026-10-20 | A wheel moved in from a screen edge treats the spot where it opened as the centre until the cursor moves 6 DIP, and keeps the mouse pointer visible | The cursor sits on a slice after the move; dropping without moving must still run nothing, and the user has to see where the pointer is |
 | 2026-10-20 | A fourth section, Reduce size (between Tools and File actions): eight slices, 90% to 20% smaller, as image.compress / media.compress with `percent` (the result is at most that share of the source) and pdf.compress with `percent`, which steps the pictures down (150 dpi q70 to 48 dpi q25) until it fits. The centre shows the files' total size; a hovered slice's `headline` replaces it with the size it comes out at, over "was …" | Prakhar (23:30): websites often need files under a size, and seeing both sizes before dropping saves trial and error. Fit-to-size already guaranteed the target for images and media |
+| 2026-10-20 | M11: XLSX is written by our own small writer on miniz, not libxlsxwriter; XLS is read by our own BIFF8 reader over Windows' structured storage (StgOpenStorageOnILockBytes), not libxls | libxls is not in the vcpkg baseline we pin. libxlsxwriter would add zlib-on-minizip and temp files for a format we only need values and dates in |
+| 2026-10-20 | M11: documents to PDF keep the planned Microsoft Print to PDF route (our layout, DirectWrite measuring, GDI drawing, DOCINFO.lpszOutput to a temp file, then the bytes into our staging file); M5's PdfWriter is not used for text | PdfWriter has no font embedding or text shaping; the printer embeds the fonts and keeps the text selectable. If the printer is missing (it can be turned off in Windows Features) the slice says so |
+| 2026-10-20 | M11: paper is US Letter when the region's LOCALE_IPAPERSIZE says Letter, else A4; 2 cm margins and a page number at the bottom | Matches what Word picks for a new document in that region |
+| 2026-10-20 | M11: Markdown or HTML output with pictures is a folder "name (converted)" holding "name.md" (or .html) and images/; without pictures it is a single file. EPUB embeds the pictures; DOCX too | One drop leaves one thing next to the original, and the page's links to its pictures keep working |
+| 2026-10-20 | M11: the documents wheel never offers a no-op: TXT gets no Markdown slice, and PDF offers only DOCX, EPUB and HTML (M5 already has TXT and Markdown) | Slices that change nothing are noise |
+| 2026-10-20 | M11: PDF → DOCX/EPUB/HTML reflows M5's Markdown of the text (headings by size, bullets); pictures are not kept. PAGES input uses only the QuickLook preview PDF; newer .pages files with only a JPEG preview get a clear error | Reuses M5's reader and OCR; extracting pictures and their places from PDFs is a separate job |
+| 2026-10-20 | M11: CSV and TSV out are UTF-8 with a BOM and CRLF (what Excel reads correctly), values only; a workbook with several non-empty sheets becomes a folder of one file per sheet. CSV in detects comma, semicolon or tab, and the encoding (BOMs, UTF-16, else UTF-8 or the ANSI code page). Text that looks like a number becomes a number in XLSX/ODS, except leading zeros ("007") and more than 15 digits | Phone numbers, ZIP codes and IDs must not lose digits |
+| 2026-10-20 | M11: SRT out is UTF-8 with a BOM and CRLF, renumbered from 1; VTT out is UTF-8 with LF. <b> <i> <u> carry across, other markup (font colours, voice and class tags, {\an8} codes) is dropped. TXT is one line per subtitle, and a line that repeats the previous one (roll-up captions) is left out | Old players need the BOM; the rest are the formats' own rules |
+| 2026-10-20 | M11 Office bridge: Microsoft Office through late-bound IDispatch (no Office headers or type libraries) on the Shell lane (STA), invisible, alerts off, macros forced off (AutomationSecurity 3), files opened read-only with a dummy password so a protected file fails instead of asking. A watchdog cancels the COM call and ends only the app processes we started after 5 minutes without progress or on cancel; PowerPoint, which is single-instance, is left running when the user already had it open | An invisible app stuck on a dialog would otherwise hang the shell lane forever; we must never close the user's own work |
+| 2026-10-20 | M11 Office bridge: LibreOffice runs as `soffice --headless --convert-to pdf` with a profile of our own (%LOCALAPPDATA%\ShiftDrop\libreoffice), no window, in a kill-on-close job, waiting for every process in the job. Slide pictures need PowerPoint (LibreOffice's picture export only does the first slide) | Without its own profile LibreOffice hands the job to a running instance, which ignores --headless |
+| 2026-10-20 | M11 Office bridge: the apps are found once when the engine is made at startup (the CLSID's LocalServer32 for Word, Excel and PowerPoint; LibreOffice's UNO InstallPath or Program Files). Its slices: "Exact PDF", "PNG slides", "JPG slides", shown only when an app can do it | Cheap registry reads; installing Office while ShiftDrop runs needs a restart of ShiftDrop |
 
 ## Open questions
 
@@ -560,6 +571,10 @@ question 1).
 3. Clicking a balloon that has moved to Action Center: does it reach us unpackaged? If not, real toasts move earlier.
 4. Opening the wheel on files selected in Explorer: Ctrl+Shift+Space (current) or a lone Shift tap? Prakhar decides after trying the app, before the launch video and website.
 5. M5: PDF → Markdown finds headings by font size and lists by bullet characters. Tables and multi-column pages come out as plain lines. Good enough, or should columns be detected?
+6. M11: the Office bridge waits up to 5 minutes without progress before giving up on a stuck Office app. Right, or shorter?
+7. M11: PDF → DOCX/EPUB/HTML keep the text only. Should pictures from the PDF come along (placed between paragraphs), or is text enough until PDF → PPTX lands?
+8. M11: Office conversions share the shell lane with Move to…, so a long PowerPoint export makes a Move wait. Give Office its own STA lane?
+9. M11: a spreadsheet to PDF prints at most 20,000 rows per sheet (with a note). Raise it, or ask before printing a huge sheet?
 
 ## Sources
 
