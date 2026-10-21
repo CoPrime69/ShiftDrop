@@ -1,5 +1,6 @@
 #include "Settings.h"
 #include "Log.h"
+#include "PanelLayout.h"
 #include "Strings.h"
 
 #include <algorithm>
@@ -186,10 +187,10 @@ namespace sd
 
         // The index of `value` in `names` (ignoring case), or `fallback` with a warning.
         template <size_t N>
-        int Pick(const wchar_t* section, const wchar_t* key, const wchar_t* const (&names)[N], int fallback)
+        int Pick(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* const (&names)[N], int fallback)
         {
             wchar_t value[32]{};
-            GetPrivateProfileStringW(section, key, names[fallback], value, ARRAYSIZE(value), SettingsPath().c_str());
+            GetPrivateProfileStringW(section, key, names[fallback], value, ARRAYSIZE(value), path.c_str());
             for (size_t i = 0; i < N; ++i)
                 if (EqualsNoCase(value, names[i]))
                     return static_cast<int>(i);
@@ -198,22 +199,30 @@ namespace sd
         }
     }
 
-    Preferences LoadPreferences()
+    Preferences LoadPreferences() { return LoadPreferences(SettingsPath()); }
+
+    Preferences LoadPreferences(const std::wstring& path)
     {
         Preferences p;
-        p.theme = static_cast<ThemeChoice>(Pick(L"Appearance", L"Theme", kThemes, 0));
-        p.terminal = static_cast<TerminalChoice>(Pick(L"FileActions", L"Terminal", kTerminals, 0));
-        p.naming = static_cast<OutputNaming>(Pick(L"Output", L"Naming", kNamings, 0));
+        p.theme = static_cast<ThemeChoice>(Pick(path, L"Appearance", L"Theme", kThemes, 0));
+        p.terminal = static_cast<TerminalChoice>(Pick(path, L"FileActions", L"Terminal", kTerminals, 0));
+        p.naming = static_cast<OutputNaming>(Pick(path, L"Output", L"Naming", kNamings, 0));
         std::wstring command(2048, L'\0');
         command.resize(GetPrivateProfileStringW(L"FileActions", L"TerminalCommand", L"", command.data(), static_cast<DWORD>(command.size()),
-                                                SettingsPath().c_str()));
+                                                path.c_str()));
         p.terminalCommand = std::move(command);
+        const int size = static_cast<int>(GetPrivateProfileIntW(L"Appearance", L"PanelSize", panel::kSizeMinPercent, path.c_str()));
+        p.panelSize = panel::SizePercent(size);
+        if (p.panelSize != size)
+            log::Warn(L"settings: [Appearance] PanelSize={} is not {} to {} in steps of {}; using {}", size, panel::kSizeMinPercent,
+                      panel::kSizeMaxPercent, panel::kSizeStepPercent, p.panelSize);
         return p;
     }
 
-    void SavePreferences(const Preferences& p)
+    void SavePreferences(const Preferences& p) { SavePreferences(p, SettingsPath()); }
+
+    void SavePreferences(const Preferences& p, const std::wstring& path)
     {
-        const auto path = SettingsPath();
         WritePrivateProfileStringW(L"Appearance", L"Theme", kThemes[static_cast<int>(p.theme)], path.c_str());
         WritePrivateProfileStringW(L"FileActions", L"Terminal", kTerminals[static_cast<int>(p.terminal)], path.c_str());
         // A value enclosed in quotes loses them when read back ("C:\term.exe" -d "{folder}"), so such
@@ -223,5 +232,6 @@ namespace sd
         const auto command = enclosed ? L"\"" + c + L"\"" : c;
         WritePrivateProfileStringW(L"FileActions", L"TerminalCommand", command.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Output", L"Naming", kNamings[static_cast<int>(p.naming)], path.c_str());
+        WritePrivateProfileStringW(L"Appearance", L"PanelSize", std::to_wstring(panel::SizePercent(p.panelSize)).c_str(), path.c_str());
     }
 }

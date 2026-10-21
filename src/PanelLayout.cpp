@@ -7,9 +7,26 @@
 
 namespace sd::panel
 {
+    int SizePercent(int percent)
+    {
+        const int p = std::clamp(percent, kSizeMinPercent, kSizeMaxPercent);
+        return (p + kSizeStepPercent / 2) / kSizeStepPercent * kSizeStepPercent;
+    }
+
     float MaxContentWidth(float scale, float workWidth)
     {
         return std::max(0.f, std::min(kMaxWidthDip * scale, workWidth - 2.f * kScreenRoomDip * scale));
+    }
+
+    float FitScale(float scale, float base, const std::vector<float>& namesDip, float workWidth, float workHeight)
+    {
+        // Both limits are linear in the scale: the bare tabs plus the inset and the room at the
+        // screen's sides across, the top gap, the tallest panel and its shadow room down.
+        const float tabs = std::accumulate(namesDip.begin(), namesDip.end(), 0.f) +
+                           static_cast<float>(namesDip.size()) * (2.f * kTabPadMinDip + kIconDip + kIconGapMinDip);
+        const float across = workWidth / (tabs + 2.f * kInsetDip + 2.f * kScreenRoomDip);
+        const float down = workHeight / 2.f / (kTopGapDip + kMaxHeightDip + kPadDip);
+        return std::max(base, std::min({ scale, across, down }));
     }
 
     Switcher FitSwitcher(const std::vector<float>& names, float hint, float scale, float available)

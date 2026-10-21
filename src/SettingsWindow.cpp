@@ -1,6 +1,7 @@
 #include "SettingsWindow.h"
 #include "Brand.h"
 #include "Log.h"
+#include "PanelLayout.h"
 #include "Theme.h"
 
 #include <windowsx.h>
@@ -15,7 +16,7 @@ namespace sd
         constexpr wchar_t kClass[] = L"" SD_NAME L".Settings";
         constexpr int kIdTree = 100;
         constexpr int kIdAllOn = 101;
-        constexpr int kIdTerminal = 102, kIdCommand = 103, kIdTheme = 104, kIdNaming = 105;
+        constexpr int kIdTerminal = 102, kIdCommand = 103, kIdTheme = 104, kIdNaming = 105, kIdPanelSize = 106;
 
         // What an item's lParam holds: a tag plus the section's Ring or the slice's index.
         constexpr LPARAM kSectionTag = 0x10000, kGroupTag = 0x20000, kSliceTag = 0x30000;
@@ -27,12 +28,16 @@ namespace sd
         // Control sizes in DIPs; scaled by the window's DPI in Layout().
         constexpr int kMargin = 14, kGap = 8, kButtonW = 150, kButtonH = 30, kIntroH = 40;
         constexpr int kLabelW = 118, kRowH = 26, kRowGap = 6;   // the choices above the tree
+        constexpr int kSliderH = 30, kValueW = 48;              // the Top panel size slider and its value
 
         // Combo box items, in the order of the enums in Settings.h and OutputPath.h.
         constexpr const wchar_t* kTerminals[] = { L"Windows Terminal", L"PowerShell", L"Command Prompt", L"Custom command" };
         constexpr const wchar_t* kThemes[] = { L"Follow Windows", L"Light", L"Dark" };
         constexpr const wchar_t* kNamings[] = { L"photo (converted).png", L"photo-converted.png", L"photo_converted.png",
                                                 L"photo.png in a \u201cShiftDrop\u201d folder" };
+
+        // The slider's value as it reads beside it: "160%".
+        std::wstring PercentText(int percent) { return std::format(L"{}%", percent); }
 
         constexpr wchar_t kIntro[] = L"Choose what the wheel offers. Untick a slice, a kind of file or a whole section to "
                                      L"hide it; changes apply right away.";
@@ -76,6 +81,14 @@ namespace sd
         SendMessageW(m_command, EM_LIMITTEXT, 1024, 0);
         m_themeLabel = label(L"T&heme");
         m_theme = combo(kIdTheme, kThemes);
+        m_panelSizeLabel = label(L"Top &panel size");
+        m_panelSize = Control(TRACKBAR_CLASSW, L"", WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS | TBS_BOTTOM, kIdPanelSize);
+        // In percent, so screen readers read the same number as the text beside it; one step is 10%.
+        SendMessageW(m_panelSize, TBM_SETRANGE, FALSE, MAKELPARAM(panel::kSizeMinPercent, panel::kSizeMaxPercent));
+        SendMessageW(m_panelSize, TBM_SETTICFREQ, panel::kSizeStepPercent, 0);
+        SendMessageW(m_panelSize, TBM_SETLINESIZE, 0, panel::kSizeStepPercent);
+        SendMessageW(m_panelSize, TBM_SETPAGESIZE, 0, 5 * panel::kSizeStepPercent);
+        m_panelSizeValue = Control(WC_STATICW, L"", SS_RIGHT | SS_CENTERIMAGE);
         m_namingLabel = label(L"&Output names");
         m_naming = combo(kIdNaming, kNamings);
 
@@ -127,6 +140,12 @@ namespace sd
         row(m_terminalLabel, m_terminal, true);
         row(m_commandLabel, m_command, false);
         row(m_themeLabel, m_theme, true);
+        // The slider, then its value at the end of the row; a little taller for its ticks.
+        const int sh = Px(kSliderH), vw = std::min(Px(kValueW), fieldW);
+        MoveWindow(m_panelSizeLabel, margin, y, lw - gap, sh, TRUE);
+        MoveWindow(m_panelSize, fieldX, y, std::max(0, fieldW - vw - gap), sh, TRUE);
+        MoveWindow(m_panelSizeValue, fieldX + fieldW - vw, y, vw, sh, TRUE);
+        y += sh + Px(kRowGap);
         row(m_namingLabel, m_naming, true);
         MoveWindow(m_intro, margin, y + gap, rc.right - 2 * margin, ih, TRUE);
         const int listTop = y + gap + ih + gap;
@@ -143,6 +162,8 @@ namespace sd
         SendMessageW(m_terminal, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.terminal), 0);
         SendMessageW(m_theme, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.theme), 0);
         SendMessageW(m_naming, CB_SETCURSEL, static_cast<WPARAM>(m_preferences.naming), 0);
+        SendMessageW(m_panelSize, TBM_SETPOS, TRUE, panel::SizePercent(m_preferences.panelSize));
+        SetWindowTextW(m_panelSizeValue, PercentText(panel::SizePercent(m_preferences.panelSize)).c_str());
         SetWindowTextW(m_command, m_preferences.terminalCommand.c_str());
         EnableWindow(m_command, m_preferences.terminal == TerminalChoice::Custom);
         m_updating = false;
@@ -160,6 +181,7 @@ namespace sd
         p.terminal = static_cast<TerminalChoice>(pick(m_terminal, ARRAYSIZE(kTerminals), static_cast<int>(p.terminal)));
         p.theme = static_cast<ThemeChoice>(pick(m_theme, ARRAYSIZE(kThemes), static_cast<int>(p.theme)));
         p.naming = static_cast<OutputNaming>(pick(m_naming, ARRAYSIZE(kNamings), static_cast<int>(p.naming)));
+        p.panelSize = panel::SizePercent(static_cast<int>(SendMessageW(m_panelSize, TBM_GETPOS, 0, 0)));
         std::wstring command(static_cast<size_t>(GetWindowTextLengthW(m_command)) + 1, L'\0');
         command.resize(static_cast<size_t>(GetWindowTextW(m_command, command.data(), static_cast<int>(command.size()))));
         p.terminalCommand = std::move(command);
@@ -167,14 +189,27 @@ namespace sd
         if (p == m_preferences)
             return;
         const bool themeChanged = p.theme != m_preferences.theme;
-        if (p.terminal != m_preferences.terminal || themeChanged || p.naming != m_preferences.naming)
-            log::Info(L"settings: terminal {}, theme {}, output names {}", kTerminals[static_cast<int>(p.terminal)],
-                      kThemes[static_cast<int>(p.theme)], kNamings[static_cast<int>(p.naming)]);
+        if (p.terminal != m_preferences.terminal || themeChanged || p.naming != m_preferences.naming || p.panelSize != m_preferences.panelSize)
+            log::Info(L"settings: terminal {}, theme {}, output names {}, top panel size {}%", kTerminals[static_cast<int>(p.terminal)],
+                      kThemes[static_cast<int>(p.theme)], kNamings[static_cast<int>(p.naming)], p.panelSize);
         m_preferences = std::move(p);
         if (m_onPreferences)
             m_onPreferences(m_preferences);
         if (themeChanged)
             ApplyTheme();   // the callback has set the new theme
+    }
+
+    void SettingsWindow::OnPanelSizeScroll(WORD code)
+    {
+        // The value beside it follows the thumb; the size is kept (and saved) when the thumb lands,
+        // on a 10% step.
+        const int percent = panel::SizePercent(static_cast<int>(SendMessageW(m_panelSize, TBM_GETPOS, 0, 0)));
+        SetWindowTextW(m_panelSizeValue, PercentText(percent).c_str());
+        if (code == TB_THUMBTRACK)
+            return;
+        if (SendMessageW(m_panelSize, TBM_GETPOS, 0, 0) != percent)
+            SendMessageW(m_panelSize, TBM_SETPOS, TRUE, percent);
+        OnPreferenceChanged();
     }
 
     // ---- The tree --------------------------------------------------------------------------------
@@ -374,6 +409,10 @@ namespace sd
                 break;
             default: break;
             }
+            return 0;
+        case WM_HSCROLL:
+            if (reinterpret_cast<HWND>(lParam) == m_panelSize)
+                OnPanelSizeScroll(LOWORD(wParam));
             return 0;
         case WM_NOTIFY:
         {

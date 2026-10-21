@@ -274,8 +274,9 @@ namespace sd
             startup::ApplyAtLaunch();
             m_icon.reset(static_cast<HICON>(LoadImageW(m_instance, MAKEINTRESOURCEW(IDI_APPICON), IMAGE_ICON,
                                                        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR)));
-            // The ListView in the history window lives in comctl32 v6 (selected by app.manifest).
-            INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES };
+            // The ListView in the history window lives in comctl32 v6 (selected by app.manifest), the
+            // trackbar in Settings is a "bar" class.
+            INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_BAR_CLASSES };
             InitCommonControlsEx(&icc);
 
             WNDCLASSEXW wc{ sizeof(wc) };
@@ -334,6 +335,7 @@ namespace sd
             if (!m_island->Create())
                 return false;
             m_island->SetAppearance(m_appearance);
+            m_island->SetPanelSize(m_preferences.panelSize);
             // The Float shelf: the File actions wheel's Float slice, and where finished results can be carried.
             m_shelf = std::make_unique<Shelf>(m_instance, log::AppDataFolder() + L"\\shelf.json");
             if (!m_shelf->Create())
@@ -954,12 +956,15 @@ namespace sd
         }
 
         // The Settings window's other choices: the theme takes effect the next time a window opens,
-        // output names with the next output, the terminal with the next Terminal slice.
+        // output names with the next output, the terminal with the next Terminal slice, the top
+        // panel's size the next time it shows.
         void ApplyPreferences()
         {
             theme::SetChoice(m_preferences.theme);
             SetOutputNaming(m_preferences.naming);
             SetTerminalChoice(m_preferences.terminal, m_preferences.terminalCommand);
+            if (m_island)   // not yet at startup: Init passes the size on when it creates the panel
+                m_island->SetPanelSize(m_preferences.panelSize);
         }
 
         // Where outputs went, for the result's second line: "next to the originals", "to Desktop".

@@ -9,12 +9,26 @@ namespace sd::panel
     // The panel is drawn this much larger than the wheel at the same Size setting: at the wheel's own
     // scale its names and hint were too small to read at a glance, above all on 1440p screens.
     inline constexpr float kScale = 1.4f;
-    // Pixels per DIP for the panel, from the wheel's (theme::ScaleFor: DPI times the Size setting).
-    inline float Scale(float wheelScale) { return wheelScale * kScale; }
+
+    // Settings › Top panel size: a share of that size, 100% (as above) to 300% in 10% steps, saved
+    // as [Appearance] PanelSize in settings.ini. It is on top of the tray's Size setting.
+    inline constexpr int kSizeMinPercent = 100, kSizeMaxPercent = 300, kSizeStepPercent = 10;
+    // `percent` kept to that range and rounded to a step (a hand-edited 155 reads as 160).
+    int SizePercent(int percent);
+
+    // Pixels per DIP for the panel, from the wheel's (theme::ScaleFor: DPI times the Size setting)
+    // and the Top panel size.
+    inline float Scale(float wheelScale, int sizePercent = kSizeMinPercent)
+    {
+        return wheelScale * kScale * static_cast<float>(SizePercent(sizePercent)) / 100.f;
+    }
 
     inline constexpr float kMaxWidthDip = 720.f;    // the widest the panel gets (the window is this wide)
     inline constexpr float kScreenRoomDip = 8.f;    // never closer than this to the sides of the screen
     inline constexpr float kInsetDip = 8.f;         // panel edge to content
+    inline constexpr float kTopGapDip = 10.f;       // work-area top edge to the panel
+    inline constexpr float kPadDip = 24.f;          // transparent room around the panel for its shadow
+    inline constexpr float kMaxHeightDip = 72.f;    // the tallest the panel gets (a result with two lines)
     inline constexpr float kSwitcherHeightDip = 44.f;
     inline constexpr float kTabFontDip = 13.f;      // wheel names
     inline constexpr float kHintFontDip = 11.5f;    // "Scroll or Shift+1-4"
@@ -30,6 +44,13 @@ namespace sd::panel
     // The widest the panel's content may be at `scale` on a monitor whose work area is `workWidth`
     // pixels wide: kMaxWidthDip, or less on a narrow screen.
     float MaxContentWidth(float scale, float workWidth);
+
+    // `scale` (Scale with the Top panel size), made smaller where it would not fit a monitor whose
+    // work area is `workWidth` x `workHeight` pixels, but never smaller than `base` (Scale at 100%,
+    // the size before the slider). It fits when the switcher's tabs, with their full names (each
+    // name's width in DIPs in `namesDip`) and the smallest gaps, go across the screen, and the
+    // window with its shadow room reaches no lower than half way down it.
+    float FitScale(float scale, float base, const std::vector<float>& namesDip, float workWidth, float workHeight);
 
     struct Switcher
     {

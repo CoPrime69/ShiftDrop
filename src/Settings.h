@@ -69,8 +69,12 @@ namespace sd
         TerminalChoice terminal = TerminalChoice::WindowsTerminal;
         std::wstring terminalCommand;                        // Custom: a command line, {folder} for the folder
         OutputNaming naming = OutputNaming::Parentheses;     // [Output] Naming=parentheses|dash|underscore|subfolder
+        int panelSize = 100;                                 // [Appearance] PanelSize=100..300, percent (panel::SizePercent)
         bool operator==(const Preferences&) const = default;
     };
     Preferences LoadPreferences();
     void SavePreferences(const Preferences& preferences);
+    // The same for a given settings.ini (tests).
+    Preferences LoadPreferences(const std::wstring& path);
+    void SavePreferences(const Preferences& preferences, const std::wstring& path);
 }
