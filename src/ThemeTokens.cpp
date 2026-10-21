@@ -72,7 +72,8 @@ namespace sd::theme
             t.navSelected = White(0.06f);
             t.text = Rgb(kDarkText);
             t.subtleText = Rgb(kDarkText2);
-            t.faintText = Rgb(kDarkText3);
+            // Text 3 a step lighter, so hints read on the fields and controls too, not only on the window.
+            t.faintText = Rgb(0x949AA5);
             t.control = Rgb(0x2E3138);
             t.controlHover = Rgb(0x353A44);
             t.controlDown = Rgb(0x2A2D33);

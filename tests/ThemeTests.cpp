@@ -72,7 +72,7 @@ TEST(Theme, WindowTextReadsInBothThemes)
         const auto t = TokensFor(dark);
         const std::string theme = dark ? "dark" : "light";
         for (const auto& [name, back] : std::vector<std::pair<std::string, D2D1_COLOR_F>>{
-                 { "window", t.window }, { "card", t.card }, { "selected item", Over(t.navSelected, t.window) } })
+                 { "window", t.window }, { "card", t.card }, { "control", t.control }, { "field", t.field } })
         {
             const auto what = theme + " " + name;
             EXPECT_READS(t.text, back, t.window, kText, what + " text");
@@ -81,8 +81,9 @@ TEST(Theme, WindowTextReadsInBothThemes)
             for (const auto& status : { t.ok, t.warn, t.error, t.info })
                 EXPECT_READS(status, back, t.window, kText, what + " status");
         }
-        EXPECT_READS(t.text, t.control, t.window, kText, theme + " button");
-        EXPECT_READS(t.text, t.field, t.window, kText, theme + " field");
+        // The selected navigation item holds a name and an icon.
+        EXPECT_READS(t.text, Over(t.navSelected, t.window), t.window, kText, theme + " selected item");
+        EXPECT_READS(t.subtleText, Over(t.navSelected, t.window), t.window, kText, theme + " selected item's detail");
         EXPECT_READS(t.strongBorder, t.card, t.window, kMark, theme + " switch outline");
         EXPECT_READS(t.paperText, t.paper, t.window, kText, theme + " ink on paper");
         EXPECT_READS(t.paperFaint, t.paper, t.window, kText, theme + " hint on paper");
@@ -156,10 +157,16 @@ TEST(Theme, DialogColoursAreOpaqueAndRead)
                 const auto c = MakeDialog(dark, tones, background);
                 const auto what = std::format("{} {} {}", dark ? "dark" : "light", background == COLOR_WINDOW ? "window" : "button face", name);
                 EXPECT_EQ(c.dark, dark);
-                for (const COLORREF back : { c.background, c.field, c.card, c.navSelected })
+                const auto reads = [&](COLORREF text, COLORREF back) {
+                    EXPECT_GE(accent::Contrast(FromColorRef(text), FromColorRef(back)), kText)
+                        << what << std::format(": #{:06X} on #{:06X}", FromColorRef(text), FromColorRef(back));
+                };
+                for (const COLORREF back : { c.background, c.field, c.card })
                     for (const COLORREF text : { c.text, c.subtleText, c.muted, c.problem, c.ok, c.warn, c.info, c.accentText })
-                        EXPECT_GE(accent::Contrast(FromColorRef(text), FromColorRef(back)), kText)
-                            << what << std::format(": #{:06X} on #{:06X}", FromColorRef(text), FromColorRef(back));
+                        reads(text, back);
+                // The selected navigation item holds a name and an icon.
+                reads(c.text, c.navSelected);
+                reads(c.subtleText, c.navSelected);
                 // Lines show on the card they edge.
                 EXPECT_NE(c.cardLine, c.card) << what;
                 EXPECT_NE(c.divider, c.card) << what;
