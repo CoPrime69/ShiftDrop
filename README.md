@@ -150,8 +150,8 @@ file is never replaced.
 - **RAR** files can be extracted and converted to other archive formats, but not created.
 - **Pages** files can be read only when they carry the preview PDF most of them have. ShiftDrop
   can't write Pages files.
-- **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists. Pictures and
-  page layout are not kept. There is no PDF to XLSX or PDF to PPTX.
+- **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists, and the
+  pictures between the paragraphs. Page layout is not kept. There is no PDF to XLSX or PDF to PPTX.
 - **No background removal**, or anything else that needs a machine-learning model.
 - **H.264 video** is encoded with your graphics card's encoder, Windows' Media Foundation encoder or
   OpenH264. x264 and x265 are GPL, so they aren't included.

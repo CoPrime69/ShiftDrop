@@ -642,6 +642,311 @@ TEST(TextLayout, MarkdownHeadingsParagraphsAndLists)
     EXPECT_EQ(VisibleChars(second), 7u);
 }
 
+namespace
+{
+    // A column of `count` lines of body text, `width` wide, from baseline `top` down, 12 pt apart.
+    PageLines Column(double x, double width, double top, int count, const std::wstring& word)
+    {
+        PageLines lines;
+        for (int i = 0; i < count; ++i)
+            lines.push_back({ x, top - 12.0 * i, x + width, 10, std::format(L"{} {}", word, i + 1) });
+        return lines;
+    }
+
+    // `a` and `b` taken in turns, the way a PDF that draws row by row (or OCR) lists them.
+    PageLines Interleave(const PageLines& a, const PageLines& b)
+    {
+        PageLines out;
+        for (size_t i = 0; i < std::max(a.size(), b.size()); ++i)
+        {
+            if (i < a.size())
+                out.push_back(a[i]);
+            if (i < b.size())
+                out.push_back(b[i]);
+        }
+        return out;
+    }
+
+    std::wstring Runs(const std::vector<PageLines>& runs)
+    {
+        std::wstring s;
+        for (const auto& run : runs)
+        {
+            s += L"[";
+            for (size_t i = 0; i < run.size(); ++i)
+                s += (i ? L"," : L"") + run[i].text;
+            s += L"]";
+        }
+        return s;
+    }
+
+    std::wstring Joined(const std::wstring& word, int from, int to)
+    {
+        std::wstring s;
+        for (int i = from; i <= to; ++i)
+            s += (i > from ? L" " : L"") + std::format(L"{} {}", word, i);
+        return s;
+    }
+}
+
+TEST(TextLayout, TwoColumnsReadLeftThenRight)
+{
+    // A title across both columns, then two columns drawn row by row.
+    PageLines page{ { 72, 760, 540, 18, L"Title across both" } };
+    const auto both = Interleave(Column(72, 220, 720, 12, L"left"), Column(320, 220, 720, 12, L"right"));
+    page.insert(page.end(), both.begin(), both.end());
+    double left = 0, right = 0;
+    ASSERT_TRUE(FindGutter(page, left, right));
+    EXPECT_DOUBLE_EQ(left, 292);
+    EXPECT_DOUBLE_EQ(right, 320);
+    const auto runs = ReadingOrder(page);
+    ASSERT_EQ(runs.size(), 3u) << Narrow(Runs(runs));
+    EXPECT_EQ(runs[0].size(), 1u);
+    EXPECT_EQ(runs[1].front().text, L"left 1");
+    EXPECT_EQ(runs[1].back().text, L"left 12");
+    EXPECT_EQ(runs[2].front().text, L"right 1");
+    EXPECT_EQ(Narrow(ToMarkdown({ page })),
+              "# Title across both\n\n" + Narrow(Joined(L"left", 1, 12)) + "\n\n" + Narrow(Joined(L"right", 1, 12)) + "\n");
+    const auto text = Narrow(ToText({ page }));
+    EXPECT_TRUE(text.starts_with("Title across both\r\n\r\nleft 1\r\nleft 2\r\n")) << text;
+    EXPECT_NE(text.find("left 12\r\n\r\nright 1\r\nright 2\r\n"), std::string::npos) << text;
+}
+
+TEST(TextLayout, FullWidthHeadingSplitsTheColumnsIntoBands)
+{
+    // Top band, a heading across the page, bottom band; drawn right column first, then the heading,
+    // then the left column, bottom to top.
+    auto topLeft = Column(72, 220, 720, 6, L"a"), topRight = Column(320, 220, 720, 6, L"b");
+    auto lowLeft = Column(72, 220, 600, 6, L"c"), lowRight = Column(320, 220, 600, 6, L"d");
+    PageLines page;
+    page.insert(page.end(), topRight.begin(), topRight.end());
+    page.insert(page.end(), lowRight.begin(), lowRight.end());
+    page.push_back({ 72, 630, 540, 14, L"Results across the page" });
+    page.insert(page.end(), lowLeft.rbegin(), lowLeft.rend());
+    page.insert(page.end(), topLeft.rbegin(), topLeft.rend());
+    const auto runs = ReadingOrder(page);
+    ASSERT_EQ(runs.size(), 5u) << Narrow(Runs(runs));
+    EXPECT_EQ(runs[0].front().text, L"a 1");
+    EXPECT_EQ(runs[0].back().text, L"a 6");
+    EXPECT_EQ(runs[1].front().text, L"b 1");
+    EXPECT_EQ(runs[2].front().text, L"Results across the page");
+    EXPECT_EQ(runs[3].front().text, L"c 1");
+    EXPECT_EQ(runs[4].front().text, L"d 1");
+    EXPECT_EQ(runs[4].back().text, L"d 6");
+    EXPECT_EQ(Narrow(ToMarkdown({ page })), Narrow(Joined(L"a", 1, 6) + L"\n\n" + Joined(L"b", 1, 6) + L"\n\n## Results across the page\n\n" +
+                                                   Joined(L"c", 1, 6) + L"\n\n" + Joined(L"d", 1, 6) + L"\n"));
+}
+
+TEST(TextLayout, ThreeColumns)
+{
+    auto page = Interleave(Column(72, 150, 720, 10, L"one"), Column(246, 150, 720, 10, L"two"));
+    const auto third = Column(420, 150, 720, 10, L"three");
+    page.insert(page.begin() + 5, third.begin(), third.end());
+    const auto runs = ReadingOrder(page);
+    ASSERT_EQ(runs.size(), 3u) << Narrow(Runs(runs));
+    EXPECT_EQ(runs[0].front().text, L"one 1");
+    EXPECT_EQ(runs[1].front().text, L"two 1");
+    EXPECT_EQ(runs[2].front().text, L"three 1");
+    EXPECT_EQ(runs[2].back().text, L"three 10");
+}
+
+TEST(TextLayout, SingleColumnPagesKeepTheirOrder)
+{
+    double left = 0, right = 0;
+    // Full-width text with a page number in the middle of the foot.
+    auto page = Column(72, 468, 720, 15, L"line");
+    page.push_back({ 300, 40, 312, 9, L"3" });
+    EXPECT_FALSE(FindGutter(page, left, right));
+    ASSERT_EQ(ReadingOrder(page).size(), 1u);
+    EXPECT_EQ(ReadingOrder(page)[0].back().text, L"3");
+
+    // A table whose rows came out as one line each (label, a wide gap, value): every row crosses.
+    PageLines table;
+    for (int i = 0; i < 10; ++i)
+        table.push_back({ 72, 700.0 - 14 * i, 540, 10, std::format(L"Label {} value {}", i, i) });
+    EXPECT_FALSE(FindGutter(table, left, right));
+
+    // Text in the left half only, ragged: nothing on the other side of any gap.
+    PageLines half;
+    for (int i = 0; i < 10; ++i)
+        half.push_back({ 72, 700.0 - 12 * i, 200.0 + (i % 3) * 30, 10, L"short line" });
+    EXPECT_FALSE(FindGutter(half, left, right));
+
+    // One block of text above another, offset to the right: not side by side, so not columns.
+    auto stacked = Column(72, 220, 720, 6, L"upper");
+    const auto lower = Column(320, 220, 500, 6, L"lower");
+    stacked.insert(stacked.end(), lower.begin(), lower.end());
+    EXPECT_FALSE(FindGutter(stacked, left, right));
+
+    // Short labels on the left, long values on the right, listed separately: a form, not columns.
+    PageLines form;
+    for (int i = 0; i < 8; ++i)
+        form.push_back({ 72, 700.0 - 14 * i, i == 0 ? 250.0 : 100.0 + (i % 2) * 10, 10, L"Label" });
+    for (int i = 0; i < 8; ++i)
+        form.push_back({ 300, 700.0 - 14 * i, 540, 10, L"A value that fills the line" });
+    EXPECT_FALSE(FindGutter(form, left, right));
+}
+
+TEST(TextLayout, PicturesGoBetweenTheirParagraphs)
+{
+    // One column: a picture between two paragraphs, another under everything.
+    PageLines page{
+        { 72, 700, 540, 10, L"First paragraph" }, { 72, 688, 540, 10, L"goes on." },
+        { 72, 500, 540, 10, L"Second paragraph." },
+    };
+    std::vector<PagePicture> pictures{ { 72, 520, 300, 660, 7 }, { 72, 100, 300, 300, 8 } };
+    auto parts = ToMarkdownParts({ page }, { pictures });
+    ASSERT_EQ(parts.size(), 4u);
+    EXPECT_EQ(Narrow(parts[0].markdown), "First paragraph goes on.\n");
+    EXPECT_EQ(parts[1].picture, 7);
+    EXPECT_TRUE(parts[1].markdown.empty());
+    EXPECT_EQ(Narrow(parts[2].markdown), "Second paragraph.\n");
+    EXPECT_EQ(parts[3].picture, 8);
+    // Without pictures, the parts are exactly ToMarkdown.
+    parts = ToMarkdownParts({ page }, {});
+    ASSERT_EQ(parts.size(), 1u);
+    EXPECT_EQ(parts[0].markdown, ToMarkdown({ page }));
+
+    // Two columns: a picture inside the right column, and one as wide as both under the first band.
+    auto columns = Interleave(Column(72, 220, 720, 22, L"left"), Column(320, 220, 720, 5, L"right"));
+    const auto rest = Column(320, 220, 520, 6, L"more");
+    columns.insert(columns.end(), rest.begin(), rest.end());
+    const auto foot = Column(72, 468, 400, 3, L"foot");
+    columns.insert(columns.end(), foot.begin(), foot.end());
+    std::vector<PagePicture> placed{ { 320, 540, 540, 640, 1 }, { 72, 420, 540, 450, 2 } };
+    parts = ToMarkdownParts({ columns }, { placed });
+    ASSERT_EQ(parts.size(), 5u);
+    EXPECT_EQ(Narrow(parts[0].markdown), Narrow(Joined(L"left", 1, 22) + L"\n\n" + Joined(L"right", 1, 5) + L"\n"));
+    EXPECT_EQ(parts[1].picture, 1);
+    EXPECT_EQ(Narrow(parts[2].markdown), Narrow(Joined(L"more", 1, 6) + L"\n"));
+    EXPECT_EQ(parts[3].picture, 2);
+    EXPECT_EQ(Narrow(parts[4].markdown), Narrow(Joined(L"foot", 1, 3) + L"\n"));
+}
+
+TEST(PdfText, TwoColumnPdfReadsLeftColumnFirst)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    const auto path = dir / L"paper.pdf";
+    // The right column is drawn before the left one.
+    std::string content = "BT /F1 18 Tf 72 740 Td (A Paper Title Across The Page) Tj ET\n";
+    for (const char* side : { "Right", "Left" })
+    {
+        const int x = side[0] == 'R' ? 320 : 72;
+        content += std::format("BT /F1 10 Tf {} 700 Td 12 TL", x);
+        for (int i = 1; i <= 10; ++i)
+            content += std::format(" ({} column line {} with words) '", side, i);
+        content += " ET\n";
+    }
+    WriteTextPdf(path, { content });
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    const auto md = runner.Run(recipes.Get("pdf-to-md"), 0, path, {});
+    ASSERT_TRUE(md.ok) << Narrow(md.error);
+    const auto text = ReadAll(md.output);
+    EXPECT_TRUE(text.starts_with("# A Paper Title Across The Page\n\nLeft column line 1 with words Left column line 2")) << text;
+    EXPECT_NE(text.find("Left column line 10 with words\n\nRight column line 1 with words"), std::string::npos) << text;
+}
+
+TEST(PdfText, KeepsPicturesOnceWithTheirPlaces)
+{
+    TempDir dir;
+    const auto path = dir / L"pictures.pdf";
+    Samples photo{ 32, 24, 3, {} };
+    for (uint32_t i = 0; i < photo.width * photo.height; ++i)
+        photo.data.insert(photo.data.end(), { uint8_t(200), uint8_t(i % 256), uint8_t(40) });
+    std::string jpeg;
+    ASSERT_HRESULT_SUCCEEDED(EncodeJpeg(photo, 90, jpeg));
+    std::string checker;   // 24 x 16, 1 bit per pixel, 3 bytes a row
+    for (int y = 0; y < 16; ++y)
+        checker += std::string(3, static_cast<char>(y % 2 ? 0x55 : 0xAA));
+    std::string alpha;
+    for (int i = 0; i < 20 * 20; ++i)
+        alpha += static_cast<char>(i % 20 < 10 ? 0 : 255);
+    const std::vector<TestImage> images{
+        { "/Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceRGB /BitsPerComponent 8", RgbRamp(40, 30), true },
+        { "/Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8", std::string(64, '\x80'), true },
+        { "/Type /XObject /Subtype /Image /Width 32 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", jpeg },
+        { "/Type /XObject /Subtype /Image /Width 24 /Height 16 /ColorSpace [/Indexed /DeviceRGB 1 <FF0000 0000FF>] /BitsPerComponent 1",
+          checker, true },
+        { "/Type /XObject /Subtype /Image /Width 20 /Height 20 /ColorSpace /DeviceGray /BitsPerComponent 8", std::string(400, '\x60'), true, 5 },
+        { "/Type /XObject /Subtype /Image /Width 20 /Height 20 /ColorSpace /DeviceGray /BitsPerComponent 8", alpha, true },
+    };
+    WritePicturePdf(path,
+                    { "BT /F1 12 Tf 72 700 Td (Before the picture.) Tj ET\n"
+                      "q 300 0 0 225 72 420 cm /Im0 Do Q\n"
+                      "q 40 0 0 40 500 700 cm /Im1 Do Q\n"   // a tiny decoration
+                      "BT /F1 12 Tf 72 380 Td (After the picture.) Tj ET",
+                      "q 300 0 0 225 72 420 cm /Im0 Do Q\n"   // the same picture again
+                      "q 160 0 0 120 72 600 cm /Im2 Do Q\n"
+                      "q 96 0 0 64 300 600 cm /Im3 Do Q\n"
+                      "q 100 0 0 100 72 300 cm /Im4 Do Q\n"
+                      "BT /F1 12 Tf 72 200 Td (Page two text.) Tj ET" },
+                    images);
+    PdfText text;
+    std::wstring error;
+    ASSERT_TRUE(ReadPdfText(path, false, {}, {}, text, error, true)) << Narrow(error);
+    ASSERT_EQ(text.pictures.size(), 2u);
+    ASSERT_EQ(text.pictures[0].size(), 1u);   // the decoration is left out
+    ASSERT_EQ(text.pictures[1].size(), 3u);   // the repeat is left out
+    ASSERT_EQ(text.images.size(), 4u);
+    const auto& first = text.pictures[0][0];
+    EXPECT_DOUBLE_EQ(first.left, 72);
+    EXPECT_DOUBLE_EQ(first.bottom, 420);
+    EXPECT_DOUBLE_EQ(first.right, 372);
+    EXPECT_DOUBLE_EQ(first.top, 645);
+
+    // The Flate picture as a PNG with its pixels intact.
+    const auto& ramp = text.images[static_cast<size_t>(first.id)];
+    EXPECT_EQ(ramp.width, 40u);
+    EXPECT_EQ(ramp.height, 30u);
+    EXPECT_EQ(ramp.bytes.substr(1, 3), "PNG");
+    Samples back;
+    ASSERT_HRESULT_SUCCEEDED(DecodeJpeg(ramp.bytes, back));   // WIC reads any format it knows
+    ASSERT_EQ(back.channels, 3u);
+    const uint8_t* p = &back.data[(3 * 40 + 5) * 3];
+    EXPECT_EQ(p[0], 30);
+    EXPECT_EQ(p[1], 24);
+    EXPECT_EQ(p[2], 128);
+    // The JPEG passes through as stored.
+    EXPECT_EQ(text.images[static_cast<size_t>(text.pictures[1][0].id)].bytes, jpeg);
+    // Indexed, 1 bit: red and blue.
+    const auto& indexed = text.images[static_cast<size_t>(text.pictures[1][1].id)];
+    ASSERT_HRESULT_SUCCEEDED(DecodeJpeg(indexed.bytes, back));
+    EXPECT_EQ(back.data[0], 0);      // first pixel of row 0 (0xAA: bit 1) is blue
+    EXPECT_EQ(back.data[2], 255);
+    EXPECT_EQ(back.data[3], 255);    // the next one red
+    EXPECT_EQ(back.data[5], 0);
+    // A soft mask becomes alpha: an RGBA PNG (colour type 6).
+    const auto& masked = text.images[static_cast<size_t>(text.pictures[1][2].id)];
+    ASSERT_GT(masked.bytes.size(), 26u);
+    EXPECT_EQ(masked.bytes[25], 6);
+
+    // The pictures sit between the paragraphs they sat between.
+    const auto parts = ToMarkdownParts(text.pages, text.pictures);
+    ASSERT_GE(parts.size(), 3u);
+    EXPECT_EQ(Narrow(parts[0].markdown), "Before the picture.\n");
+    EXPECT_EQ(parts[1].picture, first.id);
+    EXPECT_EQ(Narrow(parts[2].markdown), "After the picture.\n");
+}
+
+TEST(PdfText, PageSizedScanUnderItsTextLayerIsNotAPicture)
+{
+    TempDir dir;
+    const auto path = dir / L"scan.pdf";
+    std::string content = "q 612 0 0 792 0 0 cm /Im0 Do Q\nBT 3 Tr /F1 12 Tf 72 700 Td 14 TL";
+    for (int i = 0; i < 8; ++i)
+        content += " (Scanned words on a line) '";
+    content += " ET";
+    WritePicturePdf(path, { content },
+                    { { "/Type /XObject /Subtype /Image /Width 40 /Height 30 /ColorSpace /DeviceRGB /BitsPerComponent 8", RgbRamp(40, 30), true } });
+    PdfText text;
+    std::wstring error;
+    ASSERT_TRUE(ReadPdfText(path, false, {}, {}, text, error, true)) << Narrow(error);
+    ASSERT_EQ(text.pictures.size(), 1u);
+    EXPECT_TRUE(text.pictures[0].empty());
+    EXPECT_TRUE(text.images.empty());
+}
+
 // ---- Windows.Data.Pdf (runs where the renderer is compiled in: the MSVC build) -------------------
 
 TEST(PdfRender, RendersAPage)

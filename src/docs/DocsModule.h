@@ -21,7 +21,7 @@ namespace sd::docs
         Html,
         Rtf,
         Rtfd,    // a folder: TXT.rtf plus its pictures
-        Pdf,     // reflowed text (the PDF module's text reader); only to DOCX, EPUB and HTML
+        Pdf,     // reflowed text and pictures (the PDF module's reader); only to DOCX, EPUB and HTML
         Pages,   // Apple Pages: through the preview PDF older .pages files carry
     };
     DocInput InputOf(const std::wstring& path);

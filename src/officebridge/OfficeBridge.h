@@ -75,7 +75,7 @@ namespace sd::office
         bool cancelled = false;
         std::wstring error;
     };
-    // Microsoft Office through COM. Call on an STA thread (JobLane::Shell).
+    // Microsoft Office through COM. Call on an STA thread (JobLane::Office).
     Outcome ConvertWithOffice(Backend app, const Job& job);
     // LibreOffice: converts to PDF in a temp folder and copies the result into job.output.
     Outcome ConvertWithLibreOffice(const std::wstring& soffice, const Job& job);
