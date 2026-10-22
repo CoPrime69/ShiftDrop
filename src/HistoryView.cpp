@@ -76,4 +76,94 @@ namespace sd::history
     {
         return (run.status == status::Done || run.status == status::Partial) && run.done > 0;
     }
+    std::wstring FilesText(const RunRecord& run)
+    {
+        if (run.files.empty())
+            return run.recipeLabel;
+        if (run.files.size() == 1)
+            return run.files.front();
+        return std::format(L"{} and {} more", run.files.front(), run.files.size() - 1);
+    }
+
+    bool ParseStarted(std::wstring_view started, LocalTime& out)
+    {
+        // "YYYY-MM-DD HH:MM", seconds optional.
+        const auto number = [&](size_t at, size_t length, int& value) {
+            if (at + length > started.size())
+                return false;
+            value = 0;
+            for (size_t i = at; i < at + length; ++i)
+            {
+                if (started[i] < L'0' || started[i] > L'9')
+                    return false;
+                value = value * 10 + (started[i] - L'0');
+            }
+            return true;
+        };
+        int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+        if (started.size() < 16 || started[4] != L'-' || started[7] != L'-' || started[10] != L' ' || started[13] != L':' ||
+            !number(0, 4, y) || !number(5, 2, mo) || !number(8, 2, d) || !number(11, 2, h) || !number(14, 2, mi))
+            return false;
+        const std::chrono::year_month_day day{ std::chrono::year{ y }, std::chrono::month{ static_cast<unsigned>(mo) },
+                                               std::chrono::day{ static_cast<unsigned>(d) } };
+        if (!day.ok() || h > 23 || mi > 59)
+            return false;
+        out = { day, h, mi };
+        return true;
+    }
+
+    namespace
+    {
+        constexpr const wchar_t* kMonths[] = { L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun", L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec" };
+        constexpr const wchar_t* kMonthNames[] = { L"January", L"February", L"March",     L"April",   L"May",      L"June",
+                                                   L"July",    L"August",   L"September", L"October", L"November", L"December" };
+        constexpr const wchar_t* kWeekdays[] = { L"Sunday", L"Monday", L"Tuesday", L"Wednesday", L"Thursday", L"Friday", L"Saturday" };
+
+        int DaysBetween(std::chrono::year_month_day from, std::chrono::year_month_day to)
+        {
+            return static_cast<int>((std::chrono::sys_days{ to } - std::chrono::sys_days{ from }).count());
+        }
+    }
+
+    std::wstring WhenText(std::wstring_view started, const LocalTime& now)
+    {
+        LocalTime t;
+        if (!ParseStarted(started, t))
+            return std::wstring(started);
+        const int days = DaysBetween(t.day, now.day);
+        const int month = static_cast<int>(static_cast<unsigned>(t.day.month())) - 1;
+        const unsigned dayOfMonth = static_cast<unsigned>(t.day.day());
+        if (days == 0)
+        {
+            const int minutes = (now.hour * 60 + now.minute) - (t.hour * 60 + t.minute);
+            if (minutes < 1)
+                return L"Just now";
+            if (minutes < 60)
+                return std::format(L"{} min ago", minutes);
+            return std::format(L"{} h ago", minutes / 60);
+        }
+        if (days == 1)
+            return std::format(L"Yesterday {:02}:{:02}", t.hour, t.minute);
+        if (t.day.year() == now.day.year())
+            return std::format(L"{} {} {:02}:{:02}", dayOfMonth, kMonths[month], t.hour, t.minute);
+        return std::format(L"{} {} {}", dayOfMonth, kMonths[month], static_cast<int>(t.day.year()));
+    }
+
+    std::wstring DayTitle(std::wstring_view started, std::chrono::year_month_day today)
+    {
+        LocalTime t;
+        if (!ParseStarted(started, t))
+            return L"Earlier";
+        const int days = DaysBetween(t.day, today);
+        if (days == 0)
+            return L"Today";
+        if (days == 1)
+            return L"Yesterday";
+        const std::chrono::weekday weekday{ std::chrono::sys_days{ t.day } };
+        const int month = static_cast<int>(static_cast<unsigned>(t.day.month())) - 1;
+        auto title = std::format(L"{} {} {}", kWeekdays[weekday.c_encoding()], static_cast<unsigned>(t.day.day()), kMonthNames[month]);
+        if (t.day.year() != today.year())
+            title += std::format(L" {}", static_cast<int>(t.day.year()));
+        return title;
+    }
 }

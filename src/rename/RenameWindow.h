@@ -16,7 +16,7 @@ namespace sd
     // the list, and Rename stays off until every name works, so nothing is renamed halfway or
     // overwritten. Rename hands the names to `onConfirm` (main.cpp renames them on the shell thread);
     // Cancel or Esc closes it. Files are listed (and numbered) by name, the way Explorer sorts them.
-    // Standard controls in a DialogWindow, like Settings.
+    // Standard controls drawn by the kit (DialogWindow), like Settings (App Windows page).
     class RenameWindow final : public DialogWindow
     {
     public:
@@ -30,9 +30,10 @@ namespace sd
     private:
         LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam) override;
         void CreateChildren() override;
-        void OnThemeChanged() override;
-        COLORREF StaticTextColor(HWND control) const override;
         void Layout() override;
+        void PaintSurface(ControlKit& kit, const D2D1_RECT_F& client) override;
+        void DrawRow(HWND list, int row, ControlKit& kit, const D2D1_RECT_F& r, bool selected) override;
+        void InsertField(const wchar_t* field);   // a {field} button: typed into the pattern where the caret is
         void Update();                 // a field changed: plan again and refresh the list
         void OnRename();
         void Close();
@@ -44,11 +45,14 @@ namespace sd
         std::vector<rename::Item> m_items;
         rename::Plan m_plan;
 
-        HWND m_changeLabel = nullptr, m_changeName = nullptr, m_changeWhole = nullptr;   // children are destroyed with m_hwnd
-        HWND m_patternLabel = nullptr, m_pattern = nullptr, m_fields = nullptr;
+        HWND m_heading = nullptr;   // children are destroyed with m_hwnd
+        HWND m_patternLabel = nullptr, m_pattern = nullptr;
+        std::vector<HWND> m_fields;   // {name} {n} {date} {ext} {folder}
         HWND m_findLabel = nullptr, m_find = nullptr, m_replaceLabel = nullptr, m_replace = nullptr;
-        HWND m_startLabel = nullptr, m_start = nullptr, m_matchCase = nullptr;
+        HWND m_startLabel = nullptr, m_start = nullptr, m_changeLabel = nullptr, m_changeName = nullptr, m_changeWhole = nullptr, m_matchCase = nullptr;
+        HWND m_previewLabel = nullptr, m_count = nullptr;
         HWND m_list = nullptr, m_status = nullptr, m_rename = nullptr, m_cancel = nullptr;
+        RECT m_listCard{};
         bool m_filling = false;   // our own SetWindowText calls: not the user's
     };
 }

@@ -114,6 +114,14 @@ namespace sd
         // glyph, title, a line under it, a count at the end, and a chevron.
         void DrawExpander(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view title, std::wstring_view detail, std::wstring_view trailing,
                           bool open, ControlState s);
+        // One row of a list (History, Rename, the inspector, a question's options): the selected row
+        // filled with the accent's bar at its start (dimmer while the list hasn't the focus), the
+        // hovered one lightly, and the focus ring around the focused one. The window draws its text.
+        void DrawListItem(const D2D1_RECT_F& r, bool selected, bool hot, bool focused, bool active = true);
+        // A small pill that names a state ("Undone", "Failed", "already exists"): `text` in `ink` on a
+        // tint of it, and how wide it is.
+        void DrawPill(const D2D1_RECT_F& r, std::wstring_view text, const D2D1_COLOR_F& ink);
+        float PillWidth(std::wstring_view text);
         // A small picture of the wheel: `tiles` placed where the real wheel places them
         // (keyboard/WheelLayout.h), in the wheel's own colours (`palette`), tile `hot` in the accent,
         // and `centre` over `detail` in the middle.

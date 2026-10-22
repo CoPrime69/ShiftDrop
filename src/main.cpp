@@ -47,6 +47,7 @@
 #include "sandbox/Sandbox.h"
 #include "Features.h"
 #include "SettingsWindow.h"
+#include "AskWindow.h"
 #include "ocr/Ocr.h"
 #include "rename/RenameWindow.h"
 #include "shelf/ShelfWindow.h"
@@ -292,7 +293,7 @@ namespace sd
             if (!m_hwnd)
                 return false;
             m_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
-            ask::InstallUi();   // jobs' questions (an archive's password...) are shown on this thread
+            ask::InstallUi(QuestionWindows(m_instance));   // jobs' questions (an archive's password...) are shown on this thread
 
             m_recipes.Load(m_registry, RecipesFolder());
             m_codecs = std::make_shared<const ImageCodecs>();

@@ -278,6 +278,7 @@ add_executable(ShiftDrop WIN32
   src/Theme.cpp
   src/Tray.cpp
   src/DialogWindow.cpp   # the frame of Settings, History, Rename and the inspector
+  src/AskWindow.cpp      # the question window: a password, how loud, print every row?
   src/EditorFrame.cpp    # the frame of the PDF, picture and video/audio editors
   src/HistoryWindow.cpp
   src/SettingsWindow.cpp

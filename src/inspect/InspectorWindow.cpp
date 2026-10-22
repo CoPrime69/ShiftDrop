@@ -28,12 +28,12 @@ namespace sd::inspect
     namespace
     {
         constexpr wchar_t kClass[] = L"" SD_NAME L".Inspector";
-        constexpr int kIdTabs = 100, kIdSearch = 101, kIdList = 102, kIdStatus = 103;
+        constexpr int kIdTab = 100, kIdSearch = 90, kIdList = 91;   // a file's tab is kIdTab + its place
         constexpr int kCmdCopyValue = 1, kCmdCopyField = 2, kCmdCopyAll = 3;
         constexpr UINT kMsgRead = WM_APP + 1;   // wParam: file index, lParam: FileMetadata*, owned by the receiver
 
-        // DIPs, scaled by the window's DPI.
-        constexpr int kMargin = 10, kGap = 6, kSearchH = 24, kStatusH = 18, kTabsH = 28;
+        // DIPs (App Windows page), scaled by the window's DPI.
+        constexpr int kMargin = 20, kGap = 8, kSearchH = 32, kStatusH = 18, kTabsH = 38, kRowH = 32, kFieldW = 190;
 
         // A ListView row is one line: line breaks in a value (comments, XMP) show as a return mark.
         std::wstring OneLine(const std::wstring& value)
@@ -45,7 +45,7 @@ namespace sd::inspect
                 if (value[i] == L'\r')
                     continue;
                 if (value[i] == L'\n')
-                    out += L" ↵ ";
+                    out += L" \u21B5 ";
                 else
                     out += value[i];
             }
@@ -66,7 +66,8 @@ namespace sd::inspect
             InspectorWindow(std::vector<std::wstring> files, std::shared_ptr<const FfmpegEngine> ffmpeg)
                 // In light mode the classic "dialog" face, like the history window.
                 : DialogWindow(GetModuleHandleW(nullptr),
-                               { .className = kClass, .width = 620, .height = 560, .minWidth = 360, .minHeight = 260, .lightBackground = COLOR_BTNFACE }),
+                               { .className = kClass, .width = 640, .height = 600, .minWidth = 380, .minHeight = 300, .lightBackground = COLOR_BTNFACE,
+                                 .kitFont = true }),
                   m_paths(std::move(files)), m_ffmpeg(std::move(ffmpeg))
             {
                 m_files.resize(m_paths.size());
@@ -103,6 +104,8 @@ namespace sd::inspect
                 if (msg == WM_GETDLGCODE && hwnd == self->m_search)
                     return DefSubclassProc(hwnd, msg, wParam, lParam) | DLGC_WANTALLKEYS;
                 // (Ctrl+C and Ctrl+A arrive as characters 3 and 1; the search box keeps its own.)
+                if (msg == WM_GETDLGCODE)
+                    return DefSubclassProc(hwnd, msg, wParam, lParam) | DLGC_WANTARROWS | DLGC_WANTTAB;
                 if (msg == WM_CHAR && (wParam == VK_ESCAPE || wParam == VK_RETURN || wParam == VK_TAB ||
                                        (ctrl && (wParam == 6 || (hwnd == self->m_list && (wParam == 3 || wParam == 1))))))
                     return 0;   // handled on WM_KEYDOWN (no beep, no stray characters)
@@ -121,7 +124,26 @@ namespace sd::inspect
                     }
                     if (wParam == VK_TAB)
                     {
-                        SetFocus(hwnd == self->m_search ? self->m_list : self->m_search);
+                        // Search, the list, the file's tab (with several files), and round again.
+                        const HWND tab = self->m_tabs.size() > 1 ? self->m_tabs[self->m_tab] : nullptr;
+                        HWND next = hwnd == self->m_search ? self->m_list : hwnd == self->m_list && tab ? tab : self->m_search;
+                        if (GetKeyState(VK_SHIFT) & 0x8000)
+                            next = hwnd == self->m_search ? (tab ? tab : self->m_list) : hwnd == self->m_list ? self->m_search : self->m_list;
+                        SetFocus(next);
+                        return 0;
+                    }
+                    if ((wParam == VK_LEFT || wParam == VK_RIGHT) && std::find(self->m_tabs.begin(), self->m_tabs.end(), hwnd) != self->m_tabs.end())
+                    {
+                        // The arrow keys move between the files' tabs, as in a tab control.
+                        const size_t count = self->m_tabs.size();
+                        self->SelectTab((self->m_tab + (wParam == VK_LEFT ? count - 1 : 1)) % count);
+                        SetFocus(self->m_tabs[self->m_tab]);
+                        return 0;
+                    }
+                    if (ctrl && (wParam == VK_NEXT || wParam == VK_PRIOR) && self->m_tabs.size() > 1)
+                    {
+                        const size_t count = self->m_tabs.size();
+                        self->SelectTab((self->m_tab + (wParam == VK_PRIOR ? count - 1 : 1)) % count);
                         return 0;
                     }
                     if (hwnd == self->m_search && (wParam == VK_DOWN || wParam == VK_RETURN))
@@ -147,73 +169,95 @@ namespace sd::inspect
 
             void CreateChildren() override
             {
-                m_tabs = Control(WC_TABCONTROLW, L"", WS_TABSTOP | WS_CLIPSIBLINGS | TCS_SINGLELINE | TCS_FOCUSNEVER, kIdTabs);
-                for (size_t i = 0; i < m_paths.size(); ++i)
-                {
-                    auto name = FileName(m_paths[i]);
-                    TCITEMW item{};
-                    item.mask = TCIF_TEXT;
-                    item.pszText = name.data();
-                    TabCtrl_InsertItem(m_tabs, static_cast<int>(i), &item);
-                }
-                if (m_paths.size() < 2)
-                    ShowWindow(m_tabs, SW_HIDE);   // tabs only for several files
-                m_search = Control(WC_EDITW, L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdSearch, WS_EX_CLIENTEDGE);
-                // TRUE: the hint stays while the box has the focus and is empty.
-                SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search fields and values (Ctrl+F)"));
-                m_list = Control(WC_LISTVIEWW, L"", WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, kIdList);
-                ListView_SetExtendedListViewStyle(m_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP | LVS_EX_INFOTIP);
-                const wchar_t* titles[] = { L"Field", L"Value" };
-                for (int i = 0; i < 2; ++i)
-                {
-                    LVCOLUMNW col{};
-                    col.mask = LVCF_TEXT | LVCF_SUBITEM;
-                    col.pszText = const_cast<wchar_t*>(titles[i]);
-                    col.iSubItem = i;
-                    ListView_InsertColumn(m_list, i, &col);
-                }
+                // A tab per file, only for several files.
+                if (m_paths.size() > 1)
+                    for (size_t i = 0; i < m_paths.size(); ++i)
+                    {
+                        const HWND tab = KitButton(Look::Tab, FileName(m_paths[i]).c_str(), kIdTab + static_cast<int>(i), Surface::Window, 0, i == 0);
+                        SetWindowSubclass(tab, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this));
+                        m_tabs.push_back(tab);
+                    }
+                m_search = TextField(kIdSearch, 0, L"Search fields and values (Ctrl+F)", true, Surface::Window);
+                Describe(m_search, L"Search fields and values");
+                m_note = Label(L"Read-only. To remove fields, use File actions \u203A Remove metadata.", TextRole::Hint, Surface::Window);
+                m_list = KitList(kIdList, LVS_NOCOLUMNHEADER | LVS_NOSORTHEADER, { L"Field", L"Value" }, kRowH);
+                ListView_SetExtendedListViewStyleEx(m_list, LVS_EX_INFOTIP, LVS_EX_INFOTIP);
                 ListView_EnableGroupView(m_list, TRUE);
-                m_status = Control(WC_STATICW, L"", SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, kIdStatus);
+                Describe(m_list, L"Fields", L"Ctrl+C copies the value");
+                m_status = Label(L"", TextRole::Caption, Surface::Window);
                 SetWindowSubclass(m_search, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this));
                 SetWindowSubclass(m_list, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this));
+                CheckOne(m_tabs, 0);
             }
 
-            void OnDpiChanged() override { ListView_SetColumnWidth(m_list, 0, Px(190)); }
-
-            void OnThemeChanged() override
-            {
-                ThemeList(m_list);
-                SetTheme({ m_search }, L"DarkMode_CFD");
-            }
+            void OnDpiChanged() override { ListView_SetColumnWidth(m_list, 0, Px(kFieldW)); }
 
             void Layout() override
             {
                 RECT rc{};
                 GetClientRect(m_hwnd, &rc);
-                const int margin = Px(kMargin), gap = Px(kGap);
-                int y = margin;
-                HDWP dwp = BeginDeferWindowPos(4);
-                const auto place = [&](HWND h, int x, int top, int w, int hgt) {
-                    if (dwp)
-                        dwp = DeferWindowPos(dwp, h, nullptr, x, top, std::max(w, 0), std::max(hgt, 0), SWP_NOZORDER | SWP_NOACTIVATE);
-                };
-                const int width = rc.right - 2 * margin;
-                if (m_paths.size() > 1)
+                const int margin = Px(kMargin), gap = Px(kGap), width = std::max(0, static_cast<int>(rc.right) - 2 * margin);
+                const auto place = [](HWND h, int x, int y, int w, int hgt) { MoveWindow(h, x, y, std::max(w, 0), std::max(hgt, 0), TRUE); };
+                int y = Px(12);
+                m_tabLine = {};
+                if (!m_tabs.empty())
                 {
-                    place(m_tabs, margin, y, width, Px(kTabsH));
-                    y += Px(kTabsH) + gap;
+                    int x = margin;
+                    for (HWND tab : m_tabs)
+                    {
+                        const int w = Px(static_cast<int>(Kit().TabWidth(Text(tab))));
+                        place(tab, x, y, std::min(w, std::max(0, static_cast<int>(rc.right) - margin - x)), Px(kTabsH));
+                        x += w + Px(20);
+                    }
+                    y += Px(kTabsH);
+                    m_tabLine = { margin, y, rc.right - margin, y + std::max(1, Px(1)) };
+                    y += Px(14);
                 }
-                place(m_search, margin, y, width, Px(kSearchH));
+                PlaceField(m_search, { margin, y, margin + width, y + Px(kSearchH) });
                 y += Px(kSearchH) + gap;
-                const int statusY = rc.bottom - margin - Px(kStatusH);
-                place(m_list, margin, y, width, statusY - gap - y);
+                const int noteH = LabelHeight(m_note, width);
+                place(m_note, margin, y, width, noteH);
+                y += noteH + Px(10);
+                const int statusY = rc.bottom - Px(12) - Px(kStatusH);
+                m_listCard = { margin, y, rc.right - margin, std::max(y + Px(60), statusY - gap) };
+                place(m_list, m_listCard.left + Px(1), m_listCard.top + Px(4), m_listCard.right - m_listCard.left - Px(2), m_listCard.bottom - m_listCard.top - Px(8));
                 place(m_status, margin, statusY, width, Px(kStatusH));
-                if (dwp)
-                    EndDeferWindowPos(dwp);
                 // The value column takes the rest of the width.
                 RECT list{};
                 GetClientRect(m_list, &list);
                 ListView_SetColumnWidth(m_list, 1, std::max(Px(80), static_cast<int>(list.right) - ListView_GetColumnWidth(m_list, 0) - 2));
+                InvalidateRect(m_hwnd, nullptr, FALSE);
+            }
+
+            void PaintSurface(ControlKit& kit, const D2D1_RECT_F&) override
+            {
+                if (m_tabLine.right > m_tabLine.left)
+                    kit.FillRound(DipRect(m_tabLine), kit.Theme().line, 0.f);
+                if (m_listCard.right > m_listCard.left)
+                    kit.DrawCard(DipRect(m_listCard));
+            }
+
+            void DrawRow(HWND, int row, ControlKit& kit, const D2D1_RECT_F& r, bool) override
+            {
+                LVITEMW item{};
+                item.mask = LVIF_PARAM;
+                item.iItem = row;
+                if (!ListView_GetItem(m_list, &item) || static_cast<size_t>(item.lParam) >= m_rows.size())
+                    return;
+                const auto& field = m_rows[static_cast<size_t>(item.lParam)];
+                const auto& c = kit.Theme();
+                const float split = r.left + 16 + kFieldW - 8;
+                kit.DrawText(field.name, kit.TextFormat(ControlKit::kSmallText + 0.5f), D2D1::RectF(r.left + 16, r.top, split - 12, r.bottom), c.textDim);
+                kit.DrawText(OneLine(field.value), kit.TextFormat(ControlKit::kControlText), D2D1::RectF(split, r.top, r.right - 12, r.bottom), c.text);
+            }
+
+            void SelectTab(size_t tab)
+            {
+                if (tab >= m_paths.size() || tab == m_tab)
+                    return;
+                m_tab = tab;
+                CheckOne(m_tabs, static_cast<int>(tab));
+                Fill();
             }
 
             void StartReading()
@@ -267,7 +311,7 @@ namespace sd::inspect
                 const auto& file = m_files[m_tab];
                 std::wstring status;
                 if (!m_loaded[m_tab])
-                    status = L"Reading…";
+                    status = L"Reading\u2026";
                 else if (!file.error.empty())
                     status = std::format(L"{}: {}", FileName(m_paths[m_tab]), file.error);
                 else
@@ -303,7 +347,7 @@ namespace sd::inspect
                     }
                     status = query.empty() ? std::format(L"{} field{}", m_rows.size(), m_rows.size() == 1 ? L"" : L"s")
                                            : std::format(L"{} of {} fields match", m_rows.size(), file.fields.size());
-                    status += L" · read-only · Ctrl+C copies the value";
+                    status += L" \u00B7 Ctrl+C copies the value";
                 }
                 SendMessageW(m_list, WM_SETREDRAW, TRUE, 0);
                 InvalidateRect(m_list, nullptr, TRUE);
@@ -394,6 +438,8 @@ namespace sd::inspect
                 case WM_COMMAND:
                     if (LOWORD(wParam) == kIdSearch && HIWORD(wParam) == EN_CHANGE)
                         Fill();
+                    else if (const int tab = LOWORD(wParam) - kIdTab; tab >= 0 && static_cast<size_t>(tab) < m_tabs.size() && HIWORD(wParam) == BN_CLICKED)
+                        SelectTab(static_cast<size_t>(tab));
                     return 0;
                 case WM_CONTEXTMENU:
                     if (reinterpret_cast<HWND>(wParam) == m_list)
@@ -402,12 +448,7 @@ namespace sd::inspect
                 case WM_NOTIFY:
                 {
                     const auto* hdr = reinterpret_cast<const NMHDR*>(lParam);
-                    if (hdr->idFrom == kIdTabs && hdr->code == TCN_SELCHANGE)
-                    {
-                        m_tab = static_cast<size_t>(std::max(0, TabCtrl_GetCurSel(m_tabs)));
-                        Fill();
-                    }
-                    else if (hdr->idFrom == kIdList && hdr->code == NM_DBLCLK)
+                    if (hdr->idFrom == kIdList && hdr->code == NM_DBLCLK)
                         Copy(kCmdCopyValue);
                     return 0;
                 }
@@ -427,7 +468,9 @@ namespace sd::inspect
             std::vector<Field> m_rows;   // the list's rows, by item lParam
             size_t m_tab = 0;
 
-            HWND m_tabs = nullptr, m_search = nullptr, m_list = nullptr, m_status = nullptr;
+            std::vector<HWND> m_tabs;   // one per file, with several
+            HWND m_search = nullptr, m_note = nullptr, m_list = nullptr, m_status = nullptr;
+            RECT m_tabLine{}, m_listCard{};
             HWND m_focus = nullptr;
         };
 

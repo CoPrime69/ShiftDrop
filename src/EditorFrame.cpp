@@ -463,6 +463,35 @@ namespace sd
             DrawFocusRing(r, kControlRadius);
     }
 
+    void ControlKit::DrawListItem(const D2D1_RECT_F& r, bool selected, bool hot, bool focused, bool active)
+    {
+        const auto& c = m_colors;
+        const auto row = D2D1::RectF(r.left + 4, r.top + 1, r.right - 4, r.bottom - 1);
+        if (selected)
+            FillRound(row, active ? c.selected : theme::WithAlpha(c.selected, 0.7f), kControlRadius);
+        else if (hot)
+            FillRound(row, theme::WithAlpha(c.selected, 0.5f), kControlRadius);
+        if (selected)
+        {
+            const float cy = (row.top + row.bottom) / 2;
+            FillRound(D2D1::RectF(row.left, cy - 8, row.left + 3, cy + 8), active ? c.accent : c.textFaint, 1.5f);
+        }
+        if (focused)
+            DrawFocusRing(row, kControlRadius);
+    }
+
+    void ControlKit::DrawPill(const D2D1_RECT_F& r, std::wstring_view text, const D2D1_COLOR_F& ink)
+    {
+        const float radius = (r.bottom - r.top) / 2;
+        FillRound(r, theme::WithAlpha(ink, 0.14f), radius);
+        DrawText(text, TextFormat(kSmallText, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), r, ink);
+    }
+
+    float ControlKit::PillWidth(std::wstring_view text)
+    {
+        return std::ceil(TextWidth(text, kSmallText, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 20.f;
+    }
+
     void ControlKit::DrawToggle(const D2D1_RECT_F& r, bool on, ControlState s)
     {
         const float cy = std::round((r.top + r.bottom) / 2);

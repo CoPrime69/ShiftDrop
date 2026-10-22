@@ -86,7 +86,7 @@ folder:
 | `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to folder |
 | `Settings`, `Features`, `SettingsPages`, `WheelContents`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, which page and card each setting is on (unit-tested), the Wheel page's chips over the Features store (unit-tested), the Settings window, start with Windows, the tray icon |
 | `DialogWindow`, `EditorFrame` | The one way every window is drawn: real child controls painted by the shared kit (cards, navigation, switches, segmented choices, chips, tabs, drop-downs, fields, sliders, list rows), with focus rings, per-monitor DPI, light and dark and the accent |
-| `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
+| `Ask`, `AskWindow`, `Secret.h` | Questions a running job asks the user (a password, print every row?), the window that asks them in the kit's look, and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
 | `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times |
 | `keyboard/` | Arrow keys and Enter on the wheel, the Explorer-selection hotkey, the right-click entry, wheel layout |
