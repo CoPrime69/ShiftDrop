@@ -57,7 +57,9 @@ if ($Setup) {
     $name = Split-Path $Setup -Leaf
     Check ($name -eq "ShiftDrop-Setup-$display.exe") "installer file $name is ShiftDrop-Setup-$display.exe"
     $info = (Get-Item $Setup).VersionInfo
-    Check ($info.ProductVersion -eq $display) "installer ProductVersion '$($info.ProductVersion)' is $display"
+    # Inno Setup pads its version strings with spaces.
+    $product = "$($info.ProductVersion)".Trim().Trim([char]0)
+    Check ($product -eq $display) "installer ProductVersion '$product' is $display"
     $numbers = "$($info.FileMajorPart).$($info.FileMinorPart).$($info.FileBuildPart)"
     Check ($numbers -eq $base) "installer file version $numbers is $base"
 }
