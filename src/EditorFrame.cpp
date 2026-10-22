@@ -873,11 +873,11 @@ namespace sd
             m_target->FillEllipse(D2D1::Ellipse(centre, hub, hub), brush);
         if (auto* brush = Brush(p.centreLine))
             m_target->DrawEllipse(D2D1::Ellipse(centre, hub - 0.5f, hub - 0.5f), brush, 1.f);
-        const float size = std::max(7.f, std::round(15.f * scale * 2) / 2), small = std::max(6.f, std::round(11.f * scale * 2) / 2);
+        const float size = std::max(7.f, std::round(15.f * scale * 2) / 2), detailSize = std::max(6.f, std::round(11.f * scale * 2) / 2);
         DrawText(centreText, TextFormat(size, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
                  D2D1::RectF(centre.x - hub, centre.y - size * 1.2f, centre.x + hub, centre.y + (detail.empty() ? size * 1.2f : 0.f)), p.text);
-        DrawText(detail, TextFormat(small, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
-                 D2D1::RectF(centre.x - hub + 4, centre.y + 1, centre.x + hub - 4, centre.y + 1 + small * 1.4f), p.subtleText);
+        DrawText(detail, TextFormat(detailSize, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(centre.x - hub + 4, centre.y + 1, centre.x + hub - 4, centre.y + 1 + detailSize * 1.4f), p.subtleText);
     }
 
     int EditorFrame::ButtonAt(D2D1_POINT_2F p) const

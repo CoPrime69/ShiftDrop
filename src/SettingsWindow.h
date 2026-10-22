@@ -2,104 +2,170 @@
 #include "DialogWindow.h"
 #include "Features.h"
 #include "Settings.h"
+#include "SettingsPages.h"
+#include "WheelContents.h"
 
 #include <windows.h>
-#include <commctrl.h>
 
 #include <array>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
 namespace sd
 {
-    // What Settings lists: every section, the kinds of file its slices are for, and the slices.
-    struct SettingsTree
+    // Everything the Settings window shows, as the app has it when the window opens.
+    struct SettingsState
     {
-        struct Slice
-        {
-            std::string id;          // recipe id
-            std::wstring label;      // "TIFF"
-            std::wstring detail;     // "TIFF, lossless"
-        };
-        struct Group
-        {
-            std::wstring title;      // "Photos", "Video", "Any file"
-            std::vector<Slice> slices;
-        };
-        struct Section
-        {
-            Ring ring = Ring::Convert;
-            std::wstring title;
-            std::vector<Group> groups;
-        };
-        std::vector<Section> sections;
+        Features features;
+        Preferences preferences;
+        Appearance appearance;
+        bool startWithWindows = true;
+        bool shelfAvailable = false, shelfOn = false;
+        VirtualOutput browserDrops = VirtualOutput::Desktop;
+        std::vector<std::wstring> ocrLanguages;   // the text recognition languages, as Windows names them
+        int ocrChoice = 0;                        // 0 automatic, else 1 + the index in ocrLanguages
+        bool shellMenuAvailable = false, shellMenuOn = false;
     };
 
-    // "Settings…" from the tray. On top, the choices: the terminal File actions › Terminal opens (or
-    // a command line of your own), the theme, the accent colour (a row of round swatches, the presets
-    // of Accent.h then a colour of your own from the colour dialog, and a switch for the Windows accent
-    // colour), the top panel's size (a slider on top of the tray's Size, with its value beside it) and
-    // how outputs are named; each applies at once
-    // (onPreferences). Under them a tree of every section, kind of file and slice, each with a tick.
-    // Unticking hides it from the wheel at once (onChange); a section, or a kind of file, ticks or
-    // unticks everything under it. Standard controls in a DialogWindow, like the history window.
+    // "Settings…" from the tray (App Windows page): navigation on the left (General, Appearance, Wheel,
+    // Output, Advanced, About, and Find a setting over it) and a page of cards for each, one setting per
+    // card (SettingsPages.h says which and where). Every choice applies at once: the slices through
+    // `onFeatures`, the choices kept in Preferences through `onPreferences`, and what the tray menu
+    // also offers (start with Windows, the shelf, size and style, where browser drops go, the text
+    // recognition language, the right-click entry, the folders) through `command`, with the tray
+    // menu's own command ids (resource.h), so the app does each of them in one place.
+    //
+    // Wheel is the old tick list: a tab per section, a card per kind of file with a chip per slice,
+    // and a small wheel drawn from the real wheel's layout showing the tiles those chips make.
+    // Standard controls drawn by the kit (DialogWindow), like History and Rename.
     class SettingsWindow final : public DialogWindow
     {
     public:
-        using Change = std::function<void(const Features&)>;
+        using FeaturesChange = std::function<void(const Features&)>;
         using PreferencesChange = std::function<void(const Preferences&)>;
+        using Command = std::function<void(UINT id)>;
 
-        SettingsWindow(HINSTANCE instance, Change onChange, PreferencesChange onPreferences);
+        SettingsWindow(HINSTANCE instance, FeaturesChange onFeatures, PreferencesChange onPreferences, Command command);
+        ~SettingsWindow() override;
 
-        // Creates the window or brings it to the front, filled from `tree`, `current` and `preferences`.
-        void Show(SettingsTree tree, const Features& current, const Preferences& preferences);
+        // Creates the window or brings it to the front, filled from `tree` and `state`.
+        void Show(SettingsTree tree, SettingsState state);
 
     private:
+        using Item = settings::Item;
+        using Page = settings::Page;
+
         LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam) override;
         void CreateChildren() override;
         void OnDpiChanged() override;
-        void OnThemeChanged() override;
-        COLORREF StaticTextColor(HWND control) const override;
         void Layout() override;
-        void Fill();
-        void FillPreferences();
-        void OnPreferenceChanged();
-        void OnPanelSizeScroll(WORD code);   // the slider's WM_HSCROLL
-        // The accent row: radio buttons for the presets, a button for a colour of your own and a check
-        // box for the Windows colour, all drawn with the control kit (as swatches and a switch).
-        void FillAccent();
-        void OnAccentClicked(int controlId);
+        void PaintSurface(ControlKit& kit, const D2D1_RECT_F& client) override;
+        void PaintGdi(HDC dc) override;
+        void DrawControl(HWND control, ControlKit& kit, const D2D1_RECT_F& r, ControlKit::ControlState s) override;
+
+        // One card: its title and description (labels from the catalogue) and its control.
+        struct Row
+        {
+            HWND title = nullptr, description = nullptr;
+            HWND control = nullptr;   // at the end of the row, or null
+            RECT card{};              // where Layout() put its card, client pixels
+        };
+        Row& MakeRow(Item item, HWND control);
+        void Fill();                 // every control from m_state
+        void BuildWheel();           // the Wheel page's cards and chips for m_tree
+        void ShowPage(Page page);
+        void OnCommand(int id, int code, HWND control);
+        void OnFind();
+        void ChangePreferences(const Preferences& p);
         void SetAccent(const accent::Setting& setting);
-        LRESULT DrawAccentControl(const NMCUSTOMDRAW& draw);
-        void OnItemChanged(HTREEITEM item, UINT oldState, UINT newState);
-        void SetCheck(HTREEITEM item, int check);       // 1 off, 2 on, 3 some (TreeView state images)
-        int Check(HTREEITEM item) const;
-        void SetSubtree(HTREEITEM item, int check);     // the item and everything under it
-        void UpdateAncestors(HTREEITEM item);           // on, off or some, from the children
-        Features Collect() const;
-        void EverythingOn();
+        void FillAccent();
+        void OnPanelSizeScroll(WORD code);
+        void SetFeatures(const Features& features);
+        void FillWheel();            // the chips, the counts and the section's line, from m_state.features
+        void FillNaming();
+        void SendCommand(UINT id);
 
-        Change m_onChange;
+        // ---- Layout ----
+        void Place(HWND control, int x, int y, int w, int h);
+        int LayoutRow(Row& row, int x, int y, int width, int controlW, int controlH);
+        int LayoutPage(int x, int y, int width);
+        int LayoutWheel(int x, int y, int width);
+
+        FeaturesChange m_onFeatures;
         PreferencesChange m_onPreferences;
+        Command m_command;
         SettingsTree m_tree;
-        Features m_features;
-        Preferences m_preferences;
-        std::vector<std::string> m_sliceIds;   // a slice item's lParam - kSliceTag indexes this
+        SettingsState m_state;
+        Page m_page = Page::General;
+        bool m_updating = false;
 
-        HWND m_terminalLabel = nullptr, m_terminal = nullptr;   // children are destroyed with m_hwnd
-        HWND m_commandLabel = nullptr, m_command = nullptr;
-        HWND m_themeLabel = nullptr, m_theme = nullptr;
-        HWND m_accentLabel = nullptr, m_custom = nullptr, m_windowsAccent = nullptr;
+        HICON m_icon = nullptr;   // the app's, for the header and About
+        int m_iconPx = 0;
+        HWND m_appName = nullptr, m_version = nullptr, m_find = nullptr, m_findHint = nullptr;
+        std::array<HWND, settings::kPageCount> m_nav{};
+        HWND m_heading = nullptr;
+        std::map<Item, Row> m_rows;
+        Item m_found = Item::StartWithWindows;
+        bool m_showFound = false;
+
+        // General
+        HWND m_filesGroup = nullptr, m_startup = nullptr, m_ocr = nullptr, m_shelf = nullptr, m_terminal = nullptr, m_commandLine = nullptr;
+        std::array<HWND, 3> m_drops{};
+        // Appearance
+        HWND m_previewLabel = nullptr;
+        std::array<HWND, 3> m_themes{};
+        std::array<HWND, 2> m_looks{};
+        std::array<HWND, 4> m_sizes{};
+        HWND m_panelSize = nullptr, m_panelValue = nullptr, m_panelLow = nullptr, m_panelHigh = nullptr;
+        HWND m_accentHeader = nullptr, m_custom = nullptr, m_windowsAccent = nullptr;
         std::array<HWND, accent::kPresetCount> m_swatches{};
-        HWND m_tooltip = nullptr;                                     // the swatches' names
-        accent::Choice m_beforeWindows = accent::Choice::Tide;        // where turning the switch off goes back to
-        HWND m_panelSizeLabel = nullptr, m_panelSize = nullptr, m_panelSizeValue = nullptr;   // a trackbar and its "160%"
-        HWND m_namingLabel = nullptr, m_naming = nullptr;
-        HWND m_intro = nullptr;
-        HWND m_list = nullptr;
-        HWND m_allOn = nullptr;
-        HWND m_close = nullptr;
-        bool m_updating = false;   // our own SetCheck calls: not the user's
+        bool m_accentOpen = true;
+        accent::Choice m_beforeWindows = accent::Choice::Tide;   // where turning the Windows switch off goes back to
+        // Wheel
+        HWND m_findAction = nullptr, m_summary = nullptr, m_sectionOff = nullptr, m_reset = nullptr, m_noAction = nullptr;
+        std::array<HWND, kRingCount> m_tabs{};
+        Ring m_section = Ring::Convert;
+        struct Chip
+        {
+            HWND button = nullptr;
+            const SettingsTree::Slice* slice = nullptr;   // in m_tree
+        };
+        struct GroupView
+        {
+            Ring ring = Ring::Convert;
+            const SettingsTree::Group* group = nullptr;   // in m_tree
+            HWND header = nullptr, hint = nullptr, preview = nullptr;
+            std::vector<Chip> chips;
+            bool open = false;
+            RECT body{};                  // the open part of its card, client pixels
+            D2D1_POINT_2F wheel{};        // its preview's centre, DIPs
+            float radius = 0;
+        };
+        std::vector<GroupView> m_groups;
+        // Output
+        std::array<HWND, 4> m_namings{};
+        HWND m_example = nullptr, m_exampleNote = nullptr;
+        RECT m_exampleBox{};
+        // Advanced and About
+        HWND m_shellMenu = nullptr, m_recipes = nullptr, m_logs = nullptr, m_source = nullptr;
+        HWND m_aboutName = nullptr, m_aboutVersion = nullptr, m_aboutFree = nullptr;
+        RECT m_aboutCard{}, m_freePill{};
+
+        // What Layout() placed this time: the rest of m_all is hidden.
+        std::vector<HWND> m_all;
+        std::vector<HWND> m_placed;
+        struct Card
+        {
+            RECT rect{};
+            wchar_t icon = 0;
+            int iconY = 0;   // the glyph's centre line, client pixels (0: the card's middle)
+        };
+        std::vector<Card> m_cards;
+        std::vector<RECT> m_lines;   // dividers inside cards, and under the tabs
+        RECT m_preview{};            // Appearance's preview
+        RECT m_header{};             // the app's icon at the top of the navigation
+        int m_navWidth = 0;
     };
 }

@@ -369,7 +369,8 @@ namespace sd
                     m_preferences = p;
                     SavePreferences(m_preferences);
                     ApplyPreferences();
-                });
+                },
+                [this](UINT id) { OnCommand(id); });   // what the tray menu also offers: done in one place
             m_renameWindow = std::make_unique<RenameWindow>(m_instance);
             m_historyWindow = std::make_unique<HistoryWindow>(m_instance, m_history.get(),
                                                               [](const std::vector<std::wstring>& paths) { RevealInExplorer(paths); });
@@ -621,7 +622,7 @@ namespace sd
                 break;
             case IDM_SETTINGS:
                 if (m_settingsWindow)
-                    m_settingsWindow->Show(BuildSettingsTree(), m_features, m_preferences);
+                    m_settingsWindow->Show(BuildSettingsTree(), SettingsSnapshot());
                 break;
             case IDM_SHOW_SHELF:
                 if (m_shelf)
@@ -1030,12 +1031,37 @@ namespace sd
                                 title = kKinds[k].title;
                                 break;
                             }
-                    groupFor(title).slices.push_back(SettingsTree::Slice{ recipe.id, recipe.label, recipe.description });
+                    groupFor(title).slices.push_back(SettingsTree::Slice{ recipe.id, recipe.label, recipe.description, SliceLook(recipe).icon });
                 }
                 section.groups = std::move(groups);
                 tree.sections.push_back(std::move(section));
             }
             return tree;
+        }
+
+        // What the Settings window opens on: the slices, the preferences and what the tray menu offers.
+        SettingsState SettingsSnapshot()
+        {
+            SettingsState state;
+            state.features = m_features;
+            state.preferences = m_preferences;
+            state.appearance = m_appearance;
+            state.startWithWindows = startup::Choice() && startup::IsEnabled();
+            state.shelfAvailable = m_shelf != nullptr;
+            state.shelfOn = m_shelf && m_shelf->IsOn();
+            state.browserDrops = VirtualOutputChoice();
+            // The same list, in the same order, as the tray menu's: Settings sends its command ids.
+            m_ocrLanguages = ocr::Languages();
+            const auto current = ocr::LanguageChoice();
+            for (size_t i = 0; i < m_ocrLanguages.size() && IDM_OCR_BASE + i + 1 <= IDM_OCR_LAST; ++i)
+            {
+                state.ocrLanguages.push_back(m_ocrLanguages[i].name.empty() ? m_ocrLanguages[i].tag : m_ocrLanguages[i].name);
+                if (EqualsNoCase(m_ocrLanguages[i].tag, current))
+                    state.ocrChoice = static_cast<int>(i) + 1;
+            }
+            state.shellMenuAvailable = m_keyboard != nullptr;
+            state.shellMenuOn = m_keyboard && KeyboardController::ShellMenuOn();
+            return state;
         }
 
         // A Reduce size recipe's target, as a percentage of the source's size (10 for "90% smaller").

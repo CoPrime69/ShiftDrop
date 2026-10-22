@@ -83,6 +83,8 @@ add_library(shiftdrop_core STATIC
   src/ThemeTokens.cpp   # the brand's colour tokens and every window's palette built from them
   src/EditorChrome.cpp  # where an editor's tool bar, panel and footer go, and the kit's sizes
   src/Features.cpp
+  src/SettingsPages.cpp   # the Settings window's pages: where every setting lives (unit-tested)
+  src/WheelContents.cpp   # Settings › Wheel: sections, kinds of file and slices on and off (unit-tested)
   src/StagedOutput.cpp
   src/Startup.cpp
   src/Undo.cpp
@@ -299,7 +301,7 @@ add_executable(ShiftDrop WIN32
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
-target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme uiautomationcore)
+target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme uiautomationcore oleacc)
 
 # The sealed engine host: parses archives inside an AppContainer with no capabilities. A
 # separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
@@ -372,6 +374,7 @@ if(SHIFTDROP_TESTS)
     tests/ToastTests.cpp
     tests/FfmpegComponentsTests.cpp
     tests/HelperTests.cpp
+    tests/SettingsTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.
