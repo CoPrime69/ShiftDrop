@@ -1,5 +1,8 @@
 #pragma once
+#include "WheelContents.h"
+
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -43,7 +46,34 @@ namespace sd::settings
     const Entry& Find(Item item);
     std::vector<Item> OnPage(Page page);
 
-    // Find a setting: the entries with every word of `query` in their title, description, group,
-    // page or keywords (any case), in the window's order. Nothing for an empty query.
+    // The labels of an item's own controls, in the order the window shows them: a segmented choice's
+    // options ("System", "Light", "Dark"), a drop-down's choices, a button's text. The window makes its
+    // controls from these, and Find a setting knows the item by them. Empty for none.
+    std::span<const wchar_t* const> Options(Item item);
+
+    // Other words for a word typed in Find a setting ("color" for "colour", "theme" for "dark",
+    // "text recognition" for "ocr"), the word itself first. Lower case.
+    std::vector<std::wstring> Alternatives(const std::wstring& word);
+    // Does `text` (any case) hold every word of `words` (SearchWords), or one of its Alternatives?
+    bool HasEveryWordOrAlternative(std::wstring_view text, const std::vector<std::wstring>& words);
+
+    // Find a setting: the entries with every word of `query` (or another word for it) in their title,
+    // description, group, page, keywords or their controls' labels (any case), in the window's order.
+    // Nothing for an empty query.
     std::vector<Item> Search(std::wstring_view query);
+
+    // Find a setting over the whole window: the cards above, and on the Wheel page every section, kind
+    // of file and action of `tree`. The best first: what is named by every word (a card's title, a
+    // section, a kind of file, an action) before what only mentions them; then in the window's order.
+    struct Found
+    {
+        Item item = Item::StartWithWindows;   // the card; WheelContents for the Wheel page's
+        Page page = Page::General;
+        int section = -1;                     // the Wheel page: the section's Ring, else -1
+        int group = -1;                       // and the kind of file, its index in the section's groups, or -1
+        int slice = -1;                       // and the action, its index in the group's slices, or -1
+        std::wstring where;                   // "Wheel › Reduce size › Photos"
+        bool operator==(const Found&) const = default;
+    };
+    std::vector<Found> SearchAll(std::wstring_view query, const SettingsTree& tree);
 }

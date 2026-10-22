@@ -223,26 +223,88 @@ namespace sd
 
     // ---- Controls ------------------------------------------------------------------------------------
 
-    void ControlKit::FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius)
+    namespace
     {
+        // The target's pixels per DIP, and whether its transform only moves (no zoom or turn): only then
+        // do DIP edges land on pixel edges we can choose.
+        bool PixelGrid(ID2D1RenderTarget* target, D2D1_MATRIX_3X2_F& m, float& sx, float& sy)
+        {
+            if (!target)
+                return false;
+            target->GetTransform(&m);
+            if (m._11 != 1.f || m._22 != 1.f || m._12 != 0.f || m._21 != 0.f)
+                return false;
+            float dx = 96.f, dy = 96.f;
+            target->GetDpi(&dx, &dy);
+            sx = dx / 96.f;
+            sy = dy / 96.f;
+            return sx > 0 && sy > 0;
+        }
+    }
+
+    D2D1_RECT_F ControlKit::Snap(const D2D1_RECT_F& r) const
+    {
+        D2D1_MATRIX_3X2_F m{};
+        float sx = 1, sy = 1;
+        if (!PixelGrid(m_target, m, sx, sy))
+            return r;
+        return theme::SnapToPixels(r, m._31, m._32, sx, sy);   // the transform's move included
+    }
+
+    float ControlKit::PixelWidth(float widthDip) const
+    {
+        D2D1_MATRIX_3X2_F m{};
+        float sx = 1, sy = 1;
+        if (!PixelGrid(m_target, m, sx, sy))
+            return widthDip;
+        return theme::PixelLine(widthDip, sx);
+    }
+
+    D2D1_RECT_F ControlKit::Bounds() const
+    {
+        D2D1_MATRIX_3X2_F m{};
+        float sx = 1, sy = 1;
+        if (!m_target || !PixelGrid(m_target, m, sx, sy))
+            return D2D1::InfiniteRect();
+        const auto size = m_target->GetSize();
+        return D2D1::RectF(-m._31, -m._32, size.width - m._31, size.height - m._32);
+    }
+
+    void ControlKit::FillRound(const D2D1_RECT_F& in, const D2D1_COLOR_F& color, float radius)
+    {
+        // On whole pixels, so a fill's edge and the line drawn around it (StrokeRound) are crisp and meet.
+        const auto r = Snap(in);
         if (r.right <= r.left || r.bottom <= r.top || !m_target)
             return;
         if (auto* brush = Brush(color))
-            m_target->FillRoundedRectangle(D2D1::RoundedRect(r, radius, radius), brush);
+        {
+            if (radius > 0)
+                m_target->FillRoundedRectangle(D2D1::RoundedRect(r, radius, radius), brush);
+            else
+                m_target->FillRectangle(r, brush);
+        }
     }
 
-    void ControlKit::StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius)
+    void ControlKit::StrokeRound(const D2D1_RECT_F& in, const D2D1_COLOR_F& color, float width, float radius)
     {
-        const float in = width / 2;
+        // A line of whole pixels just inside the snapped edge, its curve following FillRound's of the same
+        // radius: the border goes all the way round and no corner of it is cut.
+        const auto r = Snap(in);
+        width = PixelWidth(width);
+        const float half = width / 2;
         if (r.right - r.left <= width || r.bottom - r.top <= width || !m_target)
             return;
+        const float curve = std::max(0.f, radius - half);
         if (auto* brush = Brush(color))
-            m_target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left + in, r.top + in, r.right - in, r.bottom - in), radius, radius), brush, width);
+            m_target->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(r.left + half, r.top + half, r.right - half, r.bottom - half), curve, curve), brush,
+                                           width);
     }
 
     void ControlKit::DrawFocusRing(const D2D1_RECT_F& r, float radius)
     {
-        StrokeRound(D2D1::RectF(r.left - 3, r.top - 3, r.right + 3, r.bottom + 3), m_colors.focus, 2.f, radius + 3);
+        // Keyboard focus only (the window says when): a thin rounded ring 2 DIPs around the control, kept
+        // inside what can be drawn, so a control that fills its own window still shows the whole ring.
+        StrokeRound(theme::FocusRingRect(r, Bounds()), theme::WithAlpha(m_colors.focus, 0.85f), 1.5f, radius + 2);
     }
 
     // ---- The editors' frame -------------------------------------------------------------------------
@@ -778,8 +840,9 @@ namespace sd
     {
         const auto& c = m_colors;
         const bool hot = s.enabled && s.hot;
+        // The header is the top of its card: the hover stays inside the card's border.
         if (hot)
-            FillRound(r, s.pressed ? c.controlDown : c.controlHover, kCardRadius);
+            FillRound(D2D1::RectF(r.left + 1, r.top + 1, r.right - 1, r.bottom - 1), s.pressed ? c.controlDown : c.controlHover, kCardRadius - 1);
         const float alpha = s.enabled ? 1.f : kDisabledAlpha;
         DrawGlyph(icon, 18.f, D2D1::RectF(r.left + 16, r.top, r.left + 40, r.bottom), theme::WithAlpha(c.text, alpha));
         const float x = r.left + (icon ? 54.f : 18.f), cy = (r.top + r.bottom) / 2;

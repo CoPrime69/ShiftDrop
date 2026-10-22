@@ -27,22 +27,18 @@ namespace sd
         constexpr int kIdAccentHeader = 140, kIdSwatch = 141, kIdCustom = 141 + accent::kPresetCount, kIdWindowsAccent = 150;
         constexpr int kIdFindAction = 160, kIdTab = 161, kIdSectionOff = 166, kIdReset = 167;
         constexpr int kIdNaming = 170, kIdShellMenu = 180, kIdRecipes = 181, kIdLogs = 182, kIdSource = 183;
-        constexpr int kIdGroup = 1000, kIdChip = 2000;
+        constexpr int kIdGroup = 1000, kIdChip = 2000, kIdCustomSwatch = 0x4000;   // a colour of your own: kIdCustomSwatch + its place
+        constexpr UINT kIdDeleteColour = 1;   // the custom swatch's right-click menu
 
         // Sizes in DIPs (App Windows.dc.html), scaled by the window's DPI in Layout().
         constexpr int kNavWide = 290, kNavNarrow = 240;   // the navigation column, with its 14 DIPs either side
         constexpr int kNavItem = 38, kNavGap = 4, kCardGap = 4, kRowMin = 68, kControlH = 32, kSegmentH = 36;
         constexpr int kSwatchCell = 54, kSwatchH = 62, kPreviewH = 250, kWheelPreview = 210;
 
-        constexpr wchar_t kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphPalette = 0xE790, kGlyphAdd = 0xE710;
+        constexpr wchar_t kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphAdd = 0xE710;
         constexpr wchar_t kSourceUrl[] = L"https://github.com/CoPrime69/" SD_NAME;
 
-        // Choices, in the order of the enums in Settings.h and OutputPath.h.
-        const std::wstring kTerminals[] = { L"Windows Terminal", L"PowerShell", L"Command Prompt", L"Custom command" };
-        constexpr const wchar_t* kThemes[] = { L"System", L"Light", L"Dark" };
-        constexpr const wchar_t* kStyles[] = { L"Solid", L"Glass" };
-        constexpr const wchar_t* kSizes[] = { L"Auto", L"Small", L"Medium", L"Large" };
-        constexpr const wchar_t* kDrops[] = { L"Desktop", L"Downloads", L"Ask every time" };
+        // Choices, in the order of the enums in Settings.h and OutputPath.h (their labels: settings::Options).
         constexpr const wchar_t* kNamingDetails[] = { L"Default", L"", L"", L"Copies go in a " SD_NAME L" folder next to the original" };
 
         // The glyph of a kind of file's card on the Wheel page.
@@ -59,12 +55,13 @@ namespace sd
             return 0xE9F5;   // Processing
         }
 
-        // The colour button's name for screen readers: "Custom colour #12A58E…".
-        std::wstring CustomText(const accent::Setting& a)
+        constexpr wchar_t kAddColour[] = L"Custom\u2026";   // the colour button's label under its +
+
+        // An option's label (settings::Options), by its place.
+        const wchar_t* Option(settings::Item item, size_t i)
         {
-            if (a.custom == accent::kNoColour)
-                return L"Custom colour\u2026";
-            return std::format(L"Custom colour {}{}\u2026", accent::ToHex(a.custom), a.choice == accent::Choice::Custom ? L" (in use)" : L"");
+            const auto options = settings::Options(item);
+            return i < options.size() ? options[i] : L"";
         }
 
         std::wstring PercentText(int percent) { return std::format(L"{}%", percent); }
@@ -162,8 +159,9 @@ namespace sd
         MakeRow(Item::OcrLanguage, m_ocr);
         Describe(m_ocr, settings::Find(Item::OcrLanguage).title, settings::Find(Item::OcrLanguage).description);
         m_shelf = toggle(Item::FloatShelf, kIdShelf);
-        segments(Item::BrowserDrops, m_drops, kDrops, kIdDrops);
-        m_terminal = keep(DropDown(kIdTerminal, kTerminals));
+        segments(Item::BrowserDrops, m_drops, settings::Options(Item::BrowserDrops), kIdDrops);
+        const auto terminals = settings::Options(Item::Terminal);
+        m_terminal = keep(DropDown(kIdTerminal, std::vector<std::wstring>(terminals.begin(), terminals.end())));
         MakeRow(Item::Terminal, m_terminal);
         Describe(m_terminal, settings::Find(Item::Terminal).title, settings::Find(Item::Terminal).description);
         m_commandLine = keep(TextField(kIdCommandLine, 0, L"e.g. wezterm start --cwd {folder}"));
@@ -173,9 +171,9 @@ namespace sd
 
         // Appearance
         m_previewLabel = keep(Label(L"Preview", TextRole::Caption, Surface::Window));
-        segments(Item::Theme, m_themes, kThemes, kIdTheme);
-        segments(Item::Style, m_looks, kStyles, kIdStyle);
-        segments(Item::Size, m_sizes, kSizes, kIdSize);
+        segments(Item::Theme, m_themes, settings::Options(Item::Theme), kIdTheme);
+        segments(Item::Style, m_looks, settings::Options(Item::Style), kIdStyle);
+        segments(Item::Size, m_sizes, settings::Options(Item::Size), kIdSize);
         m_panelSize = keep(Slider(kIdPanelSize, panel::kSizeMinPercent, panel::kSizeMaxPercent, panel::kSizeStepPercent));
         MakeRow(Item::PanelSize, m_panelSize);
         Describe(m_panelSize, settings::Find(Item::PanelSize).title, settings::Find(Item::PanelSize).description);
@@ -190,21 +188,23 @@ namespace sd
         // colour button and the switch end it.
         for (int i = 0; i < accent::kPresetCount; ++i)
             m_swatches[static_cast<size_t>(i)] = keep(KitButton(Look::Custom, accent::Name(static_cast<accent::Choice>(i)), kIdSwatch + i, Surface::Card, 0, i == 0));
-        m_custom = keep(Control(WC_BUTTONW, L"", WS_TABSTOP | WS_GROUP | BS_PUSHBUTTON, kIdCustom));
+        // The colours of your own come between the presets and this button (SyncCustomSwatches).
+        m_custom = keep(Control(WC_BUTTONW, L"Add a colour of your own\u2026", WS_TABSTOP | WS_GROUP | BS_PUSHBUTTON, kIdCustom));
         StyleOf(m_custom) = DialogWindow::Style{ .look = Look::Custom };
+        Describe(m_custom, L"Add a colour of your own\u2026", L"Opens the colour picker. Each colour you add gets its own swatch.");
         m_windowsAccent = keep(KitButton(Look::Toggle, settings::Find(Item::WindowsAccent).title, kIdWindowsAccent));
         MakeRow(Item::WindowsAccent, m_windowsAccent);
         m_rows[Item::Accent].control = m_accentHeader;
 
         // Wheel: the search, the section tabs and the section's buttons; the cards come with the tree.
         m_findAction = keep(TextField(kIdFindAction, 0, L"Find an action, such as WebP or Copy path", true, Surface::Window));
-        Describe(m_findAction, L"Find an action");
+        Describe(m_findAction, Option(Item::WheelContents, 0));
         for (int i = 0; i < kRingCount; ++i)
             m_tabs[static_cast<size_t>(i)] = keep(KitButton(Look::Tab, RingTitle(static_cast<Ring>(i)), kIdTab + i, Surface::Window, 0, i == 0));
         m_summary = keep(Label(L"", TextRole::Body, Surface::Window));
-        m_sectionOff = keep(KitButton(Look::Button, L"Turn off this section", kIdSectionOff, Surface::Window, kGlyphPower));
-        m_reset = keep(KitButton(Look::Button, L"Reset to default", kIdReset, Surface::Window));
-        Describe(m_reset, L"Reset to default", L"Turns the section and every action in it on");
+        m_sectionOff = keep(KitButton(Look::Button, Option(Item::WheelContents, 1), kIdSectionOff, Surface::Window, kGlyphPower));
+        m_reset = keep(KitButton(Look::Button, Option(Item::WheelContents, 3), kIdReset, Surface::Window));
+        Describe(m_reset, Option(Item::WheelContents, 3), L"Turns the section and every action in it on");
         m_noAction = keep(Label(L"", TextRole::Hint, Surface::Window));
         m_rows[Item::WheelContents].control = m_findAction;
 
@@ -223,16 +223,16 @@ namespace sd
 
         // Advanced
         m_shellMenu = toggle(Item::ShellMenu, kIdShellMenu);
-        m_recipes = keep(KitButton(Look::Button, L"Open recipes folder", kIdRecipes, Surface::Card, kGlyphOpen));
+        m_recipes = keep(KitButton(Look::Button, Option(Item::RecipesFolder, 0), kIdRecipes, Surface::Card, kGlyphOpen));
         MakeRow(Item::RecipesFolder, m_recipes);
-        m_logs = keep(KitButton(Look::Button, L"Open logs folder", kIdLogs, Surface::Card, kGlyphOpen));
+        m_logs = keep(KitButton(Look::Button, Option(Item::LogsFolder, 0), kIdLogs, Surface::Card, kGlyphOpen));
         MakeRow(Item::LogsFolder, m_logs);
 
         // About
         m_aboutName = keep(Label(SD_NAME, TextRole::Heading));
         m_aboutVersion = keep(Label(L"Version " SD_VERSION, TextRole::Value));
         m_aboutFree = keep(Label(L"Free and open source", TextRole::Strong));
-        m_source = keep(KitButton(Look::Icon, L"Open the source code on GitHub", kIdSource, Surface::Card, kGlyphOpen));
+        m_source = keep(KitButton(Look::Icon, Option(Item::SourceCode, 0), kIdSource, Surface::Card, kGlyphOpen));
         MakeRow(Item::SourceCode, m_source);
         MakeRow(Item::Privacy, nullptr);
         CheckOne(m_nav, 0);
@@ -334,18 +334,83 @@ namespace sd
         m_updating = false;
     }
 
+    void SettingsWindow::SyncCustomSwatches()
+    {
+        // A swatch for each colour of your own, after the presets, in the order they were added.
+        const auto& customs = m_state.preferences.accent.customs;
+        while (m_customSwatches.size() > customs.size())
+        {
+            const HWND h = m_customSwatches.back();
+            if (GetFocus() == h)
+                SetFocus(m_custom);
+            m_customSwatches.pop_back();
+            std::erase(m_all, h);
+            DestroyControl(h);
+        }
+        while (m_customSwatches.size() < customs.size())
+        {
+            const auto i = static_cast<int>(m_customSwatches.size());
+            const HWND h = KitButton(Look::Custom, L"", kIdCustomSwatch + i, Surface::Card, 0, false);
+            if (!h)
+                break;
+            // In the swatches' radio group and Tab order: after the last swatch, before the colour button.
+            SetWindowPos(h, i ? m_customSwatches.back() : m_swatches.back(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            m_customSwatches.push_back(h);
+            m_all.push_back(h);
+        }
+        for (size_t i = 0; i < m_customSwatches.size(); ++i)
+        {
+            const std::wstring name = L"Custom colour " + accent::ToHex(customs[i]);
+            SetWindowTextW(m_customSwatches[i], name.c_str());
+            Describe(m_customSwatches[i], name, L"Right-click it, or press the menu key, to delete it");
+        }
+    }
+
+    std::wstring SettingsWindow::SwatchLabel(HWND swatch) const
+    {
+        if (swatch == m_custom)
+            return kAddColour;
+        for (size_t i = 0; i < m_customSwatches.size(); ++i)
+            if (swatch == m_customSwatches[i] && i < m_state.preferences.accent.customs.size())
+                return accent::ToHex(m_state.preferences.accent.customs[i]);
+        for (int i = 0; i < accent::kPresetCount; ++i)
+            if (swatch == m_swatches[static_cast<size_t>(i)])
+                return accent::Name(static_cast<accent::Choice>(i));
+        return {};
+    }
+
     void SettingsWindow::FillAccent()
     {
         const auto& a = m_state.preferences.accent;
-        const int checked = static_cast<int>(a.choice) < accent::kPresetCount ? static_cast<int>(a.choice) : -1;
-        CheckOne(m_swatches, checked);
+        SyncCustomSwatches();
+        // The presets and the colours of your own are one radio group.
+        std::vector<HWND> swatches(m_swatches.begin(), m_swatches.end());
+        swatches.insert(swatches.end(), m_customSwatches.begin(), m_customSwatches.end());
+        int checked = static_cast<int>(a.choice) < accent::kPresetCount ? static_cast<int>(a.choice) : -1;
+        if (a.choice == accent::Choice::Custom)
+            if (const auto it = std::find(a.customs.begin(), a.customs.end(), a.custom); it != a.customs.end())
+                checked = accent::kPresetCount + static_cast<int>(it - a.customs.begin());
+        CheckOne(swatches, checked);
         Button_SetCheck(m_windowsAccent, a.choice == accent::Choice::Windows ? BST_CHECKED : BST_UNCHECKED);
-        SetWindowTextW(m_custom, CustomText(a).c_str());
         auto& header = StyleOf(m_accentHeader);
         header.open = m_accentOpen;
         header.trailing = m_accentOpen ? L"" : accent::Name(a.choice);
         for (HWND h : { m_custom, m_windowsAccent, m_accentHeader })
             Redraw(h);
+    }
+
+    void SettingsWindow::DeleteCustomColour(size_t index)
+    {
+        // Deleting the colour in use goes back to the Windows accent when that was in use before it,
+        // else to the first preset.
+        SetAccent(accent::DeleteCustom(m_state.preferences.accent, index, m_windowsBeforeCustom));
+    }
+
+    void SettingsWindow::NoteBeforeCustom()
+    {
+        const auto choice = m_state.preferences.accent.choice;
+        if (choice != accent::Choice::Custom)
+            m_windowsBeforeCustom = choice == accent::Choice::Windows;
     }
 
     void SettingsWindow::FillNaming()
@@ -365,10 +430,10 @@ namespace sd
         const auto* section = m_tree.Find(m_section);
         const bool on = f.SectionOn(m_section);
         SetWindowTextW(m_summary, section ? contents::Summary(f, *section).c_str() : L"");
-        SetWindowTextW(m_sectionOff, on ? L"Turn off this section" : L"Turn on this section");
+        SetWindowTextW(m_sectionOff, Option(Item::WheelContents, on ? 1 : 2));
         // The wheel needs a section: the last one on can't be turned off.
         EnableWindow(m_sectionOff, contents::CanTurnOff(f, m_section));
-        Describe(m_sectionOff, on ? L"Turn off this section" : L"Turn on this section",
+        Describe(m_sectionOff, Option(Item::WheelContents, on ? 1 : 2),
                  contents::CanTurnOff(f, m_section) ? L"" : L"At least one section stays on, or the wheel would have nothing to show");
         for (auto& g : m_groups)
         {
@@ -406,8 +471,8 @@ namespace sd
         const auto& before = m_state.preferences;
         const bool themeChanged = p.theme != before.theme;
         if (p.terminal != before.terminal || themeChanged || p.naming != before.naming || p.panelSize != before.panelSize)
-            log::Info(L"settings: terminal {}, theme {}, output names {}, top panel size {}%", kTerminals[static_cast<int>(p.terminal)],
-                      kThemes[static_cast<int>(p.theme)], static_cast<int>(p.naming), p.panelSize);
+            log::Info(L"settings: terminal {}, theme {}, output names {}, top panel size {}%", Option(Item::Terminal, static_cast<size_t>(p.terminal)),
+                      Option(Item::Theme, static_cast<size_t>(p.theme)), static_cast<int>(p.naming), p.panelSize);
         m_state.preferences = p;
         if (m_onPreferences)
             m_onPreferences(m_state.preferences);
@@ -422,11 +487,13 @@ namespace sd
             FillAccent();
             return;
         }
-        log::Info(L"settings: accent colour {}{}", accent::Name(a.choice), a.choice == accent::Choice::Custom ? L" " + accent::ToHex(a.custom) : L"");
+        log::Info(L"settings: accent colour {}{}, {} of your own", accent::Name(a.choice), a.choice == accent::Choice::Custom ? L" " + accent::ToHex(a.custom) : L"",
+                  a.customs.size());
         m_state.preferences.accent = a;
         if (m_onPreferences)
             m_onPreferences(m_state.preferences);
         FillAccent();
+        Layout();       // a swatch more or less
         ApplyTheme();   // the callback has set the new accent: every control redraws with it
     }
 
@@ -471,26 +538,98 @@ namespace sd
     void SettingsWindow::OnFind()
     {
         const std::wstring query = Text(m_find);
-        const auto found = settings::Search(query);
-        m_showFound = !found.empty();
+        m_results = settings::SearchAll(query, m_tree);
         if (Trim(query).empty())
             SetWindowTextW(m_findHint, L"");
-        else if (found.empty())
+        else if (m_results.empty())
             SetWindowTextW(m_findHint, std::format(L"No setting matches \u201C{}\u201D.", query).c_str());
+        else if (m_results.size() == 1)
+            SetWindowTextW(m_findHint, std::format(L"{}. Enter goes to it.", m_results.front().where).c_str());
         else
-            SetWindowTextW(m_findHint, found.size() == 1 ? L"Enter goes to it." : std::format(L"{} settings match. Enter goes to the first.", found.size()).c_str());
-        if (!found.empty())
+            SetWindowTextW(m_findHint, std::format(L"{}, and {} more. Enter goes to the first.", m_results.front().where, m_results.size() - 1).c_str());
+        if (m_results.empty())
         {
-            m_found = found.front();
-            const auto page = settings::Find(m_found).page;
-            if (page != m_page)
-                ShowPage(page);
-            else
-                Layout();
-            ScrollIntoView(m_rows[m_found].card);
+            Layout();
+            return;
         }
+        // To the best match: its page, and on the Wheel page its section with its card open.
+        const auto& found = m_results.front();
+        if (found.section >= 0)
+        {
+            m_section = static_cast<Ring>(found.section);
+            if (auto* g = FoundGroup(found))
+                g->open = true;
+            FillWheel();
+        }
+        if (found.page != m_page)
+            ShowPage(found.page);
         else
             Layout();
+        if (m_foundRect.bottom > m_foundRect.top)
+            ScrollIntoView(m_foundRect);
+    }
+
+    SettingsWindow::GroupView* SettingsWindow::FoundGroup(const settings::Found& found)
+    {
+        const auto* section = found.section >= 0 ? m_tree.Find(static_cast<Ring>(found.section)) : nullptr;
+        if (!section || found.group < 0 || static_cast<size_t>(found.group) >= section->groups.size())
+            return nullptr;
+        const auto* group = &section->groups[static_cast<size_t>(found.group)];
+        for (auto& g : m_groups)
+            if (g.group == group)
+                return &g;
+        return nullptr;
+    }
+
+    void SettingsWindow::PlaceFound()
+    {
+        // What Find a setting found, on this page: a ring around it, and where Enter goes.
+        m_foundRect = {};
+        m_foundRadius = ControlKit::kCardRadius;
+        m_foundControl = nullptr;
+        if (m_results.empty() || m_results.front().page != m_page)
+            return;
+        const auto& found = m_results.front();
+        const auto rectOf = [this](HWND h) {
+            RECT r{};
+            GetWindowRect(h, &r);
+            MapWindowPoints(nullptr, m_hwnd, reinterpret_cast<POINT*>(&r), 2);
+            return r;
+        };
+        const auto placed = [this](HWND h) { return h && std::find(m_placed.begin(), m_placed.end(), h) != m_placed.end(); };
+        if (found.section < 0)
+        {
+            if (const auto it = m_rows.find(found.item); it != m_rows.end())
+            {
+                m_foundRect = it->second.card;
+                m_foundControl = it->second.control;
+            }
+            return;
+        }
+        if (static_cast<int>(m_section) != found.section)
+            return;
+        const HWND tab = m_tabs[static_cast<size_t>(found.section)];
+        if (auto* g = FoundGroup(found); g && placed(g->header))
+        {
+            m_foundRect = g->card;
+            m_foundControl = g->header;
+            if (found.slice >= 0 && static_cast<size_t>(found.slice) < g->group->slices.size())
+                for (const auto& chip : g->chips)
+                    if (chip.slice == &g->group->slices[static_cast<size_t>(found.slice)] && placed(chip.button))
+                    {
+                        // Around the chip, as round as it is.
+                        const RECT r = rectOf(chip.button);
+                        m_foundRect = { r.left - Px(3), r.top - Px(3), r.right + Px(3), r.bottom + Px(3) };
+                        m_foundRadius = Dip(m_foundRect.bottom - m_foundRect.top) / 2;
+                        m_foundControl = chip.button;
+                    }
+        }
+        else if (found.group < 0 && placed(tab))
+        {
+            m_foundRect = rectOf(tab);
+            m_foundRadius = ControlKit::kControlRadius;
+            m_foundControl = tab;
+        }
     }
 
     void SettingsWindow::OnCommand(int id, int code, HWND control)
@@ -550,7 +689,7 @@ namespace sd
         else if ((id == kIdTerminal && code == CBN_SELCHANGE) || (id == kIdCommandLine && code == EN_CHANGE))
         {
             const int i = static_cast<int>(SendMessageW(m_terminal, CB_GETCURSEL, 0, 0));
-            if (i >= 0 && i < static_cast<int>(std::size(kTerminals)))
+            if (i >= 0 && i < static_cast<int>(settings::Options(Item::Terminal).size()))
                 p.terminal = static_cast<TerminalChoice>(i);
             p.terminalCommand = Text(m_commandLine);
             EnableWindow(m_commandLine, p.terminal == TerminalChoice::Custom);
@@ -598,15 +737,19 @@ namespace sd
         }
         else if (id == kIdCustom && clicked)
         {
-            // The colour dialog opens on the last colour of your own, or on the accent in use.
-            auto a = p.accent;
-            uint32_t rgb = a.custom != accent::kNoColour ? a.custom : accent::Current().fill;
+            // The colour dialog opens on the accent in use; the colour picked becomes a swatch of its own,
+            // chosen at once.
+            uint32_t rgb = accent::Current().fill;
             if (PickColour(m_hwnd, rgb))
             {
-                a.custom = rgb;
-                a.choice = accent::Choice::Custom;
-                SetAccent(a);
+                NoteBeforeCustom();
+                SetAccent(accent::AddCustom(p.accent, rgb));
             }
+        }
+        else if (id >= kIdCustomSwatch && id < kIdCustomSwatch + static_cast<int>(m_customSwatches.size()) && clicked && Checked(control))
+        {
+            NoteBeforeCustom();
+            SetAccent(accent::ChooseCustom(p.accent, static_cast<size_t>(id - kIdCustomSwatch)));
         }
         else if (id == kIdWindowsAccent && clicked)
         {
@@ -661,7 +804,7 @@ namespace sd
                 Layout();
             }
         }
-        else if (id >= kIdChip && clicked)
+        else if (id >= kIdChip && id < kIdCustomSwatch && clicked)
         {
             for (const auto& g : m_groups)
                 for (const auto& chip : g.chips)
@@ -738,6 +881,7 @@ namespace sd
             Layout();   // the page got shorter than where it was scrolled to: once more, from the new place
             return;
         }
+        PlaceFound();
         // Everything this page doesn't show is hidden, so Tab and screen readers skip it.
         for (HWND h : m_all)
         {
@@ -835,14 +979,26 @@ namespace sd
             if (m_accentOpen)
             {
                 m_lines.push_back({ x + Px(1), y, x + width - Px(1), y + Px(1) });
-                const int cells = accent::kPresetCount + 1, cell = Px(kSwatchCell);
-                const int perLine = std::max(1, (width - Px(54) - Px(18)) / cell);
-                for (int i = 0; i < cells; ++i)
+                // The presets, the colours of your own, then the colour button, in lines that wrap; each
+                // cell as wide as its name (semibold, as when chosen), so no name is ever cut.
+                std::vector<HWND> cells(m_swatches.begin(), m_swatches.end());
+                cells.insert(cells.end(), m_customSwatches.begin(), m_customSwatches.end());
+                cells.push_back(m_custom);
+                const int left = x + Px(46), right = x + width - Px(18);
+                int cx = left, cy = y + Px(14);
+                for (HWND h : cells)
                 {
-                    const HWND h = i < accent::kPresetCount ? m_swatches[static_cast<size_t>(i)] : m_custom;
-                    Place(h, x + Px(46) + (i % perLine) * cell, y + Px(14) + (i / perLine) * Px(kSwatchH + 8), cell, Px(kSwatchH));
+                    const float name = Kit().TextWidth(SwatchLabel(h), ControlKit::kSmallText, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+                    const int w = Px(std::max(kSwatchCell, static_cast<int>(std::ceil(name)) + 12));
+                    if (cx > left && cx + w > right)
+                    {
+                        cx = left;
+                        cy += Px(kSwatchH + 8);
+                    }
+                    Place(h, cx, cy, w, Px(kSwatchH));
+                    cx += w;
                 }
-                y += Px(14) + ((cells + perLine - 1) / perLine) * Px(kSwatchH + 8) + Px(6);
+                y = cy + Px(kSwatchH + 8) + Px(6);
                 m_lines.push_back({ x + Px(1), y, x + width - Px(1), y + Px(1) });
                 auto& windows = m_rows[Item::WindowsAccent];
                 y = LayoutRow(windows, x, y, width, Px(96), Px(kControlH));
@@ -893,8 +1049,10 @@ namespace sd
             m_cards.push_back({ m_aboutCard, 0 });
             Place(m_aboutName, x + Px(92), y + Px(36), std::max(0, width - Px(320)), Px(48));
             Place(m_aboutVersion, x + width - Px(240), y + Px(26), Px(216), Px(22));
-            const int pw = Px(static_cast<int>(Kit().TextWidth(L"Free and open source", 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 32);
-            m_freePill = { x + width - Px(24) - pw, y + Px(58), x + width - Px(24), y + Px(92) };
+            // The pill fits its whole text with room to spare, rounded up: never "Free and open sour…".
+            const int textW = static_cast<int>(std::ceil(Kit().TextWidth(Text(m_aboutFree), 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD))) + 4;
+            const int pw = Px(textW + 32);
+            m_freePill = { x + width - Px(24) - pw, y + Px(58), x + width - Px(24), y + Px(94) };
             Place(m_aboutFree, m_freePill.left + Px(16), m_freePill.top + Px(1), pw - Px(32), m_freePill.bottom - m_freePill.top - Px(2));
             y += Px(120) + gap;
             m_rows[Item::Version].card = m_aboutCard;
@@ -924,7 +1082,8 @@ namespace sd
         y += Px(16);
         // The section's line, and its two buttons at the end.
         const int resetW = Px(static_cast<int>(Kit().TextWidth(Text(m_reset), ControlKit::kControlText)) + 30);
-        const int offW = Px(static_cast<int>(Kit().TextWidth(L"Turn off this section", ControlKit::kControlText)) + 52);
+        const int offW = Px(static_cast<int>(std::ceil(std::max(Kit().TextWidth(Option(Item::WheelContents, 1), ControlKit::kControlText),
+                                                                 Kit().TextWidth(Option(Item::WheelContents, 2), ControlKit::kControlText)))) + 52);
         Place(m_reset, x + width - resetW, y, resetW, Px(kControlH));
         Place(m_sectionOff, x + width - resetW - Px(8) - offW, y, offW, Px(kControlH));
         const int sw = std::max(Px(80), width - resetW - offW - Px(24));
@@ -988,6 +1147,7 @@ namespace sd
                 y = bottom + Px(18);
             }
             m_cards.push_back({ { x, cardTop, x + width, y }, 0 });
+            g.card = { x, cardTop, x + width, y };
             y += Px(kCardGap);
         }
         if (!any)
@@ -1018,10 +1178,9 @@ namespace sd
                 kit.DrawGlyph(card.icon, 18.f, D2D1::RectF(r.left + 16, cy - 12, r.left + 40, cy + 12), c.text);
             }
         }
-        // The setting "Find a setting" found: a ring in the accent around its card.
-        if (m_showFound && settings::Find(m_found).page == m_page)
-            if (const auto it = m_rows.find(m_found); it != m_rows.end() && visible(it->second.card))
-                kit.StrokeRound(DipRect(it->second.card), c.accent, 2.f, ControlKit::kCardRadius);
+        // What Find a setting found: a ring in the accent around its card, chip or tab.
+        if (visible(m_foundRect))
+            kit.StrokeRound(DipRect(m_foundRect), c.accent, 2.f, m_foundRadius);
         for (const auto& line : m_lines)
             if (line.bottom > line.top)
                 kit.FillRound(DipRect(line), c.line, 0.f);
@@ -1070,21 +1229,20 @@ namespace sd
 
     void SettingsWindow::DrawControl(HWND control, ControlKit& kit, const D2D1_RECT_F& r, ControlKit::ControlState s)
     {
-        // A swatch: the colour over its name.
+        // A swatch: the colour over its name; the colour button: a + over "Custom…".
         const auto& a = m_state.preferences.accent;
         const auto colour = [](uint32_t rgb) { return theme::Rgb(rgb); };
         const float cx = (r.left + r.right) / 2;
         const auto disc = D2D1::RectF(cx - 21, r.top, cx + 21, r.top + 42);
         bool selected = false;
-        std::wstring name;
         if (control == m_custom)
+            kit.DrawSwatch(disc, kit.Theme().control, kGlyphAdd, kit.Theme().text, false, s);
+        else if (const auto it = std::find(m_customSwatches.begin(), m_customSwatches.end(), control); it != m_customSwatches.end())
         {
-            // The colour of your own once there is one; ticked while in use.
-            const bool picked = a.custom != accent::kNoColour;
-            selected = a.choice == accent::Choice::Custom;
-            kit.DrawSwatch(disc, picked ? colour(a.custom) : kit.Theme().control, selected ? kGlyphCheck : picked ? kGlyphPalette : kGlyphAdd,
-                           picked ? colour(accent::TextOn(a.custom)) : kit.Theme().text, selected, s);
-            name = L"Custom\u2026";
+            const auto i = static_cast<size_t>(it - m_customSwatches.begin());
+            const uint32_t rgb = i < a.customs.size() ? a.customs[i] : 0;
+            selected = a.choice == accent::Choice::Custom && a.custom == rgb;
+            kit.DrawSwatch(disc, colour(rgb), selected ? kGlyphCheck : 0, colour(accent::TextOn(rgb)), selected, s);
         }
         else
             for (int i = 0; i < accent::kPresetCount; ++i)
@@ -1094,9 +1252,8 @@ namespace sd
                     const uint32_t fill = accent::Preset(choice).fill;
                     selected = a.choice == choice;
                     kit.DrawSwatch(disc, colour(fill), selected ? kGlyphCheck : 0, colour(accent::TextOn(fill)), selected, s);
-                    name = accent::Name(choice);
                 }
-        kit.DrawText(name, kit.TextFormat(ControlKit::kSmallText, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+        kit.DrawText(SwatchLabel(control), kit.TextFormat(ControlKit::kSmallText, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
                      D2D1::RectF(r.left, r.top + 42, r.right, r.bottom), selected ? kit.Theme().text : kit.Theme().textDim);
     }
 
@@ -1113,10 +1270,12 @@ namespace sd
                 ShowWindow(m_hwnd, SW_HIDE);
             else if (id == IDOK)
             {
-                // Enter in Find a setting: to the setting it found.
-                if (GetFocus() == m_find && m_showFound)
-                    if (const HWND target = m_rows[m_found].control)
-                        SetFocus(target);
+                // Enter in Find a setting: to what it found.
+                if (GetFocus() == m_find && m_foundControl)
+                {
+                    SetFocus(m_foundControl);
+                    ShowFocusCues(true);   // the keyboard took you there: show where
+                }
             }
             else if (!m_updating)
                 OnCommand(id, HIWORD(wParam), reinterpret_cast<HWND>(lParam));
@@ -1129,6 +1288,29 @@ namespace sd
         case WM_CLOSE:
             ShowWindow(m_hwnd, SW_HIDE);   // kept for next time; destroyed with the app
             return 0;
+        case WM_CONTEXTMENU:
+        {
+            // A colour of your own: right-click (or the menu key) offers to delete it. Presets can't be.
+            const auto control = reinterpret_cast<HWND>(wParam);
+            const auto it = std::find(m_customSwatches.begin(), m_customSwatches.end(), control);
+            if (it == m_customSwatches.end())
+                break;
+            const auto index = static_cast<size_t>(it - m_customSwatches.begin());
+            POINT at{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            if (lParam == -1)
+            {
+                RECT r{};
+                GetWindowRect(control, &r);
+                at = { (r.left + r.right) / 2, r.bottom };
+            }
+            wil::unique_hmenu menu(CreatePopupMenu());
+            if (!menu)
+                return 0;
+            AppendMenuW(menu.get(), MF_STRING, kIdDeleteColour, Option(Item::Accent, 1));
+            if (TrackPopupMenu(menu.get(), TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, at.x, at.y, 0, m_hwnd, nullptr) == static_cast<BOOL>(kIdDeleteColour))
+                DeleteCustomColour(index);
+            return 0;
+        }
         default:
             break;
         }

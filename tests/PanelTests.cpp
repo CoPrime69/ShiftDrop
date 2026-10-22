@@ -541,13 +541,20 @@ TEST(Panel, AppearanceHasNoHideCursorSetting)
     EXPECT_EQ(b.size, WheelSize::Small);
     EXPECT_EQ(b.style, Style::Glass);
 
-    // No file: Medium and Solid.
+    // No file: Auto and Solid; the default too.
     const auto c = LoadAppearance(dir / L"missing.ini");
-    EXPECT_EQ(c.size, WheelSize::Medium);
+    EXPECT_EQ(c.size, WheelSize::Auto);
     EXPECT_EQ(c.style, Style::Solid);
-    // A saved Auto is still read as Auto.
+    EXPECT_EQ(Appearance{}.size, WheelSize::Auto);
+    // Saved choices are read as they were: Auto and Medium both.
     a.size = WheelSize::Auto;
     SaveAppearance(a, ini);
+    EXPECT_EQ(LoadAppearance(ini).size, WheelSize::Auto);
+    a.size = WheelSize::Medium;
+    SaveAppearance(a, ini);
+    EXPECT_EQ(LoadAppearance(ini).size, WheelSize::Medium);
+    // A value it doesn't know: Auto.
+    WritePrivateProfileStringW(L"Appearance", L"Size", L"huge", ini.c_str());
     EXPECT_EQ(LoadAppearance(ini).size, WheelSize::Auto);
 }
 

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // The accent colour: the hovered wheel slice, the top panel's active section, the Float shelf's
 // highlights, and the editors' buttons, switches and selection. Settings › Accent colour picks one of
@@ -21,16 +22,26 @@ namespace sd::accent
 
     inline constexpr uint32_t kNoColour = 0xFFFFFFFFu;   // not 0xRRGGBB: no custom colour picked yet
 
-    // [Appearance] Accent=tide|blue|purple|pink|red|orange|green|graphite|custom|windows and, once a
-    // colour of your own was picked, AccentCustom=#RRGGBB (kept while a preset is chosen, so Custom
-    // brings it back). No key, a value it doesn't know, or custom without a colour, reads as Windows: the
-    // default is the accent the user already chose in Windows (Prakhar 2026-10-21).
+    // [Appearance] Accent=tide|blue|purple|pink|red|orange|green|graphite|custom|windows, the colours of
+    // your own as AccentCustoms=#RRGGBB,#RRGGBB (as many as you add, in the order you added them), and
+    // AccentCustom=#RRGGBB, the one of them Custom uses (the only one before there could be several:
+    // a file with it alone reads as a list of one). No key, a value it doesn't know, or custom without
+    // a colour, reads as Windows: the default is the accent the user already chose in Windows
+    // (Prakhar 2026-10-21).
     struct Setting
     {
         Choice choice = Choice::Windows;
-        uint32_t custom = kNoColour;
+        uint32_t custom = kNoColour;        // the colour of your own in use while choice is Custom (one of `customs`)
+        std::vector<uint32_t> customs;      // every colour of your own, a swatch each after the presets
         bool operator==(const Setting&) const = default;
     };
+    // `rgb` added to the colours of your own (once: a colour already there is not added again) and chosen.
+    Setting AddCustom(Setting setting, uint32_t rgb);
+    // Colour `index` of `customs` chosen.
+    Setting ChooseCustom(Setting setting, size_t index);
+    // Colour `index` of `customs` deleted. When it was the one in use, the accent falls back to the
+    // Windows accent colour when `windows`, else to the first preset (Tide). The presets can't be deleted.
+    Setting DeleteCustom(Setting setting, size_t index, bool windows);
     Setting Load(const std::wstring& path);
     void Save(const Setting& setting, const std::wstring& path);
     std::wstring ToHex(uint32_t rgb);                       // "#12A58E"

@@ -124,6 +124,7 @@ namespace sd::inspect
                     }
                     if (wParam == VK_TAB)
                     {
+                        self->ShowFocusCues(true);
                         // Search, the list, the file's tab (with several files), and round again.
                         const HWND tab = self->m_tabs.size() > 1 ? self->m_tabs[self->m_tab] : nullptr;
                         HWND next = hwnd == self->m_search ? self->m_list : hwnd == self->m_list && tab ? tab : self->m_search;

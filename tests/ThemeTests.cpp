@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 #include <string>
 #include <vector>
@@ -325,4 +327,51 @@ TEST(EditorChrome, ToolBarRightGroupAndZoom)
     for (const auto& c : choices)
         if (c.zoom > 0)
             EXPECT_EQ(chrome::ZoomLabel(c.zoom, false), c.label);
+}
+
+// ---- Crisp edges (the control kit's FillRound, StrokeRound and focus ring) ----------------------------
+
+TEST(Theme, EdgesLandOnWholePixelsAtAnyScale)
+{
+    for (const float scale : { 1.f, 1.25f, 1.5f, 1.75f, 2.f, 2.5f })
+    {
+        // A card at a DIP place that falls between pixels: each edge moves to a pixel edge, at most half a pixel.
+        const auto in = D2D1::RectF(10.3f, 20.6f, 110.45f, 80.2f);
+        const auto out = SnapToPixels(in, 0.f, 0.f, scale, scale);
+        for (const auto [a, b] : { std::pair{ in.left, out.left }, { in.top, out.top }, { in.right, out.right }, { in.bottom, out.bottom } })
+        {
+            EXPECT_NEAR(b * scale, std::round(b * scale), 1e-3) << scale;
+            EXPECT_LE(std::abs(b - a) * scale, 0.5f + 1e-3f) << scale;
+        }
+        // With the DIP origin moved (a control drawn at its place in the window), the device pixels count.
+        const auto moved = SnapToPixels(in, 3.3f, 7.1f, scale, scale);
+        EXPECT_NEAR((moved.left + 3.3f) * scale, std::round((moved.left + 3.3f) * scale), 1e-3) << scale;
+        EXPECT_NEAR((moved.bottom + 7.1f) * scale, std::round((moved.bottom + 7.1f) * scale), 1e-3) << scale;
+        // A hairline stays a pixel; nothing becomes nothing.
+        const auto hair = SnapToPixels(D2D1::RectF(5.f, 9.9f, 50.f, 10.1f), 0.f, 0.f, scale, scale);
+        EXPECT_NEAR((hair.bottom - hair.top) * scale, 1.f, 1e-3) << scale;
+        // A 1 DIP line is whole pixels, at least one: one up to 150%, two from 175%; 1.5 DIPs two at 150%.
+        EXPECT_NEAR(PixelLine(1.f, scale) * scale, scale < 1.7f ? 1.f : 2.f, 1e-4) << scale;
+        EXPECT_GE(PixelLine(0.2f, scale) * scale, 1.f - 1e-4f);
+    }
+    EXPECT_NEAR(PixelLine(1.5f, 1.5f) * 1.5f, 2.f, 1e-4);
+    // No scale: nothing moves.
+    const auto same = SnapToPixels(D2D1::RectF(1.2f, 2.2f, 3.2f, 4.2f), 0.f, 0.f, 0.f, 0.f);
+    EXPECT_FLOAT_EQ(same.left, 1.2f);
+}
+
+TEST(Theme, FocusRingStaysInsideWhatCanBeDrawn)
+{
+    // Room around the control: 2 DIPs out on every side.
+    const auto ring = FocusRingRect(D2D1::RectF(10, 10, 50, 30), D2D1::RectF(0, 0, 100, 100));
+    EXPECT_FLOAT_EQ(ring.left, 8.f);
+    EXPECT_FLOAT_EQ(ring.top, 8.f);
+    EXPECT_FLOAT_EQ(ring.right, 52.f);
+    EXPECT_FLOAT_EQ(ring.bottom, 32.f);
+    // A control that fills its own window (a navigation item, a tab): the whole ring inside it, not cut.
+    const auto own = FocusRingRect(D2D1::RectF(0, 0, 200, 38), D2D1::RectF(0, 0, 200, 38));
+    EXPECT_FLOAT_EQ(own.left, 0.f);
+    EXPECT_FLOAT_EQ(own.top, 0.f);
+    EXPECT_FLOAT_EQ(own.right, 200.f);
+    EXPECT_FLOAT_EQ(own.bottom, 38.f);
 }

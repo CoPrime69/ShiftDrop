@@ -86,13 +86,79 @@ namespace sd::accent
         return true;
     }
 
+    Setting AddCustom(Setting s, uint32_t rgb)
+    {
+        rgb &= 0xFFFFFF;
+        if (std::find(s.customs.begin(), s.customs.end(), rgb) == s.customs.end())
+            s.customs.push_back(rgb);
+        s.choice = Choice::Custom;
+        s.custom = rgb;
+        return s;
+    }
+
+    Setting ChooseCustom(Setting s, size_t index)
+    {
+        if (index < s.customs.size())
+        {
+            s.choice = Choice::Custom;
+            s.custom = s.customs[index];
+        }
+        return s;
+    }
+
+    Setting DeleteCustom(Setting s, size_t index, bool windows)
+    {
+        if (index >= s.customs.size())
+            return s;
+        const uint32_t gone = s.customs[index];
+        s.customs.erase(s.customs.begin() + static_cast<std::ptrdiff_t>(index));
+        if (s.custom == gone)
+        {
+            if (s.choice == Choice::Custom)
+                s.choice = windows ? Choice::Windows : Choice::Tide;
+            s.custom = kNoColour;
+        }
+        return s;
+    }
+
     Setting Load(const std::wstring& path)
     {
         Setting s;
+        // The list first: as many colours as were added, so the buffer grows until the value fits.
+        std::wstring list(256, L'\0');
+        for (;;)
+        {
+            const DWORD n = GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", list.data(), static_cast<DWORD>(list.size()), path.c_str());
+            if (n + 2 < list.size())
+            {
+                list.resize(n);
+                break;
+            }
+            list.resize(list.size() * 2);
+        }
+        for (size_t at = 0; at <= list.size();)
+        {
+            const size_t end = std::min(list.find(L',', at), list.size());
+            const std::wstring_view item = std::wstring_view(list).substr(at, end - at);
+            const auto trimmed = item.substr(std::min(item.find_first_not_of(L' '), item.size()));
+            if (uint32_t rgb = 0; ParseHex(trimmed.substr(0, trimmed.find_last_not_of(L' ') + 1), rgb))
+            {
+                if (std::find(s.customs.begin(), s.customs.end(), rgb) == s.customs.end())
+                    s.customs.push_back(rgb);
+            }
+            else if (!trimmed.empty())
+                log::Warn(L"settings: [Appearance] AccentCustoms has '{}', not a colour like #12A58E; skipping it", trimmed);
+            at = end + 1;
+        }
         wchar_t custom[32]{};
         GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", custom, ARRAYSIZE(custom), path.c_str());
         if (uint32_t rgb = 0; custom[0] && ParseHex(custom, rgb))
+        {
             s.custom = rgb;
+            // A settings.ini from before the list: its one colour becomes a list of one.
+            if (std::find(s.customs.begin(), s.customs.end(), rgb) == s.customs.end())
+                s.customs.push_back(rgb);
+        }
         else if (custom[0])
             log::Warn(L"settings: [Appearance] AccentCustom='{}' is not a colour like #12A58E; ignoring it", custom);
         s.choice = static_cast<Choice>(IniChoice(path, L"Appearance", L"Accent", kIds, static_cast<int>(Choice::Windows)));
@@ -108,6 +174,10 @@ namespace sd::accent
     {
         WritePrivateProfileStringW(L"Appearance", L"Accent", kIds[static_cast<int>(s.choice)], path.c_str());
         WritePrivateProfileStringW(L"Appearance", L"AccentCustom", s.custom == kNoColour ? nullptr : ToHex(s.custom).c_str(), path.c_str());
+        std::wstring list;
+        for (const uint32_t rgb : s.customs)
+            list += (list.empty() ? L"" : L",") + ToHex(rgb);
+        WritePrivateProfileStringW(L"Appearance", L"AccentCustoms", list.empty() ? nullptr : list.c_str(), path.c_str());
     }
 
     double Contrast(uint32_t a, uint32_t b)
