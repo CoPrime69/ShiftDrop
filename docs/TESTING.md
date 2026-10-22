@@ -741,7 +741,7 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
 - [ ] Scrolling is plain Windows scrolling: one notch moves the page by the lines set in Windows Settings › Bluetooth & devices › Mouse › "Lines to scroll at a time" (3 by default), "One screen at a time" moves a page; it follows the wheel at once, with no glide or catch-up, and no card, label or chip smears or redraws while it moves; a precise touchpad scrolls as finely as it is moved
 - [ ] Appearance › **Top panel size**: drag the thumb slowly and fast from 50% to 300% and back, click the bar, use the arrow keys and Page Up / Page Down: the bar fills up to the thumb in one clean piece, with no streaks, dashes or rings left behind; "50%" sits under the start of the bar and "300%" ends under its right end
 - [ ] Borders all the way round, at 100%, 125%, 150% and 175%: every card's 1 px border and rounded corners are complete and crisp (Accent colour and the Wheel page's cards included, under their header too), and the selected navigation item's rounded fill has whole corners
-- [ ] No stray rectangles: the **Preview** label above the mini wheel sits on the preview's own darker panel; Output's live example is one rounded panel from end to end with "Live example" at its right on the same colour; About's "Version 0.6.0" sits on the card colour and the pill reads **Free and open source** in full, at every scaling; History's, Rename's, the inspector's and a question's labels sit on exactly their card or bar colour
+- [ ] No stray rectangles: the **Preview** label above the mini wheel sits on the preview's own darker panel; Output's live example is one rounded panel from end to end with "Live example" at its right on the same colour; About's "Version …" sits on the card colour and the pill reads **Free and open source** in full, at every scaling; History's, Rename's, the inspector's and a question's labels sit on exactly their card or bar colour
 - [ ] Focus rings only for the keyboard: click a tab on Wheel (Tools), a navigation item, a chip, a switch, a button: no ring, only the selected look (accent underline and semibold for a tab); press Tab: a thin rounded ring shows on the focused control, whole even on a control that fills its own space (a navigation item); click again: the rings go. The same in History, Rename, the inspector and a question
 - [ ] General: **Start with Windows**, **Text recognition language**, **Show Float shelf**, **Save browser drops to** and **Terminal app** (with **Command line**, greyed out unless Custom command is picked) do what the tray menu's entries do, and the tray menu shows the change at once (and the other way round: change it in the tray, open Settings again)
 - [ ] Appearance: a preview of the wheel at the top in the Style and accent in use; **Theme**, **Style** and **Size** (Auto on a new install) as segmented choices; **Top panel size** as below; **Accent colour** folds open on the swatches with **Use my Windows accent colour** under them, and folded it names the accent in use
@@ -813,3 +813,13 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
    not start.
 6. Uninstall from Settings > Apps while it runs: the tray icon goes away, the folder and Start menu
    entry are removed, `HKCU\…\Run` has no ShiftDrop value, and `%LOCALAPPDATA%\ShiftDrop` is still there.
+7. One version everywhere. With a pull request's or main's installer (`ShiftDrop-Setup-0.6.0+<commit>.exe`,
+   the version in [VERSION](../VERSION) plus the first 7 characters of the commit it was built from):
+   - [ ] The welcome page, Settings > Apps, the startup notification, Settings' top left and About
+     all say `0.6.0+<commit>`, the same commit as the file name and the run's commit
+   - [ ] Right-click the installed `ShiftDrop.exe` > Properties > Details: Product version
+     `0.6.0+<commit>`, File version `0.6.0.0`; the setup exe's Details say the same
+   - [ ] With the release's installer from the Releases page (`ShiftDrop-Setup-0.6.0.exe`): every
+     one of the places above says plain `0.6.0`, with nothing after it
+   - [ ] Install a main build over the release, then the release over it: each time About shows the
+     version of the installer just run, never the one before

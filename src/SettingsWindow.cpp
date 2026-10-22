@@ -1,4 +1,5 @@
 #include "SettingsWindow.h"
+#include "AppVersion.h"
 #include "Brand.h"
 #include "Log.h"
 #include "OutputPath.h"
@@ -124,7 +125,8 @@ namespace sd
             return h;
         };
         m_appName = keep(Label(SD_NAME, TextRole::AppName, Surface::Window));
-        m_version = keep(Label(L"Version " SD_VERSION, TextRole::Caption, Surface::Window));
+        const std::wstring versionText = std::format(L"Version {}", version::Display());
+        m_version = keep(Label(versionText.c_str(), TextRole::Caption, Surface::Window));
         m_find = keep(TextField(kIdFind, 0, L"Find a setting", true, Surface::Window));
         Describe(m_find, L"Find a setting");
         m_findHint = keep(Label(L"", TextRole::Hint, Surface::Window));
@@ -238,7 +240,7 @@ namespace sd
 
         // About
         m_aboutName = keep(Label(SD_NAME, TextRole::Heading));
-        m_aboutVersion = keep(Label(L"Version " SD_VERSION, TextRole::Value));
+        m_aboutVersion = keep(Label(versionText.c_str(), TextRole::Value));
         m_aboutFree = keep(Label(L"Free and open source", TextRole::Strong));
         m_source = keep(KitButton(Look::Icon, Option(Item::SourceCode, 0), kIdSource, Surface::Card, kGlyphOpen));
         MakeRow(Item::SourceCode, m_source);

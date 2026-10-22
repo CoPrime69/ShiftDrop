@@ -1,4 +1,5 @@
 #include "updates/Updates.h"
+#include "AppVersion.h"
 #include "Brand.h"
 #include "FileIo.h"
 #include "Log.h"
@@ -19,17 +20,16 @@
 
 namespace sd::updates
 {
-    // The one place that reads the build's version. When the generated version header lands, this
-    // returns its display string instead (the version and, for a build that isn't the release, its
-    // commit); RunningBase() already drops that part.
+    // The one place that reads the build's version (AppVersion.h, from VERSION): "0.6.0+b950d51" for a
+    // main or pull-request build, which counts as 0.6.0.
     std::wstring RunningVersion()
     {
-        return SD_VERSION;
+        return version::Display();
     }
 
     Version RunningBase()
     {
-        return ParseVersion(RunningVersion()).value_or(Version{});
+        return ParseVersion(version::Base()).value_or(Version{});
     }
 
     namespace

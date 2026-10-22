@@ -121,6 +121,16 @@ CMake options, if you need them (pass with `-D` on the configure line):
 | `SHIFTDROP_TESTS` | `ON` | Build `shiftdrop_tests` and register the tests with CTest |
 | `SHIFTDROP_M0` | `OFF` | The placeholder build (set by the `x64-release-m0` preset) |
 | `SHIFTDROP_ENGINES_DIR` | `build/engines` | Where CMake looks for `ffmpeg.exe` |
+| `SHIFTDROP_COMMIT` | empty | The commit shown after the version; empty means git's `HEAD` at build time |
+| `SHIFTDROP_RELEASE` | `OFF` | The release build: the version alone, no `+commit` (only CI's release build sets it) |
+
+The version is written once, in [VERSION](../VERSION) at the root (`0.6.0`). Every build generates
+`Version.h` from it into `<build folder>\generated` (with
+[scripts/make-version-header.cmake](../scripts/make-version-header.cmake)); the app, its version
+resource and the installer all take the version from there. A build shows where it came from:
+About, the startup notification, the log and the exe's ProductVersion say `0.6.0+b950d51` (the
+commit), or `0.6.0+dev` outside a git checkout, so a test build never looks like the release. Only the
+build that publishes a release says plain `0.6.0`.
 
 The build makes:
 
@@ -213,15 +223,19 @@ The installer is an [Inno Setup](https://jrsoftware.org/isinfo.php) script,
 ```powershell
 ./scripts/get-ffmpeg.ps1       # if you haven't already
 ./scripts/make-notices.ps1
-$version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+$version = (Get-Item build\x64-release\Release\ShiftDrop.exe).VersionInfo.ProductVersion
 & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$version" installer\ShiftDrop.iss
+./scripts/check-version.ps1 -Exe build\x64-release\Release\ShiftDrop.exe -Setup "build\installer\ShiftDrop-Setup-$version.exe"
 ```
 
 - [scripts/make-notices.ps1](../scripts/make-notices.ps1) writes `build\installer\THIRD-PARTY-NOTICES.txt`
   from the copyright files vcpkg installed under `build\x64-release\vcpkg_installed`, plus ffmpeg's
   notices from `build\engines`. It stops if one is missing.
-- The version comes from `SD_VERSION` in [src/Brand.h](../src/Brand.h).
-- The result is `build\installer\ShiftDrop-Setup-<version>.exe`.
+- The version is the one the exe states (from [VERSION](../VERSION)), commit included:
+  `build\installer\ShiftDrop-Setup-0.6.0+b950d51.exe`. Only CI's release build makes
+  `ShiftDrop-Setup-0.6.0.exe`.
+- [scripts/check-version.ps1](../scripts/check-version.ps1) fails if the exe or the installer
+  disagree with `VERSION`; CI runs it on every build.
 
 CI then runs [scripts/test-installer.ps1](../scripts/test-installer.ps1) on it: install, upgrade over a
 running copy, keep a saved "start with Windows" choice, uninstall. It uses the real per-user install
@@ -280,7 +294,8 @@ request and every `v*` tag. Its jobs:
    the pinned BtbN build instead.
 2. **build** (Windows Server 2022): gets ffmpeg, checks its components, configures with the `ci`
    preset and compiles everything once: the app, the worker and the tests. It runs the offline
-   check, writes the third-party notices and uploads the binaries for the jobs below.
+   check and the version check, writes the third-party notices and uploads the binaries for the
+   jobs below.
 3. **tests (1 of 3)**, **(2 of 3)**, **(3 of 3)** (Windows, at the same time): each downloads the
    test exe and runs every third test with CTest (`-I <shard>,<total>,3`), so the three together run
    each test exactly once; each checks that first. Every test runs in its own process, four at a
@@ -291,7 +306,7 @@ request and every `v*` tag. Its jobs:
    (`SHIFTDROP_M0=ON`), the app target only.
 6. **timings** (tags, runs started by hand, pull requests labelled `bench`): the speed benchmark,
    the photo tools' 12 MP export times and our ffmpeg against the BtbN build.
-7. **release** (pushes to main and `v*` tags): publishes the GitHub Release for `SD_VERSION` once
+7. **release** (pushes to main and `v*` tags): publishes the GitHub Release for `VERSION` once
    everything above passed, if that version has none yet (see below).
 
 **A push to main reuses its pull request's run.** Every pull-request run marks the tree it tested
@@ -321,17 +336,32 @@ its numbers.
 The speed benchmark runs only when asked: label a pull request `bench`, or start the workflow by hand
 ("Run workflow" on the Actions page) with "bench" ticked. Its table goes on the run's summary page.
 
-**Releases.** After a push to main passes (built here or reused), the release job reads
-`SD_VERSION` from `src/Brand.h`. If there is no release `v<SD_VERSION>` yet, it creates it on that
+**Releases.** The version lives in [VERSION](../VERSION) and nowhere else. On a push to main the
+reuse job first asks whether `v<VERSION>` has a release yet. If it has, the push reuses its pull
+request's run as above, and its exe and installer say `<VERSION>+<commit>`. If it hasn't, that push
+is the release build: it skips the reuse, builds in full with `SHIFTDROP_RELEASE=ON` (the version
+alone, no `+commit`) and, once everything passed, the release job creates the release on that
 commit, which also creates the tag, with the installer, for our own ffmpeg build the ffmpeg
 source tarball, and `SHA256SUMS.txt` (the SHA-256 of each of those files, in `sha256sum` format,
-so `sha256sum -c SHA256SUMS.txt` checks a download). Otherwise it does nothing, so bumping
-`SD_VERSION` is what makes the next release. The notes say how to install, list the titles of the
+so `sha256sum -c SHA256SUMS.txt` checks a download). The notes say how to install, list the titles of the
 pull requests merged since the previous release (all of them for the first one), warn that the
 installer isn't code-signed yet and give the installer's SHA-256. They are built from titles only,
 and the job checks them against a list of names that must not appear before it publishes. A
-pushed tag `v<version>` builds in full and publishes the same way; a tag that doesn't match
-`SD_VERSION` fails the release job.
+pushed tag `v<version>` builds in full as the release build and publishes the same way.
+
+What CI checks against `VERSION` ([scripts/check-version.ps1](../scripts/check-version.ps1)): that
+[CHANGELOG.md](../CHANGELOG.md) has its release heading (`## [0.6.0] - <date>`), the exe's file and
+product version (with the commit, or without it on the release build), the installer's name and
+version, on the release job the tag, and that `vcpkg.json` states no version of its own (it needs
+none, and leaving it out keeps vcpkg's caches across a version bump).
+
+### How to release
+
+1. In one pull request, change [VERSION](../VERSION) (`0.6.0` to `0.7.0`) and in
+   [CHANGELOG.md](../CHANGELOG.md) turn `## [Unreleased]` into `## [0.7.0] - <date>` (with a new
+   empty `## [Unreleased]` above it). Its CI fails if the CHANGELOG has no heading for the new
+   version.
+2. Merge it. The push to main builds the release and publishes `v0.7.0`; nothing else to do.
 
 ## When something goes wrong
 

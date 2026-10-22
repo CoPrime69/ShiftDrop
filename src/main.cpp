@@ -11,6 +11,7 @@
 //   shell worker one STA thread for IFileOperation work (Move to…, Rename…)
 //   office worker one STA thread for Word, Excel and PowerPoint exports, so moves never wait on them
 //   shelf worker one STA thread for the Float shelf: thumbnails, missing-file checks, clipboard pictures
+#include "AppVersion.h"
 #include "Ask.h"
 #include "Brand.h"
 #include "DropTarget.h"
@@ -421,9 +422,9 @@ namespace sd
             SetTimer(m_hwnd.get(), kTimerWatchdog, 3000, nullptr);
 
 #if SHIFTDROP_M0
-            constexpr const wchar_t* kBuild = L"M0 placeholder build";
+            const std::wstring build = L"M0 placeholder build";
 #else
-            constexpr const wchar_t* kBuild = L"Version " SD_VERSION;
+            const std::wstring build = std::format(L"Version {}", version::Display());
 #endif
             if (IsElevated())
             {
@@ -441,9 +442,9 @@ namespace sd
             else if (!m_autostart && m_startWheel.empty())
             {
                 // Started at login: stay quiet in the tray. Started by hand: say it is ready.
-                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file, press {}, and scroll for more sections.", kBuild, KeyHelp()));
+                m_tray.Balloon(L"" SD_NAME L" is running", std::format(L"{}. Drag a file, press {}, and scroll for more sections.", build, KeyHelp()));
             }
-            log::Info(L"ready ({}, {})", kBuild, KeyHelp());
+            log::Info(L"ready ({}, {})", build, KeyHelp());
             return true;
         }
 
@@ -1804,7 +1805,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     auto oleUninit = wil::scope_exit([] { OleUninitialize(); });
 
     sd::log::Init();
-    sd::log::Info(L"" SD_NAME L" " SD_VERSION L" starting (pid {}{})", GetCurrentProcessId(), autostart ? L", at login" : L"");
+    sd::log::Info(L"" SD_NAME L" {} starting (pid {}{})", sd::version::Display(), GetCurrentProcessId(), autostart ? L", at login" : L"");
 
     int code = 1;
     {

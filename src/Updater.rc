@@ -1,8 +1,9 @@
 // ShiftDrop-Updater.exe's resources. Its manifest (app.manifest, embedded by the linker) asks for no
 // elevation: without one, Windows would treat an exe named "...Updater" as an installer and prompt.
-// The version numbers come from CMake (the project's version), as the app's do.
+// Its version is the app's (Version.h, generated from VERSION), so scripts/check-version.ps1 agrees.
 #include <windows.h>
 #include "resource.h"
+#include "Version.h"
 
 IDI_APPICON ICON "ShiftDrop.ico"
 
@@ -21,9 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "ShiftDrop"
             VALUE "FileDescription", "ShiftDrop Updater - checks for and installs new versions"
+            VALUE "FileVersion", SD_VERSION_BASE_A
             VALUE "InternalName", "ShiftDrop-Updater"
             VALUE "OriginalFilename", "ShiftDrop-Updater.exe"
             VALUE "ProductName", "ShiftDrop"
+            VALUE "ProductVersion", SD_VERSION_A
         END
     END
     BLOCK "VarFileInfo"

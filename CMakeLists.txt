@@ -4,7 +4,13 @@ cmake_minimum_required(VERSION 3.24)
 # Must be set before project(); CMP0091 is NEW because of the minimum version above.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(ShiftDrop VERSION 0.6.0 LANGUAGES CXX RC)
+# The version is written in VERSION and nowhere else: the project, the generated Version.h (the app
+# and its .rc), the installer and the release all take it from there (docs/BUILDING.md, "Releases").
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" SHIFTDROP_VERSION LIMIT_COUNT 1)
+string(STRIP "${SHIFTDROP_VERSION}" SHIFTDROP_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+
+project(ShiftDrop VERSION ${SHIFTDROP_VERSION} LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +18,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SHIFTDROP_M0 "Build the placeholder gesture build: plain circle, every drop only logs + notifies" OFF)
 option(SHIFTDROP_TESTS "Build the unit tests (ctest)" ON)
+# Only CI's release build turns this on: it shows "0.6.0"; every other build shows "0.6.0+<commit>".
+option(SHIFTDROP_RELEASE "The build that publishes the release: the version without +commit" OFF)
+set(SHIFTDROP_COMMIT "" CACHE STRING "Commit shown after the version (empty: git's HEAD at build time)")
 
 if(NOT MSVC)
   message(FATAL_ERROR "ShiftDrop is built with MSVC (Visual Studio 2022). Use the presets in CMakePresets.json.")
@@ -49,10 +58,24 @@ set(SHIFTDROP_OPTIONS /W4 /permissive- /utf-8 /EHsc /Zc:__cplusplus /MP)
 list(APPEND SHIFTDROP_OPTIONS $<$<CONFIG:Release>:/Gw>)
 add_link_options($<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 
+# Version.h, regenerated at every build (the commit moves without a configure) and rewritten only
+# when its text changes. Targets that include it depend on shiftdrop_version.
+set(SHIFTDROP_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+set(SHIFTDROP_VERSION_COMMAND "${CMAKE_COMMAND}" "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+  "-DOUT=${SHIFTDROP_GENERATED_DIR}/Version.h" "-DRELEASE=${SHIFTDROP_RELEASE}" "-DCOMMIT=${SHIFTDROP_COMMIT}"
+  -P "${CMAKE_SOURCE_DIR}/scripts/make-version-header.cmake")
+execute_process(COMMAND ${SHIFTDROP_VERSION_COMMAND} COMMAND_ERROR_IS_FATAL ANY)
+add_custom_target(shiftdrop_version
+  COMMAND ${SHIFTDROP_VERSION_COMMAND}
+  BYPRODUCTS "${SHIFTDROP_GENERATED_DIR}/Version.h"
+  COMMENT "Version.h"
+  VERBATIM)
+
 # Everything that does not need the gesture UI: recipes, the image pipeline, history, undo, file
 # actions. The app and the tests both link it.
 add_library(shiftdrop_core STATIC
   src/Action.cpp
+  src/AppVersion.cpp   # the version the app shows (the only core file that includes Version.h)
   src/Ask.cpp       # questions a running job asks (a password, print every row?) on the UI thread
   src/Clipboard.cpp
   # Small helpers every area shares: text, paths, whole files, error codes, %TEMP%, sizes and times
@@ -227,7 +250,8 @@ add_library(shiftdrop_core STATIC
   src/photo/Signatures.cpp
   src/photo/TextBox.cpp
 )
-target_include_directories(shiftdrop_core PUBLIC src)
+target_include_directories(shiftdrop_core PUBLIC src "${SHIFTDROP_GENERATED_DIR}")
+add_dependencies(shiftdrop_core shiftdrop_version)
 target_compile_definitions(shiftdrop_core PUBLIC ${SHIFTDROP_DEFINES})
 target_compile_options(shiftdrop_core PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(shiftdrop_core PUBLIC
@@ -304,6 +328,7 @@ add_executable(ShiftDrop WIN32
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
 target_compile_definitions(ShiftDrop PRIVATE $<$<BOOL:${SHIFTDROP_M0}>:SHIFTDROP_M0=1>)
+add_dependencies(ShiftDrop shiftdrop_version)   # ShiftDrop.rc includes Version.h
 target_compile_options(ShiftDrop PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop_pdf_ui d2d1 dwrite dwmapi shcore gdi32 comctl32 uxtheme uiautomationcore oleacc)
 
@@ -325,10 +350,9 @@ add_custom_command(TARGET ShiftDropWorker POST_BUILD
 # ShiftDrop.exe starts it from the same folder; every build puts it next to the app.
 add_executable(ShiftDropUpdater WIN32 src/updates/UpdaterMain.cpp src/updates/Http.cpp src/Updater.rc src/app.manifest)
 set_target_properties(ShiftDropUpdater PROPERTIES OUTPUT_NAME ShiftDrop-Updater)
-set_source_files_properties(src/Updater.rc PROPERTIES COMPILE_DEFINITIONS
-  "SD_VERSION_MAJOR=${PROJECT_VERSION_MAJOR};SD_VERSION_MINOR=${PROJECT_VERSION_MINOR};SD_VERSION_PATCH=${PROJECT_VERSION_PATCH}")
 target_compile_options(ShiftDropUpdater PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDropUpdater PRIVATE shiftdrop_core winhttp)
+add_dependencies(ShiftDropUpdater shiftdrop_version)   # Updater.rc includes Version.h
 add_dependencies(ShiftDrop ShiftDropUpdater)
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
@@ -391,10 +415,12 @@ if(SHIFTDROP_TESTS)
     tests/HelperTests.cpp
     tests/SettingsTests.cpp
     tests/UpdatesTests.cpp
+    tests/VersionTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.
-  target_compile_definitions(shiftdrop_tests PRIVATE SHIFTDROP_FFMPEG_COMPONENTS="${CMAKE_SOURCE_DIR}/scripts/ffmpeg-components.txt")
+  target_compile_definitions(shiftdrop_tests PRIVATE SHIFTDROP_FFMPEG_COMPONENTS="${CMAKE_SOURCE_DIR}/scripts/ffmpeg-components.txt"
+    SHIFTDROP_VERSION_FILE="${CMAKE_SOURCE_DIR}/VERSION")   # VersionTests reads it
   # ws2_32: only the sandbox test's probe (a socket that must fail inside the AppContainer).
   target_link_libraries(shiftdrop_tests PRIVATE shiftdrop_core shiftdrop_winrt GTest::gtest ws2_32)
   include(GoogleTest)

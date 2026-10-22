@@ -34,7 +34,7 @@ body:
     attributes:
       label: ShiftDrop version
       description: Settings > Apps lists it, or the tray notification at startup.
-      placeholder: "0.6.0"
+      placeholder: "Settings > About, e.g. 1.2.3 or 1.2.3+abc1234"
     validations:
       required: true
   - type: input
