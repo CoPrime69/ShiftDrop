@@ -268,6 +268,33 @@ namespace sd::theme
         return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     }
 
+    D2D1_RECT_F SnapToPixels(const D2D1_RECT_F& r, float dx, float dy, float scaleX, float scaleY)
+    {
+        if (scaleX <= 0 || scaleY <= 0)
+            return r;
+        const auto x = [&](float v) { return std::round((v + dx) * scaleX) / scaleX - dx; };
+        const auto y = [&](float v) { return std::round((v + dy) * scaleY) / scaleY - dy; };
+        auto out = D2D1::RectF(x(r.left), y(r.top), x(r.right), y(r.bottom));
+        if (r.right > r.left && out.right <= out.left)
+            out.right = out.left + 1.f / scaleX;
+        if (r.bottom > r.top && out.bottom <= out.top)
+            out.bottom = out.top + 1.f / scaleY;
+        return out;
+    }
+
+    float PixelLine(float widthDip, float scale)
+    {
+        // Rounded down unless nearly the next pixel: a 1 DIP border stays one pixel up to 175%, as Windows' own.
+        return scale > 0 ? std::max(1.f, std::floor(widthDip * scale + 0.25f)) / scale : widthDip;
+    }
+
+    D2D1_RECT_F FocusRingRect(const D2D1_RECT_F& control, const D2D1_RECT_F& bounds)
+    {
+        constexpr float kOut = 2.f;
+        return D2D1::RectF(std::max(control.left - kOut, bounds.left), std::max(control.top - kOut, bounds.top), std::min(control.right + kOut, bounds.right),
+                           std::min(control.bottom + kOut, bounds.bottom));
+    }
+
     D2D1_COLOR_F Mix(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t)
     {
         return D2D1::ColorF(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);

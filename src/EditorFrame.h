@@ -86,7 +86,14 @@ namespace sd
         // A round colour swatch as large as fits in `r` with room for the focus ring around it, `glyph`
         // (an icon font character, 0 for none) on it in `ink`, and a ring around it when `selected`.
         void DrawSwatch(const D2D1_RECT_F& r, const D2D1_COLOR_F& colour, wchar_t glyph, const D2D1_COLOR_F& ink, bool selected, ControlState s);
+        // The keyboard focus ring around `r`, kept inside Bounds().
         void DrawFocusRing(const D2D1_RECT_F& r, float radius);
+        // `r` with its edges on whole device pixels (when the transform only moves), and a line width
+        // in whole pixels: what FillRound and StrokeRound draw with.
+        D2D1_RECT_F Snap(const D2D1_RECT_F& r) const;
+        float PixelWidth(float widthDip) const;
+        // What the target shows, in the current DIPs (infinite under a zoom).
+        D2D1_RECT_F Bounds() const;
         void FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius);
         void StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius);   // inside `r`
         // `r` filled with `color` where it is inside the rounded rectangle `shape` (a line along a box's edge).

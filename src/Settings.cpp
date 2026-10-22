@@ -120,11 +120,11 @@ namespace sd
     Appearance LoadAppearance(const std::wstring& path)
     {
         wchar_t size[16]{}, style[16]{};
-        GetPrivateProfileStringW(L"Appearance", L"Size", L"medium", size, ARRAYSIZE(size), path.c_str());
+        GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
         GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
-        Appearance a;
-        if (EqualsNoCase(size, L"auto"))
-            a.size = WheelSize::Auto;
+        Appearance a;   // no key, or a value it doesn't know: Auto
+        if (EqualsNoCase(size, L"medium"))
+            a.size = WheelSize::Medium;
         else if (EqualsNoCase(size, L"small"))
             a.size = WheelSize::Small;
         else if (EqualsNoCase(size, L"large"))

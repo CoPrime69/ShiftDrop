@@ -46,6 +46,12 @@ namespace sd
         bool PreTranslate(MSG& msg);
 
     protected:
+        // Shows (the keyboard moved the focus) or hides (a click) every focus ring in the window: its
+        // UI state (WM_CHANGEUISTATE), which the kit reads before drawing a ring. PreTranslate and the
+        // window's clicks do it; a window that moves the focus with keys of its own calls it.
+        void ShowFocusCues(bool show);
+
+    protected:
         struct Frame
         {
             const wchar_t* className;
@@ -216,8 +222,14 @@ namespace sd
         // The messages the kit's controls send the window, taken before Handle(): true when handled.
         bool KitMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result);
         void ApplyDpi(UINT dpi);
-        // Draws into `dc` over `rc` (pixels) with the kit, after clearing it to `behind`.
-        bool Paint(HDC dc, const RECT& rc, const D2D1_COLOR_F& behind, const std::function<void(ControlKit&, const D2D1_RECT_F&)>& paint);
+        // Draws into `dc` over `rc` (pixels) with the kit, double-buffered: from `behind`, then, for a
+        // control `over` (`rc` in its client area) or the window itself, the window's surface under it.
+        bool Paint(HDC dc, const RECT& rc, HWND over, const D2D1_COLOR_F& behind, const std::function<void(ControlKit&, const D2D1_RECT_F&)>& paint);
+        bool EnsureTarget();
+        void ResetTarget();
+        HDC Buffer(int width, int height);             // the memory DC Paint() draws in, at least this large
+        bool EnsureBackdrop();                         // the surface, drawn again when WM_PAINT asked
+        void PaintBackdrop(ControlKit& kit, const D2D1_RECT_F& client);   // PaintSurface and the field boxes
         void PaintWindow();
         LRESULT DrawStyled(const NMCUSTOMDRAW& draw, const Style& style);
         void DrawLabel(const DRAWITEMSTRUCT& item);

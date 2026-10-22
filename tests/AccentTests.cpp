@@ -168,7 +168,7 @@ TEST(Accent, SavedWithTheOtherPreferences)
     for (int i = 0; i <= static_cast<int>(Choice::Windows); ++i)
     {
         auto p = LoadPreferences(ini);
-        p.accent = { static_cast<Choice>(i), 0x336699 };
+        p.accent = { static_cast<Choice>(i), 0x336699, { 0x336699 } };
         SavePreferences(p, ini);
         const auto back = LoadPreferences(ini);
         EXPECT_EQ(back.accent, p.accent) << i;
@@ -183,9 +183,9 @@ TEST(Accent, SavedWithTheOtherPreferences)
 
     // The colour of your own stays while a preset is chosen, so Custom brings it back.
     auto p = LoadPreferences(ini);
-    p.accent = { Choice::Pink, 0xE91E63 };
+    p.accent = { Choice::Pink, 0xE91E63, { 0xE91E63 } };
     SavePreferences(p, ini);
-    EXPECT_EQ(LoadPreferences(ini).accent, (accent::Setting{ Choice::Pink, 0xE91E63 }));
+    EXPECT_EQ(LoadPreferences(ini).accent, (accent::Setting{ Choice::Pink, 0xE91E63, { 0xE91E63 } }));
     // Without one, there is no key.
     p.accent = { Choice::Green };
     SavePreferences(p, ini);
@@ -211,10 +211,77 @@ TEST(Accent, BadValuesFallBackToWindows)
     EXPECT_EQ(load("Accent=custom\r\n"), accent::Setting{});
     EXPECT_EQ(load("Accent=custom\r\nAccentCustom=#12G58E\r\n"), accent::Setting{});
     EXPECT_EQ(load("Accent=custom\r\nAccentCustom=purple\r\n"), accent::Setting{});
-    EXPECT_EQ(load("Accent=custom\r\nAccentCustom=#7C4DFF\r\n"), (accent::Setting{ Choice::Custom, 0x7C4DFF }));
+    EXPECT_EQ(load("Accent=custom\r\nAccentCustom=#7C4DFF\r\n"), (accent::Setting{ Choice::Custom, 0x7C4DFF, { 0x7C4DFF } }));
     // A bad colour of your own leaves a preset as it is.
     EXPECT_EQ(load("Accent=blue\r\nAccentCustom=nope\r\n"), accent::Setting{ Choice::Blue });
     // The other choices read on as before.
     EXPECT_EQ(load("Accent=teal\r\nTheme=light\r\n").choice, Choice::Windows);
     EXPECT_EQ(LoadPreferences(ini).theme, ThemeChoice::Light);
+}
+
+TEST(Accent, ColoursOfYourOwnAreAList)
+{
+    TempDir dir;
+    const auto ini = dir / L"settings.ini";
+    // A settings.ini from before the list: its one colour loads as a list of one, still in use.
+    WriteText(ini, "[Appearance]\r\nAccent=custom\r\nAccentCustom=#7C4DFF\r\n");
+    auto a = LoadPreferences(ini).accent;
+    EXPECT_EQ(a, (accent::Setting{ Choice::Custom, 0x7C4DFF, { 0x7C4DFF } }));
+
+    // Each colour added becomes its own swatch, after the others, chosen at once; one already there
+    // is chosen, not added twice.
+    a = accent::AddCustom(a, 0x112233);
+    a = accent::AddCustom(a, 0xA0B0C0);
+    EXPECT_EQ(a, (accent::Setting{ Choice::Custom, 0xA0B0C0, { 0x7C4DFF, 0x112233, 0xA0B0C0 } }));
+    a = accent::AddCustom(a, 0x112233);
+    EXPECT_EQ(a.customs.size(), 3u);
+    EXPECT_EQ(a.custom, 0x112233u);
+    EXPECT_EQ(accent::Resolve(a, 0), accent::Derive(0x112233));
+    a = accent::ChooseCustom(a, 2);
+    EXPECT_EQ(a.custom, 0xA0B0C0u);
+    EXPECT_EQ(accent::ChooseCustom(a, 9), a);
+
+    // Saved and loaded back as they were, in their order.
+    auto p = LoadPreferences(ini);
+    p.accent = a;
+    SavePreferences(p, ini);
+    EXPECT_EQ(LoadPreferences(ini).accent, a);
+    wchar_t value[128]{};
+    GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", value, ARRAYSIZE(value), ini.c_str());
+    EXPECT_EQ(std::wstring(value), L"#7C4DFF,#112233,#A0B0C0");
+    GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str());
+    EXPECT_EQ(std::wstring(value), L"#A0B0C0");
+
+    // A hand-edited list: spaces, a bad colour and a repeat are skipped; the colour in use joins it.
+    WriteText(ini, "[Appearance]\r\nAccent=blue\r\nAccentCustoms= #010203 ,nope,#010203,,#0A0B0C\r\nAccentCustom=#FFFFFF\r\n");
+    EXPECT_EQ(LoadPreferences(ini).accent, (accent::Setting{ Choice::Blue, 0xFFFFFF, { 0x010203, 0x0A0B0C, 0xFFFFFF } }));
+
+    // Many colours fit.
+    accent::Setting many;
+    for (uint32_t i = 0; i < 120; ++i)
+        many = accent::AddCustom(many, 0x100000 + i * 0x0101);
+    p.accent = many;
+    SavePreferences(p, ini);
+    EXPECT_EQ(LoadPreferences(ini).accent, many);
+
+    // Deleting the last one takes both keys away.
+    p.accent = accent::DeleteCustom(accent::Setting{ Choice::Green, accent::kNoColour, { 0x123456 } }, 0, true);
+    EXPECT_EQ(p.accent, accent::Setting{ Choice::Green });
+    SavePreferences(p, ini);
+    EXPECT_EQ(GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", value, ARRAYSIZE(value), ini.c_str()), 0u);
+    EXPECT_EQ(GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str()), 0u);
+}
+
+TEST(Accent, DeletingTheColourInUseFallsBack)
+{
+    const accent::Setting a{ Choice::Custom, 0x222222, { 0x111111, 0x222222, 0x333333 } };
+    // The one in use: to the Windows accent, or Tide when the Windows accent isn't wanted.
+    EXPECT_EQ(accent::DeleteCustom(a, 1, true), (accent::Setting{ Choice::Windows, accent::kNoColour, { 0x111111, 0x333333 } }));
+    EXPECT_EQ(accent::DeleteCustom(a, 1, false), (accent::Setting{ Choice::Tide, accent::kNoColour, { 0x111111, 0x333333 } }));
+    // Another one: the accent stays.
+    EXPECT_EQ(accent::DeleteCustom(a, 0, true), (accent::Setting{ Choice::Custom, 0x222222, { 0x222222, 0x333333 } }));
+    // A preset in use stays; nothing out of range is deleted (the presets aren't in the list).
+    const accent::Setting pink{ Choice::Pink, 0x111111, { 0x111111 } };
+    EXPECT_EQ(accent::DeleteCustom(pink, 0, true), accent::Setting{ Choice::Pink });
+    EXPECT_EQ(accent::DeleteCustom(pink, 5, true), pink);
 }

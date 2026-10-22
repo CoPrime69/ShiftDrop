@@ -1,9 +1,13 @@
 #include "SettingsPages.h"
+#include "Strings.h"
+#include "TestUtil.h"
 #include "WheelContents.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cwctype>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -119,6 +123,112 @@ TEST(SettingsPages, FindASetting)
     // A page's name finds what is on it.
     EXPECT_FALSE(settings::Search(L"advanced logs").empty());
     EXPECT_TRUE(settings::Search(L"zebra").empty());
+}
+
+namespace
+{
+    // The wheel's sections as Settings lists them: Convert above, and Reduce size with its photos.
+    SettingsTree Tree()
+    {
+        SettingsTree tree{ { Convert() } };
+        SettingsTree::Section reduce{ Ring::Reduce, L"Reduce size", {} };
+        reduce.groups.push_back({ L"Photos", { { "reduce-50", L"50%", L"Half as heavy", 0 }, { "reduce-mb", L"Under 10 MB", L"", 0 } } });
+        tree.sections.push_back(reduce);
+        return tree;
+    }
+}
+
+TEST(SettingsPages, FindASettingKnowsOtherWords)
+{
+    // Prakhar's: "reduce size" is a section of the wheel, found first, before anything that only mentions it.
+    const auto tree = Tree();
+    const auto reduce = settings::SearchAll(L"reduce size", tree);
+    ASSERT_FALSE(reduce.empty());
+    EXPECT_EQ(reduce[0].page, Page::Wheel);
+    EXPECT_EQ(reduce[0].item, Item::WheelContents);
+    EXPECT_EQ(reduce[0].section, static_cast<int>(Ring::Reduce));
+    EXPECT_EQ(reduce[0].group, -1);
+    EXPECT_EQ(reduce[0].where, L"Wheel \u203A Reduce size");
+    // Its actions aren't listed only because their section is named.
+    for (const auto& f : reduce)
+        EXPECT_LT(f.slice, 0) << Narrow(f.where);
+    EXPECT_TRUE(settings::SearchAll(L"zebra", tree).empty());
+    EXPECT_TRUE(settings::SearchAll(L"  ", tree).empty());
+
+    // A kind of file and an action, by their own names, in any case, any word order.
+    const auto photos = settings::SearchAll(L"PHOTOS reduce", tree);
+    ASSERT_FALSE(photos.empty());
+    EXPECT_EQ(photos[0].section, static_cast<int>(Ring::Reduce));
+    EXPECT_EQ(photos[0].group, 0);
+    EXPECT_EQ(photos[0].slice, -1);
+    const auto webp = settings::SearchAll(L"webp", tree);
+    ASSERT_FALSE(webp.empty());
+    EXPECT_EQ(webp[0], (settings::Found{ Item::WheelContents, Page::Wheel, static_cast<int>(Ring::Convert), 0, 1, L"Wheel \u203A Convert \u203A Photos \u203A WebP" }));
+    const auto mb = settings::SearchAll(L"10 mb", tree);
+    ASSERT_FALSE(mb.empty());
+    EXPECT_EQ(mb[0].slice, 1);
+    // Detail text counts too: "lossless" is PNG's.
+    const auto lossless = settings::SearchAll(L"lossless", tree);
+    ASSERT_EQ(lossless.size(), 1u);
+    EXPECT_EQ(lossless[0].slice, 0);
+
+    // Other words for the same thing.
+    const auto first = [&](const wchar_t* query) {
+        const auto found = settings::SearchAll(query, tree);
+        return found.empty() ? std::optional<Item>{} : std::optional<Item>{ found.front().item };
+    };
+    EXPECT_EQ(first(L"color"), Item::Accent);
+    EXPECT_EQ(first(L"accent"), Item::Accent);
+    EXPECT_EQ(first(L"highlight"), Item::Accent);
+    EXPECT_EQ(first(L"dark"), Item::Theme);
+    EXPECT_EQ(first(L"theme"), Item::Theme);
+    EXPECT_EQ(first(L"startup"), Item::StartWithWindows);
+    EXPECT_EQ(first(L"start with windows"), Item::StartWithWindows);
+    EXPECT_EQ(first(L"ocr"), Item::OcrLanguage);
+    EXPECT_EQ(first(L"text recognition"), Item::OcrLanguage);
+    EXPECT_EQ(first(L"rename"), Item::OutputNaming);
+    EXPECT_EQ(first(L"naming"), Item::OutputNaming);
+    EXPECT_EQ(first(L"live example"), Item::OutputNaming);
+    EXPECT_EQ(first(L"size"), Item::Size);
+    EXPECT_EQ(first(L"top panel size"), Item::PanelSize);
+    EXPECT_EQ(first(L"context menu"), Item::ShellMenu);
+    EXPECT_EQ(first(L"delete colour"), Item::Accent);
+    // A page's name, and every label of a card's own controls, find it.
+    EXPECT_EQ(first(L"advanced"), Item::ShellMenu);
+    EXPECT_EQ(first(L"about"), Item::Version);
+    EXPECT_EQ(first(L"reset to default"), Item::WheelContents);
+    for (const auto& e : settings::Catalogue())
+    {
+        const auto all = settings::SearchAll(e.title, tree);
+        EXPECT_TRUE(std::any_of(all.begin(), all.end(), [&](const settings::Found& f) { return f.item == e.item; })) << Narrow(e.title);
+        for (const wchar_t* option : settings::Options(e.item))
+        {
+            const auto found = settings::Search(option);
+            EXPECT_NE(std::find(found.begin(), found.end(), e.item), found.end()) << Narrow(option);
+        }
+    }
+    // What is named by every word comes before what only mentions them.
+    const auto windows = settings::SearchAll(L"colour windows", tree);
+    ASSERT_GE(windows.size(), 3u);
+    EXPECT_EQ(windows[0].item, Item::WindowsAccent);
+}
+
+TEST(SettingsPages, OtherWordsAndOptions)
+{
+    EXPECT_EQ(settings::Alternatives(L"colour"), (std::vector<std::wstring>{ L"colour", L"color" }));
+    EXPECT_EQ(settings::Alternatives(L"color"), (std::vector<std::wstring>{ L"color", L"colour" }));
+    EXPECT_EQ(settings::Alternatives(L"zebra"), std::vector<std::wstring>{ L"zebra" });
+    const auto dark = settings::Alternatives(L"dark");
+    EXPECT_NE(std::find(dark.begin(), dark.end(), L"theme"), dark.end());
+    EXPECT_TRUE(settings::HasEveryWordOrAlternative(L"Accent colour", SearchWords(L"COLOR accent")));
+    EXPECT_FALSE(settings::HasEveryWordOrAlternative(L"Accent colour", SearchWords(L"color zebra")));
+    EXPECT_TRUE(settings::HasEveryWordOrAlternative(L"anything", {}));
+    // The options are the window's controls, in its order.
+    ASSERT_EQ(settings::Options(Item::Size).size(), 4u);
+    EXPECT_EQ(std::wstring(settings::Options(Item::Size)[0]), L"Auto");
+    EXPECT_EQ(settings::Options(Item::Theme).size(), 3u);
+    EXPECT_EQ(settings::Options(Item::Terminal).size(), 4u);
+    EXPECT_TRUE(settings::Options(Item::Version).empty());
 }
 
 TEST(WheelContents, ChipsWriteTheFeaturesStore)

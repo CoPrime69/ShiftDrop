@@ -199,6 +199,16 @@ namespace sd::theme
     std::wstring TextFamily(IDWriteFactory* dwrite);
     std::wstring IconFamily(IDWriteFactory* dwrite);
 
+    // Crisp edges for the control kit. `r` (DIPs) with each edge on the nearest device pixel edge, at
+    // `scaleX` x `scaleY` pixels per DIP with the DIP origin `dx`, `dy` DIPs into the device; something
+    // thinner than a pixel stays one pixel. A line `widthDip` wide in whole pixels (one at least, rounded
+    // down unless nearly the next), DIPs.
+    D2D1_RECT_F SnapToPixels(const D2D1_RECT_F& r, float dx, float dy, float scaleX, float scaleY);
+    float PixelLine(float widthDip, float scale);
+    // The keyboard focus ring's rectangle: 2 DIPs around `control`, but inside `bounds` (what can be
+    // drawn: a control that fills its own window still shows its whole ring).
+    D2D1_RECT_F FocusRingRect(const D2D1_RECT_F& control, const D2D1_RECT_F& bounds);
+
     D2D1_COLOR_F Mix(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t);
     D2D1_COLOR_F WithAlpha(const D2D1_COLOR_F& c, float alphaFactor);
     float EaseOutCubic(float t);

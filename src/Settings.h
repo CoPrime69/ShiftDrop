@@ -42,7 +42,7 @@ namespace sd
     enum class Style { Solid, Glass };                      // Glass: frosted, blurred background
     struct Appearance
     {
-        WheelSize size = WheelSize::Medium;   // the default for a new install (Prakhar 2026-10-21)
+        WheelSize size = WheelSize::Auto;   // the default for a new install (Prakhar 2026-10-22)
         Style style = Style::Solid;
     };
     Appearance LoadAppearance();

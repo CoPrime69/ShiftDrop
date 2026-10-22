@@ -2,6 +2,7 @@
 #include "Brand.h"
 #include "Strings.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 
@@ -45,7 +46,7 @@ namespace sd::settings
             { WheelContents, Wheel, nullptr, L"Wheel contents", L"Turn sections and actions on or off", kWheel,
               L"[Features] Convert, Tools, Reduce, Files, Off", L"Settings \u203A the tick list", L"hide show slices tiles actions sections" },
             { OutputNaming, Output, nullptr, L"Output naming", L"How copies are named. The original is never renamed.", kDocument,
-              L"[Output] Naming", L"Settings \u203A Output names", L"name names suffix converted folder subfolder" },
+              L"[Output] Naming", L"Settings \u203A Output names", L"name names suffix converted folder subfolder live example default" },
             { ShellMenu, Advanced, nullptr, L"Right-click menu entry", L"\u201C" SD_NAME L"\u2026\u201D in File Explorer\u2019s right-click menu", kMenu,
               L"HKCU\\Software\\Classes", L"tray menu", L"explorer context menu shell" },
             { RecipesFolder, Advanced, nullptr, L"Recipes folder", L"Custom actions you\u2019ve added to the wheel", kFolder, nullptr,
@@ -96,6 +97,117 @@ namespace sd::settings
         return items;
     }
 
+    std::span<const wchar_t* const> Options(Item item)
+    {
+        static constexpr const wchar_t* kTheme[] = { L"System", L"Light", L"Dark" };
+        static constexpr const wchar_t* kStyle[] = { L"Solid", L"Glass" };
+        static constexpr const wchar_t* kSize[] = { L"Auto", L"Small", L"Medium", L"Large" };
+        static constexpr const wchar_t* kDrops[] = { L"Desktop", L"Downloads", L"Ask every time" };
+        static constexpr const wchar_t* kTerminal[] = { L"Windows Terminal", L"PowerShell", L"Command Prompt", L"Custom command" };
+        static constexpr const wchar_t* kRecipes[] = { L"Open recipes folder" };
+        static constexpr const wchar_t* kLogs[] = { L"Open logs folder" };
+        static constexpr const wchar_t* kSource[] = { L"Open the source code on GitHub" };
+        static constexpr const wchar_t* kWheel[] = { L"Find an action", L"Turn off this section", L"Turn on this section", L"Reset to default" };
+        static constexpr const wchar_t* kAccent[] = { L"Custom\u2026", L"Delete colour" };
+        switch (item)
+        {
+        case Item::Theme: return kTheme;
+        case Item::Style: return kStyle;
+        case Item::Size: return kSize;
+        case Item::BrowserDrops: return kDrops;
+        case Item::Terminal: return kTerminal;
+        case Item::RecipesFolder: return kRecipes;
+        case Item::LogsFolder: return kLogs;
+        case Item::SourceCode: return kSource;
+        case Item::WheelContents: return kWheel;
+        case Item::Accent: return kAccent;
+        default: return {};
+        }
+    }
+
+    std::vector<std::wstring> Alternatives(const std::wstring& word)
+    {
+        // Words people type for the same thing: a word of a group finds the group's other words too.
+        static constexpr const wchar_t* kGroups[][6] = {   // each ends at its first null
+            { L"colour", L"color" },
+            { L"accent", L"highlight" },
+            { L"theme", L"dark", L"light", L"mode" },
+            { L"size", L"bigger", L"smaller", L"larger", L"scale" },
+            { L"naming", L"rename", L"name", L"suffix" },
+            { L"startup", L"start with windows", L"autostart", L"sign in", L"login", L"boot" },
+            { L"ocr", L"text recognition", L"recognise", L"recognize" },
+            { L"reduce", L"compress", L"shrink" },
+            { L"delete", L"remove" },
+            { L"folder", L"directory" },
+            { L"right-click", L"context menu" },
+            { L"github", L"source code" },
+        };
+        std::vector<std::wstring> words{ word };
+        for (const auto& group : kGroups)
+        {
+            const auto end = std::find(std::begin(group), std::end(group), nullptr);
+            if (std::any_of(std::begin(group), end, [&](const wchar_t* w) { return word == w; }))
+                for (auto w = std::begin(group); w != end; ++w)
+                    if (std::find(words.begin(), words.end(), *w) == words.end())
+                        words.emplace_back(*w);
+        }
+        return words;
+    }
+
+    bool HasEveryWordOrAlternative(std::wstring_view text, const std::vector<std::wstring>& words)
+    {
+        const std::wstring haystack = Lower(text);
+        for (const auto& word : words)
+        {
+            const auto alternatives = Alternatives(word);
+            if (std::none_of(alternatives.begin(), alternatives.end(), [&](const std::wstring& w) { return haystack.find(w) != std::wstring::npos; }))
+                return false;
+        }
+        return true;
+    }
+
+    namespace
+    {
+        // A card's name (its title and its controls' labels) and everything it is known by.
+        std::wstring NameOf(const Entry& e)
+        {
+            std::wstring name = e.title;
+            for (const wchar_t* option : Options(e.item))
+                name += std::wstring(L" ") + option;
+            return name;
+        }
+
+        std::wstring TextOf(const Entry& e)
+        {
+            std::wstring text = NameOf(e) + L" " + PageTitle(e.page);
+            for (const wchar_t* more : { e.description, e.group, e.keywords })
+                if (more)
+                    text += std::wstring(L" ") + more;
+            return text;
+        }
+
+        // How well `name` and `text` answer `words`: 0 the name has every word, 1 the text has, 2 with
+        // other words for some, -1 not at all.
+        int Rank(std::wstring_view name, std::wstring_view text, const std::vector<std::wstring>& words)
+        {
+            if (HasEveryWord(name, words))
+                return 0;
+            if (HasEveryWord(text, words))
+                return 1;
+            return HasEveryWordOrAlternative(text, words) ? 2 : -1;
+        }
+
+        // Does `name` hold at least one of `words` (or another word for it)? A kind of file or an action
+        // is found by its own name, not only by its section's.
+        bool NamesAny(std::wstring_view name, const std::vector<std::wstring>& words)
+        {
+            for (const auto& word : words)
+                if (HasEveryWordOrAlternative(name, { word }))
+                    return true;
+            return false;
+        }
+    }
+
     std::vector<Item> Search(std::wstring_view query)
     {
         const auto words = SearchWords(query);
@@ -103,14 +215,49 @@ namespace sd::settings
         if (words.empty())
             return found;
         for (const auto& e : kEntries)
-        {
-            std::wstring text = std::wstring(e.title) + L" " + PageTitle(e.page);
-            for (const wchar_t* more : { e.description, e.group, e.keywords })
-                if (more)
-                    text += std::wstring(L" ") + more;
-            if (HasEveryWord(text, words))
+            if (HasEveryWordOrAlternative(TextOf(e), words))
                 found.push_back(e.item);
+        return found;
+    }
+
+    std::vector<Found> SearchAll(std::wstring_view query, const SettingsTree& tree)
+    {
+        const auto words = SearchWords(query);
+        std::vector<std::pair<int, Found>> ranked;
+        if (words.empty())
+            return {};
+        constexpr wchar_t kStep[] = L" \u203A ";
+        for (const auto& e : kEntries)
+            if (const int rank = Rank(NameOf(e), TextOf(e), words); rank >= 0)
+                ranked.push_back({ rank, Found{ e.item, e.page, -1, -1, -1, std::wstring(PageTitle(e.page)) + kStep + e.title } });
+        const std::wstring wheel = PageTitle(Page::Wheel);
+        for (const auto& section : tree.sections)
+        {
+            const int ring = static_cast<int>(section.ring);
+            const std::wstring at = wheel + kStep + section.title;
+            if (const int rank = Rank(section.title, section.title + L" " + wheel + L" section", words); rank >= 0)
+                ranked.push_back({ rank, Found{ Item::WheelContents, Page::Wheel, ring, -1, -1, at } });
+            for (size_t g = 0; g < section.groups.size(); ++g)
+            {
+                const auto& group = section.groups[g];
+                const std::wstring groupText = group.title + L" " + section.title + L" " + wheel;
+                if (const int rank = Rank(group.title, groupText, words); rank >= 0 && NamesAny(group.title, words))
+                    ranked.push_back({ rank, Found{ Item::WheelContents, Page::Wheel, ring, static_cast<int>(g), -1, at + kStep + group.title } });
+                for (size_t i = 0; i < group.slices.size(); ++i)
+                {
+                    const auto& slice = group.slices[i];
+                    const std::wstring name = slice.label + L" " + slice.detail;
+                    if (const int rank = Rank(name, name + L" " + groupText, words); rank >= 0 && NamesAny(name, words))
+                        ranked.push_back({ rank, Found{ Item::WheelContents, Page::Wheel, ring, static_cast<int>(g), static_cast<int>(i),
+                                                        at + kStep + group.title + kStep + slice.label } });
+                }
+            }
         }
+        std::stable_sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::vector<Found> found;
+        found.reserve(ranked.size());
+        for (auto& [rank, f] : ranked)
+            found.push_back(std::move(f));
         return found;
     }
 }

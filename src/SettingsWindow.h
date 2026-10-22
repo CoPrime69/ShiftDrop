@@ -78,9 +78,16 @@ namespace sd
         void ShowPage(Page page);
         void OnCommand(int id, int code, HWND control);
         void OnFind();
+        struct GroupView;
+        GroupView* FoundGroup(const settings::Found& found);   // the Wheel page's card for what was found
+        void PlaceFound();                                     // in Layout(): the ring and Enter's target
         void ChangePreferences(const Preferences& p);
         void SetAccent(const accent::Setting& setting);
         void FillAccent();
+        void SyncCustomSwatches();               // a swatch for each colour of your own
+        std::wstring SwatchLabel(HWND swatch) const;   // the name under a swatch
+        void DeleteCustomColour(size_t index);
+        void NoteBeforeCustom();                 // before a colour of your own is chosen: was the Windows accent in use?
         void OnPanelSizeScroll(WORD code);
         void SetFeatures(const Features& features);
         void FillWheel();            // the chips, the counts and the section's line, from m_state.features
@@ -107,8 +114,10 @@ namespace sd
         std::array<HWND, settings::kPageCount> m_nav{};
         HWND m_heading = nullptr;
         std::map<Item, Row> m_rows;
-        Item m_found = Item::StartWithWindows;
-        bool m_showFound = false;
+        std::vector<settings::Found> m_results;   // what Find a setting found, the best first
+        RECT m_foundRect{};                       // the ring around the best, on this page (client pixels)
+        float m_foundRadius = 0;
+        HWND m_foundControl = nullptr;            // where Enter in Find a setting goes
 
         // General
         HWND m_filesGroup = nullptr, m_startup = nullptr, m_ocr = nullptr, m_shelf = nullptr, m_terminal = nullptr, m_commandLine = nullptr;
@@ -121,6 +130,8 @@ namespace sd
         HWND m_panelSize = nullptr, m_panelValue = nullptr, m_panelLow = nullptr, m_panelHigh = nullptr;
         HWND m_accentHeader = nullptr, m_custom = nullptr, m_windowsAccent = nullptr;
         std::array<HWND, accent::kPresetCount> m_swatches{};
+        std::vector<HWND> m_customSwatches;   // the colours of your own, in accent.customs' order
+        bool m_windowsBeforeCustom = true;    // deleting the colour in use goes back to Windows' (else Tide)
         bool m_accentOpen = true;
         accent::Choice m_beforeWindows = accent::Choice::Tide;   // where turning the Windows switch off goes back to
         // Wheel
@@ -140,6 +151,7 @@ namespace sd
             std::vector<Chip> chips;
             bool open = false;
             RECT body{};                  // the open part of its card, client pixels
+            RECT card{};                  // its whole card
             D2D1_POINT_2F wheel{};        // its preview's centre, DIPs
             float radius = 0;
         };

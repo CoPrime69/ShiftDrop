@@ -45,9 +45,25 @@ namespace sd
     struct DialogWindow::KitTarget
     {
         Microsoft::WRL::ComPtr<ID2D1Factory> d2d;
-        Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target;   // bound to each control's DC in turn
+        Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> target;   // bound to `memory` for each drawing
         UINT dpi = 0;                                          // the target's
         ControlKit kit;
+        // What each control and the window draw into first, at its top left, then copy to the DC they
+        // were given with BitBlt. Never the given DC itself: a control may hand over a buffered-paint DC
+        // whose origin is moved to the part being repainted (a trackbar moving its thumb, a button
+        // fading between states), which GDI honours and Direct2D's DC target does not, so drawing on it
+        // straight put the control's left end where its thumb was: the streaks.
+        wil::unique_hbitmap bitmap;   // before `memory`: the DC goes first and lets go of it
+        wil::unique_hdc memory;
+        SIZE bufferSize{};
+        // The window's surface (its cards, panels, field boxes) as WM_PAINT last drew it, whole: every
+        // control draws its part of it behind itself, so a label or a control shows exactly what it
+        // sits on (a card, a panel inside it, a card's border and rounded corners) instead of a
+        // rectangle of a colour it was told.
+        Microsoft::WRL::ComPtr<ID2D1BitmapRenderTarget> backdropTarget;
+        Microsoft::WRL::ComPtr<ID2D1Bitmap> backdrop;
+        SIZE backdropSize{};
+        bool backdropStale = true;
     };
 
     DialogWindow::DialogWindow(HINSTANCE instance, const Frame& frame) : m_instance(instance), m_frame(frame) {}
@@ -115,6 +131,9 @@ namespace sd
         ApplyTheme();   // the theme may have changed while it was hidden
         ShowWindow(m_hwnd, IsIconic(m_hwnd) ? SW_RESTORE : SW_SHOWNORMAL);
         SetForegroundWindow(m_hwnd);
+        // Focus rings as a dialog has them: hidden when it was opened with the mouse, shown once the
+        // keyboard moves the focus (PreTranslate).
+        SendMessageW(m_hwnd, WM_CHANGEUISTATE, MAKEWPARAM(UIS_INITIALIZE, 0), 0);
         SetFocus(focus);
     }
 
@@ -221,15 +240,22 @@ namespace sd
         return on == Surface::Card && m_kit ? m_kit->kit.Theme().panel : FromColorRef(m_colors.background);
     }
 
-    bool DialogWindow::Paint(HDC dc, const RECT& rc, const D2D1_COLOR_F& behind, const std::function<void(ControlKit&, const D2D1_RECT_F&)>& paint)
+    void DialogWindow::ResetTarget()
+    {
+        auto& k = *m_kit;
+        k.kit.SetTarget(nullptr);
+        k.backdrop.Reset();
+        k.backdropTarget.Reset();
+        k.backdropSize = {};
+        k.target.Reset();
+    }
+
+    bool DialogWindow::EnsureTarget()
     {
         Kit();
         auto& k = *m_kit;
         if (k.target && k.dpi != m_dpi)
-        {
-            k.kit.SetTarget(nullptr);
-            k.target.Reset();
-        }
+            ResetTarget();
         if (!k.target)
         {
             // In DIPs at the window's DPI; opaque, so text gets ClearType like the standard controls'.
@@ -241,20 +267,146 @@ namespace sd
             k.dpi = m_dpi;
             k.kit.SetTarget(k.target.Get());
         }
-        if (rc.right <= rc.left || rc.bottom <= rc.top || FAILED(k.target->BindDC(dc, &rc)))
+        return true;
+    }
+
+    HDC DialogWindow::Buffer(int width, int height)
+    {
+        auto& k = *m_kit;
+        if (!k.memory)
+            k.memory.reset(CreateCompatibleDC(nullptr));
+        if (!k.memory)
+            return nullptr;
+        if (!k.bitmap || width > k.bufferSize.cx || height > k.bufferSize.cy)
+        {
+            // Grown to the largest drawing so far; a top-down 32-bit DIB.
+            const SIZE size{ std::max<LONG>(width, k.bufferSize.cx), std::max<LONG>(height, k.bufferSize.cy) };
+            BITMAPINFO info{};
+            info.bmiHeader = { sizeof(BITMAPINFOHEADER), size.cx, -size.cy, 1, 32, BI_RGB };
+            void* bits = nullptr;
+            wil::unique_hbitmap bitmap(CreateDIBSection(k.memory.get(), &info, DIB_RGB_COLORS, &bits, nullptr, 0));
+            if (!bitmap)
+                return nullptr;
+            SelectObject(k.memory.get(), bitmap.get());
+            k.bitmap = std::move(bitmap);   // the old one is no longer selected: freed here
+            k.bufferSize = size;
+        }
+        return k.memory.get();
+    }
+
+    void DialogWindow::PaintBackdrop(ControlKit& kit, const D2D1_RECT_F& client)
+    {
+        PaintSurface(kit, client);
+        const HWND focus = GetFocus();
+        for (const auto& [edit, field] : m_fields)
+        {
+            if (!IsWindowVisible(edit) || field.box.right <= field.box.left)
+                continue;
+            const auto box = DipRect(field.box);
+            kit.DrawTextBox(box, focus == edit, field.invalid, IsWindowEnabled(edit) != FALSE);
+            if (field.search)
+                kit.DrawGlyph(kGlyphSearch, 13.f, D2D1::RectF(box.left + 8, box.top, box.left + 28, box.bottom), kit.Theme().textDim);
+        }
+    }
+
+    bool DialogWindow::EnsureBackdrop()
+    {
+        auto& k = *m_kit;
+        RECT client{};
+        GetClientRect(m_hwnd, &client);
+        const SIZE size{ client.right, client.bottom };
+        if (size.cx <= 0 || size.cy <= 0)
             return false;
+        if (k.backdrop && !k.backdropStale && size.cx == k.backdropSize.cx && size.cy == k.backdropSize.cy)
+            return true;
+        const float scale = static_cast<float>(m_dpi) / 96.f;
+        if (!k.backdropTarget || size.cx != k.backdropSize.cx || size.cy != k.backdropSize.cy)
+        {
+            k.backdrop.Reset();
+            k.backdropTarget.Reset();
+            k.backdropSize = {};
+            // A bitmap of the client area's pixels at the window's DPI, opaque (ClearType) when it can be.
+            const D2D1_SIZE_F dips{ static_cast<float>(size.cx) / scale, static_cast<float>(size.cy) / scale };
+            const D2D1_SIZE_U pixels{ static_cast<UINT32>(size.cx), static_cast<UINT32>(size.cy) };
+            auto format = D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE);
+            if (FAILED(k.target->CreateCompatibleRenderTarget(&dips, &pixels, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &k.backdropTarget)))
+            {
+                format.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+                if (FAILED(k.target->CreateCompatibleRenderTarget(&dips, &pixels, &format, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, &k.backdropTarget)))
+                    return false;
+            }
+            if (FAILED(k.backdropTarget->GetBitmap(&k.backdrop)))
+            {
+                k.backdropTarget.Reset();
+                return false;
+            }
+            k.backdropSize = size;
+        }
+        k.kit.SetTarget(k.backdropTarget.Get());
+        k.backdropTarget->BeginDraw();
+        k.backdropTarget->SetTransform(D2D1::Matrix3x2F::Identity());
+        const auto behind = FromColorRef(m_colors.background);
+        k.backdropTarget->Clear(D2D1::ColorF(behind.r, behind.g, behind.b));
+        PaintBackdrop(k.kit, D2D1::RectF(0, 0, static_cast<float>(size.cx) / scale, static_cast<float>(size.cy) / scale));
+        const HRESULT hr = k.backdropTarget->EndDraw();
+        k.kit.SetTarget(k.target.Get());
+        if (FAILED(hr))
+        {
+            k.backdrop.Reset();
+            k.backdropTarget.Reset();
+            k.backdropSize = {};
+            return false;
+        }
+        k.backdropStale = false;
+        return true;
+    }
+
+    bool DialogWindow::Paint(HDC dc, const RECT& rc, HWND over, const D2D1_COLOR_F& behind, const std::function<void(ControlKit&, const D2D1_RECT_F&)>& paint)
+    {
+        const int w = rc.right - rc.left, h = rc.bottom - rc.top;
+        if (w <= 0 || h <= 0 || !EnsureTarget())
+            return false;
+        auto& k = *m_kit;
+        const HDC memory = Buffer(w, h);
+        const RECT bound{ 0, 0, w, h };
+        if (!memory || FAILED(k.target->BindDC(memory, &bound)))
+            return false;
+        // Where `rc` is in the window's client area, for its part of the surface.
+        POINT origin{ rc.left, rc.top };
+        bool backdrop = false;
+        if (over)
+        {
+            if (over != m_hwnd)
+                MapWindowPoints(over, m_hwnd, &origin, 1);
+            backdrop = EnsureBackdrop();
+        }
         const float scale = static_cast<float>(m_dpi) / 96.f;
         k.target->BeginDraw();
         k.target->SetTransform(D2D1::Matrix3x2F::Identity());
         k.target->Clear(D2D1::ColorF(behind.r, behind.g, behind.b));
-        paint(k.kit, D2D1::RectF(0, 0, static_cast<float>(rc.right - rc.left) / scale, static_cast<float>(rc.bottom - rc.top) / scale));
-        if (k.target->EndDraw() == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
+        if (backdrop)
         {
-            k.kit.SetTarget(nullptr);
-            k.target.Reset();
+            // Pixel for pixel; only the part inside the client area (a control scrolled half out of it).
+            const LONG x0 = std::max<LONG>(origin.x, 0), y0 = std::max<LONG>(origin.y, 0);
+            const LONG x1 = std::min<LONG>(origin.x + w, k.backdropSize.cx), y1 = std::min<LONG>(origin.y + h, k.backdropSize.cy);
+            if (x1 > x0 && y1 > y0)
+            {
+                const auto dip = [scale](LONG v) { return static_cast<float>(v) / scale; };
+                k.target->DrawBitmap(k.backdrop.Get(), D2D1::RectF(dip(x0 - origin.x), dip(y0 - origin.y), dip(x1 - origin.x), dip(y1 - origin.y)), 1.f,
+                                     D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1::RectF(dip(x0), dip(y0), dip(x1), dip(y1)));
+            }
+        }
+        paint(k.kit, D2D1::RectF(0, 0, static_cast<float>(w) / scale, static_cast<float>(h) / scale));
+        const HRESULT hr = k.target->EndDraw();
+        if (hr == static_cast<HRESULT>(D2DERR_RECREATE_TARGET))
+        {
+            ResetTarget();
             return false;
         }
-        return true;
+        if (FAILED(hr))
+            return false;
+        // GDI copies it where `rc` is in the DC's own coordinates, inside its clipping.
+        return BitBlt(dc, rc.left, rc.top, w, h, memory, 0, 0, SRCCOPY) != FALSE;
     }
 
     LRESULT DialogWindow::CustomDraw(const NMCUSTOMDRAW& draw, const KitPaint& paint)
@@ -264,7 +416,7 @@ namespace sd
         const UINT state = draw.uItemState;
         const ControlKit::ControlState s{ !(state & CDIS_DISABLED), (state & CDIS_HOT) != 0, (state & CDIS_SELECTED) != 0,
                                           (state & CDIS_FOCUS) && FocusCues(draw.hdr.hwndFrom) };
-        if (!Paint(draw.hdc, draw.rc, FromColorRef(m_colors.background), [&](ControlKit& kit, const D2D1_RECT_F& r) { paint(kit, r, s); }))
+        if (!Paint(draw.hdc, draw.rc, draw.hdr.hwndFrom, FromColorRef(m_colors.background), [&](ControlKit& kit, const D2D1_RECT_F& r) { paint(kit, r, s); }))
             InvalidateRect(draw.hdr.hwndFrom, nullptr, FALSE);
         return CDRF_SKIPDEFAULT;
     }
@@ -279,7 +431,7 @@ namespace sd
                                           (state & CDIS_FOCUS) && FocusCues(control) };
         const bool checked = Checked(control);
         const std::wstring text = WithoutMnemonic(Text(control));
-        const bool painted = Paint(draw.hdc, draw.rc, SurfaceColor(style.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
+        const bool painted = Paint(draw.hdc, draw.rc, control, SurfaceColor(style.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
             switch (style.look)
             {
             case Look::Button: kit.DrawButton(r, text, style.icon, false, s); break;
@@ -440,7 +592,7 @@ namespace sd
         const auto look = LookOf(static_cast<int>(info.role));
         const std::wstring text = Text(item.hwndItem);
         const float alpha = IsWindowEnabled(item.hwndItem) ? 1.f : ControlKit::kDisabledAlpha;
-        Paint(item.hDC, item.rcItem, SurfaceColor(info.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
+        Paint(item.hDC, item.rcItem, item.hwndItem, SurfaceColor(info.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
             const auto& c = kit.Theme();
             const D2D1_COLOR_F colours[] = { c.text, c.textDim, c.textFaint, c.danger };
             const auto colour = theme::WithAlpha(colours[look.colour], alpha);
@@ -487,7 +639,7 @@ namespace sd
         auto s = StateOf(combo, false);
         s.hot = s.hot || m_hotDropDown == combo;
         const auto it = m_dropDowns.find(combo);
-        Paint(dc, rc, SurfaceColor(it == m_dropDowns.end() ? Surface::Card : it->second),
+        Paint(dc, rc, combo, SurfaceColor(it == m_dropDowns.end() ? Surface::Card : it->second),
               [&](ControlKit& kit, const D2D1_RECT_F& r) { kit.DrawDropDown(r, text, open, s); });
         EndPaint(combo, &ps);
     }
@@ -505,7 +657,7 @@ namespace sd
         std::wstring text(static_cast<size_t>(std::max<LRESULT>(0, SendMessageW(item.hwndItem, CB_GETLBTEXTLEN, item.itemID, 0))) + 1, L'\0');
         text.resize(static_cast<size_t>(std::max<LRESULT>(0, SendMessageW(item.hwndItem, CB_GETLBTEXT, item.itemID, reinterpret_cast<LPARAM>(text.data())))));
         const bool hot = (item.itemState & ODS_SELECTED) != 0;
-        Paint(item.hDC, item.rcItem, FromColorRef(m_colors.field),
+        Paint(item.hDC, item.rcItem, nullptr, FromColorRef(m_colors.field),
               [&](ControlKit& kit, const D2D1_RECT_F& r) { kit.DrawListRow(r, text, false, hot); });
     }
 
@@ -630,7 +782,7 @@ namespace sd
         const auto s = StateOf(slider, GetCapture() == slider);
         RECT rc{};
         GetClientRect(slider, &rc);
-        Paint(draw.hdc, rc, SurfaceColor(m_sliders[slider]), [&](ControlKit& kit, const D2D1_RECT_F& r) {
+        Paint(draw.hdc, rc, slider, SurfaceColor(m_sliders[slider]), [&](ControlKit& kit, const D2D1_RECT_F& r) {
             const float cy = std::round((r.top + r.bottom) / 2);
             kit.DrawSlider(D2D1::RectF(r.left + 10, cy - 2, r.right - 10, cy + 2), high > low ? (pos - low) / (high - low) : 0.f, 0.f, s);
         });
@@ -681,7 +833,8 @@ namespace sd
         const bool focused = (state & LVIS_FOCUSED) && active && FocusCues(list);
         const bool hot = (draw.nmcd.uItemState & CDIS_HOT) != 0;
         const auto it = m_lists.find(list);
-        Paint(draw.nmcd.hdc, rc, SurfaceColor(it == m_lists.end() ? Surface::Card : it->second.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
+        // On the list's own background colour (a list paints the rest of itself).
+        Paint(draw.nmcd.hdc, rc, nullptr, SurfaceColor(it == m_lists.end() ? Surface::Card : it->second.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
             kit.DrawListItem(r, selected, hot, focused, active);
             DrawRow(list, row, kit, r, selected);
         });
@@ -732,7 +885,9 @@ namespace sd
         SendMessageW(m_hwnd, WM_SETREDRAW, FALSE, 0);
         Layout();
         SendMessageW(m_hwnd, WM_SETREDRAW, TRUE, 0);
-        RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+        // Everything repainted now, the window (its surface) before its controls (which draw their part
+        // of it): nothing keeps pixels from where it was.
+        RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     }
 
     void DialogWindow::ScrollIntoView(const RECT& r)
@@ -754,23 +909,25 @@ namespace sd
         const HDC dc = BeginPaint(m_hwnd, &ps);
         RECT rc{};
         GetClientRect(m_hwnd, &rc);
-        const HWND focus = GetFocus();
-        const bool painted = Paint(dc, rc, FromColorRef(m_colors.background), [&](ControlKit& kit, const D2D1_RECT_F& client) {
-            PaintSurface(kit, client);
-            for (const auto& [edit, field] : m_fields)
-            {
-                if (!IsWindowVisible(edit) || field.box.right <= field.box.left)
-                    continue;
-                const auto box = DipRect(field.box);
-                kit.DrawTextBox(box, focus == edit, field.invalid, IsWindowEnabled(edit) != FALSE);
-                if (field.search)
-                    kit.DrawGlyph(kGlyphSearch, 13.f, D2D1::RectF(box.left + 8, box.top, box.left + 28, box.bottom), kit.Theme().textDim);
-            }
-        });
-        if (!painted)
+        // The surface is drawn again whole (Layout, a scroll, the theme or a field's focus changed it),
+        // then shown: the window's own pixels are the backdrop's.
+        Kit();
+        m_kit->backdropStale = true;
+        if (!Paint(dc, rc, m_hwnd, FromColorRef(m_colors.background), [](ControlKit&, const D2D1_RECT_F&) {}))
             FillRect(dc, &rc, m_background.get());
         PaintGdi(dc);
         EndPaint(m_hwnd, &ps);
+        // The kit's controls over what was painted draw their part of the new surface behind them.
+        for (HWND child = GetWindow(m_hwnd, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT))
+        {
+            if (!IsWindowVisible(child) || !(m_styles.contains(child) || m_labels.contains(child) || m_dropDowns.contains(child) || m_sliders.contains(child)))
+                continue;
+            RECT r{}, overlap{};
+            GetWindowRect(child, &r);
+            MapWindowPoints(nullptr, m_hwnd, reinterpret_cast<POINT*>(&r), 2);
+            if (IntersectRect(&overlap, &r, &ps.rcPaint))
+                InvalidateRect(child, nullptr, FALSE);
+        }
     }
 
     bool DialogWindow::KitMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result)
@@ -848,8 +1005,15 @@ namespace sd
             result = reinterpret_cast<LRESULT>(m_field.get());
             return true;
         }
+        case WM_PARENTNOTIFY:
+            // A click on a control: focus rings are for the keyboard, so they go (as in WinUI), and
+            // the control clicked shows none.
+            if (const UINT event = LOWORD(wParam); event == WM_LBUTTONDOWN || event == WM_RBUTTONDOWN || event == WM_MBUTTONDOWN)
+                ShowFocusCues(false);
+            return false;
         case WM_LBUTTONDOWN:
         {
+            ShowFocusCues(false);
             // A click in a field's box, beside its edit, is a click in the field.
             const POINT p{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             for (const auto& [edit, field] : m_fields)
@@ -894,6 +1058,11 @@ namespace sd
             PaintWindow();
             result = 0;
             return true;
+        case WM_UPDATEUISTATE:
+            // Focus rings shown or hidden: every control draws itself again (and the field boxes).
+            result = DefWindowProcW(m_hwnd, msg, wParam, lParam);
+            RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+            return true;
         case WM_ERASEBKGND:
             result = 1;   // WM_PAINT paints all of it
             return true;
@@ -926,10 +1095,22 @@ namespace sd
         return true;
     }
 
+    void DialogWindow::ShowFocusCues(bool show)
+    {
+        if (!m_hwnd)
+            return;
+        const bool hidden = (SendMessageW(m_hwnd, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) != 0;
+        if (hidden == show)
+            SendMessageW(m_hwnd, WM_CHANGEUISTATE, MAKEWPARAM(show ? UIS_CLEAR : UIS_SET, UISF_HIDEFOCUS), 0);
+    }
+
     bool DialogWindow::PreTranslate(MSG& msg)
     {
         if (!m_hwnd || (msg.hwnd != m_hwnd && !IsChild(m_hwnd, msg.hwnd)))
             return false;
+        // The keys that move the focus show the focus rings (a click hides them: WM_PARENTNOTIFY).
+        if (msg.message == WM_KEYDOWN && (msg.wParam == VK_TAB || (msg.wParam >= VK_PRIOR && msg.wParam <= VK_DOWN)))
+            ShowFocusCues(true);
         const HWND before = GetFocus();
         const bool consumed = IsDialogMessageW(m_hwnd, &msg) != FALSE;
         // Tab or an arrow moved the focus: bring the control into view in a scrolling column.
