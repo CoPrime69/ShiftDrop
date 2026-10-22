@@ -1069,7 +1069,7 @@ TEST(PdfPages, EditLaysADocumentOutThenSavesNextToIt)
     const auto pdf = ImagesPdf(dir, L"extra.pdf", 2, 100, 50);
 
     // A Pages document: its pages are its preview PDF (no printer needed here).
-    const auto notes = (dir / L"notes.pages").wstring();
+    const auto notes = dir / L"notes.pages";
     std::string preview, zip, before;
     ASSERT_TRUE(ReadFileBytes(ImagesPdf(dir, L"preview.pdf", 3, 200, 80), preview));
     {
@@ -1109,7 +1109,7 @@ TEST(PdfPages, EditLaysADocumentOutThenSavesNextToIt)
     adjusted.steps[0].params["plan"] = PlanToJson({ { 0, 2, 0 }, { 0, 0, 90 } });
     const auto saved = runner.RunBatch(adjusted, 0, files, {});
     ASSERT_TRUE(saved.ok) << Narrow(saved.error);
-    EXPECT_EQ(saved.output, (dir / L"notes (edited).pdf").wstring());
+    EXPECT_EQ(saved.output, dir / L"notes (edited).pdf");
     EXPECT_EQ(Open(saved.output)->getAllPages().size(), 2u);
     std::string after;
     ASSERT_TRUE(ReadFileBytes(notes, after));
@@ -1152,7 +1152,7 @@ TEST(PdfPages, EditLaysADocumentOutThenSavesNextToIt)
     EXPECT_FALSE(opened);
 
     // A document that can't be laid out fails with the reader's own words, and writes nothing.
-    const auto broken = (dir / L"broken.pages").wstring();
+    const auto broken = dir / L"broken.pages";
     ASSERT_TRUE(WriteFileBytes(broken, "not a zip", WriteMode::New));
     const auto failed = runner.Run(*input, 0, broken, {});
     EXPECT_FALSE(failed.ok);
