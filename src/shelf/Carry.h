@@ -24,6 +24,21 @@ namespace sd::shelf
     // Explorer with the files selected, one window per folder (at most four folders).
     void ShowInFolder(const std::vector<std::wstring>& files);
 
+    // Open (the top panel's result, a shelf item): the file itself in its default app. Of a few
+    // outputs (up to kOpenFirstAtMost) the first; of more (a folder of frames, a split PDF) the
+    // folder they are in, so Open never starts a dozen apps. Empty for no files.
+    inline constexpr size_t kOpenFirstAtMost = 3;
+    struct OpenTarget
+    {
+        std::wstring path;
+        bool folder = false;   // the folder the outputs are in, not one of them
+        bool operator==(const OpenTarget&) const = default;
+    };
+    OpenTarget ChooseOpen(const std::vector<std::wstring>& files);
+    // Opens ChooseOpen's choice with the shell's "open" verb. False when there was nothing to open or
+    // the shell refused (no app for the type: Windows asks which one).
+    bool OpenFiles(const std::vector<std::wstring>& files);
+
     // A picture that goes on the clipboard next to a single image file, so pasting into a chat
     // app or a document gets the image itself.
     struct ClipboardImage

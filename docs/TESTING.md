@@ -299,7 +299,7 @@ Float shelf:
 - [ ] Add more than five items: the list scrolls with the mouse wheel and shows a thin scroll bar
 - [ ] Drag one item out into an Explorer folder: it is **copied** there (the original stays on the shelf and on disk); into a browser upload box, a mail message and a chat app (Teams, Discord, Slack, WhatsApp): each gets the file
 - [ ] Ctrl+click two items (or click one and Shift+click another), drag one of them out: both go; the handle at the bottom says "Drag 2 selected into an app"; with nothing selected it says "Drag all N into an app" and dragging it carries everything
-- [ ] Hover an item: a folder button (Explorer opens with it selected) and a × (removes it from the shelf only); right-click: Open, Show in folder, Copy, Remove, Pin/Unpin, Clear all, Close the shelf
+- [ ] Hover an item: pin, open (the file opens in its default app), folder (Explorer opens with it selected) and × (removes it from the shelf only) buttons; right-click: Open, Show in folder, Copy, Pin/Unpin, Remove, pin to the edge / unpin, Clear all, Close the shelf
 - [ ] Click an item, then use the keyboard: Up/Down move, Shift+Up/Down extend, Ctrl+A, Enter opens, Delete removes, Ctrl+C copies (the footer says "Copied…"), Esc folds a pinned shelf
 - [ ] Drag the shelf by its header to the middle of the screen: it floats there (no folding); drag it near the left, top or bottom edge and let go: it glides flush against that edge with square outer corners, and folds when you leave it
 - [ ] The pin button in the header pins a floating shelf to the nearest edge and unpins a pinned one
@@ -311,11 +311,19 @@ Float shelf:
 - [ ] The × at the right of the header (tooltip "Close the shelf (the tray icon brings it back)") hides it; the tray's **Show Float shelf** is now unticked; ticking it brings the shelf back where it was with its files; Alt+F4 on the shelf and right-click › "Close the shelf" do the same
 - [ ] Close the shelf, quit and restart ShiftDrop: it stays hidden (`"shown": false` in shelf.json); tick **Show Float shelf**: back
 - [ ] With the shelf closed, use **Float** on a file (or a result's Float button): the shelf comes back with the file on it and **Show Float shelf** is ticked again, as before
-- [ ] Click the shelf, then Tab: the focus moves from the list to Pin, Clear all and the × (a ring around the button), Shift+Tab goes back; Enter or Space presses the button; hover each header button: a tooltip names it
+- [ ] Click the shelf, then Tab: the focus moves from the list to the chevron, Pin, Clear all and the × (a ring around the button), Shift+Tab goes back; Enter or Space presses the button; hover each header button: a tooltip names it
 - [ ] Empty shelf at every tray Size (Small, Medium, Large, Auto) and at 100 %, 150 % and 200 % scaling, light and dark, Solid and Glass: the dashed box, its icon and "Drop files here" are centred and crisp, nothing is cut off, and the × and pin buttons are the same size as with files, and "Clear all" fits its button
 - [ ] Quit and restart ShiftDrop with files on the shelf: it comes back (folded if pinned) in the same place with the same files; `%LOCALAPPDATA%\ShiftDrop\shelf.json` lists them; with an empty shelf that was on, it comes back empty
 - [ ] Windows dark and light app theme: the shelf follows it (Settings > Personalisation > Colours), also while it is open; tray Style > Glass makes it translucent
 - [ ] Animation effects off: the shelf appears, folds and moves without animation
+- [ ] Float shelf header: a small chevron after "Float shelf" (tooltip "Pinned items and recent conversions"); click it (or Tab to it and press Enter): the list turns into two headed lists, **Pinned** and **Recent conversions**, the title says "Pinned and recent" and the chevron points up; click it again (tooltip "Back to the shelf"): the shelf's own files are back, with their count, Clear all and footer as before
+- [ ] Convert 6 files one by one (or a batch of 6): Recent conversions lists at least the last 5 outputs, newest first, each once; outputs of Move, Copy and Rename and undone conversions are not listed; outputs whose files were deleted are left out
+- [ ] Hover a row in either list (or on the shelf): pin, open, folder and × buttons in that order, each with a tooltip; the pin button on a Recent or shelf item adds it to Pinned (the pin turns accent; a pinned row shows the accent pin even when not hovered); on a Pinned item it unpins it
+- [ ] Quit and restart ShiftDrop: Pinned keeps its items in the same order (`"pinned"` in shelf.json); delete a pinned file in Explorer: it leaves Pinned within a few seconds
+- [ ] × on a Recent item: it leaves the list (and stays gone after a restart, `"hidden"` in shelf.json), but the file is still on disk and the History window still lists that conversion; × on a Pinned item only unpins it; neither touches the shelf's own files or its count
+- [ ] Drag an item out of Pinned and out of Recent into an Explorer folder and a chat app: the file is copied there; double-click an item or press its open button: the file opens in its default app
+- [ ] Keyboard in the lists: Up/Down move between items and skip the headings, Left/Right move between the row's buttons (a ring shows which), Enter presses it (Open by default), P pins or unpins, Delete takes the item off that list, Ctrl+C copies
+- [ ] **Clear all** in the shelf view still empties only the shelf; Pinned and Recent keep their items; in the Pinned and recent view Clear all is not shown
 
 Convert-and-carry and drop to clipboard (top panel):
 - [ ] Convert `photo.jpg` to PNG: the result in the top panel stays while the mouse is over it, and its second line says "Drag into any app, or click to show in Explorer"; it has a pin button and a copy button
@@ -325,6 +333,9 @@ Convert-and-carry and drop to clipboard (top panel):
 - [ ] The **copy** button: paste in Explorer copies the output file; for a single image, paste in Paint, Word or a chat message box pastes the picture itself (with transparency where the app supports PNG)
 - [ ] Copy something else right after clicking copy on a big photo: your newer copy is not replaced when the picture is ready
 - [ ] A failed or cancelled job with no outputs shows no buttons and cannot be dragged
+- [ ] A finished convert shows Open, Show in folder, Float, Copy and × as round icon buttons (Segoe Fluent Icons); hovering each one names it on the panel's second line ("Open the file", "Show in folder", "Keep on the Float shelf", "Copy to the clipboard", "Close")
+- [ ] **Open** on a single result: the file opens in its default app (a PNG in Photos, a PDF in the PDF viewer) and the panel tucks away; on a batch of 3: the first file opens; on a batch of 10: the folder opens in Explorer
+- [ ] **Show in folder**: Explorer opens with the output selected, as clicking the pill does; **×** tucks the panel away without doing anything else
 
 ### P. Keyboard, Explorer selection, predicted output, inspector
 Have ready: a large phone photo (with GPS), a small PNG, a video, a song, and a folder with 20 or more image recipes (copy `web-ready.json` in the recipes folder under new ids, then restart) for paging.

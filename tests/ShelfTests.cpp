@@ -8,6 +8,8 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <format>
+
 using namespace sd;
 using namespace sd::shelf;
 using namespace sd::test;
@@ -544,4 +546,123 @@ TEST(Shelf, InstantActionReachesTheShelf)
     EXPECT_EQ(got.size(), 1u);
     SetInstantFileAction("file.float", nullptr);   // the shelf is gone: the slice says so
     EXPECT_FALSE(RunInstantFileAction("file.float", { L"C:\\a.png" }, nullptr).ok);
+}
+
+// ---- Pinned and Recent conversions (the header's drop-down) -----------------------------------------
+
+TEST(Shelf, PinnedAndHiddenAreSavedAndLoaded)
+{
+    TempDir dir;
+    SavedShelf a;
+    a.items = { L"C:\\a.png" };
+    a.pinned = { L"C:\\b.pdf", L"D:\\c d\\e.mp4" };
+    a.hidden = { L"C:\\f (converted).png" };
+    const auto path = dir / L"shelf.json";
+    ASSERT_TRUE(Save(path, a));
+    const auto b = Load(path);
+    EXPECT_EQ(b.items, a.items);
+    EXPECT_EQ(b.pinned, a.pinned);
+    EXPECT_EQ(b.hidden, a.hidden);
+    // A file from before the drop-down has neither: nothing pinned, nothing hidden.
+    SavedShelf old;
+    ASSERT_TRUE(FromJson(R"({ "version": 1, "items": [ "C:\\a.png" ] })", old));
+    EXPECT_TRUE(old.pinned.empty());
+    EXPECT_TRUE(old.hidden.empty());
+    // Entries that are not paths are skipped.
+    SavedShelf odd;
+    ASSERT_TRUE(FromJson(R"({ "pinned": [ 3, "", "C:\\x.png" ], "hidden": "no" })", odd));
+    EXPECT_EQ(odd.pinned, (std::vector<std::wstring>{ L"C:\\x.png" }));
+    EXPECT_TRUE(odd.hidden.empty());
+}
+
+TEST(Shelf, PinningAndUnpinning)
+{
+    std::vector<std::wstring> pinned;
+    EXPECT_TRUE(SetPinned(pinned, L"C:\\a.png", true));
+    EXPECT_TRUE(SetPinned(pinned, L"C:\\b.png", true));
+    EXPECT_TRUE(SetPinned(pinned, L"c:/A.PNG", true));   // the same file: still once, where it was
+    EXPECT_EQ(pinned, (std::vector<std::wstring>{ L"C:\\b.png", L"C:\\a.png" }));
+    EXPECT_TRUE(IsPinned(pinned, L"c:\\a.png"));
+    EXPECT_FALSE(SetPinned(pinned, L"C:\\A.png", false));
+    EXPECT_EQ(pinned, (std::vector<std::wstring>{ L"C:\\b.png" }));
+    EXPECT_FALSE(IsPinned(pinned, L"C:\\a.png"));
+    EXPECT_FALSE(SetPinned(pinned, L"", true));
+    EXPECT_EQ(pinned.size(), 1u);
+}
+
+TEST(Shelf, RecentConversionsFromHistory)
+{
+    // History's outputs, newest first; the list shows each once, never a hidden one, at most the limit.
+    const std::vector<std::wstring> outputs = { L"C:\\1.png", L"C:\\2.png", L"c:\\1.PNG", L"C:\\3.png", L"C:\\4.png", L"C:\\5.png", L"C:\\6.png", L"" };
+    std::vector<std::wstring> hidden;
+    EXPECT_EQ(RecentList(outputs, hidden, 5), (std::vector<std::wstring>{ L"C:\\1.png", L"C:\\2.png", L"C:\\3.png", L"C:\\4.png", L"C:\\5.png" }));
+    // × on one takes it off the list only; the next one moves up so the list stays full.
+    HideRecent(hidden, L"C:\\2.png");
+    EXPECT_EQ(RecentList(outputs, hidden, 5), (std::vector<std::wstring>{ L"C:\\1.png", L"C:\\3.png", L"C:\\4.png", L"C:\\5.png", L"C:\\6.png" }));
+    HideRecent(hidden, L"C:\\2.png");
+    EXPECT_EQ(hidden.size(), 1u);
+    // At least five recent conversions fit the drop-down's list.
+    EXPECT_GE(kRecentCount, 5u);
+    // The hidden list forgets the oldest past its limit.
+    for (int i = 0; i < 5; ++i)
+        HideRecent(hidden, std::format(L"C:\\h{}.png", i), 3);
+    EXPECT_EQ(hidden.size(), 3u);
+    EXPECT_EQ(hidden.front(), L"C:\\h4.png");
+}
+
+TEST(Shelf, DropDownListLayout)
+{
+    const Metrics m(1.f);
+    // Pinned: a heading and two items; Recent: a heading and one item.
+    ListShape shape;
+    shape.rows = { RowKind::Label, RowKind::Item, RowKind::Item, RowKind::Label, RowKind::Item };
+    shape.dropDown = 120;
+    EXPECT_EQ(ContentHeight(m, shape), 2 * m.label + 3 * m.row);
+    EXPECT_EQ(RowTop(m, shape, 3), m.label + 2 * m.row);
+    EXPECT_EQ(MaxScroll(m, shape), 0.f);
+    const Box panel{ 0, 0, m.width, PanelHeight(m, shape) };
+    EXPECT_EQ(panel.bottom, m.header + 2 * m.label + 3 * m.row + m.inset);   // no footer, no Clear all
+    const auto l = LayOut(panel, m, shape, 0);
+    EXPECT_EQ(l.clear.Width(), 0.f);
+    EXPECT_EQ(l.footer.Width(), 0.f);
+    ASSERT_EQ(l.rows.size(), 5u);
+    const auto at = [&](const Box& b) { return HitTest(l, (b.left + b.right) / 2, (b.top + b.bottom) / 2); };
+    // The title is the drop-down's button; the headings are not items.
+    EXPECT_EQ(at(l.dropDown), (Hit{ Part::DropDown }));
+    EXPECT_EQ(at(l.rows[0].row), (Hit{ Part::Label, 0 }));
+    EXPECT_EQ(l.rows[3].kind, RowKind::Label);
+    // Each item's buttons, left to right: pin, Open, Show in folder, ×.
+    const auto& item = l.rows[4];
+    EXPECT_EQ(at(item.pin), (Hit{ Part::PinItem, 4 }));
+    EXPECT_EQ(at(item.open), (Hit{ Part::Open, 4 }));
+    EXPECT_EQ(at(item.reveal), (Hit{ Part::Reveal, 4 }));
+    EXPECT_EQ(at(item.remove), (Hit{ Part::Remove, 4 }));
+    EXPECT_EQ(at(item.name), (Hit{ Part::Item, 4 }));
+    EXPECT_LT(item.pin.right, item.open.left);
+    EXPECT_LT(item.open.right, item.reveal.left);
+    EXPECT_LT(item.reveal.right, item.remove.left);
+    EXPECT_LE(item.name.right, item.pin.left);
+    // The shelf's own list is as before: its rows, Clear all and the footer, no headings.
+    const auto own = ShelfShape(3);
+    EXPECT_EQ(PanelHeight(m, own), PanelHeight(m, 3));
+    EXPECT_TRUE(own.clear && own.footer && !own.drop);
+    EXPECT_TRUE(ShelfShape(0).drop);
+    // Many recent items scroll under the header like the shelf's.
+    ListShape many;
+    many.rows.assign(12, RowKind::Item);
+    many.rows.insert(many.rows.begin(), RowKind::Label);
+    EXPECT_EQ(MaxScroll(m, many), m.label + 12 * m.row - 5 * m.row);
+}
+
+// Open on a result or a shelf item: the file itself; of a few outputs the first; of many their folder.
+TEST(Shelf, OpenOpensTheFileOrTheFolderOfMany)
+{
+    EXPECT_EQ(ChooseOpen({}), OpenTarget{});
+    EXPECT_EQ(ChooseOpen({ L"C:\\out\\a (converted).png" }), (OpenTarget{ L"C:\\out\\a (converted).png", false }));
+    EXPECT_EQ(ChooseOpen({ L"C:\\out\\a.png", L"C:\\out\\b.png", L"C:\\out\\c.png" }), (OpenTarget{ L"C:\\out\\a.png", false }));
+    std::vector<std::wstring> frames;
+    for (int i = 0; i < 24; ++i)
+        frames.push_back(std::format(L"C:\\out\\clip frames\\frame {:03}.png", i));
+    EXPECT_EQ(ChooseOpen(frames), (OpenTarget{ L"C:\\out\\clip frames", true }));
+    EXPECT_FALSE(OpenFiles({}));   // nothing to open: no shell call
 }

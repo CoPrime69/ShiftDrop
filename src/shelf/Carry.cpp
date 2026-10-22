@@ -149,6 +149,26 @@ namespace sd::shelf
         }
     }
 
+    OpenTarget ChooseOpen(const std::vector<std::wstring>& files)
+    {
+        if (files.empty())
+            return {};
+        if (files.size() <= kOpenFirstAtMost)
+            return { files.front(), false };
+        return { std::filesystem::path(files.front()).parent_path().wstring(), true };
+    }
+
+    bool OpenFiles(const std::vector<std::wstring>& files)
+    {
+        const auto target = ChooseOpen(files);
+        if (target.path.empty())
+            return false;
+        // The verb's result is a pseudo-handle above 32 when the shell started something.
+        const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", target.path.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        log::Info(L"carry: opened {} ({} file(s)): {}", target.folder ? L"their folder" : L"the file", files.size(), result > 32 ? L"ok" : L"refused");
+        return result > 32;
+    }
+
     bool IsClipboardImage(const std::wstring& path)
     {
         const auto ext = LowerExtension(path);

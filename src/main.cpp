@@ -50,6 +50,7 @@
 #include "AskWindow.h"
 #include "ocr/Ocr.h"
 #include "rename/RenameWindow.h"
+#include "shelf/Carry.h"
 #include "shelf/ShelfWindow.h"
 #include "toast/Toasts.h"
 
@@ -210,34 +211,10 @@ namespace sd
             return { 0xE9F5 };                                     // Processing (a generic recipe)
         }
 
+        // Explorer with the files selected (the Float shelf's Show in folder, one window per folder).
         void RevealInExplorer(const std::vector<std::wstring>& paths)
         {
-            if (paths.empty())
-                return;
-            // ILFree as the deleter: PIDLs are __unaligned pointers on x64, which a plain void* deleter would not accept.
-            using Pidl = wil::unique_any<PIDLIST_ABSOLUTE, decltype(&::ILFree), ::ILFree>;
-            const auto folder = std::filesystem::path(paths.front()).parent_path().wstring();
-
-            PIDLIST_ABSOLUTE raw = nullptr;
-            if (FAILED(SHParseDisplayName(folder.c_str(), nullptr, &raw, 0, nullptr)))
-                return;
-            Pidl folderPidl(raw);
-
-            std::vector<Pidl> items;
-            std::vector<PCUITEMID_CHILD> children;
-            for (const auto& p : paths)
-            {
-                if (std::filesystem::path(p).parent_path().wstring() != folder)
-                    continue;
-                raw = nullptr;
-                if (SUCCEEDED(SHParseDisplayName(p.c_str(), nullptr, &raw, 0, nullptr)))
-                {
-                    items.emplace_back(raw);
-                    // The array wants child IDs relative to the folder: the last ID of each absolute PIDL.
-                    children.push_back(reinterpret_cast<PCUITEMID_CHILD>(ILFindLastID(raw)));
-                }
-            }
-            SHOpenFolderAndSelectItems(folderPidl.get(), static_cast<UINT>(children.size()), children.data(), 0);
+            shelf::ShowInFolder(paths);
         }
 
         // A click on a finished batch's toast (Toasts.h): show the outputs, or open the one output.
@@ -249,7 +226,7 @@ namespace sd
                 if (PathExists(p))
                     present.push_back(p);
             if (click.verb == toast::Verb::Open && !present.empty())
-                ShellExecuteW(nullptr, nullptr, present.front().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                shelf::OpenFiles(present);   // as the top panel's and the shelf's Open
             else if (!present.empty())
                 RevealInExplorer(present);
             else if (const auto folder = std::filesystem::path(click.paths.front()).parent_path().wstring();
@@ -342,6 +319,9 @@ namespace sd
             if (!m_shelf->Create())
                 log::Error(L"shelf: unavailable; the Float slice and carrying results are off");
             m_shelf->SetAppearance(m_appearance);
+            // The shelf's Recent conversions are History's latest outputs (read on the shelf's worker).
+            if (m_history)
+                m_shelf->SetRecentSource([history = m_history.get()](size_t limit) { return history->RecentOutputs(static_cast<int>(limit)); });
 
             Overlay::Events events;
             events.shown = [this](int ring, HMONITOR monitor) { m_island->ShowSwitcher(ring, monitor); };

@@ -269,3 +269,38 @@ TEST(History, RowsSayTheFileAndWhen)
     EXPECT_TRUE(history::ParseStarted(L"2026-02-28 10:00", t));
     EXPECT_EQ(t.hour, 10);
 }
+
+// The Float shelf's Recent conversions read History: the latest outputs, newest first, each once,
+// without failed or undone items and without the file actions' moves and copies.
+TEST(History, RecentOutputsForTheFloatShelf)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    auto history = OpenStore(dir);
+    ASSERT_TRUE(history);
+
+    const auto& png = recipes.Get("to-png");
+    const auto first = history->BeginRun(png, 2);
+    history->FinishItem(history->BeginItem(first, L"C:\\a.jpg", L""), status::Done, L"C:\\a (converted).png", 10, "ab", L"", 5);
+    history->FinishItem(history->BeginItem(first, L"C:\\b.jpg", L""), status::Failed, L"", 0, "", L"no decoder", 1);
+    history->FinishRun(first);
+    const auto undone = history->BeginRun(png, 1);
+    const auto undoneItem = history->BeginItem(undone, L"C:\\c.jpg", L"");
+    history->FinishItem(undoneItem, status::Done, L"C:\\c (converted).png", 10, "cd", L"", 5);
+    history->FinishRun(undone);
+    history->SetItemStatus(undoneItem, status::Undone);
+    const auto moved = history->BeginRun(recipes.Get("move"), 1);
+    history->FinishItem(history->BeginItem(moved, L"C:\\d.jpg", L""), status::Done, L"D:\\d.jpg", 10, "ef", L"", 5);
+    history->FinishRun(moved);
+    const auto again = history->BeginRun(png, 2);
+    history->FinishItem(history->BeginItem(again, L"C:\\e.jpg", L""), status::Done, L"C:\\e (converted).png", 10, "gh", L"", 5);
+    history->FinishItem(history->BeginItem(again, L"C:\\a.jpg", L""), status::Done, L"C:\\a (converted).png", 10, "ab", L"", 5);
+    history->FinishRun(again);
+
+    const auto recent = history->RecentOutputs(10);
+    ASSERT_EQ(recent.size(), 2u);
+    EXPECT_EQ(recent[0], L"C:\\a (converted).png");   // made again last: newest, and once
+    EXPECT_EQ(recent[1], L"C:\\e (converted).png");
+    EXPECT_EQ(history->RecentOutputs(1).size(), 1u);
+    EXPECT_TRUE(history->RecentOutputs(0).empty());
+}

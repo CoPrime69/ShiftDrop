@@ -28,6 +28,13 @@ namespace sd::shelf
             j["y"] = *shelf.y;
         }
         j["shown"] = shelf.shown;
+        for (const auto* list : { &shelf.pinned, &shelf.hidden })
+        {
+            auto& out = j[list == &shelf.pinned ? "pinned" : "hidden"];
+            out = nlohmann::json::array();
+            for (const auto& path : *list)
+                out.push_back(Narrow(path));
+        }
         return j.dump(2);
     }
 
@@ -37,10 +44,15 @@ namespace sd::shelf
         if (j.is_discarded() || !j.is_object())
             return false;
         SavedShelf out;
-        if (const auto items = j.find("items"); items != j.end() && items->is_array())
-            for (const auto& item : *items)
-                if (item.is_string() && !item.get<std::string>().empty())
-                    out.items.push_back(Widen(item.get<std::string>()));
+        const auto paths = [&](const char* key, std::vector<std::wstring>& list) {
+            if (const auto items = j.find(key); items != j.end() && items->is_array())
+                for (const auto& item : *items)
+                    if (item.is_string() && !item.get<std::string>().empty())
+                        list.push_back(Widen(item.get<std::string>()));
+        };
+        paths("items", out.items);
+        paths("pinned", out.pinned);
+        paths("hidden", out.hidden);
         if (const auto edge = j.find("edge"); edge != j.end() && edge->is_string())
             out.edge = EdgeFromName(edge->get<std::string>());
         const auto x = j.find("x"), y = j.find("y");
@@ -119,6 +131,45 @@ namespace sd::shelf
             result.resize(limit);
         items = std::move(result);
         return fresh;
+    }
+
+    bool IsPinned(const std::vector<std::wstring>& pinned, std::wstring_view path)
+    {
+        return std::any_of(pinned.begin(), pinned.end(), [&](const std::wstring& p) { return SamePath(p, path); });
+    }
+
+    bool SetPinned(std::vector<std::wstring>& pinned, const std::wstring& path, bool pin, size_t limit)
+    {
+        if (path.empty())
+            return false;
+        if (pin)
+        {
+            if (!IsPinned(pinned, path))
+                AddToTop(pinned, { path }, limit);
+            return true;
+        }
+        std::erase_if(pinned, [&](const std::wstring& p) { return SamePath(p, path); });
+        return false;
+    }
+
+    std::vector<std::wstring> RecentList(const std::vector<std::wstring>& outputs, const std::vector<std::wstring>& hidden, size_t limit)
+    {
+        std::vector<std::wstring> recent;
+        for (const auto& path : outputs)
+        {
+            if (recent.size() >= limit)
+                break;
+            if (path.empty() || IsPinned(recent, path) || IsPinned(hidden, path))
+                continue;
+            recent.push_back(path);
+        }
+        return recent;
+    }
+
+    void HideRecent(std::vector<std::wstring>& hidden, const std::wstring& path, size_t limit)
+    {
+        if (!path.empty())
+            AddToTop(hidden, { path }, limit);
     }
 
     bool Visibility::Switch(bool on)

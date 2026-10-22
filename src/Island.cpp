@@ -65,13 +65,32 @@ namespace sd
         constexpr float kChipLeadDip = 2.7f;
         constexpr float kChipWDip = 36.f, kChipHDip = 28.f;
         constexpr float kChipGapDip = 7.6f;
-        constexpr float kActionDip = 26.f;          // Float and Copy buttons
-        constexpr float kActionGapDip = 7.6f;
+        constexpr float kActionDip = 26.f;          // the result's round buttons
+        constexpr float kActionGapDip = 6.f;
+        constexpr wchar_t kGlyphOpenFile = 0xE8E5;  // OpenFile
+        constexpr wchar_t kGlyphFolderOpen = 0xE838; // FolderOpen
         constexpr wchar_t kGlyphPin = 0xE718;       // Pin (Float shelf)
         constexpr wchar_t kGlyphCopy = 0xE8C8;      // Copy
         constexpr const wchar_t* kHintShow = L"Click to show in folder";
         constexpr const wchar_t* kHintDismiss = L"Click to dismiss";
-        constexpr const wchar_t* kHintActions[2] = { L"Keep on the Float shelf", L"Copy to the clipboard" };
+
+        // Each button's icon and its name, which the line under the title shows while it is hovered.
+        struct ButtonLook
+        {
+            wchar_t glyph;
+            const wchar_t* hint;
+        };
+        ButtonLook LookOf(Island::Button b, size_t files)
+        {
+            switch (b)
+            {
+            case Island::Button::Open: return { kGlyphOpenFile, files > 1 ? L"Open the first file" : L"Open the file" };
+            case Island::Button::Reveal: return { kGlyphFolderOpen, L"Show in folder" };
+            case Island::Button::Float: return { kGlyphPin, L"Keep on the Float shelf" };
+            case Island::Button::Copy: return { kGlyphCopy, L"Copy to the clipboard" };
+            default: return { kGlyphClose, L"Close" };
+            }
+        }
     }
 
     Island::Island(HINSTANCE instance, std::vector<WheelRing> rings, std::function<void()> onClick)
@@ -357,21 +376,59 @@ namespace sd
 
     // ---- Carry: drag the result out, Float, Copy -----------------------------------------------
 
-    size_t Island::ActionCount() const
+    std::vector<Island::Button> Island::ButtonsFor(const ResultActions& a)
     {
-        return m_actions.toShelf || m_actions.copy ? 2 : 0;   // the pair is laid out together
+        std::vector<Button> buttons;
+        if (a.open)
+            buttons.push_back(Button::Open);
+        if (a.reveal)
+            buttons.push_back(Button::Reveal);
+        if (a.toShelf)
+            buttons.push_back(Button::Float);
+        if (a.copy)
+            buttons.push_back(Button::Copy);
+        if (!buttons.empty())
+            buttons.push_back(Button::Dismiss);
+        return buttons;
     }
 
     int Island::ActionAt(POINT pt) const
     {
-        const std::function<std::wstring()>* fns[2] = { &m_actions.toShelf, &m_actions.copy };
-        for (int i = 0; i < static_cast<int>(ActionCount()); ++i)
+        for (size_t i = 0; i < ActionCount(); ++i)
         {
             const auto& r = m_actionRects[i];
-            if (*fns[i] && pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom)
-                return i;
+            if (pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom)
+                return static_cast<int>(i);
         }
         return -1;
+    }
+
+    void Island::Run(size_t i)
+    {
+        if (i >= m_buttons.size() || m_actionDone[i])
+            return;
+        switch (m_buttons[i])
+        {
+        case Button::Open:
+        case Button::Reveal:
+        {
+            // Copies: the callback may show a new result.
+            const auto fn = m_buttons[i] == Button::Open ? m_actions.open : m_actions.reveal;
+            Retract();
+            fn();
+            return;
+        }
+        case Button::Float:
+        case Button::Copy:
+            m_subtitle = (m_buttons[i] == Button::Float ? m_actions.toShelf : m_actions.copy)();
+            m_actionDone[i] = true;
+            m_resultSince = GetTickCount64();
+            Animate();
+            return;
+        case Button::Dismiss:
+            Retract();
+            return;
+        }
     }
 
     std::wstring Island::DragHint() const
@@ -381,9 +438,9 @@ namespace sd
 
     std::wstring Island::ResultLine() const
     {
-        if (m_actionHover >= 0 && !m_actionDone[m_actionHover])
-            return kHintActions[m_actionHover];
-        if (m_resultHover && m_outcome != Outcome::Failure && !m_actionDone[0] && !m_actionDone[1])
+        if (m_actionHover >= 0 && static_cast<size_t>(m_actionHover) < m_buttons.size() && !m_actionDone[m_actionHover])
+            return LookOf(m_buttons[static_cast<size_t>(m_actionHover)], m_actions.files).hint;
+        if (m_resultHover && m_outcome != Outcome::Failure && std::none_of(std::begin(m_actionDone), std::end(m_actionDone), [](bool d) { return d; }))
             return m_actions.drag ? DragHint() : std::wstring(kHintShow);
         return m_subtitle;
     }
@@ -447,15 +504,9 @@ namespace sd
                 break;
             if (m_pressAction >= 0)
             {
-                // A button: run it if the mouse is still on it, and say what happened.
-                if (over == m_pressAction && !m_actionDone[over])
-                {
-                    const auto fn = over == 0 ? m_actions.toShelf : m_actions.copy;
-                    m_subtitle = fn();
-                    m_actionDone[over] = true;
-                    m_resultSince = GetTickCount64();
-                    Animate();
-                }
+                // A button: run it if the mouse is still on it.
+                if (over == m_pressAction)
+                    Run(static_cast<size_t>(over));
                 break;
             }
             // A failure only goes away ("Click to dismiss"); anything else shows its files.
@@ -472,7 +523,8 @@ namespace sd
     void Island::ShowResult(Outcome outcome, const std::wstring& title, const std::wstring& subtitle, ResultActions actions)
     {
         m_actions = std::move(actions);
-        m_actionDone[0] = m_actionDone[1] = false;
+        m_buttons = ButtonsFor(m_actions);
+        std::fill(std::begin(m_actionDone), std::end(m_actionDone), false);
         m_actionHover = m_pressAction = -1;
         m_pressed = false;
         m_resultHover = false;
@@ -602,8 +654,8 @@ namespace sd
             {
                 // Room for the hints too, so the pill does not jump when the mouse arrives.
                 text = std::max(text, TextWidth(m_actions.drag ? DragHint() : std::wstring(kHintShow), m_subFont.Get()));
-                if (m_actions.Any())
-                    text = std::max({ text, TextWidth(kHintActions[0], m_subFont.Get()), TextWidth(kHintActions[1], m_subFont.Get()) });
+                for (const auto b : m_buttons)
+                    text = std::max(text, TextWidth(LookOf(b, m_actions.files).hint, m_subFont.Get()));
             }
             w = (m_actions.drag ? (kChipLeadDip + kChipWDip + kChipGapDip) : (kLeadDip + kMarkDip + kMarkGapDip)) * s + text;
             if (const size_t n = ActionCount())
@@ -794,20 +846,19 @@ namespace sd
         if (const size_t n = ActionCount())
         {
             const float d = kActionDip * s, gap = kActionGapDip * s;
-            const std::function<std::wstring()>* fns[2] = { &m_actions.toShelf, &m_actions.copy };
-            const wchar_t glyphs[2] = { kGlyphPin, kGlyphCopy };
             float x = box.right - kButtonEndDip * s - static_cast<float>(n) * d - static_cast<float>(n - 1) * gap;
             textRight = x - 6.f * s;
-            for (size_t i = 0; i < n; ++i, x += d + gap)
+            for (size_t i = 0; i < n && i < kMaxButtons; ++i, x += d + gap)
             {
                 m_actionRects[i] = D2D1::RectF(x, cy - d / 2.f, x + d, cy + d / 2.f);
-                if (!*fns[i])
-                    continue;
                 const bool hover = m_actionHover == static_cast<int>(i), done = m_actionDone[i];
+                const bool dismiss = m_buttons[i] == Button::Dismiss;
                 const auto c2 = D2D1::Point2F(x + d / 2.f, cy);
-                m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
-                                  Brush(done ? WithAlpha(m_palette.ok, 0.22f) : hover ? m_palette.panelAccent : m_palette.keycap, alpha).Get());
-                const wchar_t g2[2]{ done ? kGlyphCheck : glyphs[i], 0 };
+                // The × is quieter: only a hover fill, as the progress pill's cancel.
+                if (!dismiss || hover)
+                    m_rt->FillEllipse(D2D1::Ellipse(c2, d / 2.f, d / 2.f),
+                                      Brush(done ? WithAlpha(m_palette.ok, 0.22f) : hover ? m_palette.panelAccent : m_palette.keycap, alpha).Get());
+                const wchar_t g2[2]{ done ? kGlyphCheck : LookOf(m_buttons[i], m_actions.files).glyph, 0 };
                 Text(g2, m_actionFont.Get(), m_actionRects[i], done ? m_palette.ok : hover ? m_palette.panelTextOnAccent : m_palette.panelText, alpha);
             }
         }

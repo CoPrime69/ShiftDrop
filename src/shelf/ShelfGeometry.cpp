@@ -129,6 +129,7 @@ namespace sd::shelf
           button(std::round(28.f * s)),
           clearAll(std::round(70.f * s)),
           radius(std::round(8.f * s)),
+          label(std::round(28.f * s)),
           tabThickness(std::round(30.f * s)),
           tabLength(std::round(84.f * s)),
           snap(std::round(32.f * s))
@@ -137,16 +138,71 @@ namespace sd::shelf
 
     float PanelHeight(const Metrics& m, size_t count)
     {
-        const size_t rows = std::clamp<size_t>(count, 1, m.maxRows);
-        return m.header + static_cast<float>(rows) * m.row + m.footer;
+        return PanelHeight(m, ShelfShape(count));
     }
 
     float MaxScroll(const Metrics& m, size_t count)
     {
-        return count > m.maxRows ? static_cast<float>(count - m.maxRows) * m.row : 0.f;
+        return MaxScroll(m, ShelfShape(count));
+    }
+
+    ListShape ShelfShape(size_t count)
+    {
+        ListShape shape;
+        shape.rows.assign(count, RowKind::Item);
+        shape.clear = shape.footer = count > 0;
+        shape.drop = count == 0;
+        return shape;
+    }
+
+    float RowHeight(const Metrics& m, const ListShape& shape, size_t index)
+    {
+        return index < shape.rows.size() && shape.rows[index] == RowKind::Label ? m.label : m.row;
+    }
+
+    float RowTop(const Metrics& m, const ListShape& shape, size_t index)
+    {
+        float top = 0;
+        for (size_t i = 0; i < index && i < shape.rows.size(); ++i)
+            top += RowHeight(m, shape, i);
+        return top;
+    }
+
+    float ContentHeight(const Metrics& m, const ListShape& shape)
+    {
+        return RowTop(m, shape, shape.rows.size());
+    }
+
+    float PanelHeight(const Metrics& m, const ListShape& shape)
+    {
+        // At least one row's room (the empty shelf's drop box), at most five rows' before it scrolls.
+        const float view = static_cast<float>(m.maxRows) * m.row;
+        const float list = std::clamp(ContentHeight(m, shape), m.row, view);
+        return m.header + list + (shape.footer || shape.drop ? m.footer : m.inset);
+    }
+
+    float MaxScroll(const Metrics& m, const ListShape& shape)
+    {
+        return std::max(0.f, ContentHeight(m, shape) - static_cast<float>(m.maxRows) * m.row);
+    }
+
+    const Box& ButtonBox(const RowBox& row, Part part)
+    {
+        switch (part)
+        {
+        case Part::PinItem: return row.pin;
+        case Part::Open: return row.open;
+        case Part::Reveal: return row.reveal;
+        default: return row.remove;
+        }
     }
 
     Layout LayOut(const Box& panel, const Metrics& m, size_t count, float scroll)
+    {
+        return LayOut(panel, m, ShelfShape(count), scroll);
+    }
+
+    Layout LayOut(const Box& panel, const Metrics& m, const ListShape& shape, float scroll)
     {
         Layout l;
         l.panel = panel;
@@ -156,38 +212,55 @@ namespace sd::shelf
         const float gap = std::round(4.f * m.scale);
         l.close = Box{ panel.right - m.inset - b, hy - b / 2.f, panel.right - m.inset, hy + b / 2.f };
         float left = l.close.left;
-        if (count > 0)
+        if (shape.clear)
         {
             l.clear = Box{ left - gap - m.clearAll, l.close.top, left - gap, l.close.bottom };
             left = l.clear.left;
         }
         l.pin = Box{ left - gap - b, l.close.top, left - gap, l.close.bottom };
         l.title = Box{ panel.left + m.inset + std::round(8.f * m.scale), l.header.top, l.pin.left - m.inset, l.header.bottom };
-        l.list = Box{ panel.left, l.header.bottom, panel.right, panel.bottom - m.footer };
-        if (count > 0)
+        if (shape.dropDown > 0)
+            l.dropDown = Box{ l.title.left - std::round(6.f * m.scale), l.close.top, std::min(l.title.right, l.title.left + shape.dropDown), l.close.bottom };
+        const float bottom = shape.footer || shape.drop ? m.footer : m.inset;
+        l.list = Box{ panel.left, l.header.bottom, panel.right, panel.bottom - bottom };
+        if (shape.footer)
             l.footer = Box{ panel.left + m.inset, panel.bottom - m.footer + std::round(4.f * m.scale), panel.right - m.inset, panel.bottom - m.inset };
-        else
+        else if (shape.drop)
             l.drop = Box{ panel.left + m.inset, l.header.bottom + std::round(4.f * m.scale), panel.right - m.inset, panel.bottom - m.inset };
 
-        scroll = std::clamp(scroll, 0.f, MaxScroll(m, count));
+        scroll = std::clamp(scroll, 0.f, MaxScroll(m, shape));
         const float pad = std::round(6.f * m.scale);
-        for (size_t i = 0; i < count; ++i)
+        float top = l.list.top - scroll;
+        for (size_t i = 0; i < shape.rows.size(); ++i)
         {
-            const float top = l.list.top + static_cast<float>(i) * m.row - scroll;
-            if (top + m.row <= l.list.top)
+            const float h = RowHeight(m, shape, i);
+            const float rowTop = top;
+            top += h;
+            if (rowTop + h <= l.list.top)
                 continue;
-            if (top >= l.list.bottom)
+            if (rowTop >= l.list.bottom)
                 break;
             RowBox r;
             r.index = i;
-            r.row = Box{ panel.left + m.inset, top, panel.right - m.inset, top + m.row };
-            const float cy = top + m.row / 2.f;
+            r.kind = shape.rows[i];
+            r.row = Box{ panel.left + m.inset, rowTop, panel.right - m.inset, rowTop + h };
+            if (r.kind == RowKind::Label)
+            {
+                // A heading: small text at the bottom of its row, over the items it heads.
+                r.name = Box{ r.row.left + pad + std::round(4.f * m.scale), rowTop + std::round(8.f * m.scale), r.row.right - pad, r.row.bottom - std::round(2.f * m.scale) };
+                l.rows.push_back(r);
+                continue;
+            }
+            const float cy = rowTop + h / 2.f;
             r.thumb = Box{ r.row.left + pad, cy - m.thumb / 2.f, r.row.left + pad + m.thumb, cy + m.thumb / 2.f };
+            const float step = b + std::round(2.f * m.scale);
             r.remove = Box{ r.row.right - pad - b, cy - b / 2.f, r.row.right - pad, cy + b / 2.f };
-            r.reveal = r.remove.Offset(-(b + std::round(2.f * m.scale)), 0);
+            r.reveal = r.remove.Offset(-step, 0);
+            r.open = r.reveal.Offset(-step, 0);
+            r.pin = r.open.Offset(-step, 0);
             const float tx = r.thumb.right + std::round(10.f * m.scale);
-            r.name = Box{ tx, top + std::round(7.f * m.scale), r.reveal.left - pad, cy + std::round(2.f * m.scale) };
-            r.detail = Box{ tx, cy + std::round(1.f * m.scale), r.reveal.left - pad, r.row.bottom - std::round(7.f * m.scale) };
+            r.name = Box{ tx, rowTop + std::round(7.f * m.scale), r.pin.left - pad, cy + std::round(2.f * m.scale) };
+            r.detail = Box{ tx, cy + std::round(1.f * m.scale), r.pin.left - pad, r.row.bottom - std::round(7.f * m.scale) };
             l.rows.push_back(r);
         }
         return l;
@@ -203,6 +276,8 @@ namespace sd::shelf
             return { Part::Clear };
         if (l.pin.Contains(x, y))
             return { Part::Pin };
+        if (l.dropDown.Contains(x, y))
+            return { Part::DropDown };
         if (l.header.Contains(x, y))
             return { Part::Header };
         if (l.footer.Contains(x, y))
@@ -211,10 +286,11 @@ namespace sd::shelf
             for (const auto& r : l.rows)
                 if (r.row.Contains(x, y))
                 {
-                    if (r.remove.Contains(x, y))
-                        return { Part::Remove, r.index };
-                    if (r.reveal.Contains(x, y))
-                        return { Part::Reveal, r.index };
+                    if (r.kind == RowKind::Label)
+                        return { Part::Label, r.index };
+                    for (const Part part : kRowButtons)
+                        if (ButtonBox(r, part).Contains(x, y))
+                            return { part, r.index };
                     return { Part::Item, r.index };
                 }
         return {};

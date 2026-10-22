@@ -44,6 +44,7 @@ namespace sd
         constexpr UINT kMsgCheck = WM_APP + 2;       // lParam: CheckResult*
         constexpr UINT kMsgClipboard = WM_APP + 3;   // lParam: ClipboardJob*
         constexpr UINT kMsgKeep = WM_APP + 4;        // lParam: KeepJob*
+        constexpr UINT kMsgRecent = WM_APP + 5;      // lParam: RecentResult*
         constexpr UINT_PTR kTimerFrame = 1;
         constexpr UINT_PTR kTimerFold = 2;
         constexpr UINT_PTR kTimerCheck = 3;
@@ -67,11 +68,28 @@ namespace sd
         constexpr wchar_t kGlyphRemove = 0xE711;   // Cancel
         constexpr wchar_t kGlyphClose = 0xE8BB;    // ChromeClose
         constexpr wchar_t kGlyphFolder = 0xE8B7;   // Folder
+        constexpr wchar_t kGlyphOpenFile = 0xE8E5; // OpenFile
+        constexpr wchar_t kGlyphDown = 0xE70D, kGlyphUp = 0xE70E;   // ChevronDown, ChevronUp
 
-        enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear, kMenuClose };
+        enum MenuId : UINT { kMenuOpen = 1, kMenuReveal, kMenuCopy, kMenuRemove, kMenuPin, kMenuClear, kMenuClose, kMenuPinItem };
 
         // The header buttons Tab moves through, left to right (Clear all only while there are files).
-        constexpr Part kHeaderButtons[] = { Part::Pin, Part::Clear, Part::Close };
+        constexpr Part kHeaderButtons[] = { Part::DropDown, Part::Pin, Part::Clear, Part::Close };
+        // Tooltip ids of a row's buttons (the header buttons' ids are their Part).
+        constexpr UINT_PTR kRowTipBase = 100;
+
+        constexpr const wchar_t* kTitleShelf = L"Float shelf";
+        constexpr const wchar_t* kTitleDropDown = L"Pinned and recent";
+
+        // The paths of a list of the shelf's items.
+        template <class ItemT>
+        std::vector<std::wstring> PathsIn(const std::vector<ItemT>& items)
+        {
+            std::vector<std::wstring> paths;
+            for (const auto& item : items)
+                paths.push_back(item.path);
+            return paths;
+        }
 
         // The shelf's colours, from the same palette as the wheel and the top panel (theme::Palette):
         // a floating surface that follows the light or dark app theme.
@@ -114,6 +132,12 @@ namespace sd
     struct Shelf::CheckResult
     {
         std::vector<std::wstring> gone;
+    };
+
+    // History's latest outputs that still exist, newest first (before Recent's own filtering).
+    struct Shelf::RecentResult
+    {
+        std::vector<std::wstring> outputs;
     };
 
     struct Shelf::ClipboardJob
@@ -171,15 +195,22 @@ namespace sd
         m_tips = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT,
                                  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, m_hwnd.get(), nullptr, m_instance, nullptr);
         if (m_tips)
+        {
+            std::vector<UINT_PTR> ids;
             for (const Part part : kHeaderButtons)
+                ids.push_back(static_cast<UINT_PTR>(part));
+            for (size_t k = 0; k < std::size(shelf::kRowButtons); ++k)
+                ids.push_back(kRowTipBase + k);   // the hovered row's buttons
+            for (const UINT_PTR id : ids)
             {
                 TTTOOLINFOW tool{ sizeof(tool) };
                 tool.uFlags = TTF_SUBCLASS;   // it watches the shelf's mouse messages itself
                 tool.hwnd = m_hwnd.get();
-                tool.uId = static_cast<UINT_PTR>(part);
+                tool.uId = id;
                 tool.lpszText = LPSTR_TEXTCALLBACKW;
                 SendMessageW(m_tips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
             }
+        }
 
         SetInstantFileAction("file.float", [this](const std::vector<std::wstring>& files, HWND) {
             Add(files);
@@ -214,9 +245,12 @@ namespace sd
         }
         for (const auto& path : saved.items)
             m_items.push_back(Item{ path, FileName(path) });
+        for (const auto& path : saved.pinned)
+            m_pinned.push_back(Item{ path, FileName(path) });
+        m_hidden = saved.hidden;
         m_selection.Resize(m_items.size());
         m_shown = shelf::Visibility(saved.shown);
-        log::Info(L"shelf: {} item(s) restored, {}", m_items.size(), m_shown.On() ? L"on" : L"switched off");
+        log::Info(L"shelf: {} item(s) and {} pinned restored, {}", m_items.size(), m_pinned.size(), m_shown.On() ? L"on" : L"switched off");
         if (!m_shown.On())
             return;
         // Back where it was, empty or not; a pinned shelf comes back folded so it doesn't cover
@@ -230,8 +264,9 @@ namespace sd
     void Shelf::Save() const
     {
         shelf::SavedShelf saved;
-        for (const auto& item : m_items)
-            saved.items.push_back(item.path);
+        saved.items = PathsIn(m_items);
+        saved.pinned = PathsIn(m_pinned);
+        saved.hidden = m_hidden;
         saved.edge = m_edge;
         saved.shown = m_shown.On();
         if (m_placed)
@@ -261,7 +296,9 @@ namespace sd
         m_selection = shelf::Selection();
         m_selection.Resize(m_items.size());
         m_focus = 0;
+        m_rowButton = -1;
         m_scrollTarget = 0.f;
+        m_dropDown = false;   // what just arrived is what to see
         log::Info(L"shelf: {} added ({} new), {} on the shelf", files.size(), fresh, m_items.size());
         Save();
         Show(true);
@@ -307,8 +344,9 @@ namespace sd
                 m_items.erase(m_items.begin() + static_cast<std::ptrdiff_t>(i));
                 m_selection.Erase(i);
             }
-        m_focus = std::min(m_focus, m_items.empty() ? 0 : m_items.size() - 1);
-        m_scrollTarget = std::min(m_scrollTarget, shelf::MaxScroll(m_metrics, m_items.size()));
+        const auto entries = Entries();
+        m_focus = std::min(m_focus, entries.empty() ? 0 : entries.size() - 1);
+        m_scrollTarget = std::min(m_scrollTarget, shelf::MaxScroll(m_metrics, Shape(entries)));
         m_hover = {};
         if (m_items.empty() && m_keyPart == Part::Clear)
             m_keyPart = Part::Pin;   // Clear goes with the last file
@@ -333,7 +371,8 @@ namespace sd
     {
         if (!m_worker || m_thumbPx == 0)
             return;
-        for (auto& item : m_items)
+        for (auto* list : { &m_items, &m_pinned, &m_recent })
+        for (auto& item : *list)
         {
             if (item.requested)
                 continue;
@@ -360,34 +399,47 @@ namespace sd
 
     void Shelf::OnThumb(std::unique_ptr<ThumbResult> r)
     {
-        const auto it = std::find_if(m_items.begin(), m_items.end(), [&](const Item& i) { return shelf::SamePath(i.path, r->path); });
-        if (it == m_items.end())
-            return;
+        const auto same = [&](const Item& i) { return shelf::SamePath(i.path, r->path); };
         if (!r->exists)
         {
+            // Gone from every list: the shelf's, Pinned (saved) and Recent.
             log::Info(L"shelf: {} is gone; removed", r->path);
-            RemoveAt({ static_cast<size_t>(it - m_items.begin()) });
+            const size_t pinned = std::erase_if(m_pinned, same);
+            std::erase_if(m_recent, same);
+            if (const auto it = std::find_if(m_items.begin(), m_items.end(), same); it != m_items.end())
+                RemoveAt({ static_cast<size_t>(it - m_items.begin()) });   // saves
+            else if (pinned)
+                Save();
+            m_focus = std::min(m_focus, Entries().empty() ? 0 : Entries().size() - 1);
+            Animate();
             return;
         }
-        it->folder = r->folder;
-        const auto parent = std::filesystem::path(it->path).parent_path().filename().wstring();
-        const auto what = r->folder ? std::wstring(L"Folder") : SizeText(r->size);
-        it->detail = parent.empty() ? what : std::format(L"{} · {}", what, parent);
-        if (!r->pixels.px.empty())
-        {
-            it->thumb = std::move(r->pixels);
-            it->bitmap.Reset();
-        }
+        // The same file can be on the shelf, pinned and recent: each gets the picture.
+        for (auto* list : { &m_items, &m_pinned, &m_recent })
+            for (auto& item : *list)
+            {
+                if (!same(item))
+                    continue;
+                item.folder = r->folder;
+                const auto parent = std::filesystem::path(item.path).parent_path().filename().wstring();
+                const auto what = r->folder ? std::wstring(L"Folder") : SizeText(r->size);
+                item.detail = parent.empty() ? what : std::format(L"{} · {}", what, parent);
+                if (!r->pixels.px.empty())
+                {
+                    item.thumb = r->pixels;
+                    item.bitmap.Reset();
+                }
+            }
         Animate();
     }
 
     void Shelf::CheckFiles()
     {
-        if (m_checking || m_items.empty() || !m_worker)
+        if (m_checking || (m_items.empty() && m_pinned.empty()) || !m_worker)
             return;
         m_checking = true;
-        std::vector<std::wstring> paths;
-        for (const auto& item : m_items)
+        std::vector<std::wstring> paths = PathsIn(m_items);
+        for (const auto& item : m_pinned)
             paths.push_back(item.path);
         m_worker->Submit([hwnd = m_hwnd.get(), paths = std::move(paths)](std::stop_token) {
             auto result = std::make_unique<CheckResult>();
@@ -401,6 +453,15 @@ namespace sd
     void Shelf::OnCheck(std::unique_ptr<CheckResult> r)
     {
         m_checking = false;
+        size_t unpinned = 0;
+        for (const auto& gone : r->gone)
+            unpinned += std::erase_if(m_pinned, [&](const Item& i) { return shelf::SamePath(i.path, gone); });
+        if (unpinned)
+        {
+            log::Info(L"shelf: {} pinned item(s) were moved or deleted; unpinned", unpinned);
+            Save();
+            Animate();
+        }
         std::vector<size_t> indices;
         for (const auto& gone : r->gone)
             for (size_t i = 0; i < m_items.size(); ++i)
@@ -421,6 +482,10 @@ namespace sd
             return actions;
         const std::weak_ptr<bool> alive = m_alive;
         actions.files = outputs.size();
+        // Open and Show in folder need no shelf: the shell does them.
+        actions.open = [outputs] { shelf::OpenFiles(outputs); };
+        actions.reveal = [outputs] { shelf::ShowInFolder(outputs); };
+        RefreshRecent();   // a conversion just finished: it is the newest of Recent conversions
         actions.drag = [alive, this, outputs] {
             if (!alive.expired())
                 shelf::DragOut(m_hwnd.get(), outputs);
@@ -460,6 +525,192 @@ namespace sd
             PostOwned(hwnd, kMsgClipboard, std::make_unique<ClipboardJob>(std::move(*job)));
         });
         return L"Copied, paste the picture into a chat or the file into a folder";
+    }
+
+    // ---- Pinned and Recent conversions (the header's drop-down) -----------------------------------
+
+    std::vector<Shelf::Entry> Shelf::Entries() const
+    {
+        std::vector<Entry> entries;
+        if (!m_dropDown)
+        {
+            for (size_t i = 0; i < m_items.size(); ++i)
+                entries.push_back({ List::Shelf, i });
+            return entries;
+        }
+        for (const List list : { List::Pinned, List::Recent })
+        {
+            entries.push_back({ list, 0, true });
+            for (size_t i = 0; i < ItemsOf(list).size(); ++i)
+                entries.push_back({ list, i });
+        }
+        return entries;
+    }
+
+    shelf::ListShape Shelf::Shape(const std::vector<Entry>& entries) const
+    {
+        if (!m_dropDown)
+        {
+            auto shape = shelf::ShelfShape(m_items.size());
+            shape.dropDown = DropDownWidth();
+            return shape;
+        }
+        shelf::ListShape shape;
+        for (const auto& e : entries)
+            shape.rows.push_back(e.label ? shelf::RowKind::Label : shelf::RowKind::Item);
+        shape.dropDown = DropDownWidth();
+        return shape;
+    }
+
+    float Shelf::DropDownWidth() const
+    {
+        // From the title's start: the Float icon's room, the title, a gap and the chevron (DrawPanel).
+        if (!m_titleFont)
+            return 0.f;
+        return TextWidth(m_dropDown ? kTitleDropDown : kTitleShelf, m_titleFont.Get()) + 40.f * m_scale;
+    }
+
+    shelf::Layout Shelf::CurrentLayout() const
+    {
+        return shelf::LayOut(Content(), m_metrics, Shape(Entries()), m_scroll);
+    }
+
+    std::vector<Shelf::Item>& Shelf::ItemsOf(List list)
+    {
+        return list == List::Pinned ? m_pinned : list == List::Recent ? m_recent : m_items;
+    }
+
+    const std::vector<Shelf::Item>& Shelf::ItemsOf(List list) const
+    {
+        return list == List::Pinned ? m_pinned : list == List::Recent ? m_recent : m_items;
+    }
+
+    const Shelf::Item* Shelf::ItemAt(const std::vector<Entry>& entries, size_t entry) const
+    {
+        if (entry >= entries.size() || entries[entry].label)
+            return nullptr;
+        const auto& items = ItemsOf(entries[entry].list);
+        return entries[entry].index < items.size() ? &items[entries[entry].index] : nullptr;
+    }
+
+    bool Shelf::IsPinned(const std::wstring& path) const
+    {
+        return std::any_of(m_pinned.begin(), m_pinned.end(), [&](const Item& i) { return shelf::SamePath(i.path, path); });
+    }
+
+    void Shelf::SetPinned(const std::wstring& path, bool pin)
+    {
+        auto paths = PathsIn(m_pinned);
+        shelf::SetPinned(paths, path, pin);
+        // In the new order, keeping the pictures of items that were pinned already (or are on the
+        // shelf or recent: the same file).
+        std::vector<Item> pinned;
+        for (const auto& p : paths)
+        {
+            const Item* known = nullptr;
+            for (const auto* list : { &m_pinned, &m_items, &m_recent })
+                for (const auto& item : *list)
+                    if (!known && shelf::SamePath(item.path, p))
+                        known = &item;
+            pinned.push_back(known ? *known : Item{ p, FileName(p) });
+        }
+        m_pinned = std::move(pinned);
+        log::Info(L"shelf: {} {}, {} pinned", FileName(path), pin ? L"pinned" : L"unpinned", m_pinned.size());
+        Save();
+        RequestThumbnails();
+        Animate();
+    }
+
+    void Shelf::RunButton(Part part, size_t entry)
+    {
+        const auto entries = Entries();
+        const Item* item = ItemAt(entries, entry);
+        if (!item)
+            return;
+        const Entry e = entries[entry];
+        const std::wstring path = item->path;   // the lists change below
+        // On the shelf, Open and Show in folder take the selection when the row is part of it.
+        const auto files = e.list == List::Shelf ? PathsOf(m_selection.DragSet(e.index)) : std::vector<std::wstring>{ path };
+        switch (part)
+        {
+        case Part::Open: Open(files); break;
+        case Part::Reveal: shelf::ShowInFolder(files); break;
+        case Part::PinItem: SetPinned(path, !IsPinned(path)); break;
+        case Part::Remove:
+            // × takes it off this list only: the shelf's, Pinned, or Recent (remembered, so History's
+            // entry and the file stay but the list no longer shows it).
+            if (e.list == List::Shelf)
+                RemoveAt({ e.index });
+            else if (e.list == List::Pinned)
+                SetPinned(path, false);
+            else
+            {
+                shelf::HideRecent(m_hidden, path);
+                m_recent.erase(m_recent.begin() + static_cast<std::ptrdiff_t>(e.index));
+                log::Info(L"shelf: {} taken off Recent conversions", FileName(path));
+                Save();
+            }
+            m_hover = {};
+            m_focus = std::min(m_focus, std::max<size_t>(Entries().size(), 1) - 1);
+            m_rowButton = -1;
+            Animate();
+            break;
+        default: break;
+        }
+    }
+
+    void Shelf::ToggleDropDown()
+    {
+        m_dropDown = !m_dropDown;
+        m_focus = m_dropDown ? 1 : 0;   // the first item under the Pinned heading, or the shelf's first
+        m_rowButton = -1;
+        m_hover = {};
+        m_scrollTarget = m_scroll = 0.f;
+        if (m_keyPart == Part::Clear)
+            m_keyPart = Part::DropDown;
+        if (m_dropDown)
+            RefreshRecent();
+        log::Info(L"shelf: {}", m_dropDown ? L"Pinned and recent shown" : L"back to the shelf");
+        Animate();
+    }
+
+    void Shelf::RefreshRecent()
+    {
+        if (!m_worker || !m_recentSource || !m_hwnd)
+            return;
+        if (m_recentBusy)
+        {
+            m_recentAgain = true;
+            return;
+        }
+        m_recentBusy = true;
+        // Enough to fill the list after the hidden ones and files that are gone are left out.
+        const size_t want = shelf::kRecentCount + std::min<size_t>(m_hidden.size(), 200) + 20;
+        m_worker->Submit([hwnd = m_hwnd.get(), source = m_recentSource, want](std::stop_token) {
+            auto result = std::make_unique<RecentResult>();
+            for (auto& path : source(want))
+                if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+                    result->outputs.push_back(std::move(path));
+            PostOwned(hwnd, kMsgRecent, std::move(result));
+        });
+    }
+
+    void Shelf::OnRecent(std::unique_ptr<RecentResult> r)
+    {
+        m_recentBusy = false;
+        std::vector<Item> recent;
+        for (const auto& path : shelf::RecentList(r->outputs, m_hidden, shelf::kRecentCount))
+        {
+            const auto it = std::find_if(m_recent.begin(), m_recent.end(), [&](const Item& i) { return shelf::SamePath(i.path, path); });
+            recent.push_back(it != m_recent.end() ? std::move(*it) : Item{ path, FileName(path) });
+        }
+        m_recent = std::move(recent);
+        if (m_dropDown)
+            m_focus = std::min(m_focus, Entries().size() - 1);
+        RequestThumbnails();
+        Animate();
+        if (std::exchange(m_recentAgain, false))
+            RefreshRecent();
     }
 
     // ---- Drop target -----------------------------------------------------------------------------
@@ -589,7 +840,7 @@ namespace sd
         m_kit.SetPalette(theme::EditorColors());
         m_motion = AnimationsOn();
         if (m_h <= 0.f)
-            m_h = shelf::PanelHeight(m_metrics, m_items.size());
+            m_h = shelf::PanelHeight(m_metrics, Shape(Entries()));
         // Back inside the (possibly changed) work area.
         const Box rest = Expanded();
         m_x = rest.left;
@@ -644,7 +895,7 @@ namespace sd
             if (fresh)
             {
                 m_presence = m_motion ? 0.f : 1.f;
-                m_h = shelf::PanelHeight(m_metrics, m_items.size());
+                m_h = shelf::PanelHeight(m_metrics, Shape(Entries()));
                 m_slideX = m_slideY = 0.f;
                 m_scroll = m_scrollTarget;
             }
@@ -709,7 +960,7 @@ namespace sd
             else
                 value = target;
         };
-        const float height = shelf::PanelHeight(m_metrics, m_items.size());
+        const float height = shelf::PanelHeight(m_metrics, Shape(Entries()));
         approach(m_open, m_wantOpen ? 1.f : 0.f, kOpenTauMs, 0.002f);
         approach(m_h, height, kSizeTauMs, 0.3f);
         approach(m_slideX, 0.f, kSlideTauMs, 0.3f);
@@ -753,7 +1004,7 @@ namespace sd
     {
         if (Folded() || m_hiding || !m_visible)
             return {};
-        return shelf::HitTest(shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll), static_cast<float>(pt.x), static_cast<float>(pt.y));
+        return shelf::HitTest(CurrentLayout(), static_cast<float>(pt.x), static_cast<float>(pt.y));
     }
 
     void Shelf::OnMouseMove(POINT pt)
@@ -771,7 +1022,8 @@ namespace sd
         if (m_pressed)
         {
             const bool beyond = std::abs(pt.x - m_pressPt.x) > GetSystemMetrics(SM_CXDRAG) || std::abs(pt.y - m_pressPt.y) > GetSystemMetrics(SM_CYDRAG);
-            if (m_press.part == Part::Header && !m_moving && beyond)
+            // The title is the drop-down's button, and part of the header: dragged, it moves the shelf.
+            if ((m_press.part == Part::Header || m_press.part == Part::DropDown) && !m_moving && beyond)
             {
                 // Picked up by the header: it follows the mouse freely and pins (or not) when let go.
                 const Box b = Expanded();
@@ -799,7 +1051,15 @@ namespace sd
             }
             if ((m_press.part == Part::Item || m_press.part == Part::Footer) && beyond)
             {
-                StartDragOut(m_press.part == Part::Item ? m_selection.DragSet(m_press.index) : m_selection.HandleSet());
+                if (m_dropDown)
+                {
+                    // A Pinned or recent item goes out alone, like any file.
+                    const auto entries = Entries();
+                    if (const Item* item = ItemAt(entries, m_press.index))
+                        StartDragOut({ item->path });
+                    return;
+                }
+                StartDragOut(PathsOf(m_press.part == Part::Item ? m_selection.DragSet(m_press.index) : m_selection.HandleSet()));
                 return;
             }
         }
@@ -838,20 +1098,23 @@ namespace sd
             return;
         switch (hit.part)
         {
+        case Part::DropDown:
         case Part::Pin:
         case Part::Clear:
         case Part::Close:
             Press(hit.part);
             break;
         case Part::Remove:
-            RemoveAt({ hit.index });
-            break;
         case Part::Reveal:
-            shelf::ShowInFolder(PathsOf(m_selection.DragSet(hit.index)));
+        case Part::Open:
+        case Part::PinItem:
+            RunButton(hit.part, hit.index);
             break;
         case Part::Item:
-            m_selection.Click(hit.index, (keys & MK_CONTROL) != 0, (keys & MK_SHIFT) != 0);
+            if (!m_dropDown)
+                m_selection.Click(hit.index, (keys & MK_CONTROL) != 0, (keys & MK_SHIFT) != 0);
             m_focus = hit.index;
+            m_rowButton = -1;
             m_keyPart = Part::None;
             Animate();
             break;
@@ -868,20 +1131,19 @@ namespace sd
     {
         const Hit hit = HitAt(pt);
         if (hit.part == Part::Item)
-            Open({ hit.index });
+            RunButton(Part::Open, hit.index);
     }
 
-    void Shelf::Open(const std::vector<size_t>& indices)
+    void Shelf::Open(const std::vector<std::wstring>& files)
     {
-        for (const auto& path : PathsOf(indices))
-            ShellExecuteW(m_hwnd.get(), nullptr, path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        // As the top panel's Open: the file, the first of a few, or the folder of many.
+        shelf::OpenFiles(files);
     }
 
-    void Shelf::StartDragOut(std::vector<size_t> indices)
+    void Shelf::StartDragOut(const std::vector<std::wstring>& files)
     {
         m_pressed = false;
         ReleaseCapture();
-        const auto files = PathsOf(indices);
         if (files.empty())
             return;
         m_draggingOut = true;
@@ -922,6 +1184,7 @@ namespace sd
     {
         switch (part)
         {
+        case Part::DropDown: ToggleDropDown(); break;
         case Part::Pin: TogglePin(); break;
         case Part::Clear: Clear(); break;
         case Part::Close: SwitchOn(false); break;   // as unticking "Show Float shelf" in the tray
@@ -933,10 +1196,11 @@ namespace sd
     {
         // The stops in Tab order: the list (when there is one), then the header buttons.
         std::vector<Part> stops;
-        if (!m_items.empty())
+        const auto entries = Entries();
+        if (std::any_of(entries.begin(), entries.end(), [](const Entry& e) { return !e.label; }))
             stops.push_back(Part::None);
         for (const Part part : kHeaderButtons)
-            if (part != Part::Clear || !m_items.empty())
+            if (part != Part::Clear || (!m_items.empty() && !m_dropDown))
                 stops.push_back(part);
         const auto at = std::find(stops.begin(), stops.end(), m_keyPart);
         const size_t i = at == stops.end() ? 0 : static_cast<size_t>(at - stops.begin());
@@ -981,38 +1245,49 @@ namespace sd
     {
         if (Folded())
             return;
-        std::vector<size_t> targets;
-        Hit hit = !fromKeyboard ? HitAt(pt) : m_items.empty() || m_keyPart != Part::None ? Hit{} : Hit{ Part::Item, m_focus };
+        const auto entries = Entries();
+        Hit hit = !fromKeyboard ? HitAt(pt) : ItemAt(entries, m_focus) && m_keyPart == Part::None ? Hit{ Part::Item, m_focus } : Hit{};
         if (fromKeyboard)
         {
-            const auto layout = shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll);
+            const auto layout = CurrentLayout();
             pt = POINT{ static_cast<LONG>(layout.title.left), static_cast<LONG>(layout.header.bottom) };
             for (const auto& r : layout.rows)
                 if (hit.part == Part::Item && r.index == m_focus)
                     pt = POINT{ static_cast<LONG>(r.name.left), static_cast<LONG>(r.row.bottom) };
         }
-        if (hit.part == Part::Item || hit.part == Part::Reveal || hit.part == Part::Remove)
+        const bool row = hit.part == Part::Item || hit.part == Part::Reveal || hit.part == Part::Remove || hit.part == Part::Open || hit.part == Part::PinItem;
+        const Item* item = row ? ItemAt(entries, hit.index) : nullptr;
+        std::vector<size_t> targets;   // the shelf's items the menu is for
+        if (item)
         {
-            if (!m_selection.IsSelected(hit.index))
-                m_selection.Click(hit.index, false, false);
             m_focus = hit.index;
-            targets = m_selection.Indices();
+            if (!m_dropDown)
+            {
+                if (!m_selection.IsSelected(hit.index))
+                    m_selection.Click(hit.index, false, false);
+                targets = m_selection.Indices();
+            }
             Animate();
         }
+        const auto files = !item ? std::vector<std::wstring>{} : m_dropDown ? std::vector<std::wstring>{ item->path } : PathsOf(targets);
+        const List list = item ? entries[hit.index].list : List::Shelf;
 
         wil::unique_hmenu menu(CreatePopupMenu());
         if (!menu)
             return;
-        if (!targets.empty())
+        if (item)
         {
-            const bool one = targets.size() == 1;
-            AppendMenuW(menu.get(), MF_STRING, kMenuOpen, one ? L"&Open" : std::format(L"&Open {} items", targets.size()).c_str());
+            const bool one = files.size() == 1;
+            const bool pinned = IsPinned(item->path);
+            AppendMenuW(menu.get(), MF_STRING, kMenuOpen, one ? L"&Open" : std::format(L"&Open {} items", files.size()).c_str());
             AppendMenuW(menu.get(), MF_STRING, kMenuReveal, L"Show in &folder");
             AppendMenuW(menu.get(), MF_STRING, kMenuCopy, L"&Copy\tCtrl+C");
-            AppendMenuW(menu.get(), MF_STRING, kMenuRemove, L"&Remove from the shelf\tDel");
+            AppendMenuW(menu.get(), MF_STRING, kMenuPinItem, pinned ? L"U&npin\tP" : L"Pi&n\tP");
+            const wchar_t* remove = list == List::Shelf ? L"&Remove from the shelf\tDel" : list == List::Pinned ? L"&Remove from Pinned\tDel" : L"&Remove from Recent\tDel";
+            AppendMenuW(menu.get(), MF_STRING, kMenuRemove, remove);
             AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         }
-        AppendMenuW(menu.get(), MF_STRING, kMenuPin, m_edge == Edge::None ? L"&Pin to the nearest edge" : L"Un&pin");
+        AppendMenuW(menu.get(), MF_STRING, kMenuPin, m_edge == Edge::None ? L"&Pin to the nearest edge" : L"Un&pin from the edge");
         AppendMenuW(menu.get(), MF_STRING | (m_items.empty() ? MF_GRAYED : 0), kMenuClear, L"C&lear all");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu.get(), MF_STRING, kMenuClose, L"Cl&ose the shelf");
@@ -1023,10 +1298,16 @@ namespace sd
         m_menu = false;
         switch (cmd)
         {
-        case kMenuOpen: Open(targets); break;
-        case kMenuReveal: shelf::ShowInFolder(PathsOf(targets)); break;
-        case kMenuCopy: ShowNote(Copy(PathsOf(targets))); break;
-        case kMenuRemove: RemoveAt(targets); break;
+        case kMenuOpen: Open(files); break;
+        case kMenuReveal: shelf::ShowInFolder(files); break;
+        case kMenuCopy: ShowNote(Copy(files)); break;
+        case kMenuPinItem: RunButton(Part::PinItem, hit.index); break;
+        case kMenuRemove:
+            if (m_dropDown)
+                RunButton(Part::Remove, hit.index);
+            else
+                RemoveAt(targets);
+            break;
         case kMenuPin: TogglePin(); break;
         case kMenuClear: Clear(); break;
         case kMenuClose: SwitchOn(false); return;
@@ -1040,22 +1321,37 @@ namespace sd
 
     void Shelf::ScrollIntoView(size_t index)
     {
-        const float top = static_cast<float>(index) * m_metrics.row;
+        const auto shape = Shape(Entries());
+        const float top = shelf::RowTop(m_metrics, shape, index), h = shelf::RowHeight(m_metrics, shape, index);
+        // A heading comes into view with the item under it.
+        const float above = index > 0 && shape.rows[index - 1] == shelf::RowKind::Label ? m_metrics.label : 0.f;
         const float view = static_cast<float>(m_metrics.maxRows) * m_metrics.row;
-        if (top < m_scrollTarget)
-            m_scrollTarget = top;
-        else if (top + m_metrics.row > m_scrollTarget + view)
-            m_scrollTarget = top + m_metrics.row - view;
-        m_scrollTarget = std::clamp(m_scrollTarget, 0.f, shelf::MaxScroll(m_metrics, m_items.size()));
+        if (top - above < m_scrollTarget)
+            m_scrollTarget = top - above;
+        else if (top + h > m_scrollTarget + view)
+            m_scrollTarget = top + h - view;
+        m_scrollTarget = std::clamp(m_scrollTarget, 0.f, shelf::MaxScroll(m_metrics, shape));
     }
 
     void Shelf::MoveFocus(int delta, bool extend)
     {
-        if (m_items.empty())
+        // Through the items, over the headings.
+        const auto entries = Entries();
+        std::vector<size_t> items;
+        for (size_t i = 0; i < entries.size(); ++i)
+            if (!entries[i].label)
+                items.push_back(i);
+        if (items.empty())
             return;
-        const auto last = static_cast<long long>(m_items.size()) - 1;
-        m_focus = static_cast<size_t>(std::clamp(static_cast<long long>(m_focus) + delta, 0ll, last));
-        m_selection.Click(m_focus, false, extend);
+        auto at = std::lower_bound(items.begin(), items.end(), m_focus);
+        long long k = at == items.end() ? static_cast<long long>(items.size()) - 1 : at - items.begin();
+        if (at != items.end() && *at != m_focus && delta > 0)
+            --k;   // the focus was on a heading: the first step lands on the item under it
+        k = std::clamp(k + delta, 0ll, static_cast<long long>(items.size()) - 1);
+        m_focus = items[static_cast<size_t>(k)];
+        m_rowButton = -1;
+        if (!m_dropDown)
+            m_selection.Click(m_focus, false, extend);
         ScrollIntoView(m_focus);
         Animate();
     }
@@ -1066,6 +1362,7 @@ namespace sd
         const bool ctrl = GetKeyState(VK_CONTROL) < 0, shift = GetKeyState(VK_SHIFT) < 0;
         if (vk == VK_TAB)
         {
+            m_rowButton = -1;
             MoveButtonFocus(shift);
             return;
         }
@@ -1074,33 +1371,63 @@ namespace sd
             Press(m_keyPart);
             return;
         }
-        if (m_items.empty())
+        const auto entries = Entries();
+        const Item* focused = ItemAt(entries, m_focus);
+        if (!focused)
         {
+            if (std::any_of(entries.begin(), entries.end(), [](const Entry& e) { return !e.label; }) && (vk == VK_UP || vk == VK_DOWN || vk == VK_HOME || vk == VK_END))
+            {
+                m_keyPart = Part::None;
+                MoveFocus(vk == VK_UP || vk == VK_HOME ? -1 : 1, false);
+                return;
+            }
             if (vk == VK_ESCAPE && m_edge != Edge::None)
                 WantOpen(false);
             return;
         }
-        if (vk == VK_UP || vk == VK_DOWN || vk == VK_HOME || vk == VK_END)
+        if (vk == VK_UP || vk == VK_DOWN || vk == VK_HOME || vk == VK_END || vk == VK_LEFT || vk == VK_RIGHT)
             m_keyPart = Part::None;   // back in the list
-        const auto chosen = [&] { return m_selection.Count() ? m_selection.Indices() : std::vector<size_t>{ m_focus }; };
+        const auto chosen = [&] { return m_dropDown ? std::vector<size_t>{} : m_selection.Count() ? m_selection.Indices() : std::vector<size_t>{ m_focus }; };
+        const auto chosenFiles = [&] { return m_dropDown ? std::vector<std::wstring>{ focused->path } : PathsOf(chosen()); };
+        const int buttons = static_cast<int>(std::size(shelf::kRowButtons));
         switch (vk)
         {
         case VK_UP: MoveFocus(-1, shift); break;
         case VK_DOWN: MoveFocus(1, shift); break;
-        case VK_HOME: MoveFocus(-static_cast<int>(m_items.size()), shift); break;
-        case VK_END: MoveFocus(static_cast<int>(m_items.size()), shift); break;
-        case VK_RETURN: Open(chosen()); break;
+        case VK_HOME: MoveFocus(-static_cast<int>(entries.size()), shift); break;
+        case VK_END: MoveFocus(static_cast<int>(entries.size()), shift); break;
+        case VK_LEFT:
+        case VK_RIGHT:
+            // Through the focused row's buttons (pin, Open, Show in folder, ×) and back to the row.
+            m_rowButton = vk == VK_RIGHT ? std::min(m_rowButton + 1, buttons - 1) : std::max(m_rowButton - 1, -1);
+            Animate();
+            break;
+        case VK_RETURN:
+        case VK_SPACE:
+            if (m_rowButton >= 0)
+                RunButton(shelf::kRowButtons[m_rowButton], m_focus);
+            else if (vk == VK_RETURN)
+                Open(chosenFiles());
+            break;
         case VK_DELETE:
-            RemoveAt(chosen());
+            if (m_dropDown)
+                RunButton(Part::Remove, m_focus);
+            else
+                RemoveAt(chosen());
+            break;
+        case 'P':
+            if (!ctrl)
+                RunButton(Part::PinItem, m_focus);
             break;
         case VK_ESCAPE:
             m_selection.Clear();
+            m_rowButton = -1;
             if (m_edge != Edge::None)
                 WantOpen(false);
             Animate();
             break;
         case 'A':
-            if (ctrl)
+            if (ctrl && !m_dropDown)
             {
                 m_selection.SelectAll();
                 Animate();
@@ -1108,7 +1435,7 @@ namespace sd
             break;
         case 'C':
             if (ctrl)
-                ShowNote(Copy(PathsOf(m_selection.HandleSet())));
+                ShowNote(Copy(m_dropDown ? chosenFiles() : PathsOf(m_selection.HandleSet())));
             break;
         default:
             break;
@@ -1117,7 +1444,7 @@ namespace sd
 
     void Shelf::OnWheel(int delta)
     {
-        const float max = shelf::MaxScroll(m_metrics, m_items.size());
+        const float max = shelf::MaxScroll(m_metrics, Shape(Entries()));
         if (max <= 0.f)
             return;
         m_scrollTarget = std::clamp(m_scrollTarget - static_cast<float>(delta) / WHEEL_DELTA * m_metrics.row, 0.f, max);
@@ -1194,8 +1521,25 @@ namespace sd
             if (header->hwndFrom != m_tips || header->code != TTN_GETDISPINFOW)
                 return DefWindowProcW(hwnd, msg, wParam, lParam);
             auto* info = reinterpret_cast<NMTTDISPINFOW*>(lParam);
+            if (header->idFrom >= kRowTipBase)
+            {
+                // The hovered row's buttons.
+                const auto entries = Entries();
+                const Item* item = ItemAt(entries, m_hover.index);
+                const size_t k = header->idFrom - kRowTipBase;
+                const List list = item ? entries[m_hover.index].list : List::Shelf;
+                const wchar_t* tips[] = { item && IsPinned(item->path) ? L"Unpin (P)" : L"Pin, to keep it in Pinned (P)", L"Open (Enter)", L"Show in folder",
+                                          list == List::Shelf    ? L"Remove from the shelf (the file stays where it is)"
+                                          : list == List::Pinned ? L"Remove from Pinned (the file stays where it is)"
+                                                                 : L"Remove from Recent (the file and its History entry stay)" };
+                info->lpszText = const_cast<wchar_t*>(k < std::size(tips) ? tips[k] : L"");
+                return 0;
+            }
             switch (static_cast<Part>(header->idFrom))
             {
+            case Part::DropDown:
+                info->lpszText = const_cast<wchar_t*>(m_dropDown ? L"Back to the shelf" : L"Pinned items and recent conversions");
+                break;
             case Part::Pin: info->lpszText = const_cast<wchar_t*>(m_edge == Edge::None ? L"Pin to the nearest edge" : L"Unpin"); break;
             case Part::Clear: info->lpszText = const_cast<wchar_t*>(L"Take everything off the shelf (the files stay where they are)"); break;
             case Part::Close: info->lpszText = const_cast<wchar_t*>(L"Close the shelf (the tray icon brings it back)"); break;
@@ -1210,7 +1554,7 @@ namespace sd
             const Hit hit = HitAt(cursor);
             const auto* id = hit.part == Part::Header ? IDC_SIZEALL
                              : hit.part == Part::Pin || hit.part == Part::Clear || hit.part == Part::Close || hit.part == Part::Reveal ||
-                                       hit.part == Part::Remove
+                                       hit.part == Part::Remove || hit.part == Part::Open || hit.part == Part::PinItem || hit.part == Part::DropDown
                                    ? IDC_HAND
                                    : IDC_ARROW;
             SetCursor(LoadCursorW(nullptr, id));
@@ -1248,6 +1592,9 @@ namespace sd
             return 0;
         case kMsgKeep:
             OnKeep(std::unique_ptr<KeepJob>(reinterpret_cast<KeepJob*>(lParam)));
+            return 0;
+        case kMsgRecent:
+            OnRecent(std::unique_ptr<RecentResult>(reinterpret_cast<RecentResult*>(lParam)));
             return 0;
         case kMsgClipboard:
         {
@@ -1374,22 +1721,34 @@ namespace sd
         const float s = m_scale;
         const size_t n = m_items.size();
 
-        // Header: the Float icon, "Float shelf" and the count ("3 files"), then Pin, Clear all and
-        // Close in the control kit's look (the keyboard's button with the kit's focus ring).
+        // Header: the Float icon, the title as the drop-down's button ("Float shelf" or "Pinned and
+        // recent", with a chevron) and the count ("3 files"), then Pin, Clear all and Close in the
+        // control kit's look (the keyboard's button with the kit's focus ring).
+        const auto focused = [&](Part part) { return m_active && m_keyPart == part; };
         const float cy = (l.header.top + l.header.bottom) / 2.f;
         const float ix = l.title.left - 4.f * s;
+        if (l.dropDown.Width() > 0.f)
+        {
+            // The kit's button look without its glyph: a hover fill and the focus ring around the title.
+            const auto state = StateOf(Part::DropDown, focused(Part::DropDown));
+            if (state.hot || state.focused || m_dropDown)
+                IconButton(l.dropDown, 0, state);
+        }
         Glyph(kGlyphPin, m_iconFont.Get(), Box{ ix, cy - 9.f * s, ix + 16.f * s, cy + 9.f * s }, c.text, alpha);
         const Box title{ ix + 24.f * s, l.title.top, l.title.right, l.title.bottom };
-        const std::wstring name = L"Float shelf";
+        const std::wstring name = m_dropDown ? kTitleDropDown : kTitleShelf;
         const float tw = TextWidth(name, m_titleFont.Get());
         Text(name, m_titleFont.Get(), title, c.text, alpha);
+        const float chevron = title.left + tw + 4.f * s;
+        Glyph(m_dropDown ? kGlyphUp : kGlyphDown, m_iconFont.Get(),
+              Box{ chevron, cy - 7.f * s, chevron + 12.f * s, cy + 7.f * s }, c.dim, alpha);
         const size_t folders = static_cast<size_t>(std::count_if(m_items.begin(), m_items.end(), [](const Item& i) { return i.folder; }));
-        const Box count{ title.left + tw + 8.f * s, title.top, title.right, title.bottom };
+        const float countLeft = std::max(l.dropDown.right, title.left + tw) + 6.f * s;
+        const Box count{ countLeft, title.top, title.right, title.bottom };
         if (count.Width() > 20.f * s)
-            Text(shelf::CountText(n - folders, folders), m_countFont.Get(), count, c.dim, alpha);
-        const auto focused = [&](Part part) { return m_active && m_keyPart == part; };
+            Text(m_dropDown ? std::format(L"{} pinned", m_pinned.size()) : shelf::CountText(n - folders, folders), m_countFont.Get(), count, c.dim, alpha);
         IconButton(l.pin, m_edge == Edge::None ? kGlyphPin : kGlyphUnpin, StateOf(Part::Pin, focused(Part::Pin)));
-        if (n > 0)
+        if (l.clear.Width() > 0.f)
             PushButton(l.clear, L"Clear all", StateOf(Part::Clear, focused(Part::Clear)));
         IconButton(l.close, kGlyphClose, StateOf(Part::Close, focused(Part::Close)));
         m_rt->DrawLine(D2D1::Point2F(l.panel.left + m_metrics.inset, l.header.bottom - 0.5f), D2D1::Point2F(l.panel.right - m_metrics.inset, l.header.bottom - 0.5f),
@@ -1398,11 +1757,26 @@ namespace sd
         // Rows, clipped to the list so scrolled rows slide under the header and footer.
         m_rt->PushAxisAlignedClip(D2D1::RectF(l.list.left, l.list.top, l.list.right, l.list.bottom), D2D1_ANTIALIAS_MODE_ALIASED);
         const float rr = 6.f * s;
+        const auto entries = Entries();
         for (const auto& r : l.rows)
         {
-            auto& item = m_items[r.index];
-            const bool hovered = m_hover.index == r.index && (m_hover.part == Part::Item || m_hover.part == Part::Reveal || m_hover.part == Part::Remove);
-            const bool selected = m_selection.IsSelected(r.index);
+            if (r.index >= entries.size())
+                continue;
+            const Entry& e = entries[r.index];
+            if (e.label)
+            {
+                // "Pinned", "Recent conversions", and what an empty one is for.
+                const bool none = ItemsOf(e.list).empty();
+                const std::wstring heading = e.list == List::Pinned ? (none ? L"Pinned · pin an item to keep it here" : L"Pinned")
+                                                                    : (none ? L"Recent conversions · none yet" : L"Recent conversions");
+                Text(heading, m_footerFont.Get(), r.name, c.dim, alpha);
+                continue;
+            }
+            auto& item = ItemsOf(e.list)[e.index];
+            const bool keyRow = m_active && m_keyPart == Part::None && r.index == m_focus;
+            const auto onRow = [](Part p) { return p == Part::Item || p == Part::Reveal || p == Part::Remove || p == Part::Open || p == Part::PinItem; };
+            const bool hovered = m_hover.index == r.index && onRow(m_hover.part);
+            const bool selected = !m_dropDown && m_selection.IsSelected(r.index);
             const auto rowRect = D2D1::RoundedRect(D2D1::RectF(r.row.left, r.row.top + 1.f * s, r.row.right, r.row.bottom - 1.f * s), rr, rr);
             if (selected)
             {
@@ -1414,22 +1788,37 @@ namespace sd
             }
             else if (hovered)
                 m_rt->FillRoundedRectangle(rowRect, Brush(c.hover, alpha).Get());
-            if (m_active && m_keyPart == Part::None && r.index == m_focus && !selected)
+            if (keyRow && !selected && m_rowButton < 0)
                 m_rt->DrawRoundedRectangle(rowRect, Brush(c.dim, 0.6f * alpha).Get(), 1.f);
             DrawThumb(item, r.thumb, alpha);
-            Text(item.name, m_nameFont.Get(), r.name, c.text, alpha);
-            Text(item.detail.empty() ? std::wstring(L"…") : item.detail, m_detailFont.Get(), r.detail, c.dim, alpha);
-            if (hovered)
+            // The buttons show on the hovered row and the keyboard's; elsewhere the name takes their room.
+            const bool buttons = hovered || keyRow;
+            const bool pinned = IsPinned(item.path);
+            const float textRight = buttons ? r.name.right : pinned ? r.pin.left - 2.f * s : r.remove.right;
+            Text(item.name, m_nameFont.Get(), Box{ r.name.left, r.name.top, textRight, r.name.bottom }, c.text, alpha);
+            Text(item.detail.empty() ? std::wstring(L"…") : item.detail, m_detailFont.Get(), Box{ r.detail.left, r.detail.top, textRight, r.detail.bottom }, c.dim, alpha);
+            if (buttons)
             {
-                IconButton(r.reveal, kGlyphReveal, StateOf(Part::Reveal, false));
-                IconButton(r.remove, kGlyphRemove, StateOf(Part::Remove, false));
+                for (size_t k = 0; k < std::size(shelf::kRowButtons); ++k)
+                {
+                    const Part part = shelf::kRowButtons[k];
+                    const wchar_t glyph = part == Part::PinItem ? (pinned ? kGlyphUnpin : kGlyphPin) : part == Part::Open ? kGlyphOpenFile
+                                          : part == Part::Reveal                ? kGlyphReveal
+                                                                                : kGlyphRemove;
+                    auto state = StateOf(part, keyRow && m_rowButton == static_cast<int>(k));
+                    state.hot = state.hot && m_hover.index == r.index;
+                    IconButton(shelf::ButtonBox(r, part), glyph, state);
+                }
             }
+            else if (pinned)
+                Glyph(kGlyphPin, m_iconFont.Get(), r.pin, c.accent, alpha);   // pinned: its pin, in the accent
         }
         // Scroll position, when there is more than fits.
-        if (const float max = shelf::MaxScroll(m_metrics, n); max > 0.f)
+        const auto shape = Shape(entries);
+        if (const float max = shelf::MaxScroll(m_metrics, shape); max > 0.f)
         {
             const float track = l.list.Height() - 8.f * s;
-            const float thumbLen = std::max(track * static_cast<float>(m_metrics.maxRows) / static_cast<float>(n), 18.f * s);
+            const float thumbLen = std::max(track * l.list.Height() / std::max(1.f, shelf::ContentHeight(m_metrics, shape)), 18.f * s);
             const float y = l.list.top + 4.f * s + (track - thumbLen) * (m_scroll / max);
             const float x = l.panel.right - 4.f * s;
             m_rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x - 1.5f * s, y, x + 1.5f * s, y + thumbLen), 1.5f * s, 1.5f * s),
@@ -1437,11 +1826,13 @@ namespace sd
         }
         m_rt->PopAxisAlignedClip();
 
-        if (n == 0)
+        if (l.drop.Width() > 0.f)
         {
             DrawDropZone(l.drop, alpha);   // no footer: nothing to drag out yet
             return;
         }
+        if (l.footer.Width() <= 0.f)
+            return;   // the drop-down's lists: their items are dragged one by one
 
         // The handle at the bottom: drag it to carry all (or the selected) items out at once.
         const bool footerHover = m_hover.part == Part::Footer;
@@ -1583,7 +1974,7 @@ namespace sd
         // Content fades in once the panel has mostly unfolded; the tab's fades out first.
         const float contentAlpha = EaseOutCubic(std::clamp((m_open - 0.55f) / 0.45f, 0.f, 1.f));
         const float tabAlpha = std::clamp(1.f - m_open * 2.5f, 0.f, 1.f);
-        const auto layout = shelf::LayOut(Content(), m_metrics, m_items.size(), m_scroll);
+        const auto layout = CurrentLayout();
         PlaceTips(contentAlpha > 0.f && !Folded() && !m_hiding ? &layout : nullptr);
         if (contentAlpha > 0.f)
         {
@@ -1616,20 +2007,34 @@ namespace sd
     {
         if (!m_tips)
             return;
-        for (const Part part : kHeaderButtons)
-        {
+        const auto place = [&](UINT_PTR id, const Box* b) {
             TTTOOLINFOW tool{ sizeof(tool) };
             tool.hwnd = m_hwnd.get();
-            tool.uId = static_cast<UINT_PTR>(part);
-            if (layout)
-            {
-                // Window (client) pixels: the layout is in screen pixels and the window starts at m_origin.
-                const Box& b = part == Part::Pin ? layout->pin : part == Part::Clear ? layout->clear : layout->close;
-                if (b.Width() > 0.f)
-                    tool.rect = RECT{ static_cast<LONG>(b.left) - m_origin.x, static_cast<LONG>(b.top) - m_origin.y,
-                                      static_cast<LONG>(std::ceil(b.right)) - m_origin.x, static_cast<LONG>(std::ceil(b.bottom)) - m_origin.y };
-            }
+            tool.uId = id;
+            // Window (client) pixels: the layout is in screen pixels and the window starts at m_origin.
+            if (b && b->Width() > 0.f)
+                tool.rect = RECT{ static_cast<LONG>(b->left) - m_origin.x, static_cast<LONG>(b->top) - m_origin.y,
+                                  static_cast<LONG>(std::ceil(b->right)) - m_origin.x, static_cast<LONG>(std::ceil(b->bottom)) - m_origin.y };
             SendMessageW(m_tips, TTM_NEWTOOLRECTW, 0, reinterpret_cast<LPARAM>(&tool));
+        };
+        for (const Part part : kHeaderButtons)
+        {
+            const Box* b = !layout ? nullptr
+                           : part == Part::DropDown ? &layout->dropDown
+                           : part == Part::Pin      ? &layout->pin
+                           : part == Part::Clear    ? &layout->clear
+                                                    : &layout->close;
+            place(static_cast<UINT_PTR>(part), b);
         }
+        // The hovered row's buttons.
+        const shelf::RowBox* row = nullptr;
+        if (layout)
+            for (const auto& r : layout->rows)
+                if (r.kind == shelf::RowKind::Item && r.index == m_hover.index &&
+                    (m_hover.part == Part::Item || m_hover.part == Part::Reveal || m_hover.part == Part::Remove || m_hover.part == Part::Open ||
+                     m_hover.part == Part::PinItem))
+                    row = &r;
+        for (size_t k = 0; k < std::size(shelf::kRowButtons); ++k)
+            place(kRowTipBase + k, row ? &shelf::ButtonBox(*row, shelf::kRowButtons[k]) : nullptr);
     }
 }
