@@ -54,12 +54,17 @@ namespace sd
             int lightBackground = COLOR_WINDOW;
             bool scrolls = false;      // a vertical scroll bar for a column taller than the window (SetScroll)
             bool kitFont = false;      // edits in the kit's font (Segoe UI Variable, 13 DIPs), not the message font
+            bool fixed = false;        // a question: a dialog frame the user doesn't resize (SetClientSize sizes it)
         };
         DialogWindow(HINSTANCE instance, const Frame& frame);
 
         // Creates the window, hidden: its controls, the client area sized for its monitor's DPI and
         // the message font on every control. False when it could not be created.
         bool Create(const wchar_t* title);
+        // The same, owned by `owner` (it stays over it, and has no taskbar button of its own).
+        bool Create(const wchar_t* title, HWND owner);
+        // The client area `width` x `height` DIPs at the window's DPI (a question sized to its text).
+        void SetClientSize(int width, int height);
         // Shows it in front (restored if minimised), in the current light or dark, with the focus on
         // `focus`. Allowed to come forward: the user just asked for it.
         void Present(HWND focus);
@@ -152,6 +157,7 @@ namespace sd
             AppName,   // 16 semibold
             Small,     // 11.5 in the faint colour (a slider's ends)
             Centred,   // 12 in the subtle colour, centred, wraps
+            Question,  // a question's heading, 20 semibold, wraps
         };
         HWND Label(const wchar_t* text, TextRole role, Surface on = Surface::Card);
         void SetRole(HWND label, TextRole role);
@@ -169,6 +175,14 @@ namespace sd
         void SetInvalid(HWND edit, bool invalid);
         // A slider (a trackbar) drawn by the kit.
         HWND Slider(int id, int low, int high, int step, Surface on = Surface::Card);
+
+        // A list (a report-view ListView) whose rows the kit draws: `rowDip` tall, the selected one in
+        // the selection colour with the accent's bar, the hovered one lightly, the focused one with a
+        // ring; the window draws each row's content in DrawRow. The columns stay (screen readers read
+        // a row's cells from them); pass LVS_NOCOLUMNHEADER in `style` to hide their header.
+        HWND KitList(int id, DWORD style, std::initializer_list<const wchar_t*> columns, int rowDip, Surface on = Surface::Card);
+        // Row `row` of a KitList, in `r` (DIPs), over its background.
+        virtual void DrawRow(HWND /*list*/, int /*row*/, ControlKit&, const D2D1_RECT_F& /*r*/, bool /*selected*/) {}
 
         // The name and the description screen readers say for a control (Dynamic Annotation), for
         // controls whose text doesn't say it (a drop-down, an icon button, a chip's longer name).
@@ -210,6 +224,7 @@ namespace sd
         void DrawDropDownItem(const DRAWITEMSTRUCT& item);
         void PaintDropDown(HWND combo);
         LRESULT DrawSlider(const NMCUSTOMDRAW& draw);
+        LRESULT DrawListRow(const NMLVCUSTOMDRAW& draw);
         ControlKit::ControlState StateOf(HWND control, bool pressed) const;
 
         struct KitTarget;              // the kit and its target, made on first use
@@ -227,6 +242,14 @@ namespace sd
         };
         std::map<HWND, LabelInfo> m_labels;
         std::map<HWND, Surface> m_dropDowns, m_sliders;
+        struct ListInfo
+        {
+            int rowDip = 32;
+            Surface on = Surface::Card;
+        };
+        std::map<HWND, ListInfo> m_lists;
+        HWND m_owner = nullptr;
+        DWORD m_style = 0, m_exStyle = 0;
         struct FieldInfo
         {
             RECT box{};

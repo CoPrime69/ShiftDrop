@@ -53,4 +53,25 @@ namespace sd::history
 
     // Undo is offered for a run that made something and has not been undone.
     bool CanUndo(const RunRecord& run);
+
+    // A row's first line: the file it ran on ("photo.heic"), "photo.heic and 2 more" for several, or
+    // the action's name when no file name was kept.
+    std::wstring FilesText(const RunRecord& run);
+
+    // A local time as RunRecord::started writes it, "2026-10-20 14:31:07"; false if it isn't one.
+    struct LocalTime
+    {
+        std::chrono::year_month_day day;
+        int hour = 0, minute = 0;
+    };
+    bool ParseStarted(std::wstring_view started, LocalTime& out);
+
+    // When a run started, as the row says it at `now`: "Just now", "12 min ago", "3 h ago" (today),
+    // "Yesterday 18:40", "14 Oct 18:40", "14 Oct 2025" (another year); the text as it is when it
+    // can't be read.
+    std::wstring WhenText(std::wstring_view started, const LocalTime& now);
+
+    // The day heading a run is listed under: "Today", "Yesterday", or "Tuesday 14 October" (with
+    // the year when it isn't this one).
+    std::wstring DayTitle(std::wstring_view started, std::chrono::year_month_day today);
 }

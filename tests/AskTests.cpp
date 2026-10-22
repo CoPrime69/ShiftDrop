@@ -205,3 +205,73 @@ TEST(Ask, ThePasswordBoxHandsOverWhatWasTyped)
     EXPECT_NE(shown.find(L"locked.zip"), std::wstring::npos) << Narrow(shown);
     EXPECT_NE(shown.find(L"didn't work"), std::wstring::npos) << Narrow(shown);
 }
+
+// The question window's buttons: the choices, the first of them primary, and Cancel; one confirm
+// button for a list to pick from.
+TEST(Ask, TheQuestionWindowsButtons)
+{
+    auto q = Sample();
+    auto buttons = ask::ButtonsOf(q);
+    ASSERT_EQ(buttons.size(), 3u);
+    EXPECT_EQ(buttons[0].id, 1);
+    EXPECT_TRUE(buttons[0].primary);
+    EXPECT_EQ(buttons[1].label, L"Two");
+    EXPECT_FALSE(buttons[1].primary);
+    EXPECT_EQ(buttons[2].id, ask::kCancel);
+    EXPECT_EQ(buttons[2].label, L"Cancel");
+
+    q.pickOne = true;
+    q.confirm = L"Normalize";
+    buttons = ask::ButtonsOf(q);
+    ASSERT_EQ(buttons.size(), 2u);
+    EXPECT_EQ(buttons[0].id, ask::kConfirm);
+    EXPECT_EQ(buttons[0].label, L"Normalize");
+    EXPECT_TRUE(buttons[0].primary);
+    q.confirm.clear();
+    EXPECT_EQ(ask::ButtonsOf(q)[0].label, L"OK");
+
+    q.choices.clear();
+    q.pickOne = false;
+    buttons = ask::ButtonsOf(q);
+    ASSERT_EQ(buttons.size(), 1u);
+    EXPECT_TRUE(buttons[0].primary) << "Cancel alone is the one Enter presses";
+}
+
+// With the app's question window: a worker's question and password, and a question asked on the UI
+// thread, go to it; what it answers comes back, and an answer that isn't a choice is Cancel.
+TEST(Ask, TheAppsQuestionWindowAnswers)
+{
+    std::atomic<int> asked{ 0 };
+    ask::Presenter presenter;
+    presenter.choose = [&](HWND, const ask::Question& q, const std::function<void(HWND)>&) {
+        ++asked;
+        return q.heading == L"Wrong" ? 99 : 2;
+    };
+    presenter.password = [&](const ask::PasswordRequest& r, Secret& password, const std::function<void(HWND)>&) {
+        ++asked;
+        return r.wrong && password.Assign(L"hunter2") ? IDOK : ask::kCancel;
+    };
+    ask::InstallUi(presenter);
+    std::atomic<bool> done{ false };
+    int choice = -5;
+    bool ok = false;
+    std::wstring got;
+    std::jthread worker([&] {
+        choice = ask::Choose(Sample(), {});
+        Secret password;
+        ok = ask::Password({ L"Ask test password", L"locked.zip", true }, password, {});
+        got = password.View();
+        done = true;
+    });
+    PumpUntil(done);
+    worker.join();
+    auto wrong = Sample();
+    wrong.heading = L"Wrong";
+    EXPECT_EQ(ask::ChooseNow(nullptr, Sample()), 2);
+    EXPECT_EQ(ask::ChooseNow(nullptr, wrong), ask::kCancel);
+    ask::UninstallUi();
+    EXPECT_EQ(choice, 2);
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(got, L"hunter2");
+    EXPECT_EQ(asked, 4);
+}

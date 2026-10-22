@@ -88,6 +88,8 @@ namespace sd::audiotools
         q.choices = { { 16, L"Speech", L"\u221216 LUFS, for podcasts, voice notes, talks and lectures" },
                       { 14, L"Music", L"\u221214 LUFS, the level streaming apps play at" },
                       { 23, L"Broadcast", L"\u221223 LUFS, the EBU R128 level for TV and radio" } };
+        q.pickOne = true;   // one answer of three, under one Normalize button
+        q.confirm = L"Normalize";
         const int picked = ask::ChooseNow(owner, q);
         if (picked != 16 && picked != 14 && picked != 23)
             return false;   // cancelled

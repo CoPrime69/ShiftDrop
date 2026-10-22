@@ -236,3 +236,36 @@ TEST(History, ClearEmptiesTheListAndLeavesFilesAlone)
     EXPECT_TRUE(history->RecentRuns(10).empty());
     EXPECT_EQ(history->Clear(), 0);
 }
+
+// A row's lines: the file it ran on, and when, said the way people say it.
+TEST(History, RowsSayTheFileAndWhen)
+{
+    RunRecord run;
+    run.recipeLabel = L"Convert to WebP";
+    EXPECT_EQ(history::FilesText(run), L"Convert to WebP");
+    run.files = { L"photo.heic" };
+    EXPECT_EQ(history::FilesText(run), L"photo.heic");
+    run.files = { L"photo.heic", L"b.jpg", L"c.jpg" };
+    EXPECT_EQ(history::FilesText(run), L"photo.heic and 2 more");
+
+    using namespace std::chrono;
+    const history::LocalTime now{ year{ 2026 } / October / 21, 14, 30 };
+    EXPECT_EQ(history::WhenText(L"2026-10-21 14:30:05", now), L"Just now");
+    EXPECT_EQ(history::WhenText(L"2026-10-21 14:18:00", now), L"12 min ago");
+    EXPECT_EQ(history::WhenText(L"2026-10-21 11:02:00", now), L"3 h ago");
+    EXPECT_EQ(history::WhenText(L"2026-10-20 18:40:00", now), L"Yesterday 18:40");
+    EXPECT_EQ(history::WhenText(L"2026-10-14 08:05:00", now), L"14 Oct 08:05");
+    EXPECT_EQ(history::WhenText(L"2025-12-31 23:59:00", now), L"31 Dec 2025");
+    EXPECT_EQ(history::WhenText(L"not a time", now), L"not a time");
+
+    const auto today = year{ 2026 } / October / 21;
+    EXPECT_EQ(history::DayTitle(L"2026-10-21 00:00:01", today), L"Today");
+    EXPECT_EQ(history::DayTitle(L"2026-10-20 23:59:59", today), L"Yesterday");
+    EXPECT_EQ(history::DayTitle(L"2026-10-14 08:05:00", today), L"Wednesday 14 October");
+    EXPECT_EQ(history::DayTitle(L"2025-12-31 08:05:00", today), L"Wednesday 31 December 2025");
+    EXPECT_EQ(history::DayTitle(L"", today), L"Earlier");
+    history::LocalTime t;
+    EXPECT_FALSE(history::ParseStarted(L"2026-02-30 10:00:00", t));
+    EXPECT_TRUE(history::ParseStarted(L"2026-02-28 10:00", t));
+    EXPECT_EQ(t.hour, 10);
+}

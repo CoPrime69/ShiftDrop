@@ -386,23 +386,6 @@ namespace sd
             DrawFocusRing(r, kControlRadius);
     }
 
-    void ControlKit::DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s)
-    {
-        const auto& c = m_colors;
-        const bool hot = s.enabled && s.hot;
-        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
-        if (selected)
-            FillRound(r, theme::WithAlpha(c.accent, alpha), kControlRadius);
-        else
-        {
-            FillRound(r, theme::WithAlpha(hot && s.pressed ? c.controlDown : hot ? c.controlHover : c.control, alpha), kControlRadius);
-            StrokeRound(r, c.controlLine, 1.f, kControlRadius);
-        }
-        DrawText(text, TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), D2D1::RectF(r.left + 2, r.top, r.right - 2, r.bottom),
-                 theme::WithAlpha(selected ? c.onAccent : c.text, alpha));
-        if (s.focused)
-            DrawFocusRing(r, kControlRadius);
-    }
 
     void ControlKit::DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s)
     {
@@ -575,6 +558,35 @@ namespace sd
                  c.text);
         if (s.focused)
             DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawListItem(const D2D1_RECT_F& r, bool selected, bool hot, bool focused, bool active)
+    {
+        const auto& c = m_colors;
+        const auto row = D2D1::RectF(r.left + 4, r.top + 1, r.right - 4, r.bottom - 1);
+        if (selected)
+            FillRound(row, active ? c.selected : theme::WithAlpha(c.selected, 0.7f), kControlRadius);
+        else if (hot)
+            FillRound(row, theme::WithAlpha(c.selected, 0.5f), kControlRadius);
+        if (selected)
+        {
+            const float cy = (row.top + row.bottom) / 2;
+            FillRound(D2D1::RectF(row.left, cy - 8, row.left + 3, cy + 8), active ? c.accent : c.textFaint, 1.5f);
+        }
+        if (focused)
+            DrawFocusRing(row, kControlRadius);
+    }
+
+    void ControlKit::DrawPill(const D2D1_RECT_F& r, std::wstring_view text, const D2D1_COLOR_F& ink)
+    {
+        const float radius = (r.bottom - r.top) / 2;
+        FillRound(r, theme::WithAlpha(ink, 0.14f), radius);
+        DrawText(text, TextFormat(kSmallText, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), r, ink);
+    }
+
+    float ControlKit::PillWidth(std::wstring_view text)
+    {
+        return std::ceil(TextWidth(text, kSmallText, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 20.f;
     }
 
     void ControlKit::DrawToggle(const D2D1_RECT_F& r, bool on, ControlState s)

@@ -64,6 +64,11 @@ namespace sd
 
     bool DialogWindow::Create(const wchar_t* title)
     {
+        return Create(title, nullptr);
+    }
+
+    bool DialogWindow::Create(const wchar_t* title, HWND owner)
+    {
         WNDCLASSEXW wc{ sizeof(wc) };
         if (!GetClassInfoExW(m_instance, m_frame.className, &wc))
         {
@@ -78,20 +83,31 @@ namespace sd
         }
         // WS_EX_CONTROLPARENT lets IsDialogMessage move focus with Tab between our child controls;
         // WS_CLIPCHILDREN keeps the window's painting (cards) off its controls.
-        const DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | (m_frame.scrolls ? WS_VSCROLL : 0);
-        m_hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, m_frame.className, title, style, CW_USEDEFAULT, CW_USEDEFAULT, m_frame.width,
-                                 m_frame.height, nullptr, nullptr, m_instance, this);
+        // A question has a dialog's frame, and a taskbar button of its own when nothing owns it.
+        const DWORD style = (m_frame.fixed ? WS_POPUP | WS_CAPTION | WS_SYSMENU : WS_OVERLAPPEDWINDOW) | WS_CLIPCHILDREN | (m_frame.scrolls ? WS_VSCROLL : 0);
+        const DWORD exStyle = WS_EX_CONTROLPARENT | (m_frame.fixed ? WS_EX_DLGMODALFRAME | (owner ? 0 : WS_EX_APPWINDOW) : 0);
+        m_owner = owner;
+        m_style = style;
+        m_exStyle = exStyle;
+        m_hwnd = CreateWindowExW(exStyle, m_frame.className, title, style, CW_USEDEFAULT, CW_USEDEFAULT, m_frame.width, m_frame.height, owner,
+                                 nullptr, m_instance, this);
         if (!m_hwnd)
             return false;
         CreateChildren();
         // Size the client area for this monitor's DPI; CreateWindow took the size in physical pixels.
         const UINT dpi = GetDpiForWindow(m_hwnd);
-        RECT r{ 0, 0, MulDiv(m_frame.width, static_cast<int>(dpi), 96), MulDiv(m_frame.height, static_cast<int>(dpi), 96) };
-        AdjustWindowRectExForDpi(&r, style, FALSE, WS_EX_CONTROLPARENT, dpi);
-        SetWindowPos(m_hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        m_dpi = dpi;
+        SetClientSize(m_frame.width, m_frame.height);
         ApplyDpi(dpi);
         ApplyTheme();
         return true;
+    }
+
+    void DialogWindow::SetClientSize(int width, int height)
+    {
+        RECT r{ 0, 0, Px(width), Px(height) };
+        AdjustWindowRectExForDpi(&r, m_style, FALSE, m_exStyle, m_dpi);
+        SetWindowPos(m_hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     void DialogWindow::Present(HWND focus)
@@ -132,6 +148,10 @@ namespace sd
             SendMessageW(combo, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), Px(kDropDownField));
             SendMessageW(combo, CB_SETITEMHEIGHT, 0, Px(kDropDownRow));
         }
+        // A list's rows are as tall as its (empty) small image list says.
+        for (const auto& [list, info] : m_lists)
+            if (const HIMAGELIST old = ListView_SetImageList(list, ImageList_Create(1, Px(info.rowDip), ILC_COLOR32, 1, 0), LVSIL_SMALL))
+                ImageList_Destroy(old);
         OnDpiChanged();
         Layout();
         for (const auto& [edit, field] : m_fields)
@@ -147,6 +167,16 @@ namespace sd
         Kit().SetPalette(theme::EditorColors());
         if (m_frame.scrolls)
             SetWindowTheme(m_hwnd, m_colors.dark ? L"DarkMode_Explorer" : nullptr, nullptr);   // the scroll bar
+        for (const auto& [list, info] : m_lists)
+        {
+            // "Explorer" in light mode too: its hot tracking tells the kit which row is under the mouse.
+            SetTheme({ list }, L"DarkMode_Explorer", L"Explorer");
+            SetTheme({ ListView_GetHeader(list) }, L"DarkMode_ItemsView");
+            const COLORREF behind = theme::ToColorRef(SurfaceColor(info.on));
+            ListView_SetBkColor(list, behind);
+            ListView_SetTextBkColor(list, behind);
+            ListView_SetTextColor(list, m_colors.text);   // the group headers'
+        }
         OnThemeChanged();
         RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
     }
@@ -317,6 +347,7 @@ namespace sd
         m_dropDowns.erase(control);
         m_sliders.erase(control);
         m_fields.erase(control);
+        m_lists.erase(control);
         if (m_accessibility && std::erase(m_described, control))
         {
             const MSAAPROPID props[] = { PROPID_ACC_NAME, PROPID_ACC_DESCRIPTION };
@@ -368,6 +399,7 @@ namespace sd
                 { 16.f, kSemi, 0, false },   // AppName
                 { 11.5f, kNormal, 2, false },// Small
                 { 12.f, kNormal, 1, true, DWRITE_TEXT_ALIGNMENT_CENTER },    // Centred
+                { 20.f, kSemi, 0, true },    // Question
             };
             return kLooks[std::clamp(role, 0, static_cast<int>(std::size(kLooks)) - 1)];
         }
@@ -605,6 +637,57 @@ namespace sd
         return CDRF_SKIPDEFAULT;
     }
 
+    // ---- Lists --------------------------------------------------------------------------------------------
+
+    HWND DialogWindow::KitList(int id, DWORD style, std::initializer_list<const wchar_t*> columns, int rowDip, Surface on)
+    {
+        const HWND h = Control(WC_LISTVIEWW, L"", WS_TABSTOP | WS_GROUP | LVS_REPORT | LVS_SHOWSELALWAYS | style, id);
+        if (!h)
+            return nullptr;
+        ListView_SetExtendedListViewStyle(h, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+        int i = 0;
+        for (const wchar_t* title : columns)
+        {
+            LVCOLUMNW col{};
+            col.mask = LVCF_TEXT | LVCF_SUBITEM;
+            col.pszText = const_cast<wchar_t*>(title);
+            col.iSubItem = i;
+            ListView_InsertColumn(h, i++, &col);
+        }
+        m_lists[h] = { rowDip, on };
+        return h;
+    }
+
+    LRESULT DialogWindow::DrawListRow(const NMLVCUSTOMDRAW& draw)
+    {
+        // Group headers (the inspector's, History's days) as the list draws them; rows by the kit.
+        if (draw.dwItemType == LVCDI_GROUP)
+            return CDRF_DODEFAULT;
+        if (draw.nmcd.dwDrawStage == CDDS_PREPAINT)
+            return CDRF_NOTIFYITEMDRAW;
+        if (draw.nmcd.dwDrawStage != CDDS_ITEMPREPAINT)
+            return CDRF_DODEFAULT;
+        const HWND list = draw.nmcd.hdr.hwndFrom;
+        const int row = static_cast<int>(draw.nmcd.dwItemSpec);
+        RECT rc{};
+        if (!ListView_GetItemRect(list, row, &rc, LVIR_BOUNDS))
+            return CDRF_DODEFAULT;
+        RECT client{};
+        GetClientRect(list, &client);
+        rc.left = std::max(rc.left, client.left);
+        rc.right = std::min(rc.right, client.right);
+        const UINT state = ListView_GetItemState(list, row, LVIS_SELECTED | LVIS_FOCUSED);
+        const bool selected = (state & LVIS_SELECTED) != 0, active = GetFocus() == list;
+        const bool focused = (state & LVIS_FOCUSED) && active && FocusCues(list);
+        const bool hot = (draw.nmcd.uItemState & CDIS_HOT) != 0;
+        const auto it = m_lists.find(list);
+        Paint(draw.nmcd.hdc, rc, SurfaceColor(it == m_lists.end() ? Surface::Card : it->second.on), [&](ControlKit& kit, const D2D1_RECT_F& r) {
+            kit.DrawListItem(r, selected, hot, focused, active);
+            DrawRow(list, row, kit, r, selected);
+        });
+        return CDRF_SKIPDEFAULT;
+    }
+
     // ---- Screen readers -----------------------------------------------------------------------------------
 
     void DialogWindow::Describe(HWND control, const std::wstring& name, const std::wstring& description)
@@ -707,6 +790,11 @@ namespace sd
             if (m_sliders.contains(hdr->hwndFrom))
             {
                 result = DrawSlider(*reinterpret_cast<const NMCUSTOMDRAW*>(lParam));
+                return true;
+            }
+            if (m_lists.contains(hdr->hwndFrom))
+            {
+                result = DrawListRow(*reinterpret_cast<const NMLVCUSTOMDRAW*>(lParam));
                 return true;
             }
             return false;

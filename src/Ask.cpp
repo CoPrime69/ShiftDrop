@@ -31,6 +31,7 @@ namespace sd::ask
             bool done = false;
             bool abandoned = false;
             HWND dialog = nullptr;   // while it is on screen
+            bool own = false;        // in the presenter's window, not a TaskDialog
             int answer = kCancel;
             Secret secret;           // what was typed, until the worker takes it
         };
@@ -38,6 +39,7 @@ namespace sd::ask
 
         std::mutex g_mutex;
         HWND g_window = nullptr;   // the message-only window on the UI thread
+        Presenter g_presenter;     // set with g_window
         ChooseFn g_choose;
         PasswordFn g_password;
 
@@ -51,7 +53,7 @@ namespace sd::ask
         {
             if (!r.dialog)
                 return;
-            if (r.password)
+            if (r.password || r.own)
                 PostMessageW(r.dialog, WM_COMMAND, IDCANCEL, 0);
             else
                 PostMessageW(r.dialog, TDM_CLICK_BUTTON, IDCANCEL, 0);
@@ -289,6 +291,21 @@ namespace sd::ask
             return result == IDOK ? IDOK : kCancel;
         }
 
+        // An answer that is one of the question's choices, else Cancel.
+        int OneOfTheChoices(const Question& q, int answer)
+        {
+            for (const auto& c : q.choices)
+                if (c.id == answer)
+                    return answer;
+            return kCancel;
+        }
+
+        Presenter CurrentPresenter()
+        {
+            std::scoped_lock lock(g_mutex);
+            return g_presenter;
+        }
+
         // ---- The UI thread's side ------------------------------------------------------------------
 
         void ShowQueued()
@@ -308,7 +325,23 @@ namespace sd::ask
                         continue;
                 }
                 g_current = r;
-                const int answer = r->password ? ShowPassword(*r) : ShowChoice(r->question, nullptr, &ChoiceCallback, reinterpret_cast<LONG_PTR>(r.get()));
+                const auto presenter = CurrentPresenter();
+                const auto shown = [raw = r.get()](HWND window) { Shown(*raw, window); };
+                int answer = kCancel;
+                if (r->password && presenter.password)
+                {
+                    r->own = true;
+                    answer = presenter.password(r->passwordRequest, r->secret, shown) == IDOK ? IDOK : kCancel;
+                }
+                else if (r->password)
+                    answer = ShowPassword(*r);
+                else if (presenter.choose)
+                {
+                    r->own = true;
+                    answer = OneOfTheChoices(r->question, presenter.choose(nullptr, r->question, shown));
+                }
+                else
+                    answer = ShowChoice(r->question, nullptr, &ChoiceCallback, reinterpret_cast<LONG_PTR>(r.get()));
                 g_current.reset();
                 Finish(*r, answer);
             }
@@ -399,6 +432,8 @@ namespace sd::ask
         case Route::Answers: return answer(question);
         case Route::Ui: break;
         }
+        if (const auto presenter = CurrentPresenter(); presenter.choose)
+            return OneOfTheChoices(question, presenter.choose(owner, question, {}));
         return ShowChoice(question, owner, nullptr, 0);
     }
 
@@ -427,7 +462,19 @@ namespace sd::ask
         return true;
     }
 
-    void InstallUi()
+    std::vector<Button> ButtonsOf(const Question& question)
+    {
+        std::vector<Button> buttons;
+        if (question.pickOne)
+            buttons.push_back({ kConfirm, question.confirm.empty() ? std::wstring(L"OK") : question.confirm, true });
+        else
+            for (const auto& c : question.choices)
+                buttons.push_back({ c.id, c.label, buttons.empty() });
+        buttons.push_back({ kCancel, L"Cancel", buttons.empty() });
+        return buttons;
+    }
+
+    void InstallUi(Presenter presenter)
     {
         WNDCLASSEXW wc{ sizeof(wc) };
         wc.lpfnWndProc = &WindowProc;
@@ -439,6 +486,7 @@ namespace sd::ask
             log::Warn(L"ask: cannot create the question window ({}); jobs will not ask", GetLastError());
         std::scoped_lock lock(g_mutex);
         g_window = window;
+        g_presenter = std::move(presenter);
     }
 
     void UninstallUi()
@@ -448,6 +496,7 @@ namespace sd::ask
             std::scoped_lock lock(g_mutex);
             window = g_window;
             g_window = nullptr;
+            g_presenter = {};
         }
         // Questions not shown yet are answered Cancel, and one on screen is closed as Cancel.
         for (auto& r : g_queue)

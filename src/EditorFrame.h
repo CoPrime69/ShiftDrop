@@ -77,8 +77,6 @@ namespace sd
         void DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s);
         // A glyph alone, filled only while hot, pressed or `on`.
         void DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s);
-        // One option of a segmented choice.
-        void DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s);
         // An on/off switch, `r` 40 x 20 DIPs.
         void DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s);
         // A slider's bar `track` (4 DIPs high), filled from `from` to `value` (both 0..1), and its thumb.
@@ -137,6 +135,14 @@ namespace sd
         // glyph, title, a line under it, a count at the end, and a chevron.
         void DrawExpander(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view title, std::wstring_view detail, std::wstring_view trailing,
                           bool open, ControlState s);
+        // One row of a list (History, Rename, the inspector, a question's options): the selected row
+        // filled with the accent's bar at its start (dimmer while the list hasn't the focus), the
+        // hovered one lightly, and the focus ring around the focused one. The window draws its text.
+        void DrawListItem(const D2D1_RECT_F& r, bool selected, bool hot, bool focused, bool active = true);
+        // A small pill that names a state ("Undone", "Failed", "already exists"): `text` in `ink` on a
+        // tint of it, and how wide it is.
+        void DrawPill(const D2D1_RECT_F& r, std::wstring_view text, const D2D1_COLOR_F& ink);
+        float PillWidth(std::wstring_view text);
         // A small picture of the wheel: `tiles` placed where the real wheel places them
         // (keyboard/WheelLayout.h), in the wheel's own colours (`palette`), tile `hot` in the accent,
         // and `centre` over `detail` in the middle.
