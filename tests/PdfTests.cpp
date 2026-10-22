@@ -2,6 +2,9 @@
 #include "PdfTestUtil.h"
 #include "PipelineRunner.h"
 #include "canvas/Covers.h"
+#include "docs/Zip.h"
+#include "FileIo.h"
+#include "pdf/DocumentPages.h"
 #include "pdf/ImagePdf.h"
 #include "pdf/PageEdits.h"
 #include "pdf/PageRenderer.h"
@@ -995,6 +998,166 @@ TEST(PdfPages, EditSliceSavesOneAndMergesSeveral)
     result = runner.RunBatch(edit, 0, { a }, {});
     ASSERT_TRUE(result.ok) << Narrow(result.error);
     EXPECT_EQ(Open(result.output)->getAllPages().size(), 3u);
+}
+
+TEST(PdfPages, EditOpensEveryDocumentKindTheAppCanLayOut)
+{
+    using office::Apps;
+    const Apps none;
+    Apps word;
+    word.word = true;
+    Apps excel;
+    excel.excel = true;
+    Apps libre;
+    libre.soffice = L"C:\\LibreOffice\\program\\soffice.exe";
+    const auto from = [](const wchar_t* name, const Apps& apps) { return PageSourceOf(std::wstring(L"C:\\files\\") + name, apps); };
+
+    EXPECT_EQ(from(L"a.pdf", none), PageSource::Pdf);
+    // Our own layout without an office app; the office app's exact pages with one.
+    EXPECT_EQ(from(L"a.docx", none), PageSource::Document);
+    EXPECT_EQ(from(L"a.docx", word), PageSource::Office);
+    EXPECT_EQ(from(L"a.docx", libre), PageSource::Office);
+    EXPECT_EQ(from(L"a.docx", excel), PageSource::Document);
+    EXPECT_EQ(from(L"a.rtf", none), PageSource::Document);
+    EXPECT_EQ(from(L"a.rtf", word), PageSource::Office);
+    EXPECT_EQ(from(L"a.xlsx", none), PageSource::Spreadsheet);
+    EXPECT_EQ(from(L"a.xls", none), PageSource::Spreadsheet);
+    EXPECT_EQ(from(L"a.ods", none), PageSource::Spreadsheet);
+    EXPECT_EQ(from(L"a.xlsx", excel), PageSource::Office);
+    EXPECT_EQ(from(L"a.xlsx", word), PageSource::Spreadsheet);
+    // Text tables are ours even with Excel (not an office file), so long ones ask first.
+    EXPECT_EQ(from(L"a.csv", excel), PageSource::Spreadsheet);
+    EXPECT_EQ(from(L"a.tsv", none), PageSource::Spreadsheet);
+    for (const auto* name : { L"a.md", L"a.txt", L"a.html", L"a.htm", L"a.pages" })
+        EXPECT_EQ(from(name, none), PageSource::Document) << Narrow(name);
+    // Only an office app lays these out.
+    for (const auto* name : { L"a.pptx", L"a.ppt", L"a.odp", L"a.odt", L"a.doc", L"a.xlsb" })
+    {
+        EXPECT_EQ(from(name, none), PageSource::None) << Narrow(name);
+        EXPECT_EQ(from(name, libre), PageSource::Office) << Narrow(name);
+    }
+    EXPECT_EQ(from(L"a.pptx", word), PageSource::None);
+    // Pictures have their own editors; media, archives and the rest have no pages.
+    for (const auto* name : { L"a.jpg", L"a.png", L"a.heic", L"a.mp4", L"a.mp3", L"a.zip", L"a.srt", L"a.json", L"a.epub", L"a.xyz" })
+        EXPECT_EQ(from(name, libre), PageSource::None) << Narrow(name);
+
+    // The one Edit slice, on the Tools wheel, for the documents as for PDFs.
+    TempDir dir;
+    Recipes recipes(dir);
+    const PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    const auto& edit = recipes.Get("pdf-edit");
+    EXPECT_EQ(edit.ring, "tools");
+    EXPECT_EQ(edit.label, L"Edit");
+    for (const auto* name : { L"a.pdf", L"a.docx", L"a.xlsx", L"a.csv", L"a.md", L"a.txt", L"a.html", L"a.rtf" })
+        EXPECT_TRUE(runner.Applies(edit, std::wstring(L"C:\\files\\") + name)) << Narrow(name);
+    for (const auto* name : { L"a.jpg", L"a.mp4", L"a.zip", L"a.srt" })
+        EXPECT_FALSE(runner.Applies(edit, std::wstring(L"C:\\files\\") + name)) << Narrow(name);
+    size_t edits = 0;
+    for (const auto& r : recipes.store.All())
+        edits += r.ring == "tools" && r.label == L"Edit" && runner.Applies(r, L"C:\\files\\a.docx");
+    EXPECT_EQ(edits, 1u);   // one slice, not one per format
+}
+
+TEST(PdfPages, EditLaysADocumentOutThenSavesNextToIt)
+{
+    TempDir dir;
+    Recipes recipes(dir);
+    PipelineRunner runner(std::make_shared<const ImageCodecs>(), nullptr);
+    const Recipe edit = recipes.Get("pdf-edit");
+    const auto* engine = runner.EngineFor(edit);
+    ASSERT_NE(engine, nullptr);
+    const auto pdf = ImagesPdf(dir, L"extra.pdf", 2, 100, 50);
+
+    // A Pages document: its pages are its preview PDF (no printer needed here).
+    const auto notes = (dir / L"notes.pages").wstring();
+    std::string preview, zip, before;
+    ASSERT_TRUE(ReadFileBytes(ImagesPdf(dir, L"preview.pdf", 3, 200, 80), preview));
+    {
+        docs::ZipWriter w;
+        ASSERT_TRUE(w.Add("QuickLook/Preview.pdf", preview));
+        ASSERT_TRUE(w.Finish(zip));
+    }
+    ASSERT_TRUE(WriteFileBytes(notes, zip, WriteMode::New));
+    std::filesystem::remove(dir / L"preview.pdf");
+    before = zip;
+
+    // PDFs alone open as they are; with a document the pages are laid out first.
+    EXPECT_FALSE(engine->EditorInput(edit, { pdf }).has_value());
+    const auto input = engine->EditorInput(edit, { notes, pdf });
+    ASSERT_TRUE(input.has_value());
+    EXPECT_EQ(input->steps[0].action, "pdf.lay_out");
+    EXPECT_EQ(input->label, L"Edit");
+    EXPECT_EQ(runner.Lane(*input), JobLane::Pool);   // no office file among them
+    EXPECT_FALSE(engine->IsBatch(*input));
+
+    const auto laid = runner.Run(*input, 0, notes, {});
+    ASSERT_TRUE(laid.ok) << Narrow(laid.error);
+    EXPECT_NE(std::filesystem::path(laid.output).parent_path(), dir.path());   // a temporary file, not next to the document
+    EXPECT_EQ(Open(laid.output)->getAllPages().size(), 3u);
+    const auto same = runner.Run(*input, 0, pdf, {});
+    ASSERT_TRUE(same.ok);
+    EXPECT_EQ(same.output, pdf);   // a PDF is its own pages
+
+    // The editor's Save (no window in tests: every page as it is) goes back to the documents.
+    Recipe adjusted;
+    std::vector<std::wstring> files;
+    engine->OpenEditorOn(nullptr, edit, { notes }, { laid.output }, false, [&](Recipe r, std::vector<std::wstring> f) {
+        adjusted = std::move(r);
+        files = std::move(f);
+    });
+    ASSERT_EQ(files, std::vector<std::wstring>{ notes });
+    adjusted.steps[0].params["plan"] = PlanToJson({ { 0, 2, 0 }, { 0, 0, 90 } });
+    const auto saved = runner.RunBatch(adjusted, 0, files, {});
+    ASSERT_TRUE(saved.ok) << Narrow(saved.error);
+    EXPECT_EQ(saved.output, (dir / L"notes (edited).pdf").wstring());
+    EXPECT_EQ(Open(saved.output)->getAllPages().size(), 2u);
+    std::string after;
+    ASSERT_TRUE(ReadFileBytes(notes, after));
+    EXPECT_EQ(after, before);                                                              // the document is untouched
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(laid.output).parent_path()));   // read once, then removed
+    // Saving again never replaces the first.
+    const auto again = runner.Run(*input, 0, notes, {});
+    ASSERT_TRUE(again.ok);
+    engine->OpenEditorOn(nullptr, edit, { notes }, { again.output }, false, [&](Recipe r, std::vector<std::wstring> f) {
+        adjusted = std::move(r);
+        files = std::move(f);
+    });
+    const auto second = runner.RunBatch(adjusted, 0, files, {});
+    ASSERT_TRUE(second.ok) << Narrow(second.error);
+    EXPECT_NE(second.output, saved.output);
+    EXPECT_TRUE(std::filesystem::exists(saved.output));
+
+    // A document with a PDF: one view, merged and named after the first, as two PDFs are.
+    const auto both = runner.Run(*input, 0, notes, {});
+    ASSERT_TRUE(both.ok);
+    engine->OpenEditorOn(nullptr, edit, { notes, pdf }, { both.output, pdf }, false, [&](Recipe r, std::vector<std::wstring> f) {
+        adjusted = std::move(r);
+        files = std::move(f);
+    });
+    ASSERT_EQ(files, (std::vector<std::wstring>{ notes, pdf }));
+    const auto merged = runner.RunBatch(adjusted, 0, files, {});
+    ASSERT_TRUE(merged.ok) << Narrow(merged.error);
+    EXPECT_EQ(FileName(merged.output), L"notes (merged).pdf");
+    EXPECT_EQ(Open(merged.output)->getAllPages().size(), 5u);
+    EXPECT_EQ(merged.message, L"Merged 2 files into 5 pages");
+
+    // Cancelled (the ×), or a file that failed: what was made goes, nothing opens.
+    const auto dropped = runner.Run(*input, 0, notes, {});
+    ASSERT_TRUE(dropped.ok);
+    bool opened = false;
+    engine->OpenEditorOn(nullptr, edit, { notes }, { dropped.output }, true, [&](Recipe, std::vector<std::wstring>) { opened = true; });
+    EXPECT_FALSE(opened);
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(dropped.output).parent_path()));
+    engine->OpenEditorOn(nullptr, edit, { notes }, { L"" }, false, [&](Recipe, std::vector<std::wstring>) { opened = true; });
+    EXPECT_FALSE(opened);
+
+    // A document that can't be laid out fails with the reader's own words, and writes nothing.
+    const auto broken = (dir / L"broken.pages").wstring();
+    ASSERT_TRUE(WriteFileBytes(broken, "not a zip", WriteMode::New));
+    const auto failed = runner.Run(*input, 0, broken, {});
+    EXPECT_FALSE(failed.ok);
+    EXPECT_FALSE(failed.error.empty());
+    EXPECT_FALSE(std::filesystem::exists(dir / L"broken (edited).pdf"));
 }
 
 TEST(PdfPages, EditedPagesFolderGoesAfterTheExport)

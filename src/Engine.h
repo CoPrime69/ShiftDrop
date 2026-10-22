@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -81,6 +82,24 @@ namespace sd
                                 std::function<void(Recipe adjusted, std::vector<std::wstring> files)> done) const
         {
             (void)owner, (void)recipe, (void)files, (void)done;
+        }
+
+        // An editor that opens on something made from the files instead of the files themselves (Edit
+        // lays a Word document out as PDF pages first). The recipe that makes it: the app runs it on the
+        // files as a batch of its own, with the top panel's progress and ×, and a file it fails on is
+        // reported as any failed run is. Each file's output (the file itself when nothing needed making)
+        // then goes to OpenEditorOn. No value: OpenEditor gets the files as they are.
+        virtual std::optional<Recipe> EditorInput(const Recipe& recipe, const std::vector<std::wstring>& files) const
+        {
+            (void)recipe, (void)files;
+            return std::nullopt;
+        }
+        // After EditorInput's batch, on the UI thread: `made[i]` is what it made from `files[i]`, empty
+        // where that failed. `cancelled` (the ×): only remove what was made; nothing opens.
+        virtual void OpenEditorOn(HWND owner, const Recipe& recipe, const std::vector<std::wstring>& files, const std::vector<std::wstring>& made,
+                                  bool cancelled, std::function<void(Recipe adjusted, std::vector<std::wstring> files)> done) const
+        {
+            (void)owner, (void)recipe, (void)files, (void)made, (void)cancelled, (void)done;
         }
     };
 
