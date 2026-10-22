@@ -51,6 +51,29 @@ namespace sd
         static constexpr float kControlRadius = 4.f;
         static constexpr float kControlText = 13.f;   // the size of control labels
         static constexpr float kDisabledAlpha = 0.4f;
+
+        // ---- The editors' frame (App Editors page; sizes and layout maths in EditorChrome.h) ----------
+        // The tool bar's background, with a line under it.
+        void DrawToolBar(const D2D1_RECT_F& r);
+        // A tool's tab on the tool bar: its icon over its name, and while `selected` a tinted
+        // background, a semibold name and a short accent bar under it. Width: chrome::TabWidth.
+        void DrawToolTab(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool selected, ControlState s);
+        // The 1 DIP line between groups of the tool bar.
+        void DrawToolBarDivider(const D2D1_RECT_F& r);
+        // The options panel: a card with a line on its left and the tool's name at the top. Its rows
+        // start chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap below r.top.
+        void DrawSidePanel(const D2D1_RECT_F& r, std::wstring_view title);
+        // A small semibold heading over a group of the panel's controls ("Ratio", "Size").
+        void DrawSectionLabel(const D2D1_RECT_F& r, std::wstring_view text);
+        // The footer: a line over it, `status` on the left (what will be saved; from `textLeft`, or the
+        // footer's padding when negative, and ending in "..." before `textRight`). The window draws
+        // Cancel and Apply on its right.
+        void DrawFooterBar(const D2D1_RECT_F& r, std::wstring_view status, float textRight, float textLeft = -1.f);
+        // One option of a choice shown as tiles of an icon over a short name (Annotate's Arrow, Text...):
+        // tinted and outlined in the accent when `chosen`.
+        void DrawToolTile(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool chosen, ControlState s);
+
+        // ---- Every window's controls ----
         void DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s);
         // A glyph alone, filled only while hot, pressed or `on`.
         void DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s);
@@ -66,37 +89,64 @@ namespace sd
         // (an icon font character, 0 for none) on it in `ink`, and a ring around it when `selected`.
         void DrawSwatch(const D2D1_RECT_F& r, const D2D1_COLOR_F& colour, wchar_t glyph, const D2D1_COLOR_F& ink, bool selected, ControlState s);
         void DrawFocusRing(const D2D1_RECT_F& r, float radius);
-
-        // ---- The editors' frame (App Editors page; sizes and layout maths in EditorChrome.h) ----------
-        // The tool bar's background, with a line under it.
-        void DrawToolBar(const D2D1_RECT_F& r);
-        // A tool's tab on the tool bar: its icon over its name, and while `selected` a tinted
-        // background, a semibold name and a short accent bar under it. Width: chrome::TabWidth.
-        void DrawToolTab(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool selected, ControlState s);
-        // The 1 DIP line between groups of the tool bar.
-        void DrawToolBarDivider(const D2D1_RECT_F& r);
-        // A drop-down's closed field: its value and a chevron (the zoom: "Fit", "100%").
-        void DrawDropField(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s);
-        // The options panel: a card with a line on its left and the tool's name at the top. Its rows
-        // start chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap below r.top.
-        void DrawSidePanel(const D2D1_RECT_F& r, std::wstring_view title);
-        // A small semibold heading over a group of the panel's controls ("Ratio", "Size").
-        void DrawSectionLabel(const D2D1_RECT_F& r, std::wstring_view text);
-        // The footer: a line over it, `status` on the left (what will be saved; ends in "..." before
-        // `textRight`). The window draws Cancel and Apply on its right.
-        void DrawFooterBar(const D2D1_RECT_F& r, std::wstring_view status, float textRight);
-        // One option of a choice shown as a row of round chips (aspect ratios, presets): outlined, and
-        // tinted with a check mark when `chosen`. Width: chrome::ChipWidth.
-        void DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s);
-        // One option of a choice shown as tiles of an icon over a short name (Annotate's Arrow, Text...):
-        // tinted and outlined in the accent when `chosen`.
-        void DrawToolTile(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool chosen, ControlState s);
-        // A segmented choice: its track (chrome::Segments' first rectangle), then each option on it.
-        void DrawSegmentTrack(const D2D1_RECT_F& r);
-        void DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s);
-
         void FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius);
         void StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius);   // inside `r`
+        // `r` filled with `color` where it is inside the rounded rectangle `shape` (a line along a box's edge).
+        void FillInside(const D2D1_RECT_F& shape, float radius, const D2D1_RECT_F& r, const D2D1_COLOR_F& color);
+
+        // ---- The windows' pieces (App Windows page: Settings, History, Rename, the inspector and the
+        // questions). Each draws one control in `r`; the window says where and in what state. ----
+        static constexpr float kCardRadius = 6.f;
+        static constexpr float kNavText = 14.f;     // navigation, tabs, a card's title
+        static constexpr float kSmallText = 12.f;   // a card's description, hints
+        // A glyph of the icon font, centred in `r`.
+        void DrawGlyph(wchar_t glyph, float sizeDip, const D2D1_RECT_F& r, const D2D1_COLOR_F& color);
+        // Text that wraps at the width of `r`, from its top; and how tall it is at `width`.
+        void DrawParagraph(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, const D2D1_RECT_F& r, const D2D1_COLOR_F& color,
+                           DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING);
+        float TextHeight(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, float width);
+        // A card: one setting, a group of rows, a list.
+        void DrawCard(const D2D1_RECT_F& r);
+        // An item of the navigation on the left: its glyph and name; the selected one has a fill and the
+        // accent's bar at its start.
+        void DrawNavItem(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view text, bool selected, ControlState s);
+        // A switch with "On" or "Off" before it, at the right of `r`.
+        void DrawToggle(const D2D1_RECT_F& r, bool on, ControlState s);
+        // One option of a segmented choice (Windows 11's): a grey track around the options, the
+        // selected one raised in the card colour with the accent under it. Each option draws its part
+        // of the track, so the options side by side make the whole.
+        enum class Part { Only, First, Middle, Last };
+        void DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool selected, Part part, ControlState s);
+        float SegmentWidth(std::wstring_view text);
+        // A radio button: a round mark, its text, and `detail` after it in the subtle colour.
+        void DrawRadio(const D2D1_RECT_F& r, std::wstring_view text, std::wstring_view detail, bool selected, ControlState s);
+        // A tab: its name, with the accent's bar under the selected one.
+        void DrawTab(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s);
+        float TabWidth(std::wstring_view text);
+        // A chip that turns something on or off: a pill, ticked and in the accent's tint while on.
+        void DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool on, ControlState s);
+        float ChipWidth(std::wstring_view text);
+        // A closed drop-down list: its value and a chevron; and one row of the open list (`current` is
+        // the value it has now: the accent's bar; `hot` under the mouse or the arrow keys).
+        void DrawDropDown(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s);
+        void DrawListRow(const D2D1_RECT_F& r, std::wstring_view text, bool current, bool hot);
+        // The box around a text field (a native edit inside it): a line under it, the accent's while
+        // the field has the focus, the error colour when what is typed can't be used.
+        void DrawTextBox(const D2D1_RECT_F& r, bool focused, bool invalid, bool enabled = true);
+        // The header of a card that folds open (Settings › Wheel's kinds of file, the accent colours):
+        // glyph, title, a line under it, a count at the end, and a chevron.
+        void DrawExpander(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view title, std::wstring_view detail, std::wstring_view trailing,
+                          bool open, ControlState s);
+        // A small picture of the wheel: `tiles` placed where the real wheel places them
+        // (keyboard/WheelLayout.h), in the wheel's own colours (`palette`), tile `hot` in the accent,
+        // and `centre` over `detail` in the middle.
+        struct MiniTile
+        {
+            std::wstring label;
+            wchar_t icon = 0;
+        };
+        void DrawMiniWheel(D2D1_POINT_2F centre, float radius, const std::vector<MiniTile>& tiles, int hot, const theme::Palette& palette,
+                           std::wstring_view centreText, std::wstring_view detail);
 
     private:
         ID2D1RenderTarget* m_target = nullptr;
@@ -115,8 +165,10 @@ namespace sd
             int weight, align;
             bool icon;
             Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
+            bool wrap = false;   // DrawParagraph's: wraps, from the top
         };
         std::vector<CachedFormat> m_formats;
+        IDWriteTextFormat* WrapFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align);
     };
 }
 

@@ -472,6 +472,22 @@ GPU and speed
 - [ ] On a laptop with a graphics card and on a VM without one (WARP): every preview works; the log names the device
 - [ ] Unplug or update the graphics driver while an editor is open (or change the display): the preview comes back
 
+Editors' frame, as the App Editors page draws it (picture editor, PDF page view and Merge list, video and audio editor; light and dark, two accents)
+- [ ] Crop a photo: the title bar says `photo.jpg · Picture editor`; along the top a tool bar with a **Crop** tab (icon over the name, tinted, a short accent bar under it), the file's name beside it, and on the right undo, redo, a thin line and a **Fit** drop-down; the picture in the grey well; the options panel on the right titled **Crop**; along the bottom a footer with `4032 × 3024 · 3.4 MB · Enter applies…` on the left and Cancel and **Crop** (semibold, accent) on the right
+- [ ] The zoom drop-down: Fit, 25%, 50%, 100%, 200%, 400%; picking one zooms about the middle and the field shows it ("100%"); Ctrl+wheel and the zoom keys still work and the field follows them
+- [ ] Crop's ratios are round chips that wrap: the chosen one tinted with an accent outline and a check mark; Straighten's slider has a 16 DIP knob with an accent dot; Thirds grid shows "On" beside its switch (12 DIP knob, accent), "Off" with an outlined switch
+- [ ] Redact: Solid / Blur / Pixelate is a segmented control (grey track, the chosen option raised with an accent line under it); a Redact of several pictures shows ‹ › and `2 of 3 · name` on the tool bar
+- [ ] Edit Photos: the tab and panel say **Edit**; presets are chips; Light / Colour / Detail / Effects is segmented. Add a Background says **Background**, Create a Collage **Collage**, Annotate Photos **Annotate**, Fill and sign **Fill and sign**
+- [ ] Annotate: the marks (Select, Text, Date, Tick, Cross, Arrow, Box, Circle, Callout, Number, Magnifier, Pen, Highlighter) are tiles of an icon over the name, five to a row; the chosen one tinted and outlined. Signature buttons still read **Draw…** and **From a photo…**, the second with an up arrow; the signature pad's Draw / From a photo is segmented and its Choose a picture… has an up arrow
+- [ ] Colour swatches: 26 DIP circles; the chosen one has an accent ring with a gap; the custom one still has its small + badge and opens the colour dialog
+- [ ] Every option and button of every picture tool is still there and works (Crop, Redact, Share-safe review, Edit, Annotate with Fill and sign, Background with Fit to picture, Collage); the panel scrolls when it is taller than the window
+- [ ] PDF page view (Edit PDF with three PDFs): the tool bar's Duplicate, Delete and Undo have icons; pages sit on the grey well; the file letters are square tags, A teal, B purple, C orange (also in the Merge list); the footer has Add files… on the left, then the page count, then Back / Cancel / Merge and export
+- [ ] Merge list: each PDF is a card with its number, its letter tag and its name over its pages and size; the chosen one tinted with an accent outline; the footer shows "N pages in all"
+- [ ] Trim a video: the title says `clip.mp4 · Video editor`; the tool bar's tabs (Trim, Crop, Speed, Join, Frames, Split, Redact) have the wheel's icons; the preview sits in the grey well and the timeline on the panel colour under it; the play button is a round accent button; Keep selection / Remove selection is segmented; Fade in and out reads "Off" beside its switch
+- [ ] Change Video Speed: the speeds are chips that wrap; Crop Video's shapes are chips; section names read in sentence case ("Output size", not "OUTPUT SIZE")
+- [ ] Bleep a song: `song.flac · Audio editor`, tabs Trim, Channels, Bleep, Visualizer with icons, every option as before (#61's Duck, keep pitch, styles, Add clips)
+- [ ] Video frames, the waveform, the visualizer's preview and annotation colours are the content's own colours in both themes; only the frame around them follows the theme and the accent
+
 ### S. AVIF, HEIC, SVG and multi-frame files
 Have ready: a large phone photo (JPG), a transparent PNG logo, an `.avif` from a phone or a website
 (Chrome: right-click an image on a site that serves AVIF > Save image as), an iPhone `.heic`, and three

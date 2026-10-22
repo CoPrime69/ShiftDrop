@@ -8,6 +8,7 @@
 #include "PathUtil.h"
 #include "Theme.h"
 #include "UiThread.h"
+#include "EditorChrome.h"
 #include "EditorFrame.h"
 #include "pdf/OrganizeWindow.h"
 #include "pdf/PageEdits.h"
@@ -32,7 +33,7 @@ namespace sd::pdf
         constexpr UINT kPagesCounted = WM_APP + 1;   // lParam: Counted*, ours to delete
 
         // DIPs
-        constexpr float kMargin = 16.f, kHeader = 56.f, kRowH = 44.f, kFooter = 64.f, kButtonW = 104.f, kButtonH = 32.f;
+        constexpr float kMargin = 16.f, kHeader = 56.f, kRowH = 50.f, kFooter = chrome::kFooterHeight, kButtonW = 104.f, kButtonH = 32.f;
 
         using Done = std::function<void(std::vector<std::wstring>, PagePlan)>;
 
@@ -325,7 +326,7 @@ namespace sd::pdf
                 if (m_hasPlan)
                     total = static_cast<long long>(InListOrder(m_plan, Order()).size());
                 const std::wstring heading = m_edit ? std::format(L"Edit {} PDFs, top to bottom", m_items.size()) : std::format(L"Merge {} PDFs, top to bottom", m_items.size());
-                DrawText(heading, TextFormat(18.f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kMargin, 8.f, size.width - kMargin, 34.f), c.text);
+                DrawText(heading, TextFormat(chrome::kPanelTitle, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kMargin, 8.f, size.width - kMargin, 34.f), c.text);
                 std::wstring hint = L"Drag to reorder · Alt+↑/↓ moves · Delete leaves one out · More… (Alt+M) shows every page";
                 bool notice = true;
                 if (!m_notice.empty())
@@ -337,32 +338,28 @@ namespace sd::pdf
                 DrawText(hint, TextFormat(12.f), D2D1::RectF(kMargin, 32.f, size.width - kMargin, 50.f), notice ? c.text : c.textDim);
 
                 const auto list = ListRect(size);
-                if (auto* b = Brush(c.panel))
-                    rt->FillRoundedRectangle(D2D1::RoundedRect(list, 6.f, 6.f), b);
                 rt->PushAxisAlignedClip(list, D2D1_ANTIALIAS_MODE_ALIASED);
                 const auto [first, end] = m_scroll.Visible(m_items.size(), list.bottom - list.top);
                 for (size_t i = first; i < end; ++i)
                 {
                     const float top = list.top + static_cast<float>(i) * kRowH - m_scroll.offset;
-                    const auto row = D2D1::RectF(list.left + 4.f, top + 2.f, list.right - 4.f, top + kRowH - 2.f);
+                    // Each file a card: its place, its tag, its name over its pages and size (the kit's Merge list).
+                    const auto row = D2D1::RectF(list.left, top + 3.f, list.right, top + kRowH - 3.f);
                     const bool dragged = m_drag.dragging && i == m_focus;
-                    if (i == m_focus)
-                        if (auto* b = Brush(dragged ? theme::WithAlpha(c.accentSoft, 0.5f) : c.accentSoft))
-                            rt->FillRoundedRectangle(D2D1::RoundedRect(row, 4.f, 4.f), b);
+                    FillRound(row, i == m_focus ? (dragged ? theme::WithAlpha(c.accentSoft, 0.5f) : c.accentSoft) : c.control, kControlRadius);
+                    StrokeRound(row, i == m_focus ? c.accent : c.controlLine, 1.f, kControlRadius);
                     const auto& item = m_items[i];
-                    DrawText(std::format(L"{}", i + 1), TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
-                             D2D1::RectF(row.left, row.top, row.left + 26.f, row.bottom), c.textDim);
+                    DrawText(std::format(L"{}", i + 1), TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
+                             D2D1::RectF(row.left, row.top, row.left + 24.f, row.bottom), c.textDim);
                     // The file's tag, as its pages carry it in the page view.
                     const auto letter = FileTagLetter(item.file);
-                    const float cy = (row.top + row.bottom) / 2.f, tagW = 10.f + 7.f * static_cast<float>(letter.size());
-                    const auto tag = D2D1::RectF(row.left + 36.f, cy - 8.f, row.left + 36.f + tagW, cy + 8.f);
+                    const float cy = (row.top + row.bottom) / 2.f, tagW = std::max(20.f, 10.f + 7.f * static_cast<float>(letter.size()));
+                    const auto tag = D2D1::RectF(row.left + 34.f, cy - 10.f, row.left + 34.f + tagW, cy + 10.f);
                     if (auto* b = Brush(FileTagColor(item.file)))
-                        rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 3.f, 3.f), b);
-                    DrawText(letter, TextFormat(10.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
-                    const float detailsW = 200.f;
-                    DrawText(FileName(item.path), TextFormat(14.f), D2D1::RectF(tag.right + 8.f, row.top, row.right - detailsW - 8.f, row.bottom), c.text);
-                    DrawText(Details(item), TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
-                             D2D1::RectF(row.right - detailsW, row.top, row.right - 10.f, row.bottom), c.textDim);
+                        rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 4.f, 4.f), b);
+                    DrawText(letter, TextFormat(11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
+                    DrawText(FileName(item.path), TextFormat(13.f), D2D1::RectF(tag.right + 10.f, cy - 17.f, row.right - 12.f, cy + 1.f), c.text);
+                    DrawText(Details(item), TextFormat(11.5f), D2D1::RectF(tag.right + 10.f, cy, row.right - 12.f, cy + 16.f), c.textDim);
                 }
                 if (m_drag.dragging)
                 {
@@ -373,8 +370,7 @@ namespace sd::pdf
                 rt->PopAxisAlignedClip();
 
                 const std::wstring summary = counting && !m_hasPlan ? std::wstring(L"Counting pages…") : total == 1 ? std::wstring(L"1 page in all") : std::format(L"{} pages in all", total);
-                const float y = size.height - kFooter;
-                DrawText(summary, TextFormat(12.f), D2D1::RectF(kMargin, y, m_buttons[kMore].rect.left - 8.f, size.height), c.textDim);
+                DrawFooterBar(D2D1::RectF(0, size.height - kFooter, size.width, size.height), summary, m_buttons[kMore].rect.left);
                 m_buttons[kMerge].text = m_edit && m_items.size() == 1 ? L"Save" : L"Merge";
                 m_buttons[kMerge].enabled = m_items.size() >= MinFiles() && (!m_hasPlan || total > 0);
                 DrawButtons();

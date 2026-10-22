@@ -1129,7 +1129,7 @@ namespace sd::photo
         Control photo = draw;
         photo.id = "pictureSignature";
         photo.label = L"From a photo…";
-        photo.icon = 0xEB9F;   // Photo
+        photo.icon = 0xE898;   // Upload: an up arrow
         out.push_back(photo);
         Control signNote;
         signNote.kind = ControlKind::Note;

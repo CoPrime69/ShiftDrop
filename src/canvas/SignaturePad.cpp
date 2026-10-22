@@ -108,7 +108,7 @@ namespace sd::canvas
             // ---- Layout -----------------------------------------------------------------------------
             D2D1_RECT_F Card(D2D1_SIZE_F size) const { return D2D1::RectF(kPad, 96, size.width - kPad, size.height - 112); }
             // Draw and From a photo: a segmented choice (its track, then the two options; Layout).
-            D2D1_RECT_F Tab(int i) const { return m_tabs[static_cast<size_t>(i) + 1]; }
+            D2D1_RECT_F Tab(int i) const { return m_tabs[static_cast<size_t>(i)]; }
             D2D1_RECT_F ToolRow(D2D1_SIZE_F size) const { return D2D1::RectF(kPad, size.height - 100, size.width - kPad, size.height - 100 + kRow); }
             D2D1_RECT_F ClearButton(D2D1_SIZE_F size) const
             {
@@ -162,9 +162,8 @@ namespace sd::canvas
                     m_buttons[1].enabled = HasInk() && !m_saving;
                 DrawText(L"Add a signature", TextFormat(chrome::kPanelTitle, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kPad, 14, size.width - kPad, 40), c.text);
                 const wchar_t* tabs[] = { L"Draw", L"From a photo" };
-                DrawSegmentTrack(m_tabs[0]);
                 for (int i = 0; i < 2; ++i)
-                    DrawSegment(Tab(i), tabs[i], m_picture == (i == 1), { true, m_hot == 10 + i, false, false });
+                    DrawSegment(Tab(i), tabs[i], m_picture == (i == 1), i == 0 ? Part::First : Part::Last, { true, m_hot == 10 + i, false, false });
                 DrawText(L"Stays on this PC", TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
                          D2D1::RectF(size.width - 220, 52, size.width - kPad, 80), c.textDim);
 
@@ -256,7 +255,7 @@ namespace sd::canvas
                     DrawText(text, TextFormat(13.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
                              D2D1::RectF(card.left + 16, card.top + 16, card.right - 16, (card.top + card.bottom) / 2 - 4), Theme().paperText);
                     if (!m_loading)
-                        DrawButton(ChooseButton(card), L"Choose a picture…", 0xEB9F, true, { true, m_hot == 5, false, false });   // Photo
+                        DrawButton(ChooseButton(card), L"Choose a picture…", 0xE898, true, { true, m_hot == 5, false, false });   // Upload: an up arrow
                     return;
                 }
                 if (!m_bitmap || m_bitmapGeneration != DeviceGeneration() || m_bitmapOf != shown.get())
@@ -570,7 +569,7 @@ namespace sd::canvas
             unsigned m_bitmapGeneration = 0;
             const Raster* m_bitmapOf = nullptr;
             int m_hot = -1;
-            D2D1_RECT_F m_tabs[3]{};
+            D2D1_RECT_F m_tabs[2]{};
         };
     }
 

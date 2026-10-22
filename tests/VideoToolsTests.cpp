@@ -668,6 +668,11 @@ TEST(VideoTools, SlicesOnTheToolsWheelForVideosOnly)
         EditorTool back{};
         EXPECT_TRUE(ToolForAction(ToolAction(tool), back));
         EXPECT_EQ(back, tool);
+        // Its tab shows the wheel's icon for the same action.
+        EXPECT_NE(ToolIcon(tool), 0) << ToolAction(tool);
+        for (const auto& r : recipes.store.All())
+            if (r.icon && !r.steps.empty() && r.steps[0].action == ToolAction(tool))
+                EXPECT_EQ(static_cast<int>(ToolIcon(tool)), static_cast<int>(r.icon)) << r.id;
     }
     EXPECT_FALSE(ToolRecipe(EditorTool::TrimAudio).is_object());
     const auto* engine = runner.EngineFor(recipes.Get("video-trim"));

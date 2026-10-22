@@ -20,14 +20,6 @@ namespace sd::chrome
 
     float TabWidth(float labelWidth) { return std::max(kTabMinWidth, std::ceil(labelWidth) + 2 * kTabPadX); }
 
-    float ChipWidth(float textWidth, bool chosen)
-    {
-        // A chosen chip's left padding is shorter: the check mark sits in it (the kit's 10 + 12 + 6).
-        return std::ceil(textWidth) + 2 * kChipPadX + (chosen ? kChipCheck - 4.f : 0.f);
-    }
-
-    float SegmentWidth(float textWidth) { return std::ceil(textWidth) + 2 * kSegmentPadX; }
-
     std::vector<D2D1_RECT_F> Flow(const std::vector<float>& widths, float left, float right, float top, float height, float gap, float rowGap)
     {
         std::vector<D2D1_RECT_F> out;
@@ -50,19 +42,20 @@ namespace sd::chrome
     {
         if (textWidths.empty())
             return {};
-        float total = 2 * kSegmentInset + kSegmentGap * static_cast<float>(textWidths.size() - 1);
+        const float n = static_cast<float>(textWidths.size());
+        float texts = 0;
         for (const float w : textWidths)
-            total += SegmentWidth(w);
-        if (total > maxWidth + 0.5f)
+            texts += std::ceil(w);
+        const float pad = std::min(kSegmentPadX, std::floor((maxWidth - texts) / (2 * n)));
+        if (pad < kSegmentMinPadX)
             return {};
         std::vector<D2D1_RECT_F> out;
-        out.push_back(D2D1::RectF(left, top, left + total, top + kSegmentHeight));
-        float x = left + kSegmentInset;
+        float x = left;
         for (const float w : textWidths)
         {
-            const float sw = SegmentWidth(w);
-            out.push_back(D2D1::RectF(x, top + kSegmentInset, x + sw, top + kSegmentHeight - kSegmentInset));
-            x += sw + kSegmentGap;
+            const float sw = std::ceil(w) + 2 * pad;
+            out.push_back(D2D1::RectF(x, top, x + sw, top + kSegmentHeight));
+            x += sw;
         }
         return out;
     }

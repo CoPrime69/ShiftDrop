@@ -373,7 +373,7 @@ namespace sd::canvas
                 if (!Hwnd() || m_files.empty())
                     return;
                 const auto name = FileName(m_files[m_index]);
-                SetWindowTextW(Hwnd(), (name + L" · " + m_tool->Title()).c_str());
+                SetWindowTextW(Hwnd(), (name + L" · Picture editor").c_str());   // the tool is on its tab
             }
 
             // The picture's size in tool coordinates (after the tool's quarter turns).
@@ -519,7 +519,7 @@ namespace sd::canvas
                     text = FileName(m_files[0]);
                 DrawText(text, TextFormat(12.5f), m_barText, c.textDim);
                 DrawToolBarDivider(m_barDivider);
-                DrawDropField(m_zoomField, chrome::ZoomLabel(m_view.Zoom(), m_view.IsFit()), m_drop.id == kZoomDrop,
+                DrawDropDown(m_zoomField, chrome::ZoomLabel(m_view.Zoom(), m_view.IsFit()), m_drop.id == kZoomDrop,
                               { m_full != nullptr, In(m_zoomField, m_mouse), false, false });
                 (void)rt;
             }
@@ -720,7 +720,7 @@ namespace sd::canvas
                 size_t control = 0;
                 D2D1_RECT_F rect{};
                 std::vector<D2D1_RECT_F> parts;   // chips, swatches, a slider's track
-                D2D1_RECT_F track{};              // a segmented choice's track
+                bool segmented = false;           // a choice's options are segments (their track around them), not chips
             };
 
             float TextHeight(const std::wstring& text, float width, float sizeDip)
@@ -801,24 +801,20 @@ namespace sd::canvas
                         {
                             for (const auto& option : c.options)
                                 widths.push_back(TextWidth(option, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD));
-                            // One segmented control when it fits (its track is the item's rectangle), else chips.
-                            if (auto segments = c.chips ? std::vector<D2D1_RECT_F>{} : chrome::Segments(widths, left, y, width); !segments.empty())
-                            {
-                                item.track = segments.front();
-                                item.parts.assign(segments.begin() + 1, segments.end());
-                            }
-                            else
+                            // One segmented control when it fits, else chips.
+                            if (!c.chips)
+                                item.parts = chrome::Segments(widths, left, y, width);
+                            item.segmented = !item.parts.empty();
+                            if (!item.segmented)
                             {
                                 for (size_t k = 0; k < widths.size(); ++k)
-                                    widths[k] = std::min(width, chrome::ChipWidth(widths[k], static_cast<int>(k) == c.selected));
+                                    widths[k] = std::min(width, ChipWidth(c.options[k]));
                                 item.parts = chrome::Flow(widths, left, right, y, kRow, 6, 6);
                             }
                         }
                         float bottom = y;
                         for (const auto& part : item.parts)
                             bottom = std::max(bottom, part.bottom);
-                        if (item.track.bottom > item.track.top)
-                            bottom = std::max(bottom, item.track.bottom);
                         item.rect = D2D1::RectF(left, y, right, bottom);
                         y = bottom + kGap;
                         break;
@@ -956,26 +952,23 @@ namespace sd::canvas
                 case ControlKind::Toggle:
                 {
                     DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 84, item.rect.bottom), ink);
-                    const float cy = (item.rect.top + item.rect.bottom) / 2;
-                    DrawText(c.on ? L"On" : L"Off", TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
-                             D2D1::RectF(item.rect.right - 84, item.rect.top, item.rect.right - 52, item.rect.bottom), ink);
-                    DrawSwitch(D2D1::RectF(item.rect.right - 40, cy - 10, item.rect.right, cy + 10), c.on, state);
+                    DrawToggle(D2D1::RectF(item.rect.right - 84, item.rect.top, item.rect.right, item.rect.bottom), c.on, state);
                     break;
                 }
                 case ControlKind::Choice:
                 {
                     const bool tiles = c.icons.size() == c.options.size() && !c.icons.empty();
-                    const bool segmented = item.track.bottom > item.track.top;
-                    if (segmented)
-                        DrawSegmentTrack(item.track);
-                    for (size_t i = 0; i < item.parts.size() && i < c.options.size(); ++i)
+                    const bool segmented = item.segmented;
+                    const size_t n = std::min(item.parts.size(), c.options.size());
+                    for (size_t i = 0; i < n; ++i)
                     {
                         const bool chosen = static_cast<int>(i) == c.selected;
                         const ControlState part{ c.enabled, hot && m_hotPart == static_cast<int>(i), false, false };
                         if (tiles)
                             DrawToolTile(item.parts[i], c.icons[i], c.options[i], chosen, part);
                         else if (segmented)
-                            DrawSegment(item.parts[i], c.options[i], chosen, part);
+                            DrawSegment(item.parts[i], c.options[i], chosen,
+                                        n == 1 ? Part::Only : i == 0 ? Part::First : i + 1 == n ? Part::Last : Part::Middle, part);
                         else
                             DrawChip(item.parts[i], c.options[i], chosen, part);
                     }
@@ -1030,8 +1023,8 @@ namespace sd::canvas
                 case ControlKind::Dropdown:
                 {
                     const bool open = m_drop.id == c.id;
-                    DrawField(item.rect, open, false, state);
-                    float x = item.rect.left + 10;
+                    DrawDropDown(item.rect, L"", open, state);   // the box and its chevron; the text is drawn here
+                    float x = item.rect.left + 12;
                     if (!c.label.empty())
                     {
                         const float w = TextWidth(c.label, 12.f) + 10;
@@ -1041,8 +1034,6 @@ namespace sd::canvas
                     const std::wstring value = c.selected >= 0 && c.selected < static_cast<int>(c.options.size()) ? c.options[c.selected] : c.text;
                     DrawText(value, c.fonts ? FontFormat(value) : TextFormat(kControlText), D2D1::RectF(x, item.rect.top, item.rect.right - 28, item.rect.bottom),
                              ink);
-                    DrawText(std::wstring(1, open ? wchar_t(0xE70E) : wchar_t(0xE70D)), IconFormat(10.f),
-                             D2D1::RectF(item.rect.right - 26, item.rect.top, item.rect.right - 8, item.rect.bottom), dim);   // ChevronUp / Down
                     break;
                 }
                 case ControlKind::Icons:

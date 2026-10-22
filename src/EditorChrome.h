@@ -25,8 +25,9 @@ namespace sd::chrome
     inline constexpr float kToolBarButton = 34.f;   // undo and redo
     inline constexpr float kZoomFieldWidth = 90.f;
     inline constexpr float kTabMinWidth = 56.f, kTabPadX = 12.f, kTabHeight = 50.f;
-    inline constexpr float kChipPadX = 14.f, kChipCheck = 18.f;   // a chosen chip's check mark and the gap after it
-    inline constexpr float kSegmentPadX = 14.f, kSegmentInset = 3.f, kSegmentGap = 2.f, kSegmentHeight = 33.f;
+    // A segmented choice's options (the kit's DrawSegment): text with 16 either side (ControlKit's
+    // SegmentWidth), down to 8 where the panel is narrow.
+    inline constexpr float kSegmentPadX = 16.f, kSegmentMinPadX = 8.f, kSegmentHeight = 32.f;
 
     struct FrameRects
     {
@@ -36,17 +37,16 @@ namespace sd::chrome
     // whole width (an editor without options, such as the "Checking..." step).
     FrameRects LayoutFrame(float width, float height, bool panel = true);
 
-    // A tool tab around a label `labelWidth` wide.
+    // A tool tab (icon over name) around a label `labelWidth` wide.
     float TabWidth(float labelWidth);
-    // A chip around its text; a chosen one also holds a check mark.
-    float ChipWidth(float textWidth, bool chosen);
-    float SegmentWidth(float textWidth);
 
     // Items of `widths` left to right from (left, top), `gap` apart, onto a new row `rowGap` lower when
     // one would pass `right` (an item wider than the row gets a row of its own, clipped to it).
     std::vector<D2D1_RECT_F> Flow(const std::vector<float>& widths, float left, float right, float top, float height, float gap, float rowGap);
-    // Options of a segmented choice side by side in one track at (left, top): the track, then one
-    // rectangle for each option. Empty when they don't fit in `maxWidth` (the caller shows chips).
+    // Options of a segmented choice side by side from (left, top), touching (each draws its part of the
+    // track: ControlKit::DrawSegment), one rectangle for each option of text `textWidths` wide. Their
+    // padding shrinks to fit `maxWidth`; empty when even the least padding doesn't fit (the caller
+    // shows chips).
     std::vector<D2D1_RECT_F> Segments(const std::vector<float>& textWidths, float left, float top, float maxWidth);
 
     // The tool bar's right-hand group, from the right edge in: the zoom field (when `zoom`), a divider,

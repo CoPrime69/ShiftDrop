@@ -150,6 +150,7 @@ namespace sd::mediatools
 
         void DropBitmaps();                 // made on a device that is gone
         void PaintHeader(ui::Painter& p);
+        std::wstring WindowTitle() const;   // "demo-cut.mov · Video editor"
         void PaintStage(ui::Painter& p);
         void PaintCropOverlay(ui::Painter& p, const PreviewMap& map);
         void PaintAreas(ui::Painter& p, const PreviewMap& map);
