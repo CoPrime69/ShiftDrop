@@ -105,6 +105,56 @@ namespace sd::pdf
             return sum;
         }
 
+        // A TrueType file from its tables: the directory (sorted by tag, as it must be), every
+        // table's checksum and head's checkSumAdjustment.
+        std::string Sfnt(std::map<uint32_t, std::string> tables)
+        {
+            const uint16_t count = static_cast<uint16_t>(tables.size());
+            uint16_t power = 1, selector = 0;
+            while (power * 2 <= count)
+            {
+                power *= 2;
+                ++selector;
+            }
+            std::string sfnt;
+            Put32(sfnt, 0x00010000);
+            Put16(sfnt, count);
+            Put16(sfnt, uint16_t(power * 16));
+            Put16(sfnt, selector);
+            Put16(sfnt, uint16_t(count * 16 - power * 16));
+            size_t offset = 12 + size_t(count) * 16, headAt = 0;
+            std::string body;
+            for (const auto& [tag, data] : tables)
+            {
+                Put32(sfnt, tag);
+                Put32(sfnt, Checksum(data));
+                Put32(sfnt, uint32_t(offset + body.size()));
+                Put32(sfnt, uint32_t(data.size()));
+                if (tag == Tag("head"))
+                    headAt = offset + body.size();
+                body += data;
+                while (body.size() % 4)
+                    body.push_back('\0');
+            }
+            std::string out = sfnt + body;
+            if (headAt)
+                Set32(out, headAt + 8, 0xB1B0AFBAu - Checksum(out));
+            return out;
+        }
+
+        // A cmap that maps nothing (a PDF picks the glyphs by number): one format 4 subtable for
+        // Windows Unicode holding only the closing segment.
+        std::string EmptyCmap()
+        {
+            std::string cmap;
+            for (const uint16_t v : { 0, 1, 3, 1 })
+                Put16(cmap, v);
+            Put32(cmap, 12);
+            for (const uint16_t v : { 4, 24, 0, 2, 2, 0, 0, 0xFFFF, 0, 0xFFFF, 1, 0 })
+                Put16(cmap, uint16_t(v));
+            return cmap;
+        }
+
         // The PostScript name (name ID 6), if the font has one.
         std::string PostScriptName(std::string_view table)
         {
@@ -265,14 +315,7 @@ namespace sd::pdf
         Set16(newMaxp, 4, n);
 
         // A cmap that maps nothing (the PDF picks glyphs by number) and a post table without names.
-        std::string cmap;
-        Put16(cmap, 0);
-        Put16(cmap, 1);
-        Put16(cmap, 3);
-        Put16(cmap, 1);
-        Put32(cmap, 12);
-        for (const uint16_t v : { 4, 24, 0, 2, 2, 0, 0, 0xFFFF, 0, 0xFFFF, 1, 0 })
-            Put16(cmap, uint16_t(v));
+        const std::string cmap = EmptyCmap();
         std::string post(font.Table(Tag("post")).substr(0, 32));
         post.resize(32, '\0');
         Set32(post, 0, 0x00030000);
@@ -286,35 +329,7 @@ namespace sd::pdf
             if (const auto t = font.Table(tag); !t.empty())
                 tables[tag] = std::string(t);
 
-        const uint16_t count = static_cast<uint16_t>(tables.size());
-        uint16_t power = 1, selector = 0;
-        while (power * 2 <= count)
-        {
-            power *= 2;
-            ++selector;
-        }
-        std::string sfnt;
-        Put32(sfnt, 0x00010000);
-        Put16(sfnt, count);
-        Put16(sfnt, uint16_t(power * 16));
-        Put16(sfnt, selector);
-        Put16(sfnt, uint16_t(count * 16 - power * 16));
-        size_t offset = 12 + size_t(count) * 16, headAt = 0;
-        std::string body;
-        for (const auto& [tag, data] : tables)   // sorted by tag, as the directory must be
-        {
-            Put32(sfnt, tag);
-            Put32(sfnt, Checksum(data));
-            Put32(sfnt, uint32_t(offset + body.size()));
-            Put32(sfnt, uint32_t(data.size()));
-            if (tag == Tag("head"))
-                headAt = offset + body.size();
-            body += data;
-            while (body.size() % 4)
-                body.push_back('\0');
-        }
-        out.data = sfnt + body;
-        Set32(out.data, headAt + 8, 0xB1B0AFBAu - Checksum(out.data));
+        out.data = Sfnt(std::move(tables));
 
         out.unitsPerEm = std::max<uint16_t>(16, head.U16(18));
         out.xMin = head.I16(36);
@@ -330,5 +345,89 @@ namespace sd::pdf
         out.fixedPitch = postIn.U32(12) != 0;
         out.postScriptName = PostScriptName(font.Table(Tag("name")));
         return true;
+    }
+
+    std::string GlyphlessTrueType()
+    {
+        // Glyph 0 (.notdef) is a plain box so the font has outlines a checker can read; glyph 1 has
+        // none. Both advance half an em; the em is 1000 units, one PDF text-space unit each.
+        std::string glyf;
+        for (const int16_t v : { 1, 50, 0, 450, 1000, 3, 0 })   // one contour, bbox, last point, no instructions
+            Put16(glyf, uint16_t(v));
+        for (int i = 0; i < 4; ++i)
+            glyf.push_back('\x01');   // on-curve points, full 16-bit coordinate steps
+        for (const int16_t v : { 50, 0, 400, 0, 0, 1000, 0, -1000 })   // x steps, then y steps: clockwise
+            Put16(glyf, uint16_t(v));
+        while (glyf.size() % 4)
+            glyf.push_back('\0');
+        std::string loca;
+        for (const uint32_t v : { 0u, uint32_t(glyf.size()), uint32_t(glyf.size()) })
+            Put32(loca, v);
+        std::string hmtx;
+        for (const uint16_t v : { 500, 50, 500, 0 })
+            Put16(hmtx, v);
+
+        std::string head;
+        for (const uint32_t v : { 0x00010000u, 0x00010000u, 0u, 0x5F0F3CF5u })   // version, revision, adjustment, magic
+            Put32(head, v);
+        Put16(head, 0x000B);   // baseline and left sidebearing at 0, integer scaling
+        Put16(head, 1000);     // unitsPerEm
+        for (int i = 0; i < 2; ++i)
+        {
+            Put32(head, 0);    // created, then modified: 2026-01-01, in seconds since 1904
+            Put32(head, 3850070400u);
+        }
+        for (const int16_t v : { 0, 0, 500, 1000, 0, 8, 2, 1, 0 })   // bbox, macStyle, lowestRecPPEM, direction, long loca, format
+            Put16(head, uint16_t(v));
+
+        std::string hhea;
+        Put32(hhea, 0x00010000);
+        for (const int16_t v : { 1000, 0, 0, 500, 50, 50, 450, 1, 0, 0, 0, 0, 0, 0, 0, 2 })
+            Put16(hhea, uint16_t(v));   // ascender .. caret, reserved, metric format, numberOfHMetrics
+
+        std::string maxp;
+        Put32(maxp, 0x00010000);
+        for (const uint16_t v : { 2, 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0 })
+            Put16(maxp, v);   // numGlyphs, maxPoints, maxContours, ..., maxZones, the rest unused
+
+        std::string os2;
+        for (const int16_t v : { 4, 500, 400, 5, 0, 650, 700, 0, 140, 650, 700, 0, 480, 50, 300, 0 })
+            Put16(os2, uint16_t(v));   // version 4, widths, weight, installable, sub/superscript, strikeout, class
+        os2.append(10, '\0');          // PANOSE: any
+        for (int i = 0; i < 4; ++i)
+            Put32(os2, 0);             // Unicode ranges: none claimed
+        os2 += "NONE";
+        for (const uint16_t v : { 0x0040, 0x0020, 0x0020, 1000, 0, 0, 1000, 0 })
+            Put16(os2, v);             // regular; first/last char; typo ascender, descender, gap; win ascent, descent
+        Put32(os2, 1);                 // code pages: Latin 1
+        Put32(os2, 0);
+        for (const uint16_t v : { 500, 1000, 0, 0x0020, 0 })
+            Put16(os2, v);             // x-height, cap height, default char, break char, context
+
+        // name: family, style, unique id, full name, version, PostScript name (Windows, US English).
+        const std::string_view names[] = { "SDGlyphless", "Regular", "SDGlyphless-1", "SDGlyphless", "Version 1.0", "SDGlyphless" };
+        std::string name, strings;
+        Put16(name, 0);
+        Put16(name, uint16_t(std::size(names)));
+        Put16(name, uint16_t(6 + std::size(names) * 12));
+        for (size_t i = 0; i < std::size(names); ++i)
+        {
+            for (const uint16_t v : std::initializer_list<uint16_t>{ 3, 1, 0x0409, uint16_t(i + 1), uint16_t(names[i].size() * 2), uint16_t(strings.size()) })
+                Put16(name, v);
+            for (const char c : names[i])
+                Put16(strings, uint16_t(uint8_t(c)));
+        }
+        name += strings;
+
+        std::string post;
+        Put32(post, 0x00030000);   // version 3: no glyph names
+        Put32(post, 0);            // italic angle
+        Put16(post, uint16_t(int16_t(-100)));
+        Put16(post, 50);
+        for (int i = 0; i < 5; ++i)
+            Put32(post, 0);        // fixed pitch, memory hints
+
+        return Sfnt({ { Tag("OS/2"), os2 }, { Tag("cmap"), EmptyCmap() }, { Tag("glyf"), glyf }, { Tag("head"), head }, { Tag("hhea"), hhea },
+                      { Tag("hmtx"), hmtx }, { Tag("loca"), loca }, { Tag("maxp"), maxp }, { Tag("name"), name }, { Tag("post"), post } });
     }
 }

@@ -43,4 +43,9 @@ namespace sd::pdf
 
     // Glyph 0 (.notdef) is always kept, so new ids start at 1 for the first used glyph.
     bool SubsetTrueType(std::string_view file, uint32_t index, const std::vector<uint16_t>& used, FontSubset& out, std::wstring& error);
+
+    // A TrueType font with no visible glyphs, for text that is never painted (a searchable PDF's
+    // invisible OCR layer): .notdef and one blank glyph, both 500 of 1000 units wide. Small (under
+    // 1 KB) and complete, so PDF readers find the font they were told is embedded.
+    std::string GlyphlessTrueType();
 }

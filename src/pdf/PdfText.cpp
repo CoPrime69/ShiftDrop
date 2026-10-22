@@ -4,10 +4,12 @@
 #include "ocr/TextLayer.h"
 #include "pdf/PdfContent.h"
 #include "pdf/PdfDoc.h"
+#include "pdf/PdfWriter.h"
 
 #include <qpdf/QPDFPageDocumentHelper.hh>
 
 #include <cmath>
+#include <format>
 #include <set>
 
 namespace sd::pdf
@@ -160,43 +162,19 @@ namespace sd::pdf
     {
         if (m_font.isInitialized())
             return m_font;
-        using H = QPDFObjectHandle;
-        auto bbox = H::newArray({ H::newInteger(0), H::newInteger(0), H::newInteger(500), H::newInteger(1000) });
-        auto descriptor = m_pdf.makeIndirectObject(H::newDictionary({
-            { "/Type", H::newName("/FontDescriptor") },
-            { "/FontName", H::newName("/SDGlyphless") },
-            { "/Flags", H::newInteger(4) },
-            { "/FontBBox", bbox },
-            { "/ItalicAngle", H::newInteger(0) },
-            { "/Ascent", H::newInteger(1000) },
-            { "/Descent", H::newInteger(0) },
-            { "/CapHeight", H::newInteger(1000) },
-            { "/StemV", H::newInteger(80) },
-        }));
-        auto system = H::newDictionary({
-            { "/Registry", H::newString("Adobe") },
-            { "/Ordering", H::newString("Identity") },
-            { "/Supplement", H::newInteger(0) },
+        ocr::MakeGlyphlessFont([&](const std::string& dict, const std::string* data) {
+            auto parsed = QPDFObjectHandle::parse(&m_pdf, "<< " + dict + " >>");
+            if (data)
+            {
+                m_font = m_pdf.newStream(Deflate(*data));
+                parsed.replaceKey("/Filter", QPDFObjectHandle::newName("/FlateDecode"));
+                for (const auto& key : parsed.getKeys())
+                    m_font.getDict().replaceKey(key, parsed.getKey(key));
+            }
+            else
+                m_font = m_pdf.makeIndirectObject(parsed);
+            return std::format("{} {} R", m_font.getObjectID(), m_font.getGeneration());
         });
-        auto cid = m_pdf.makeIndirectObject(H::newDictionary({
-            { "/Type", H::newName("/Font") },
-            { "/Subtype", H::newName("/CIDFontType2") },
-            { "/BaseFont", H::newName("/SDGlyphless") },
-            { "/CIDSystemInfo", system },
-            { "/FontDescriptor", descriptor },
-            { "/DW", H::newInteger(500) },
-            { "/CIDToGIDMap", H::newName("/Identity") },
-        }));
-        // QPDFWriter deflates streams that have no filter.
-        auto toUnicode = m_pdf.newStream(ocr::IdentityToUnicodeCMap());
-        m_font = m_pdf.makeIndirectObject(H::newDictionary({
-            { "/Type", H::newName("/Font") },
-            { "/Subtype", H::newName("/Type0") },
-            { "/BaseFont", H::newName("/SDGlyphless") },
-            { "/Encoding", H::newName("/Identity-H") },
-            { "/DescendantFonts", H::newArray({ cid }) },
-            { "/ToUnicode", toUnicode },
-        }));
         return m_font;
     }
 

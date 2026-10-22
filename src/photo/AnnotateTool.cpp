@@ -235,7 +235,7 @@ namespace sd::photo
         return (m_dpi > 1 ? m_dpi : 200.0) / 72.0;
     }
 
-    double AnnotateTool::DefaultTextSize() const { return m_options.document ? 11 * PixelsPerUnit() : DefaultFont(m_width, m_height); }
+    double AnnotateTool::DefaultTextSize() const { return kDefaultTextSize * PixelsPerUnit(); }
 
     Annotation AnnotateTool::Style(Mark kind) const
     {
@@ -247,7 +247,7 @@ namespace sd::photo
                                                    : DefaultStroke(m_width, m_height);
         a.width = kind == Mark::Highlighter ? stroke * 5 : stroke;
         const double labels = m_options.document ? 14 * PixelsPerUnit() : DefaultFont(m_width, m_height);
-        a.fontSize = m_font > 0 ? m_font : kind == Mark::Text ? DefaultTextSize() : labels;
+        a.fontSize = m_font > 0 ? m_font : HasText(kind) ? DefaultTextSize() : labels;
         a.fill = m_fill && (kind == Mark::Rect || kind == Mark::Ellipse || kind == Mark::Text);
         a.zoom = m_zoom;
         a.radius = std::max(12.0, std::round(std::min(m_width, m_height) * 0.06));

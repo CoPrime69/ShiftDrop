@@ -1,6 +1,7 @@
 // Fill and sign: typing in a text box, its handles, the signatures kept on this PC, and marks
 // written into a PDF page as real content (text in a subset font, images, shapes).
 #include "FileIo.h"
+#include "PdfTestUtil.h"
 #include "TestUtil.h"
 #include "Utf.h"
 #include "canvas/Raster.h"
@@ -536,7 +537,8 @@ TEST(FillSign, ToolTypesStylesAndPlacesSignatures)
     const uint32_t id = tool.Editing();
     auto* m = tool.Marks().Find(id);
     ASSERT_NE(m, nullptr);
-    EXPECT_NEAR(m->fontSize, 11 * 200 / 72.0, 1e-6);   // 11 pt on a 200 dpi page
+    EXPECT_NEAR(m->fontSize, 32 * 200 / 72.0, 1e-6);   // 32 pt on a 200 dpi page
+    EXPECT_EQ(kDefaultTextSize, 32);
     EXPECT_EQ(m->color, 0x111111u);
     tool.Key(VK_BACK, false, false);
     tool.Char(L'e');
@@ -557,10 +559,10 @@ TEST(FillSign, ToolTypesStylesAndPlacesSignatures)
     EXPECT_TRUE(tool.Key('B', false, true).changed);
     EXPECT_GE(m->weight, 700);
     tool.Key(VK_OEM_6, false, true);   // Ctrl+]
-    EXPECT_NEAR(m->fontSize / (200 / 72.0), 12, 1e-6);
+    EXPECT_NEAR(m->fontSize / (200 / 72.0), 36, 1e-6);
     tool.Key(VK_OEM_4, false, true);
     tool.Key(VK_OEM_4, false, true);   // Ctrl+[ twice
-    EXPECT_NEAR(m->fontSize / (200 / 72.0), 10, 1e-6);
+    EXPECT_NEAR(m->fontSize / (200 / 72.0), 28, 1e-6);
     canvas::ControlEvent wrap{ "wrap" };
     wrap.on = true;
     EXPECT_TRUE(tool.OnControl(wrap).changed);
@@ -911,6 +913,11 @@ TEST(FillSign, TypedTextBecomesSearchableTextInThePdf)
     const std::wstring all = AllText(read);
     EXPECT_NE(all.find(L"Jane Doe"), std::wstring::npos) << Narrow(all);
     EXPECT_NE(all.find(L"Original"), std::wstring::npos) << Narrow(all);
+    // The subset font is complete for a PDF reader: embedded program, widths, descriptor, ToUnicode.
+    int fonts = 0;
+    const auto problems = sd::test::FontProblems(out, "SDFillF", fonts);
+    EXPECT_GE(fonts, 1);
+    EXPECT_TRUE(problems.empty()) << problems.front();
 }
 
 TEST(FillSign, SignedPagesKeepTheirPageAndOpenAgainWithTheirMarks)

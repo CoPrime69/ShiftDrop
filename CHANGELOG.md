@@ -23,6 +23,15 @@ until 1.0, a minor version may change behaviour.
 - The dragged item's picture (its icon or thumbnail and name) stays visible over the wheel again,
   still without a "+ Copy" badge.
 - "Hide cursor over the wheel" is gone: the pointer is never hidden.
+- The tray glyph and the app icon's small sizes (title bars, taskbar, Alt+Tab) show the tilted page
+  with the teal corner too, drawn for each size so they stay crisp at 16 px.
+- New text boxes in Fill and sign and Annotate start at 32 pt (32 px on photos).
+- Releases are unsigned for now; code signing will be added later.
+
+### Fixed
+
+- Searchable PDFs open in Adobe Acrobat without "Cannot find or create the font": the invisible text
+  layer now embeds a small font of its own. Text stays searchable and copies as before.
 
 ## [0.5.0] - 2026-10-21
 

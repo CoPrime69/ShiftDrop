@@ -1,6 +1,7 @@
 #pragma once
 #include "ocr/Ocr.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -10,7 +11,9 @@
 //
 // The font is a Type0 font with Identity-H encoding whose character codes are UTF-16 code units and
 // whose ToUnicode CMap maps every code to itself, so any language Windows OCR reads survives copy and
-// paste. It has no glyphs at all: the text is never painted, so there is nothing to embed.
+// paste. Its CIDFontType2 embeds a tiny TrueType program (pdf::GlyphlessTrueType) whose one blank
+// glyph every code is drawn with, so readers such as Acrobat find a real font and open the file
+// without complaint, though the text is never painted.
 namespace sd::ocr
 {
     struct PlacedWord
@@ -28,6 +31,15 @@ namespace sd::ocr
 
     // The ToUnicode CMap (stream data) for the font: <0000>..<FFFF> map to themselves, surrogates excepted.
     std::string IdentityToUnicodeCMap();
+
+    // The CIDToGIDMap (stream data): code 0 to glyph 0 (.notdef), every other code to glyph 1.
+    std::string GlyphlessCidToGidMap();
+
+    // Makes the font's objects with `make`, which writes one object and returns a reference to it
+    // ("12 0 R"): a dictionary when `data` is null, else a stream whose data `make` deflates. `dict`
+    // is the inside of the dictionary (no << >>, /Length or /Filter) and refers only to objects made
+    // before it. The last object made is the Type0 font to put in a page's /Font resources.
+    void MakeGlyphlessFont(const std::function<std::string(const std::string& dict, const std::string* data)>& make);
 
     // Hex for a Tj operand: UTF-16BE code units, characters outside the Basic Multilingual Plane
     // dropped (a lone surrogate cannot be mapped), plus a trailing space when asked.
