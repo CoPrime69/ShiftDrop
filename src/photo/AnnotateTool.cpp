@@ -25,12 +25,14 @@ namespace sd::photo
             Mode mode;
             const wchar_t* label;
             unsigned key;
+            wchar_t icon;   // its tile in the panel (Segoe Fluent Icons)
         };
         const ModeInfo kModes[] = {
-            { Mode::Select, L"Select", 'V' },  { Mode::Text, L"Text", 'T' },     { Mode::Date, L"Date", 'D' },          { Mode::Check, L"Tick", 'K' },
-            { Mode::Cross, L"Cross", 'X' },    { Mode::Arrow, L"Arrow", 'A' },   { Mode::Rect, L"Box", 'B' },           { Mode::Ellipse, L"Circle", 'O' },
-            { Mode::Callout, L"Callout", 'C' }, { Mode::Number, L"Number", 'N' }, { Mode::Magnifier, L"Magnifier", 'M' }, { Mode::Pen, L"Pen", 'P' },
-            { Mode::Highlighter, L"Highlighter", 'H' },
+            { Mode::Select, L"Select", 'V', 0xE7C9 },       { Mode::Text, L"Text", 'T', 0xE8D2 },          { Mode::Date, L"Date", 'D', 0xE787 },
+            { Mode::Check, L"Tick", 'K', 0xE73E },          { Mode::Cross, L"Cross", 'X', 0xE711 },        { Mode::Arrow, L"Arrow", 'A', 0xE72A },
+            { Mode::Rect, L"Box", 'B', 0xE739 },            { Mode::Ellipse, L"Circle", 'O', 0xEA3A },     { Mode::Callout, L"Callout", 'C', 0xE8BD },
+            { Mode::Number, L"Number", 'N', 0xE8FD },       { Mode::Magnifier, L"Magnifier", 'M', 0xE71E }, { Mode::Pen, L"Pen", 'P', 0xE76D },
+            { Mode::Highlighter, L"Highlighter", 'H', 0xE7E6 },
         };
 
         // Six colours and a custom chip fill the panel's row; a document's page starts with inks.
@@ -143,6 +145,8 @@ namespace sd::photo
             return L"Fill and sign";
         return m_options.document ? L"Annotate" : L"Annotate Photos";
     }
+
+    std::wstring AnnotateTool::ToolName() const { return m_options.sign ? L"Fill and sign" : L"Annotate"; }
 
     std::wstring AnnotateTool::TodayText()
     {
@@ -1090,6 +1094,7 @@ namespace sd::photo
         for (size_t i = 0; i < std::size(kModes); ++i)
         {
             modes.options.emplace_back(kModes[i].label);
+            modes.icons.push_back(kModes[i].icon);
             if (kModes[i].mode == m_mode)
                 modes.selected = static_cast<int>(i);
         }
@@ -1124,7 +1129,7 @@ namespace sd::photo
         Control photo = draw;
         photo.id = "pictureSignature";
         photo.label = L"From a photo…";
-        photo.icon = 0xEB9F;   // Photo
+        photo.icon = 0xE898;   // Upload: an up arrow
         out.push_back(photo);
         Control signNote;
         signNote.kind = ControlKind::Note;

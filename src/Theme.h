@@ -44,6 +44,10 @@ namespace sd::theme
         inline constexpr uint32_t kWarn = 0x8A5A00, kWarnOnDark = 0xF5C04A;
         inline constexpr uint32_t kError = 0xC02B2B, kErrorOnDark = 0xFF7A7A;
         inline constexpr uint32_t kInfo = 0x0067C0, kInfoOnDark = 0x60A5FA;
+        // The letters that tell PDFs apart in the page view and the Merge list (A, B, C...), white on
+        // the colour in both themes: Tide, purple and orange as the App Editors page shows them, then
+        // blue, pink, green, red and graphite.
+        inline constexpr uint32_t kFileTags[] = { 0x0B7A69, 0x7B3FC4, 0xB85000, 0x0067C0, 0xB4246F, 0x1D7F4A, 0xC02B2B, 0x4A4F5A };
     }
 
     D2D1_COLOR_F Rgb(uint32_t rgb, float alpha = 1.f);   // 0xRRGGBB
@@ -130,6 +134,9 @@ namespace sd::theme
         D2D1_COLOR_F danger, dangerSoft, onDanger, focus, shadow;
         D2D1_COLOR_F ok, warn, info;      // status text
         D2D1_COLOR_F paper, paperText, paperFaint, paperLine;   // a light card for dark ink, in both themes (Tokens)
+        // The kit's controls (App Editors page): a chip's outline and a slider's bar; an off switch's
+        // outline and knob; the line under a text field.
+        D2D1_COLOR_F chipLine, outline, fieldLine;
     };
     EditorPalette EditorColors();
     EditorPalette MakeEditorColors(bool dark, const accent::Variants& tones);

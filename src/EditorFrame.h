@@ -51,11 +51,32 @@ namespace sd
         static constexpr float kControlRadius = 4.f;
         static constexpr float kControlText = 13.f;   // the size of control labels
         static constexpr float kDisabledAlpha = 0.4f;
+
+        // ---- The editors' frame (App Editors page; sizes and layout maths in EditorChrome.h) ----------
+        // The tool bar's background, with a line under it.
+        void DrawToolBar(const D2D1_RECT_F& r);
+        // A tool's tab on the tool bar: its icon over its name, and while `selected` a tinted
+        // background, a semibold name and a short accent bar under it. Width: chrome::TabWidth.
+        void DrawToolTab(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool selected, ControlState s);
+        // The 1 DIP line between groups of the tool bar.
+        void DrawToolBarDivider(const D2D1_RECT_F& r);
+        // The options panel: a card with a line on its left and the tool's name at the top. Its rows
+        // start chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap below r.top.
+        void DrawSidePanel(const D2D1_RECT_F& r, std::wstring_view title);
+        // A small semibold heading over a group of the panel's controls ("Ratio", "Size").
+        void DrawSectionLabel(const D2D1_RECT_F& r, std::wstring_view text);
+        // The footer: a line over it, `status` on the left (what will be saved; from `textLeft`, or the
+        // footer's padding when negative, and ending in "..." before `textRight`). The window draws
+        // Cancel and Apply on its right.
+        void DrawFooterBar(const D2D1_RECT_F& r, std::wstring_view status, float textRight, float textLeft = -1.f);
+        // One option of a choice shown as tiles of an icon over a short name (Annotate's Arrow, Text...):
+        // tinted and outlined in the accent when `chosen`.
+        void DrawToolTile(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool chosen, ControlState s);
+
+        // ---- Every window's controls ----
         void DrawButton(const D2D1_RECT_F& r, std::wstring_view text, wchar_t icon, bool primary, ControlState s);
         // A glyph alone, filled only while hot, pressed or `on`.
         void DrawIconButton(const D2D1_RECT_F& r, wchar_t icon, bool on, ControlState s);
-        // One option of a segmented choice.
-        void DrawChoice(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s);
         // An on/off switch, `r` 40 x 20 DIPs.
         void DrawSwitch(const D2D1_RECT_F& r, bool on, ControlState s);
         // A slider's bar `track` (4 DIPs high), filled from `from` to `value` (both 0..1), and its thumb.
@@ -205,6 +226,7 @@ namespace sd
             D2D1_RECT_F rect{};        // DIPs, set by the subclass's layout
             std::function<void()> action;
             bool visible = true;       // hidden buttons are neither drawn nor clicked
+            bool flat = false;         // an icon alone with no box, like the tool bar's undo and redo (DrawIconButton)
         };
 
         // ---- For subclasses ----------------------------------------------------------------------

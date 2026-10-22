@@ -37,6 +37,7 @@ namespace sd::mediatools
     std::vector<EditorTool> SiblingTools(EditorTool tool);
     const wchar_t* ToolName(EditorTool tool);    // "Trim": its tool bar label
     const wchar_t* ToolTitle(EditorTool tool);   // "Trim Video": the window title
+    wchar_t ToolIcon(EditorTool tool);           // its tab's icon: the wheel's for the same action
     const char* ToolAction(EditorTool tool);     // "video.trim": the action that runs it
     bool ToolForAction(const std::string& action, EditorTool& tool);
 

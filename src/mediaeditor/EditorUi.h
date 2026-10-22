@@ -81,13 +81,17 @@ namespace sd::mediatools::ui
 
     struct Control
     {
-        enum class Kind { Button, Primary, Icon, Segment, Toggle, Field, Slider, Row };
+        // Tab: a tool's tab on the tool bar (glyph over text); Segment: an option of a segmented choice
+        // (`part` says which part of the track it draws); Chip: an option of a choice that wraps.
+        enum class Kind { Button, Primary, Icon, Segment, Toggle, Field, Slider, Row, Tab, Chip };
         int id = 0;              // stable across layouts (focus and hover follow it)
         Kind kind = Kind::Button;
         RectF rect;
         std::wstring text;       // label; a field's value; a row's main text
         std::wstring detail;     // a row's second text, a slider's value, a field's label
         const wchar_t* glyph = nullptr;
+        wchar_t icon = 0;        // a tab's icon
+        int part = 0;            // a segment's place: alone, first, middle, last (ControlKit::Part)
         bool on = false;         // chosen segment, toggle on, selected row
         bool enabled = true;
         double value = 0;        // slider position 0..1

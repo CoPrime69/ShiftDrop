@@ -12,6 +12,7 @@
 #include "UiThread.h"
 #include "Utf.h"
 #include "canvas/Editor.h"
+#include "EditorChrome.h"
 #include "EditorFrame.h"
 #include "pdf/OrganizeWindow.h"
 #include "pdf/PageEdits.h"
@@ -45,13 +46,11 @@ namespace sd::pdf
         constexpr UINT kAdded = WM_APP + 7;        // lParam: Added*, ours to delete
 
         // DIPs
-        constexpr float kMargin = 16.f, kToolbar = 56.f, kHint = 22.f, kFooter = 64.f;
+        constexpr float kMargin = 16.f, kToolbar = 56.f, kHint = 22.f, kFooter = chrome::kFooterHeight;
         constexpr float kCellW = 164.f, kCellH = 204.f, kThumbBox = 136.f;
         constexpr float kButtonW = 104.f, kButtonH = 32.f, kNavH = 44.f, kCaptionH = 30.f, kAddFilesW = 112.f;
         constexpr size_t kMaxBitmaps = 240;   // device bitmaps kept beyond the ones on screen
 
-        // Tag colours for the files, told apart in light and dark themes.
-        constexpr uint32_t kTagColors[] = { 0x0078D4, 0xC239B3, 0x10893E, 0xCA5010, 0x8764B8, 0x038387, 0xD13438, 0x986F0B };
 
         enum MenuId : UINT
         {
@@ -205,9 +204,9 @@ namespace sd::pdf
                 // In ButtonId order.
                 button(L"Rotate left", 0, false, [this] { Rotate(-90); });
                 button(L"Rotate right", 0, false, [this] { Rotate(90); });
-                button(L"Duplicate", 0, false, [this] { Duplicate(); });
-                button(L"Delete", 0, false, [this] { Remove(); });
-                button(L"Undo", 0, false, [this] { Undo(); });
+                button(L"Duplicate", 0xE8C8, false, [this] { Duplicate(); });   // Copy
+                button(L"Delete", 0xE74D, false, [this] { Remove(); });         // Delete
+                button(L"Undo", 0xE7A7, false, [this] { Undo(); });             // Undo
                 button(L"Edit page", 0xE70F, false, [this] { ShowEditMenu(); });
                 button(L"Revert", 0, false, [this] { Revert(); });
                 button(L"Previous", 0, false, [this] { Step(-1); });
@@ -638,7 +637,7 @@ namespace sd::pdf
                 for (auto& b : m_buttons)
                     b.visible = true;
                 // The toolbar: page edits on the left; in Merge and Edit the editors above the preview.
-                const float widths[] = { 104.f, 112.f, 96.f, 84.f, 76.f };
+                const float widths[] = { 104.f, 112.f, 118.f, 96.f, 88.f };
                 float x = kMargin;
                 const float ty = (kToolbar - kButtonH) / 2.f;
                 for (int i = kRotateLeft; i <= kUndo; ++i)
@@ -806,8 +805,8 @@ namespace sd::pdf
             void DrawTag(ID2D1RenderTarget* rt, uint32_t file, const D2D1_RECT_F& tag)
             {
                 if (auto* b = Brush(FileTagColor(file)))
-                    rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 3.f, 3.f), b);
-                DrawText(FileTagLetter(file), TextFormat(10.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
+                    rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 4.f, 4.f), b);
+                DrawText(FileTagLetter(file), TextFormat(10.5f, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
             }
 
             void DrawCell(ID2D1RenderTarget* rt, size_t i, const D2D1_RECT_F& cell)
@@ -870,7 +869,8 @@ namespace sd::pdf
             void PaintGrid(ID2D1RenderTarget* rt)
             {
                 const auto& c = Theme();
-                if (auto* b = Brush(c.panel))
+                // White pages on the picture's well (the kit's page view).
+                if (auto* b = Brush(c.stage))
                     rt->FillRoundedRectangle(D2D1::RoundedRect(m_grid, 6.f, 6.f), b);
                 rt->PushAxisAlignedClip(m_grid, D2D1_ANTIALIAS_MODE_ALIASED);
                 // Only the rows on screen are drawn: a 1,000-page plan paints as fast as a short one.
@@ -988,6 +988,7 @@ namespace sd::pdf
             {
                 ++m_paint;
                 const auto& c = Theme();
+                DrawToolBar(D2D1::RectF(0, 0, size.width, kToolbar));
                 if (GridShown())
                     PaintGrid(rt);
                 if (!Organizing())
@@ -1026,8 +1027,8 @@ namespace sd::pdf
                 if (!m_status.empty())
                     status = m_status;
                 const float left = m_buttons[kBack].visible ? m_buttons[kBack].rect.left : m_buttons[kCancel].rect.left;
-                const float statusLeft = m_buttons[kAddFiles].visible ? m_buttons[kAddFiles].rect.right + 12.f : kMargin;
-                DrawText(status, TextFormat(12.f), D2D1::RectF(statusLeft, size.height - kFooter, left - 8.f, size.height), c.textDim);
+                const float statusLeft = m_buttons[kAddFiles].visible ? m_buttons[kAddFiles].rect.right + 12.f : -1.f;
+                DrawFooterBar(D2D1::RectF(0, size.height - kFooter, size.width, size.height), status, left, statusLeft);
 
                 const bool any = m_loaded && !m_plan.empty() && !Busy();
                 for (int i = kRotateLeft; i <= kDelete; ++i)
@@ -1688,8 +1689,7 @@ namespace sd::pdf
 
     D2D1_COLOR_F FileTagColor(uint32_t file)
     {
-        const uint32_t rgb = kTagColors[file % std::size(kTagColors)];
-        return D2D1::ColorF(((rgb >> 16) & 0xFF) / 255.f, ((rgb >> 8) & 0xFF) / 255.f, (rgb & 0xFF) / 255.f, 1.f);
+        return theme::Rgb(theme::brand::kFileTags[file % std::size(theme::brand::kFileTags)]);
     }
 
     std::wstring FileTagLetter(uint32_t file)

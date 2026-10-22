@@ -25,7 +25,7 @@ namespace sd::mediatools::ui
             { 13.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Body
             { 13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // BodyStrong
             { 12.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Small
-            { 11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // Caption
+            { 12.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, false },   // Caption: a section's label (the kit's)
             { 16.f, DWRITE_FONT_WEIGHT_NORMAL, true },       // Icon
             { 12.f, DWRITE_FONT_WEIGHT_NORMAL, true },       // IconSmall
             { 13.f, DWRITE_FONT_WEIGHT_NORMAL, false },      // Number

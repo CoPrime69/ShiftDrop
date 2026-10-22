@@ -233,7 +233,7 @@ namespace sd
                 const auto& c = kit.Theme();
                 const float bar = Dip(m_barTop);
                 kit.FillRound(D2D1::RectF(client.left, client.top, client.right, bar), c.panel, 0.f);
-                kit.FillRound(D2D1::RectF(client.left, bar, client.right, bar + 1.f), c.line, 0.f);
+                kit.DrawFooterBar(D2D1::RectF(client.left, bar, client.right, client.bottom), L"", client.left);
                 if (m_optionBox.right > m_optionBox.left)
                     kit.StrokeRound(DipRect(m_optionBox), c.line, 1.f, ControlKit::kCardRadius);
             }

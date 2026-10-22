@@ -96,8 +96,10 @@ namespace sd::canvas
         bool half = false;          // half the panel's width: two in a row (W and H fields)
         bool custom = false;        // Swatches: the last chip opens a colour picker
         bool fonts = false;         // Dropdown: the options are font families
+        bool chips = false;         // Choice: round chips that wrap onto more rows (ratios, presets) instead
+                                    // of one segmented control (which falls back to chips when it doesn't fit)
         std::vector<std::wstring> options;
-        std::vector<wchar_t> icons;          // Icons
+        std::vector<wchar_t> icons;          // Icons; Choice: one for each option, shown as tiles of an icon over its name
         std::vector<bool> flags;             // Icons: pressed
         std::vector<std::wstring> pictures;  // Pictures: the files
         std::vector<Color> swatches;
@@ -231,6 +233,10 @@ namespace sd::canvas
         virtual void Attach(ICanvasHost* host) { m_host = host; }
 
         virtual std::wstring Title() const = 0;                         // "Crop", in the title bar
+        // The tool's tab on the tool bar and the options panel's title: its full name without the
+        // action's verb ("Background" for Add a Background), and its icon (the wheel's).
+        virtual std::wstring ToolName() const { return Title(); }
+        virtual wchar_t Icon() const { return 0; }
         virtual std::wstring ApplyLabel() const { return L"Apply"; }
         // Tools that edit every file on its own (Redact) get a file switcher; the others edit the
         // first file and their params apply to all.
