@@ -1,14 +1,16 @@
 // The manifest is embedded by the linker (see CMakeLists.txt), not here, to avoid a duplicate RT_MANIFEST.
 #include <windows.h>
 #include "resource.h"
+#include "Version.h"   // generated from VERSION at build time
 
 IDI_APPICON ICON "ShiftDrop.ico"
 IDI_TRAY_DARK ICON "TrayDarkTaskbar.ico"
 IDI_TRAY_LIGHT ICON "TrayLightTaskbar.ico"
 
+// ProductVersion is what the app shows: "0.6.0" for the release build, "0.6.0+<commit>" for any other.
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,6,0,0
- PRODUCTVERSION 0,6,0,0
+ FILEVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
+ PRODUCTVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -21,11 +23,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "ShiftDrop"
             VALUE "FileDescription", "ShiftDrop - drag, press a key, drop to convert"
-            VALUE "FileVersion", "0.6.0.0"
+            VALUE "FileVersion", SD_VERSION_BASE_A
             VALUE "InternalName", "ShiftDrop"
             VALUE "OriginalFilename", "ShiftDrop.exe"
             VALUE "ProductName", "ShiftDrop"
-            VALUE "ProductVersion", "0.6.0.0"
+            VALUE "ProductVersion", SD_VERSION_A
         END
     END
     BLOCK "VarFileInfo"

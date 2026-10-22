@@ -87,7 +87,7 @@ folder:
 | `Settings`, `Features`, `SettingsPages`, `WheelContents`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, which page and card each setting is on (unit-tested), the Wheel page's chips over the Features store (unit-tested), the Settings window, start with Windows, the tray icon |
 | `DialogWindow`, `EditorFrame` | The one way every window is drawn: real child controls painted by the shared kit (cards, navigation, switches, segmented choices, chips, tabs, drop-downs, fields, sliders, list rows), with focus rings (keyboard only, from the window's UI state), per-monitor DPI, light and dark and the accent. Each control is drawn off screen over its part of the window's own surface (a cached bitmap of the cards and panels behind it) and copied in with GDI, edges on whole pixels |
 | `Ask`, `AskWindow`, `Secret.h` | Questions a running job asks the user (a password, print every row?), the window that asks them in the kit's look, and passwords that wipe themselves |
-| `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
+| `Log`, `Brand.h`, `AppVersion` (the version, from `VERSION`), `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
 | `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times |
 | `keyboard/` | Arrow keys and Enter on the wheel, the Explorer-selection hotkey, the right-click entry, wheel layout |
 | `preview/` | The predicted-output card |

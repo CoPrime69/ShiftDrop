@@ -5,6 +5,13 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- The version is written in one place (VERSION). The app, its file properties, the installer and the
+  release all take it from there, and CI fails if any of them disagree. Builds that aren't a release
+  show the commit they came from, such as 0.6.0+b950d51 in About and in the installer's name, so a
+  test build never looks like the release it follows.
+
 ## [0.6.0] - 2026-10-22
 
 ### Added
