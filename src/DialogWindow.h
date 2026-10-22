@@ -87,6 +87,21 @@ namespace sd
         virtual void OnNcDestroy() {}
         virtual LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam);
 
+        // Changes what the window shows (another page or tab, a card folded open) with its drawing
+        // held: `change` fills and lays out the new content (Layout()), then the window and every
+        // control are painted once, from the new content, so no frame in between ever shows: no
+        // control moved but not yet drawn, nothing of the page before. Calls nest; only the outermost
+        // paints. While the window is hidden it only calls `change`.
+        void Rebuild(const std::function<void()>& change);
+        // In Layout() while ScrollTo() scrolls: the column's pixels and its controls have moved already
+        // (ScrollWindowEx), so Layout() only updates where things are and invalidates nothing itself.
+        bool Scrolling() const { return m_scrolling; }
+        // In Layout(): shows the controls of `all` that are in `placed` and hides the others, so Tab and
+        // screen readers skip what the page doesn't show. It goes by each control's own WS_VISIBLE:
+        // IsWindowVisible() says no for every control while the window is hidden or its drawing is held,
+        // which left the controls of the tab before on top of the new ones.
+        static void ShowOnly(std::span<const HWND> all, std::span<const HWND> placed);
+
         // A child control (WS_CHILD | WS_VISIBLE | `style`), placed by Layout() later.
         HWND Control(const wchar_t* windowClass, const wchar_t* text, DWORD style, int id = 0, DWORD exStyle = 0) const;
         int Px(int dip) const { return MulDiv(dip, static_cast<int>(m_dpi), 96); }
@@ -164,6 +179,7 @@ namespace sd
             Small,     // 11.5 in the faint colour (a slider's ends)
             Centred,   // 12 in the subtle colour, centred, wraps
             Question,  // a question's heading, 20 semibold, wraps
+            SmallEnd,  // Small, at the right (a slider's far end)
         };
         HWND Label(const wchar_t* text, TextRole role, Surface on = Surface::Card);
         void SetRole(HWND label, TextRole role);
@@ -181,6 +197,10 @@ namespace sd
         void SetInvalid(HWND edit, bool invalid);
         // A slider (a trackbar) drawn by the kit.
         HWND Slider(int id, int low, int high, int step, Surface on = Surface::Card);
+        // Places a slider at `box` (client pixels) and the labels of its two ends under it (Small and
+        // SmallEnd, either may be null), at the two ends of the bar it draws: the far one ends where the
+        // bar ends. Returns the labels' bottom.
+        int PlaceSlider(HWND slider, const RECT& box, HWND low, HWND high);
 
         // A list (a report-view ListView) whose rows the kit draws: `rowDip` tall, the selected one in
         // the selection colour with the accent's bar, the hovered one lightly, the focused one with a
@@ -219,6 +239,7 @@ namespace sd
     private:
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         static LRESULT CALLBACK DropDownProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR self);
+        static LRESULT CALLBACK SliderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR self);
         // The messages the kit's controls send the window, taken before Handle(): true when handled.
         bool KitMessage(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result);
         void ApplyDpi(UINT dpi);
@@ -274,6 +295,10 @@ namespace sd
         std::vector<HWND> m_described;
         RECT m_scrollArea{};
         int m_scrollY = 0, m_scrollHeight = 0;
+        int m_wheelRest = 0;          // the part of a wheel turn too small to scroll a pixel yet
+        bool m_scrolling = false;
+        int m_holds = 0;              // Rebuild() calls under way
+        bool m_held = false;          // the outermost one switched the drawing off (WM_SETREDRAW)
     };
 
     // The Windows colour dialog (ChooseColor), owned by `owner`, opening on `rgb` (0xRRGGBB): true with

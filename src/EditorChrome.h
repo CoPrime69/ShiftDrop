@@ -66,4 +66,33 @@ namespace sd::chrome
     };
     std::vector<ZoomChoice> ZoomChoices();
     std::wstring ZoomLabel(double zoom, bool fit);
+
+    // ---- The kit on standard controls (DialogWindow) ----------------------------------------------
+    // A slider drawn on a standard trackbar: the kit's bar, `trackHeight` high, along the trackbar's
+    // own channel (TBM_GETCHANNELRECT) and its thumb centred on the trackbar's own thumb
+    // (TBM_GETTHUMBRECT), so what is drawn is where the trackbar takes clicks and what it repaints when
+    // the thumb moves. `value` (0..1) is where the thumb is along the bar, for ControlKit::DrawSlider.
+    struct SliderParts
+    {
+        D2D1_RECT_F track{};
+        float value = 0;
+    };
+    SliderParts SliderOnChannel(const D2D1_RECT_F& channel, const D2D1_RECT_F& thumb, float trackHeight);
+    // The labels under a slider's two ends ("50%", "300%"), `lowWidth` and `highWidth` wide, from
+    // `top`, `height` high: the first starts where the bar starts, the second ends where it ends (its
+    // text right-aligned there). On a bar too short for both they share it, never overlapping.
+    struct SliderEnds
+    {
+        D2D1_RECT_F low{}, high{};
+    };
+    SliderEnds LayoutSliderEnds(float left, float right, float top, float height, float lowWidth, float highWidth);
+
+    // Scrolling a window's column with the mouse wheel, as Windows has it: each notch (WHEEL_DELTA of
+    // `delta`; a precise touchpad sends less) scrolls `lines` lines (SPI_GETWHEELSCROLLLINES) of
+    // `linePx`, or a page of `pagePx` when `lines` is kWheelPage (WHEEL_PAGESCROLL); 0 lines scrolls
+    // nothing. `rest` keeps what was too little to move a whole pixel until the next message. Returns
+    // how far to scroll, pixels: positive towards the end (the wheel turned towards the user).
+    inline constexpr float kScrollLine = 16.f;   // a line of the wheel, and a scroll bar arrow's step, DIPs
+    inline constexpr unsigned kWheelPage = 0xFFFFFFFFu;
+    int WheelScroll(int delta, unsigned lines, int linePx, int pagePx, int& rest);
 }

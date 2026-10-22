@@ -4,12 +4,14 @@
 #include <oleacc.h>
 
 #include "DialogWindow.h"
+#include "EditorChrome.h"
 #include "Strings.h"
 #include "resource.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
 #include <uxtheme.h>
+#include <wil/result.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -139,7 +141,9 @@ namespace sd
 
     HWND DialogWindow::Control(const wchar_t* windowClass, const wchar_t* text, DWORD style, int id, DWORD exStyle) const
     {
-        return CreateWindowExW(exStyle, windowClass, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, m_hwnd,
+        // WS_CLIPSIBLINGS: a control never paints over another, so what a control shows is always its own
+        // drawing, even where two meet for a moment.
+        return CreateWindowExW(exStyle, windowClass, text, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | style, 0, 0, 0, 0, m_hwnd,
                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), m_instance, nullptr);
     }
 
@@ -197,7 +201,8 @@ namespace sd
             ListView_SetTextColor(list, m_colors.text);   // the group headers'
         }
         OnThemeChanged();
-        RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
+        // No erase: WM_PAINT paints all of the window, and each control all of itself.
+        RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_FRAME);
     }
 
     void DialogWindow::SetTheme(std::initializer_list<HWND> controls, const wchar_t* dark, const wchar_t* light) const
@@ -552,6 +557,7 @@ namespace sd
                 { 11.5f, kNormal, 2, false },// Small
                 { 12.f, kNormal, 1, true, DWRITE_TEXT_ALIGNMENT_CENTER },    // Centred
                 { 20.f, kSemi, 0, true },    // Question
+                { 11.5f, kNormal, 2, false, DWRITE_TEXT_ALIGNMENT_TRAILING },   // SmallEnd
             };
             return kLooks[std::clamp(role, 0, static_cast<int>(std::size(kLooks)) - 1)];
         }
@@ -769,7 +775,30 @@ namespace sd
         SendMessageW(h, TBM_SETLINESIZE, 0, step);
         SendMessageW(h, TBM_SETPAGESIZE, 0, 5 * step);
         m_sliders[h] = on;
+        SetWindowSubclass(h, SliderProc, 1, reinterpret_cast<DWORD_PTR>(this));
         return h;
+    }
+
+    LRESULT CALLBACK DialogWindow::SliderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR id, DWORD_PTR)
+    {
+        switch (msg)
+        {
+        case WM_PAINT:
+            // A trackbar repaints only its thumb's old and new rectangles when the thumb moves, but the
+            // kit's thumb is larger than the trackbar's and the bar's filled part runs up to it: each
+            // repaint covers the whole control, so no piece of an earlier drawing stays behind (the
+            // streaks and dashes along the bar).
+            InvalidateRect(hwnd, nullptr, FALSE);
+            break;
+        case WM_ERASEBKGND:
+            return 1;   // painted whole by the custom draw
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(hwnd, SliderProc, id);
+            break;
+        default:
+            break;
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
     LRESULT DialogWindow::DrawSlider(const NMCUSTOMDRAW& draw)
@@ -777,16 +806,41 @@ namespace sd
         if (draw.dwDrawStage != CDDS_PREPAINT)
             return CDRF_DODEFAULT;
         const HWND slider = draw.hdr.hwndFrom;
-        const auto low = static_cast<float>(SendMessageW(slider, TBM_GETRANGEMIN, 0, 0)), high = static_cast<float>(SendMessageW(slider, TBM_GETRANGEMAX, 0, 0));
-        const auto pos = static_cast<float>(SendMessageW(slider, TBM_GETPOS, 0, 0));
         const auto s = StateOf(slider, GetCapture() == slider);
-        RECT rc{};
+        // The bar on the trackbar's own channel and the thumb on its own thumb: where it takes clicks,
+        // and what it repaints when the thumb moves.
+        RECT channel{}, thumb{}, rc{};
+        SendMessageW(slider, TBM_GETCHANNELRECT, 0, reinterpret_cast<LPARAM>(&channel));
+        SendMessageW(slider, TBM_GETTHUMBRECT, 0, reinterpret_cast<LPARAM>(&thumb));
         GetClientRect(slider, &rc);
-        Paint(draw.hdc, rc, slider, SurfaceColor(m_sliders[slider]), [&](ControlKit& kit, const D2D1_RECT_F& r) {
-            const float cy = std::round((r.top + r.bottom) / 2);
-            kit.DrawSlider(D2D1::RectF(r.left + 10, cy - 2, r.right - 10, cy + 2), high > low ? (pos - low) / (high - low) : 0.f, 0.f, s);
-        });
+        const auto parts = chrome::SliderOnChannel(DipRect(channel), DipRect(thumb), 4.f);
+        Paint(draw.hdc, rc, slider, SurfaceColor(m_sliders[slider]),
+              [&](ControlKit& kit, const D2D1_RECT_F&) { kit.DrawSlider(parts.track, parts.value, 0.f, s); });
         return CDRF_SKIPDEFAULT;
+    }
+
+    int DialogWindow::PlaceSlider(HWND slider, const RECT& box, HWND low, HWND high)
+    {
+        SetWindowPos(slider, nullptr, box.left, box.top, std::max(0, static_cast<int>(box.right - box.left)), std::max(0, static_cast<int>(box.bottom - box.top)),
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        // Where the bar is drawn (SliderOnChannel), in client pixels.
+        RECT channel{};
+        SendMessageW(slider, TBM_GETCHANNELRECT, 0, reinterpret_cast<LPARAM>(&channel));
+        const auto track = chrome::SliderOnChannel(DipRect(channel), {}, 4.f).track;
+        const float left = Dip(box.left) + track.left, right = Dip(box.left) + track.right;
+        const int top = box.bottom, height = LabelHeight(low ? low : high, Px(100));
+        const auto width = [&](HWND label) { return label ? std::ceil(Kit().TextWidth(Text(label), LookOf(static_cast<int>(TextRole::Small)).size)) + 2.f : 0.f; };
+        const auto ends = chrome::LayoutSliderEnds(left, right, Dip(top), Dip(height), width(low), width(high));
+        const auto place = [&](HWND label, const D2D1_RECT_F& r, TextRole role) {
+            if (!label)
+                return;
+            SetRole(label, role);
+            const int l = static_cast<int>(std::floor(r.left * static_cast<float>(m_dpi) / 96.f)), rr = static_cast<int>(std::ceil(r.right * static_cast<float>(m_dpi) / 96.f));
+            SetWindowPos(label, nullptr, l, top, rr - l, height, SWP_NOZORDER | SWP_NOACTIVATE);
+        };
+        place(low, ends.low, TextRole::Small);
+        place(high, ends.high, TextRole::SmallEnd);
+        return top + height;
     }
 
     // ---- Lists --------------------------------------------------------------------------------------------
@@ -879,15 +933,56 @@ namespace sd
         y = std::clamp(y, 0, std::max(0, m_scrollHeight - view));
         if (y == m_scrollY)
             return;
+        const int dy = m_scrollY - y;
         m_scrollY = y;
         SetScrollPos(m_hwnd, SB_VERT, y, TRUE);
-        // Move everything at once, then paint once.
-        SendMessageW(m_hwnd, WM_SETREDRAW, FALSE, 0);
-        Layout();
-        SendMessageW(m_hwnd, WM_SETREDRAW, TRUE, 0);
-        // Everything repainted now, the window (its surface) before its controls (which draw their part
-        // of it): nothing keeps pixels from where it was.
-        RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        if (m_holds > 0 || !IsWindowVisible(m_hwnd))
+        {
+            Layout();   // a Rebuild() paints everything once it is done; a hidden window paints when shown
+            return;
+        }
+        // Plain scrolling, as any window does it: the column's pixels and its controls move together in
+        // one step, and only the strip that comes into view is painted. No control draws itself again
+        // unless it comes into view.
+        ScrollWindowEx(m_hwnd, 0, dy, &m_scrollArea, &m_scrollArea, nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+        m_scrolling = true;
+        Layout();   // where the window's cards are now; its controls are there already
+        m_scrolling = false;
+        UpdateWindow(m_hwnd);
+    }
+
+    void DialogWindow::Rebuild(const std::function<void()>& change)
+    {
+        if (m_holds++ == 0)
+        {
+            // WM_SETREDRAW TRUE would show a hidden window: hold the drawing only while it is shown.
+            m_held = m_hwnd && IsWindowVisible(m_hwnd);
+            if (m_held)
+                SendMessageW(m_hwnd, WM_SETREDRAW, FALSE, 0);
+        }
+        const auto done = wil::scope_exit([&] {
+            if (--m_holds > 0 || !m_held)
+                return;
+            m_held = false;
+            SendMessageW(m_hwnd, WM_SETREDRAW, TRUE, 0);
+            // Once, from the new content: the window's surface, then every control over it. No erase:
+            // WM_PAINT paints all of the window, and each control all of itself.
+            RedrawWindow(m_hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        });
+        change();
+    }
+
+    void DialogWindow::ShowOnly(std::span<const HWND> all, std::span<const HWND> placed)
+    {
+        std::vector<HWND> shown(placed.begin(), placed.end());
+        std::sort(shown.begin(), shown.end());
+        for (HWND h : all)
+        {
+            const bool show = std::binary_search(shown.begin(), shown.end(), h);
+            const bool visible = (GetWindowLongPtrW(h, GWL_STYLE) & WS_VISIBLE) != 0;
+            if (show != visible)
+                ShowWindow(h, show ? SW_SHOWNA : SW_HIDE);
+        }
     }
 
     void DialogWindow::ScrollIntoView(const RECT& r)
@@ -1030,7 +1125,7 @@ namespace sd
         {
             if (!m_frame.scrolls || lParam)
                 return false;
-            const int view = static_cast<int>(m_scrollArea.bottom - m_scrollArea.top), line = Px(40);
+            const int view = static_cast<int>(m_scrollArea.bottom - m_scrollArea.top), line = Px(static_cast<int>(chrome::kScrollLine));
             SCROLLINFO info{ sizeof(info), SIF_TRACKPOS };
             GetScrollInfo(m_hwnd, SB_VERT, &info);
             switch (LOWORD(wParam))
@@ -1051,9 +1146,15 @@ namespace sd
         case WM_MOUSEWHEEL:
             if (!m_frame.scrolls)
                 return false;
-            ScrollTo(m_scrollY - GET_WHEEL_DELTA_WPARAM(wParam) * Px(48) / WHEEL_DELTA);
+        {
+            // As far as the user set a notch to scroll (Mouse settings: lines at a time, or a page).
+            UINT lines = 3;
+            SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
+            const int line = Px(static_cast<int>(chrome::kScrollLine)), view = static_cast<int>(m_scrollArea.bottom - m_scrollArea.top);
+            ScrollTo(m_scrollY + chrome::WheelScroll(GET_WHEEL_DELTA_WPARAM(wParam), lines, line, std::max(line, view - line), m_wheelRest));
             result = 0;
             return true;
+        }
         case WM_PAINT:
             PaintWindow();
             result = 0;

@@ -116,5 +116,24 @@ namespace sd
                     on.push_back(slice);
             return on;
         }
+
+        std::vector<ShownGroup> Shown(const SettingsTree& tree, Ring ring, std::wstring_view query)
+        {
+            std::vector<ShownGroup> shown;
+            const auto* section = tree.Find(ring);
+            if (!section)
+                return shown;
+            const bool searching = !SearchWords(query).empty();
+            for (const auto& group : section->groups)
+            {
+                ShownGroup g{ &group, {}, searching };
+                for (size_t i = 0; i < group.slices.size(); ++i)
+                    if (Matches(group.slices[i], query))
+                        g.chips.push_back(i);
+                if (!group.slices.empty() && !(searching && g.chips.empty()))
+                    shown.push_back(std::move(g));
+            }
+            return shown;
+        }
     }
 }

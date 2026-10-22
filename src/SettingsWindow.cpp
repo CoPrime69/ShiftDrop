@@ -92,9 +92,11 @@ namespace sd
         m_state = std::move(state);
         if (!m_hwnd && !Create(L"" SD_NAME L" Settings"))
             return;
-        BuildWheel();
-        Fill();
-        Layout();
+        Rebuild([this] {
+            BuildWheel();
+            Fill();
+            Layout();
+        });
         Present(m_nav[static_cast<size_t>(m_page)]);   // allowed in front: we are handling the user's tray-menu click
     }
 
@@ -492,9 +494,11 @@ namespace sd
         m_state.preferences.accent = a;
         if (m_onPreferences)
             m_onPreferences(m_state.preferences);
-        FillAccent();
-        Layout();       // a swatch more or less
-        ApplyTheme();   // the callback has set the new accent: every control redraws with it
+        Rebuild([this] {
+            FillAccent();
+            Layout();       // a swatch more or less
+            ApplyTheme();   // the callback has set the new accent: every control redraws with it
+        });
     }
 
     void SettingsWindow::OnPanelSizeScroll(WORD code)
@@ -528,14 +532,21 @@ namespace sd
 
     void SettingsWindow::ShowPage(Page page)
     {
-        m_page = page;
-        CheckOne(m_nav, static_cast<int>(page));
-        SetWindowTextW(m_heading, page == Page::Wheel ? settings::Find(Item::WheelContents).title : settings::PageTitle(page));
-        ScrollTo(0);
-        Layout();
+        Rebuild([&] {
+            m_page = page;
+            CheckOne(m_nav, static_cast<int>(page));
+            SetWindowTextW(m_heading, page == Page::Wheel ? settings::Find(Item::WheelContents).title : settings::PageTitle(page));
+            ScrollTo(0);
+            Layout();
+        });
     }
 
     void SettingsWindow::OnFind()
+    {
+        Rebuild([this] { FindNow(); });
+    }
+
+    void SettingsWindow::FindNow()
     {
         const std::wstring query = Text(m_find);
         m_results = settings::SearchAll(query, m_tree);
@@ -574,11 +585,20 @@ namespace sd
         const auto* section = found.section >= 0 ? m_tree.Find(static_cast<Ring>(found.section)) : nullptr;
         if (!section || found.group < 0 || static_cast<size_t>(found.group) >= section->groups.size())
             return nullptr;
-        const auto* group = &section->groups[static_cast<size_t>(found.group)];
+        return ViewOf(&section->groups[static_cast<size_t>(found.group)]);
+    }
+
+    SettingsWindow::GroupView* SettingsWindow::ViewOf(const SettingsTree::Group* group)
+    {
         for (auto& g : m_groups)
             if (g.group == group)
                 return &g;
         return nullptr;
+    }
+
+    bool SettingsWindow::IsPlaced(HWND control) const
+    {
+        return control && std::find(m_placed.begin(), m_placed.end(), control) != m_placed.end();
     }
 
     void SettingsWindow::PlaceFound()
@@ -596,7 +616,7 @@ namespace sd
             MapWindowPoints(nullptr, m_hwnd, reinterpret_cast<POINT*>(&r), 2);
             return r;
         };
-        const auto placed = [this](HWND h) { return h && std::find(m_placed.begin(), m_placed.end(), h) != m_placed.end(); };
+        const auto placed = [this](HWND h) { return IsPlaced(h); };
         if (found.section < 0)
         {
             if (const auto it = m_rows.find(found.item); it != m_rows.end())
@@ -725,9 +745,11 @@ namespace sd
         }
         else if (id == kIdAccentHeader && clicked)
         {
-            m_accentOpen = !m_accentOpen;
-            FillAccent();
-            Layout();
+            Rebuild([this] {
+                m_accentOpen = !m_accentOpen;
+                FillAccent();
+                Layout();
+            });
         }
         else if (id >= kIdSwatch && id < kIdSwatch + accent::kPresetCount && clicked && Checked(control))
         {
@@ -766,15 +788,21 @@ namespace sd
         }
         else if (id == kIdFindAction && code == EN_CHANGE)
         {
-            ScrollTo(0);
-            Layout();
+            Rebuild([this] {
+                ScrollTo(0);
+                Layout();
+            });
         }
         else if (id >= kIdTab && id < kIdTab + kRingCount && clicked && Checked(control))
         {
-            m_section = static_cast<Ring>(id - kIdTab);
-            FillWheel();
-            ScrollTo(0);
-            Layout();
+            // The new tab's cards and chips are filled and placed, and the old tab's hidden, before any
+            // of it is drawn; then it is shown in one paint.
+            Rebuild([&] {
+                m_section = static_cast<Ring>(id - kIdTab);
+                FillWheel();
+                ScrollTo(0);
+                Layout();
+            });
         }
         else if (id == kIdSectionOff && clicked)
             SetFeatures(contents::WithSection(m_state.features, m_section, !m_state.features.SectionOn(m_section)));
@@ -798,11 +826,11 @@ namespace sd
         else if (id >= kIdGroup && id < kIdChip && clicked)
         {
             if (const auto i = static_cast<size_t>(id - kIdGroup); i < m_groups.size())
-            {
-                m_groups[i].open = !m_groups[i].open;
-                FillWheel();
-                Layout();
-            }
+                Rebuild([&] {
+                    m_groups[i].open = !m_groups[i].open;
+                    FillWheel();
+                    Layout();
+                });
         }
         else if (id >= kIdChip && id < kIdCustomSwatch && clicked)
         {
@@ -883,13 +911,10 @@ namespace sd
         }
         PlaceFound();
         // Everything this page doesn't show is hidden, so Tab and screen readers skip it.
-        for (HWND h : m_all)
-        {
-            const bool placed = std::find(m_placed.begin(), m_placed.end(), h) != m_placed.end();
-            if (placed != (IsWindowVisible(h) != FALSE))
-                ShowWindow(h, placed ? SW_SHOWNA : SW_HIDE);
-        }
-        InvalidateRect(m_hwnd, nullptr, FALSE);
+        ShowOnly(m_all, m_placed);
+        // While scrolling, the pixels moved with the page: only the strip coming into view is painted.
+        if (!Scrolling())
+            InvalidateRect(m_hwnd, nullptr, FALSE);
     }
 
     int SettingsWindow::LayoutPage(int x, int y, int width)
@@ -967,11 +992,10 @@ namespace sd
             card(Item::PanelSize, sw, Px(48));
             const auto& row = m_rows[Item::PanelSize];
             const int sy = top + (row.card.bottom - row.card.top - Px(48)) / 2, sx = x + width - Px(14) - sw;
-            Place(m_panelSize, sx - Px(10), sy, sw - Px(56) + Px(20), Px(28));
             Place(m_panelValue, sx + sw - Px(48), sy, Px(48), Px(28));
-            Place(m_panelLow, sx, sy + Px(28), Px(60), Px(18));
-            SetRole(m_panelHigh, TextRole::Small);
-            Place(m_panelHigh, sx + sw - Px(56) - Px(60), sy + Px(28), Px(60), Px(18));
+            // The 50% and 300% under the two ends of the bar.
+            PlaceSlider(m_panelSize, { sx - Px(10), sy, sx + sw - Px(56) + Px(10), sy + Px(28) }, m_panelLow, m_panelHigh);
+            m_placed.insert(m_placed.end(), { m_panelSize, m_panelLow, m_panelHigh });
             // The accent: a card that folds open on the swatches and the Windows switch.
             const int cardTop = y;
             Place(m_accentHeader, x, y, width, Px(kRowMin));
@@ -1090,21 +1114,19 @@ namespace sd
         Place(m_summary, x, y + (Px(kControlH) - LabelHeight(m_summary, sw)) / 2, sw, LabelHeight(m_summary, sw));
         y += Px(kControlH + 12);
 
-        // A card per kind of file; searching opens every card with a match and shows only those chips.
+        // A card per kind of file of this tab's section (and no other's); searching opens every card
+        // with a match and shows only those chips.
         const std::wstring query = Text(m_findAction);
         const bool searching = !Trim(query).empty();
         bool any = false;
-        for (auto& g : m_groups)
+        for (const auto& shown : contents::Shown(m_tree, m_section, query))
         {
-            if (g.ring != m_section)
+            auto* view = ViewOf(shown.group);
+            if (!view)
                 continue;
-            size_t matches = 0;
-            for (const auto& chip : g.chips)
-                matches += contents::Matches(*chip.slice, query) ? 1 : 0;
-            if (searching && matches == 0)
-                continue;
+            auto& g = *view;
             any = true;
-            const bool open = g.open || searching;
+            const bool open = g.open || shown.searched;
             if (StyleOf(g.header).open != open)
             {
                 StyleOf(g.header).open = open;
@@ -1123,11 +1145,11 @@ namespace sd
                 const int hintH = LabelHeight(g.hint, bw);
                 Place(g.hint, bx, by, bw, hintH);
                 int cx = bx, cy = by + hintH + Px(12);
-                for (const auto& chip : g.chips)
+                for (size_t i : shown.chips)
                 {
-                    if (!contents::Matches(*chip.slice, query))
-                        continue;
-                    const int w = Px(static_cast<int>(Kit().ChipWidth(chip.slice->label)));
+                    const auto& chip = g.chips[i];
+                    // Whole pixels, rounded up: the pill and its text always fit the control.
+                    const int w = Px(static_cast<int>(std::ceil(Kit().ChipWidth(chip.slice->label))));
                     if (cx > bx && cx + w > bx + bw)
                     {
                         cx = bx;
@@ -1201,7 +1223,7 @@ namespace sd
         }
         if (m_page == Page::Wheel)
             for (const auto& g : m_groups)
-                if (g.ring == m_section && IsWindowVisible(g.preview))
+                if (g.ring == m_section && IsPlaced(g.preview))
                 {
                     std::vector<ControlKit::MiniTile> tiles;
                     for (const auto& slice : contents::PreviewSlices(m_state.features, *g.group))

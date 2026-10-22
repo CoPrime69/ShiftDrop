@@ -375,3 +375,60 @@ TEST(Theme, FocusRingStaysInsideWhatCanBeDrawn)
     EXPECT_FLOAT_EQ(own.right, 200.f);
     EXPECT_FLOAT_EQ(own.bottom, 38.f);
 }
+
+TEST(EditorChrome, SliderDrawsOnTheTrackbarsOwnParts)
+{
+    // The trackbar's channel 12..288 and its thumb (11 wide) centred at 150: the bar runs along the
+    // channel, 4 high on its middle, and the thumb is drawn where the trackbar has it (and repaints it).
+    const auto parts = chrome::SliderOnChannel(D2D1::RectF(12, 12, 288, 16), D2D1::RectF(144.5f, 4, 155.5f, 24), 4.f);
+    EXPECT_FLOAT_EQ(parts.track.left, 12);
+    EXPECT_FLOAT_EQ(parts.track.right, 288);
+    EXPECT_FLOAT_EQ(parts.track.bottom - parts.track.top, 4);
+    EXPECT_FLOAT_EQ(parts.track.left + parts.value * (parts.track.right - parts.track.left), 150);
+    // A thumb past an end is drawn at that end; an empty channel has nothing to fill.
+    EXPECT_FLOAT_EQ(chrome::SliderOnChannel(D2D1::RectF(12, 12, 288, 16), D2D1::RectF(290, 4, 300, 24), 4.f).value, 1.f);
+    EXPECT_FLOAT_EQ(chrome::SliderOnChannel(D2D1::RectF(12, 12, 12, 16), D2D1::RectF(0, 4, 10, 24), 4.f).value, 0.f);
+}
+
+TEST(EditorChrome, SliderEndLabelsSitAtTheEnds)
+{
+    // "50%" under the start of a 240 DIP bar, "300%" under its end: the far label ends where the bar
+    // ends (it was drawn from its start, 60 DIPs in, so it sat in the middle of the bar).
+    const auto ends = chrome::LayoutSliderEnds(100, 340, 30, 18, 26, 34);
+    EXPECT_FLOAT_EQ(ends.low.left, 100);
+    EXPECT_FLOAT_EQ(ends.low.right, 126);
+    EXPECT_FLOAT_EQ(ends.high.right, 340);
+    EXPECT_FLOAT_EQ(ends.high.left, 306);
+    EXPECT_FLOAT_EQ(ends.high.top, 30);
+    EXPECT_FLOAT_EQ(ends.high.bottom, 48);
+    // A bar too short for both: they share it and never overlap.
+    const auto tight = chrome::LayoutSliderEnds(0, 40, 0, 18, 30, 30);
+    EXPECT_FLOAT_EQ(tight.low.left, 0);
+    EXPECT_FLOAT_EQ(tight.high.right, 40);
+    EXPECT_LE(tight.low.right, tight.high.left);
+}
+
+TEST(EditorChrome, WheelScrollsAsWindowsSays)
+{
+    int rest = 0;
+    // A notch down at 3 lines of 16 pixels scrolls 48 pixels towards the end; a notch up as far back.
+    EXPECT_EQ(chrome::WheelScroll(-120, 3, 16, 600, rest), 48);
+    EXPECT_EQ(chrome::WheelScroll(120, 3, 16, 600, rest), -48);
+    EXPECT_EQ(rest, 0);
+    // The user's lines at a time; a page; none.
+    EXPECT_EQ(chrome::WheelScroll(-120, 5, 16, 600, rest), 80);
+    EXPECT_EQ(chrome::WheelScroll(-240, chrome::kWheelPage, 16, 600, rest), 1200);
+    EXPECT_EQ(chrome::WheelScroll(-120, 0, 16, 600, rest), 0);
+    // A precise touchpad's small steps add up to the same distance, nothing lost on the way.
+    int total = 0;
+    for (int i = 0; i < 12; ++i)
+        total += chrome::WheelScroll(-10, 3, 16, 600, rest);
+    EXPECT_EQ(total, 48);
+    EXPECT_EQ(rest, 0);
+    // Turning back drops what was left over from the other way.
+    rest = 0;
+    EXPECT_EQ(chrome::WheelScroll(-1, 3, 16, 600, rest), 0);
+    EXPECT_GT(rest, 0);
+    EXPECT_EQ(chrome::WheelScroll(120, 3, 16, 600, rest), -48);
+    EXPECT_EQ(rest, 0);
+}
