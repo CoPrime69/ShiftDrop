@@ -81,6 +81,7 @@ add_library(shiftdrop_core STATIC
   src/Settings.cpp
   src/Accent.cpp    # the accent colour: its presets, their tones and the one every window draws with
   src/ThemeTokens.cpp   # the brand's colour tokens and every window's palette built from them
+  src/EditorChrome.cpp  # where an editor's tool bar, panel and footer go, and the kit's sizes
   src/Features.cpp
   src/SettingsPages.cpp   # the Settings window's pages: where every setting lives (unit-tested)
   src/WheelContents.cpp   # Settings › Wheel: sections, kinds of file and slices on and off (unit-tested)

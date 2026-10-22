@@ -169,6 +169,7 @@ namespace sd::photo
         Control presets;
         presets.id = "preset";
         presets.kind = ControlKind::Choice;
+        presets.chips = true;
         presets.options = { L"Original", L"Auto" };
         for (const auto& p : Presets())
             presets.options.emplace_back(p.label);

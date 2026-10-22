@@ -2,6 +2,7 @@
 // the picture do under the mouse and keys, how a choice sounds while playing, and the parameters
 // handed back to the engine.
 #include "mediaeditor/EditorWindow.h"
+#include "EditorChrome.h"
 #include "FileMove.h"
 #include "FormatText.h"
 #include "Log.h"
@@ -266,13 +267,15 @@ namespace sd::mediatools
         auto& f = Cur();
         const bool ready = f.ready;
         const int64_t dur = Duration();
-        const float x = m_rcPanel.x + 20, w = m_rcPanel.w - 40;
-        float y = m_rcPanel.y + 20;
+        // Under the tool's name (EditorFrame's DrawSidePanel).
+        const float x = m_rcPanel.x + chrome::kPanelPadX, w = m_rcPanel.w - 2 * chrome::kPanelPadX;
+        float y = m_rcPanel.y + chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap;
         const float bottom = m_rcPanel.Bottom() - 12;
 
         const auto caption = [&](const std::wstring& text) {
-            m_texts.push_back({ { x, y, w, 18 }, text, ui::Font::Caption, 1 });
-            y += 26;
+            y += 6;
+            m_texts.push_back({ { x, y, w, 16 }, text, ui::Font::Caption, 1 });
+            y += 24;
         };
         const auto note = [&](const std::wstring& text, int tone = 1) {
             if (text.empty())
@@ -287,18 +290,32 @@ namespace sd::mediatools
             y += 26;
         };
         const auto add = [&](ui::Control c) { m_controls.push_back(std::move(c)); };
-        // Choices in rows of `perRow`; arrows move between them.
+        // A choice: one segmented control when its options fit side by side (and `perRow` allows them
+        // in one row), else round chips that wrap. Arrows move between the options.
         const auto segments = [&](int baseId, const std::vector<std::wstring>& labels, int chosen, std::function<void(int)> pick, int perRow = 4,
                                   const std::wstring& tip = {}, bool enabled = true) {
             const int n = static_cast<int>(labels.size());
-            const int cols = std::min(n, perRow);
-            const float gap = 4, sw = (w - gap * static_cast<float>(cols - 1)) / static_cast<float>(cols);
+            std::vector<float> widths;
+            for (const auto& label : labels)
+                widths.push_back(TextWidth(label, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD));
+            auto rects = n <= perRow ? chrome::Segments(widths, x, y, w) : std::vector<D2D1_RECT_F>{};
+            const bool segmented = !rects.empty();
+            if (!segmented)
+            {
+                for (int i = 0; i < n; ++i)
+                    widths[static_cast<size_t>(i)] = std::min(w, ChipWidth(labels[static_cast<size_t>(i)]));
+                rects = chrome::Flow(widths, x, x + w, y, chrome::kControlHeight, 6, 6);
+            }
+            float bottom = y;
             for (int i = 0; i < n; ++i)
             {
+                const auto& r = rects[static_cast<size_t>(i)];
+                bottom = std::max(bottom, r.bottom);
                 ui::Control c;
                 c.id = baseId + i;
-                c.kind = K::Segment;
-                c.rect = { x + static_cast<float>(i % cols) * (sw + gap), y + static_cast<float>(i / cols) * 36, sw, 32 };
+                c.kind = segmented ? K::Segment : K::Chip;
+                c.part = !segmented || n == 1 ? 0 : i == 0 ? 1 : i + 1 == n ? 3 : 2;
+                c.rect = { r.left, r.top, r.right - r.left, r.bottom - r.top };
                 c.text = labels[static_cast<size_t>(i)];
                 c.on = i == chosen;
                 c.enabled = enabled && ready;
@@ -307,7 +324,7 @@ namespace sd::mediatools
                 c.step = [pick, i, n](int d) { pick(std::clamp(i + d, 0, n - 1)); };
                 add(std::move(c));
             }
-            y += static_cast<float>((n + cols - 1) / cols) * 36 + 6;
+            y = bottom + 10;
         };
         const auto field = [&](int id, const std::wstring& label, const std::wstring& value, std::function<bool(const std::wstring&)> commit,
                                const std::wstring& tip, bool enabled = true) {
@@ -440,7 +457,7 @@ namespace sd::mediatools
             if (video)
                 segments(kIdTrimPart, { L"Keep selection", L"Remove selection" }, m_remove ? 1 : 0, [this](int i) { m_remove = i == 1; Rebuild(); }, 2,
                          L"Keep the selected part, or cut it out and join what is on either side");
-            caption(remove ? L"PART TO REMOVE" : L"PART TO KEEP");
+            caption(remove ? L"Part to remove" : L"Part to keep");
             const std::wstring part = remove ? L"removed" : L"kept";
             rangeFields(
                 f.keep, [this](TimeRange r) { Cur().keep = r; Rebuild(); }, std::format(L"Where the {} part starts (I sets it at the playhead)", part),
@@ -460,7 +477,7 @@ namespace sd::mediatools
             {
                 // Copying the streams only keeps one part as it is: removing a part or fading re-encodes.
                 const bool copies = videotools::TrimCopies(true, { m_remove, m_fade });
-                caption(L"CUT");
+                caption(L"Cut");
                 segments(kIdMode, { L"Exact", L"Fast" }, m_fast && copies ? 1 : 0, [this](int i) { m_fast = i == 1; Rebuild(); }, 4,
                          copies ? std::wstring() : L"Removing a part or fading always re-encodes", copies);
                 note(!copies  ? L"Removing a part or fading re-encodes, so the cuts land on the exact frames."
@@ -474,7 +491,7 @@ namespace sd::mediatools
             }
             else
             {
-                caption(L"SILENCE");
+                caption(L"Silence");
                 toggle(kIdSilence, L"Also trim silence at both ends", m_silence, [this] { m_silence = !m_silence; Rebuild(); });
                 note(L"Quiet below \u221250 dB for at least 0.1 s is cut from the start and the end of the kept part.");
             }
@@ -482,7 +499,7 @@ namespace sd::mediatools
         }
         case EditorTool::CropVideo:
         {
-            caption(L"SHAPE");
+            caption(L"Shape");
             int chosen = 0;
             for (int i = 0; i < 6; ++i)
                 if (m_aspect == kAspects[i])
@@ -499,11 +516,11 @@ namespace sd::mediatools
                          Rebuild();
                      },
                      3);
-            caption(L"AREA");
+            caption(L"Area");
             info(L"Size", std::format(L"{} \u00D7 {}", f.crop.w, f.crop.h));
             info(L"Position", std::format(L"{}, {}", f.crop.x, f.crop.y));
             y += 4;
-            caption(L"OUTPUT SIZE");
+            caption(L"Output size");
             int ow = 0, oh = 0;
             CropOutputSize(f.crop, f.outW, f.outH, ow, oh);
             field(kIdOutW, L"Width", std::to_wstring(ow),
@@ -533,7 +550,7 @@ namespace sd::mediatools
         }
         case EditorTool::SpeedVideo:
         {
-            caption(L"SPEED");
+            caption(L"Speed");
             int chosen = -1;
             std::vector<std::wstring> labels;
             for (size_t i = 0; i < kSpeeds.size(); ++i)
@@ -556,7 +573,7 @@ namespace sd::mediatools
             const bool sound = std::any_of(m_files.begin(), m_files.end(), [](const FileState& file) { return file.ready && file.info.HasAudio(); });
             toggle(kIdPitch, L"Keep pitch", m_keepPitch && sound, [this, restart] { m_keepPitch = !m_keepPitch; restart(); Rebuild(); }, sound,
                    L"Off: the sound plays faster or slower like a tape, its pitch going up or down with it");
-            caption(L"RESULT");
+            caption(L"Result");
             info(L"Length", FormatTimecode(static_cast<int64_t>(static_cast<double>(dur) / m_factor)));
             info(L"Was", FormatTimecode(dur));
             y += 4;
@@ -570,7 +587,7 @@ namespace sd::mediatools
         }
         case EditorTool::JoinVideos:
         {
-            caption(L"ORDER");
+            caption(L"Order");
             note(L"Drag the clips to change their order, or select one and press Alt+\u2191 or Alt+\u2193.");
             const bool sel = m_selected >= 0 && m_selected < static_cast<int>(m_order.size());
             const float third = (w - 8) / 3;
@@ -582,10 +599,10 @@ namespace sd::mediatools
             button(kIdAddClips, L"Add clips\u2026", ui::icon::Add, [this] { AddClips(); }, true, L"Add more videos to the end of the list");
             y += 6;
             // Clips of another shape than the first: whole with black bars, or cropped to fill the frame.
-            caption(L"OTHER SHAPES");
+            caption(L"Other shapes");
             segments(kIdJoinFit, { L"Fit", L"Fill" }, m_joinFill ? 1 : 0, [this](int i) { m_joinFill = i == 1; Rebuild(); }, 2);
             y += 6;
-            caption(L"RESULT");
+            caption(L"Result");
             std::vector<ProbeInfo> clips;
             bool allProbed = true;
             int64_t total = 0;
@@ -623,7 +640,7 @@ namespace sd::mediatools
         }
         case EditorTool::SaveFrames:
         {
-            caption(L"FRAMES TO SAVE");
+            caption(L"Frames to save");
             segments(kIdFramePick, { L"Marked", L"Every N", L"Per second" }, static_cast<int>(m_frames.pick),
                      [this](int i) {
                          m_frames.pick = static_cast<videotools::FramePick>(i);
@@ -673,13 +690,13 @@ namespace sd::mediatools
                 info(L"One every", FormatRulerLabel(static_cast<int64_t>(std::llround(1e6 / m_frames.perSecond)), 100'000));
             }
             y += 4;
-            caption(L"FORMAT");
+            caption(L"Format");
             int format = 0;
             for (int i = 0; i < 3; ++i)
                 if (m_frameFormat == kFrameFormats[i])
                     format = i;
             segments(kIdFormat, { L"PNG", L"JPG", L"WebP" }, format, [this](int i) { m_frameFormat = kFrameFormats[i]; Rebuild(); }, 3);
-            caption(L"RESULT");
+            caption(L"Result");
             const int64_t count = FrameCount(f);
             const uint64_t each = ready ? videotools::FrameFileBytes(f.info.width, f.info.height, m_frameFormat) : 0;
             info(L"Frames", count > 0 ? std::to_wstring(count) : L"\u2013");
@@ -693,7 +710,7 @@ namespace sd::mediatools
         }
         case EditorTool::SplitVideo:
         {
-            caption(L"SPLIT");
+            caption(L"Split");
             segments(kIdSplitKind, { L"At marks", L"Equal parts", L"Every" }, static_cast<int>(m_split),
                      [this](int i) {
                          m_split = static_cast<SplitKind>(i);
@@ -740,7 +757,7 @@ namespace sd::mediatools
                 info(L"Parts", std::to_wstring(f.marks.size() + 1));
             }
             y += 4;
-            caption(L"CUT");
+            caption(L"Cut");
             segments(kIdMode, { L"Exact", L"Fast" }, m_fast ? 1 : 0, [this](int i) { m_fast = i == 1; Rebuild(); });
             note(m_fast ? L"Copies the video as it is: instant and lossless, but each cut moves to the nearest keyframe."
                         : L"Re-encodes each part so the cuts land on the exact frames.");
@@ -748,7 +765,7 @@ namespace sd::mediatools
         }
         case EditorTool::RedactVideo:
         {
-            caption(L"AREAS");
+            caption(L"Areas");
             if (f.areas.empty())
                 note(L"Drag on the picture to cover a face, a name or a number plate. Each area can show for part of the video.");
             std::vector<std::pair<std::wstring, std::wstring>> items;
@@ -766,7 +783,7 @@ namespace sd::mediatools
             if (m_selected >= 0 && m_selected < static_cast<int>(f.areas.size()))
             {
                 auto& area = f.areas[static_cast<size_t>(m_selected)];
-                caption(std::format(L"AREA {}", m_selected + 1));
+                caption(std::format(L"Area {}", m_selected + 1));
                 segments(kIdStyle, { L"Blur", L"Solid" }, area.blur ? 0 : 1,
                          [this](int i) {
                              auto& a = Cur().areas[static_cast<size_t>(m_selected)];
@@ -789,17 +806,17 @@ namespace sd::mediatools
             }
             else
             {
-                caption(L"NEW AREAS");
+                caption(L"New areas");
                 segments(kIdStyle, { L"Blur", L"Solid" }, m_blurStyle ? 0 : 1, [this](int i) { m_blurStyle = i == 0; Rebuild(); }, 2);
             }
             break;
         }
         case EditorTool::AudioChannels:
         {
-            caption(L"OUTPUT");
+            caption(L"Output");
             segments(kIdMono, { L"Stereo", L"Mono" }, m_mono ? 1 : 0, [this, restart](int i) { m_mono = i == 1; restart(); Rebuild(); }, 2);
             toggle(kIdSwap, L"Swap left and right", m_swap && !m_mono, [this, restart] { m_swap = !m_swap; restart(); Rebuild(); }, !m_mono);
-            caption(L"VOLUME");
+            caption(L"Volume");
             const auto pct = [](double v) { return std::format(L"{}%", static_cast<int>(std::lround(v * 100))); };
             const auto set = [this, restart](double& target) {
                 return [this, restart, &target](double v) {
@@ -813,7 +830,7 @@ namespace sd::mediatools
             slider(kIdRight, m_mono ? L"Right into the mix" : L"Right", m_right, 0, 2, pct, set(m_right), 0.05);
             button(kIdResetVol, L"Reset volumes", nullptr, [this, restart] { m_left = m_right = 1; restart(); Rebuild(); },
                    std::abs(m_left - 1) > 1e-6 || std::abs(m_right - 1) > 1e-6);
-            caption(L"LISTEN TO");
+            caption(L"Listen to");
             segments(kIdListen, { L"Original", L"Result" }, m_listenProcessed ? 1 : 0, [this](int i) { m_listenProcessed = i == 1; if (m_playing) StartPlay(m_playback->PositionUs(), m_playEnd); Rebuild(); }, 2,
                      L"A switches while playing");
             if (ready && f.info.channels > 2)
@@ -824,7 +841,7 @@ namespace sd::mediatools
         }
         case EditorTool::BleepAudio:
         {
-            caption(L"SOUND");
+            caption(L"Sound");
             segments(kIdTone, { L"Beep", L"Silence", L"Duck" }, static_cast<int>(m_bleep),
                      [this, restart](int i) {
                          m_bleep = static_cast<audiotools::BleepSound>(i);
@@ -842,7 +859,7 @@ namespace sd::mediatools
                            Rebuild();
                        },
                        1);
-            caption(L"PARTS TO BLEEP");
+            caption(L"Parts to bleep");
             button(kIdAdd, L"Add at the playhead", ui::icon::Add, [this] { ToolKey('M', false, false); }, true, L"M, or drag across the waveform");
             std::vector<std::pair<std::wstring, std::wstring>> items;
             for (size_t i = 0; i < f.ranges.size(); ++i)
@@ -865,7 +882,7 @@ namespace sd::mediatools
                         Rebuild();
                     },
                     L"Where the bleep starts (I)", L"Where it ends (O)");
-            caption(L"LISTEN TO");
+            caption(L"Listen to");
             segments(kIdListen, { L"Original", L"Bleeped" }, m_listenProcessed ? 1 : 0, [this](int i) { m_listenProcessed = i == 1; if (m_playing) StartPlay(m_playback->PositionUs(), m_playEnd); Rebuild(); }, 2,
                      L"A switches while playing");
             button(kIdPlaySel, L"Play around the selected bleep", ui::icon::Play, [this] { StopPlay(); TogglePlay(true); }, m_selected >= 0, L"Shift+Space");
@@ -873,7 +890,7 @@ namespace sd::mediatools
         }
         case EditorTool::AudioVisualizer:
         {
-            caption(L"STYLE");
+            caption(L"Style");
             segments(kIdPicStyle, { L"Bars", L"Wave", L"Circle", L"Square", L"Vertical", L"Picture" }, static_cast<int>(m_style),
                      [this](int i) {
                          m_style = static_cast<audiotools::VisualStyle>(i);
@@ -881,7 +898,7 @@ namespace sd::mediatools
                      },
                      3);
             const bool still = m_style == audiotools::VisualStyle::Picture;
-            caption(still ? L"PICTURE" : L"BACKGROUND");
+            caption(still ? L"Picture" : L"Background");
             button(kIdChoose, m_image.empty() ? L"Choose a picture\u2026" : L"Choose another\u2026", ui::icon::Picture, [this] { ChoosePicture(); });
             if (!m_image.empty())
             {
@@ -891,7 +908,7 @@ namespace sd::mediatools
             else
                 note(still ? L"Without a picture, each song's own cover art is used; a song without one gets the waveform."
                            : L"Without a picture the background is plain dark. A picture is fitted to fill the video and darkened a little.");
-            caption(L"SHAPE");
+            caption(L"Shape");
             int chosen = 0;
             for (int i = 0; i < 3; ++i)
                 if (m_shape == kShapes[i])

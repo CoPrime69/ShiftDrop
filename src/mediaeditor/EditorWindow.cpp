@@ -1,4 +1,5 @@
 #include "mediaeditor/EditorWindow.h"
+#include "EditorChrome.h"
 #include "Brand.h"
 #include "Log.h"
 #include "PathUtil.h"
@@ -24,7 +25,7 @@ namespace sd::mediatools
         constexpr UINT_PTR kTimerThumbs = 2, kTimerPlay = 3;
 
         // Layout, in DIPs.
-        constexpr float kHeaderH = 56, kFooterH = 64, kPanelW = 316, kPad = 16;
+        constexpr float kHeaderH = chrome::kToolBarHeight, kFooterH = chrome::kFooterHeight, kPanelW = chrome::kPanelWidth, kPad = 16;
         constexpr float kTransportH = 40, kRulerH = 24, kFilmH = 64, kScrollH = 10;
 
         // Control ids shared by every tool (tool controls use 100 and up).
@@ -129,7 +130,7 @@ namespace sd::mediatools
         const auto& work = monitor.work;
         const int w = static_cast<int>(std::min(wantW, static_cast<float>(work.right - work.left) * 0.94f / scale));
         const int h = static_cast<int>(std::min(wantH, static_cast<float>(work.bottom - work.top) * 0.92f / scale));
-        if (!Create(m_req.title + L" \u2013 " SD_NAME, w, h, 820, 540, false))
+        if (!Create(WindowTitle(), w, h, 820, 540, false))
             return false;
 
         m_loader = std::make_unique<MediaLoader>(m_req.ffmpeg, &m_temp, Hwnd(), kLoadedMsg);
@@ -417,7 +418,15 @@ namespace sd::mediatools
         StopPlay();
         CancelEdit();
         m_current = std::clamp(index, 0, static_cast<int>(m_files.size()) - 1);
+        SetWindowTextW(Hwnd(), WindowTitle().c_str());
         FileReady();
+    }
+
+    std::wstring EditorWindow::WindowTitle() const
+    {
+        // "demo-cut.mov · Video editor": the tool is on its tab.
+        const std::wstring kind = Video() ? L"Video editor" : L"Audio editor";
+        return m_files.empty() || Cur().name.empty() ? kind : Cur().name + L" \u00B7 " + kind;
     }
 
     void EditorWindow::RequestWaveform(int index)
@@ -628,16 +637,17 @@ namespace sd::mediatools
     {
         const auto tools = SiblingTools(m_req.tool);
         const RectF& h = m_rcHeader;
-        float x = kPad;
+        float x = chrome::kBarPadX;
         for (size_t i = 0; i < tools.size(); ++i)
         {
             const EditorTool tool = tools[i];
             ui::Control c;
             c.id = kIdTools + static_cast<int>(i);
-            c.kind = ui::Control::Kind::Segment;
+            c.kind = ui::Control::Kind::Tab;
             c.text = ToolName(tool);
-            const float w = std::max(64.f, m_painter.TextWidth(c.text, ui::Font::Body) + 28);
-            c.rect = { x, h.y + (h.h - 32) / 2, w, 32 };
+            c.icon = ToolIcon(tool);
+            const float w = chrome::TabWidth(TextWidth(c.text, 12.f, DWRITE_FONT_WEIGHT_SEMI_BOLD));
+            c.rect = { x, h.y + (h.h - chrome::kTabHeight) / 2, w, chrome::kTabHeight };
             c.on = tool == m_req.tool;
             c.tip = std::format(L"{} (Ctrl+{})", ToolTitle(tool), i + 1);
             c.click = [this, tool] { SwitchTool(tool); };
@@ -647,9 +657,9 @@ namespace sd::mediatools
                     SwitchTool(tools[static_cast<size_t>(next)]);
             };
             m_controls.push_back(std::move(c));
-            x += w + 4;
+            x += w + 2;
         }
-        m_toolBarRight = x + 12;
+        m_toolBarRight = x + 14;
     }
 
     void EditorWindow::SwitchTool(EditorTool tool)
@@ -664,7 +674,7 @@ namespace sd::mediatools
         const bool wasPerFile = PerFile();
         m_req.tool = tool;
         m_req.title = ToolTitle(tool);
-        SetWindowTextW(Hwnd(), (m_req.title + L" \u2013 " SD_NAME).c_str());
+        SetWindowTextW(Hwnd(), WindowTitle().c_str());
         if (HasTimeline() && !m_playback)
             m_playback = std::make_unique<Playback>(m_req.ffmpeg, &m_temp);
         // A fresh pass through the files; choices made so far stay (a trim range is still there on
@@ -862,8 +872,21 @@ namespace sd::mediatools
         auto& p = m_painter;
         p.Begin(rt, Theme(), m_device);
         PaintHeader(p);
-        p.Fill(m_rcPanel, Theme().panel);
-        p.Line(m_rcPanel.x + 0.5f, m_rcPanel.y, m_rcPanel.x + 0.5f, m_rcPanel.Bottom(), Theme().line);
+        // The picture's well above the timeline, which sits on the panel's surface (the kit's editor).
+        {
+            const RectF left{ 0, m_rcHeader.Bottom(), m_rcPanel.x, m_rcFooter.y - m_rcHeader.Bottom() };
+            if (HasTimeline())
+            {
+                const float split = m_rcStage.h > 0 ? m_rcTransport.y - 8 : left.y;
+                p.Fill({ left.x, left.y, left.w, split - left.y }, Theme().stage);
+                p.Fill({ left.x, split, left.w, left.Bottom() - split }, Theme().panel);
+                if (split > left.y)
+                    p.Line(left.x, split + 0.5f, left.Right(), split + 0.5f, Theme().line);
+            }
+            else
+                p.Fill(left, Theme().stage);
+        }
+        DrawSidePanel(ui::ToD2D(m_rcPanel), ToolName(m_req.tool));
         if (m_req.tool == EditorTool::JoinVideos)
             PaintJoinList(p);
         else if (m_req.tool == EditorTool::AudioVisualizer)
@@ -916,17 +939,35 @@ namespace sd::mediatools
             DrawButton(ui::ToD2D(c.rect), c.text, glyph, c.kind == Kind::Primary, state);
             break;
         case Kind::Icon:
-            DrawIconButton(ui::ToD2D(c.rect), glyph, c.on, state);
+            if (c.id == kIdPlay)
+            {
+                // Play: a round accent button, the transport's main control.
+                const float d = std::min(c.rect.w, c.rect.h);
+                const RectF round{ c.rect.x + (c.rect.w - d) / 2, c.rect.y + (c.rect.h - d) / 2, d, d };
+                p.Fill(round, theme::WithAlpha(s.pressed ? k.accent : s.hover ? k.accentHover : k.accent, a), d / 2);
+                p.Text(c.glyph ? c.glyph : L"", round, ui::Font::Icon, theme::WithAlpha(k.onAccent, a), 1);
+                if (s.focused)
+                    DrawFocusRing(ui::ToD2D(round), d / 2);
+            }
+            else
+                DrawIconButton(ui::ToD2D(c.rect), glyph, c.on, state);
             break;
         case Kind::Segment:
-            DrawChoice(ui::ToD2D(c.rect), c.text, c.on, state);
+            DrawSegment(ui::ToD2D(c.rect), c.text, c.on, static_cast<Part>(c.part), state);
+            break;
+        case Kind::Chip:
+            DrawChip(ui::ToD2D(c.rect), c.text, c.on, state);
+            break;
+        case Kind::Tab:
+            DrawToolTab(ui::ToD2D(c.rect), c.icon, c.text, c.on, state);
             break;
         case Kind::Toggle:
         {
-            const float labelHeight = p.ParagraphHeight(c.text, c.rect.w - 52, ui::Font::Body);
-            p.Paragraph(c.text, { c.rect.x, c.rect.y + std::max(0.f, (c.rect.h - labelHeight) / 2), c.rect.w - 52, c.rect.h }, ui::Font::Body,
+            // The label, then "On" or "Off" and the switch (the kit's row).
+            const float labelHeight = p.ParagraphHeight(c.text, c.rect.w - 84, ui::Font::Body);
+            p.Paragraph(c.text, { c.rect.x, c.rect.y + std::max(0.f, (c.rect.h - labelHeight) / 2), c.rect.w - 84, c.rect.h }, ui::Font::Body,
                         theme::WithAlpha(k.text, a));
-            DrawSwitch(ui::ToD2D({ c.rect.Right() - 40, c.rect.y + (c.rect.h - 20) / 2, 40, 20 }), c.on, state);
+            DrawToggle(ui::ToD2D({ c.rect.Right() - 84, c.rect.y, 84, c.rect.h }), c.on, state);
             break;
         }
         case Kind::Field:
@@ -978,6 +1019,7 @@ namespace sd::mediatools
     {
         const auto& f = Cur();
         const RectF& h = m_rcHeader;
+        DrawToolBar(ui::ToD2D(h));
         // The tool bar's tabs are on the left (controls); the file's details follow them.
         std::wstring sub;
         if (m_req.tool == EditorTool::JoinVideos)
@@ -1004,8 +1046,7 @@ namespace sd::mediatools
             p.Text(counter, chip, ui::Font::BodyStrong, Theme().accent, 1);
             right -= cw + 12;
         }
-        p.Text(sub, { m_toolBarRight, h.y, std::max(0.f, right - m_toolBarRight), h.h }, ui::Font::Body, Theme().textDim);
-        p.Line(0, h.Bottom() - 0.5f, h.Right(), h.Bottom() - 0.5f, Theme().line);
+        p.Text(sub, { m_toolBarRight, h.y, std::max(0.f, right - m_toolBarRight), h.h }, ui::Font::Small, Theme().textDim);
     }
 
     PreviewMap EditorWindow::StageMap() const
@@ -1781,9 +1822,8 @@ namespace sd::mediatools
             StopPlay();
     }
 
-    void EditorWindow::PaintFooter(ui::Painter& p)
+    void EditorWindow::PaintFooter(ui::Painter&)
     {
-        p.Line(0, m_rcFooter.y + 0.5f, m_rcFooter.Right(), m_rcFooter.y + 0.5f, Theme().line);
         // The hovered control's hint, else the keys for this tool.
         std::wstring hint;
         if (const auto* c = m_hover ? ControlById(m_hover) : nullptr)
@@ -1796,6 +1836,6 @@ namespace sd::mediatools
         for (const auto& c : m_controls)
             if (c.rect.y >= m_rcFooter.y)
                 right = std::min(right, c.rect.x);
-        p.Text(hint, { kPad, m_rcFooter.y, right - kPad - 16, m_rcFooter.h }, ui::Font::Small, Theme().textDim);
+        DrawFooterBar(ui::ToD2D(m_rcFooter), hint, right);
     }
 }

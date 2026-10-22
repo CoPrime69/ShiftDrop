@@ -13,6 +13,7 @@ namespace sd::crop
         explicit CropTool(size_t fileCount);
 
         std::wstring Title() const override { return L"Crop"; }
+        wchar_t Icon() const override { return 0xE7A8; }   // Crop
         std::wstring ApplyLabel() const override { return m_files > 1 ? L"Crop all" : L"Crop"; }
         void ImageReady(size_t index, int width, int height) override;
         canvas::ViewRotation Rotation() const override { return { m_params.quarterTurns, m_params.straighten }; }

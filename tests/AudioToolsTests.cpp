@@ -347,6 +347,11 @@ TEST(AudioTools, SlicesOnTheToolsWheelForAudioOnly)
         std::string error;
         EXPECT_TRUE(ParseRecipe(ToolRecipe(tool).dump(), recipes.registry, parsed, error)) << error;
         EXPECT_EQ(parsed.steps[0].action, ToolAction(tool));
+        // Its tab shows the wheel's icon for the same action.
+        EXPECT_NE(ToolIcon(tool), 0) << ToolAction(tool);
+        for (const auto& r : recipes.store.All())
+            if (r.icon && !r.steps.empty() && r.steps[0].action == ToolAction(tool))
+                EXPECT_EQ(static_cast<int>(ToolIcon(tool)), static_cast<int>(r.icon)) << r.id;
     }
     const auto* engine = runner.EngineFor(recipes.Get("audio-normalize"));
     ASSERT_NE(engine, nullptr);

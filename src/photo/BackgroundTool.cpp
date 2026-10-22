@@ -167,6 +167,7 @@ namespace sd::photo
         Control aspect;
         aspect.id = "aspect";
         aspect.kind = ControlKind::Choice;
+        aspect.chips = true;
         int i = 0;
         for (const auto& c : AspectChoices())
         {

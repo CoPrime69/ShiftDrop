@@ -137,6 +137,7 @@ namespace sd::crop
         Control aspect;
         aspect.id = "aspect";
         aspect.kind = ControlKind::Choice;
+        aspect.chips = true;
         int i = 0;
         for (const auto& preset : AspectPresets())
         {
