@@ -2,12 +2,15 @@
 #include "Brand.h"
 #include "UiThread.h"
 #include "resource.h"
+#include "keyboard/WheelLabels.h"
+#include "keyboard/WheelLayout.h"
 
 #include <shellscalingapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace sd
 {
@@ -157,7 +160,7 @@ namespace sd
     IDWriteTextFormat* ControlKit::TextFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
     {
         for (const auto& f : m_formats)
-            if (!f.icon && f.size == sizeDip && f.weight == weight && f.align == align)
+            if (!f.icon && !f.wrap && f.size == sizeDip && f.weight == weight && f.align == align)
                 return f.format.Get();
         Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
         if (FAILED(m_dwrite->CreateTextFormat(m_textFamily.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
@@ -383,6 +386,384 @@ namespace sd
         }
         if (s.focused)
             DrawFocusRing(D2D1::RectF(centre.x - outer, centre.y - outer, centre.x + outer, centre.y + outer), outer);
+    }
+
+    // ---- The windows' pieces ------------------------------------------------------------------------
+
+    IDWriteTextFormat* ControlKit::WrapFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align)
+    {
+        for (const auto& f : m_formats)
+            if (f.wrap && f.size == sizeDip && f.weight == weight && f.align == align)
+                return f.format.Get();
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
+        if (!m_dwrite || FAILED(m_dwrite->CreateTextFormat(m_textFamily.c_str(), nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                                                           sizeDip, L"", &format)))
+            return nullptr;
+        format->SetTextAlignment(align);
+        format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+        CachedFormat cached{ sizeDip, static_cast<int>(weight), static_cast<int>(align), false, format };
+        cached.wrap = true;
+        m_formats.push_back(cached);
+        return format.Get();
+    }
+
+    void ControlKit::DrawGlyph(wchar_t glyph, float sizeDip, const D2D1_RECT_F& r, const D2D1_COLOR_F& color)
+    {
+        if (!glyph)
+            return;
+        const wchar_t text[2] = { glyph, 0 };
+        DrawText(text, IconFormat(sizeDip), r, color);
+    }
+
+    void ControlKit::DrawParagraph(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, const D2D1_RECT_F& r, const D2D1_COLOR_F& color,
+                                   DWRITE_TEXT_ALIGNMENT align)
+    {
+        auto* format = WrapFormat(sizeDip, weight, align);
+        if (format && m_target && !text.empty())
+            if (auto* brush = Brush(color))
+                m_target->DrawText(text.data(), static_cast<UINT32>(text.size()), format, r, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+
+    float ControlKit::TextHeight(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, float width)
+    {
+        auto* format = WrapFormat(sizeDip, weight, DWRITE_TEXT_ALIGNMENT_LEADING);
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        DWRITE_TEXT_METRICS metrics{};
+        if (!format || text.empty() ||
+            FAILED(m_dwrite->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), format, std::max(1.f, width), 10000.f, &layout)) ||
+            FAILED(layout->GetMetrics(&metrics)))
+            return text.empty() ? 0.f : sizeDip * 1.4f;
+        return std::ceil(metrics.height);
+    }
+
+    void ControlKit::DrawCard(const D2D1_RECT_F& r)
+    {
+        FillRound(r, m_colors.panel, kCardRadius);
+        StrokeRound(r, m_colors.line, 1.f, kCardRadius);
+    }
+
+    void ControlKit::DrawNavItem(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view text, bool selected, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        if (selected || (hot && s.pressed))
+            FillRound(r, c.selected, kControlRadius);
+        else if (hot)
+            FillRound(r, theme::WithAlpha(c.selected, 0.6f), kControlRadius);
+        if (selected)
+        {
+            const float cy = (r.top + r.bottom) / 2;
+            FillRound(D2D1::RectF(r.left, cy - 8, r.left + 3, cy + 8), c.accent, 1.5f);
+        }
+        DrawGlyph(icon, 16.f, D2D1::RectF(r.left + 12, r.top, r.left + 30, r.bottom), c.text);
+        DrawText(text, TextFormat(kNavText, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL), D2D1::RectF(r.left + 44, r.top, r.right - 8, r.bottom),
+                 c.text);
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawToggle(const D2D1_RECT_F& r, bool on, ControlState s)
+    {
+        const float cy = std::round((r.top + r.bottom) / 2);
+        const auto track = D2D1::RectF(r.right - 40, cy - 10, r.right, cy + 10);
+        DrawSwitch(track, on, { s.enabled, s.hot, s.pressed, false });
+        DrawText(on ? L"On" : L"Off", TextFormat(kNavText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING), D2D1::RectF(r.left, r.top, track.left - 12, r.bottom),
+                 theme::WithAlpha(m_colors.text, s.enabled ? 1.f : kDisabledAlpha));
+        if (s.focused)
+            DrawFocusRing(D2D1::RectF(r.left + 3, r.top + 3, r.right - 3, r.bottom - 3), kControlRadius);
+    }
+
+    float ControlKit::SegmentWidth(std::wstring_view text)
+    {
+        return std::ceil(TextWidth(text, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 32.f;
+    }
+
+    void ControlKit::DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool selected, Part part, ControlState s)
+    {
+        if (!m_target)
+            return;
+        const auto& c = m_colors;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        // The track runs on past the sides another option continues; the clip cuts it there.
+        const bool open0 = part == Part::Middle || part == Part::Last, open1 = part == Part::First || part == Part::Middle;
+        m_target->PushAxisAlignedClip(r, D2D1_ANTIALIAS_MODE_ALIASED);
+        const auto track = D2D1::RectF(open0 ? r.left - 12 : r.left, r.top, open1 ? r.right + 12 : r.right, r.bottom);
+        FillRound(track, theme::WithAlpha(c.window, alpha), 5.f);
+        StrokeRound(track, c.controlLine, 1.f, 5.f);
+        m_target->PopAxisAlignedClip();
+        const auto pill = D2D1::RectF(r.left + (open0 ? 1.f : 3.f), r.top + 3, r.right - (open1 ? 1.f : 3.f), r.bottom - 3);
+        const bool hot = s.enabled && s.hot;
+        if (selected)
+        {
+            FillRound(pill, theme::WithAlpha(c.panel, alpha), kControlRadius);
+            StrokeRound(pill, c.controlLine, 1.f, kControlRadius);
+            FillInside(pill, kControlRadius, D2D1::RectF(pill.left, pill.bottom - 2, pill.right, pill.bottom), theme::WithAlpha(c.accent, alpha));
+        }
+        else if (hot)
+            FillRound(pill, s.pressed ? c.controlDown : c.controlHover, kControlRadius);
+        DrawText(text, TextFormat(kControlText, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), pill,
+                 theme::WithAlpha(selected || hot ? c.text : c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(pill, kControlRadius);
+    }
+
+    void ControlKit::DrawRadio(const D2D1_RECT_F& r, std::wstring_view text, std::wstring_view detail, bool selected, ControlState s)
+    {
+        if (!m_target)
+            return;
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        const auto centre = D2D1::Point2F(r.left + 10, std::round((r.top + r.bottom) / 2));
+        if (selected)
+        {
+            if (auto* brush = Brush(theme::WithAlpha(hot ? c.accentHover : c.accent, alpha)))
+                m_target->FillEllipse(D2D1::Ellipse(centre, 9.f, 9.f), brush);
+            if (auto* brush = Brush(theme::WithAlpha(c.onAccent, alpha)))
+                m_target->FillEllipse(D2D1::Ellipse(centre, hot && s.pressed ? 3.f : 4.f, hot && s.pressed ? 3.f : 4.f), brush);
+        }
+        else
+        {
+            if (auto* brush = Brush(theme::WithAlpha(hot ? c.controlHover : c.control, alpha)))
+                m_target->FillEllipse(D2D1::Ellipse(centre, 9.f, 9.f), brush);
+            if (auto* brush = Brush(theme::WithAlpha(c.textDim, alpha)))
+                m_target->DrawEllipse(D2D1::Ellipse(centre, 8.5f, 8.5f), brush, 1.f);
+        }
+        auto* format = TextFormat(kControlText);
+        const float x = r.left + 30;
+        const float width = text.empty() ? 0.f : std::ceil(theme::TextWidth(m_dwrite.Get(), text, format));
+        DrawText(text, format, D2D1::RectF(x, r.top, std::min(r.right, x + width + 2), r.bottom), theme::WithAlpha(c.text, alpha));
+        if (!detail.empty())
+            DrawText(detail, TextFormat(kSmallText), D2D1::RectF(x + width + 12, r.top, r.right, r.bottom), theme::WithAlpha(c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(D2D1::RectF(r.left + 1, centre.y - 9, r.left + 19, centre.y + 9), 9.f);
+    }
+
+    float ControlKit::TabWidth(std::wstring_view text)
+    {
+        return std::ceil(TextWidth(text, kNavText, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 6.f;
+    }
+
+    void ControlKit::DrawTab(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        DrawText(text, TextFormat(kNavText, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(r.left, r.top, r.right, r.bottom - 9), theme::WithAlpha(selected || hot ? c.text : c.textDim, s.enabled ? 1.f : kDisabledAlpha));
+        const float cx = (r.left + r.right) / 2;
+        if (selected)
+            FillRound(D2D1::RectF(cx - 9, r.bottom - 6, cx + 9, r.bottom - 3), c.accent, 1.5f);
+        else if (hot)
+            FillRound(D2D1::RectF(cx - 9, r.bottom - 6, cx + 9, r.bottom - 3), c.controlLine, 1.5f);
+        if (s.focused)
+            DrawFocusRing(D2D1::RectF(r.left + 2, r.top + 4, r.right - 2, r.bottom - 2), kControlRadius);
+    }
+
+    float ControlKit::ChipWidth(std::wstring_view text)
+    {
+        return std::ceil(TextWidth(text, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD)) + 42.f;
+    }
+
+    void ControlKit::DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool on, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        const float radius = (r.bottom - r.top) / 2;
+        if (on)
+        {
+            FillRound(r, theme::WithAlpha(hot ? theme::WithAlpha(c.accent, s.pressed ? 0.34f : 0.26f) : c.accentSoft, alpha), radius);
+            StrokeRound(r, theme::WithAlpha(c.accent, alpha), 1.f, radius);
+            DrawGlyph(0xE73E, 11.f, D2D1::RectF(r.left + 9, r.top, r.left + 23, r.bottom), theme::WithAlpha(c.text, alpha));   // CheckMark
+        }
+        else
+        {
+            FillRound(r, theme::WithAlpha(hot && s.pressed ? c.controlDown : hot ? c.controlHover : c.control, alpha), radius);
+            StrokeRound(r, theme::WithAlpha(c.controlLine, alpha), 1.f, radius);
+        }
+        // The label keeps its place on and off, so chips don't shift as they are ticked.
+        DrawText(text, TextFormat(kControlText, on ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL), D2D1::RectF(r.left + 27, r.top, r.right - 10, r.bottom),
+                 theme::WithAlpha(on ? c.text : c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(r, radius);
+    }
+
+    void ControlKit::DrawDropDown(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        FillRound(r, theme::WithAlpha(open || (hot && s.pressed) ? c.controlDown : hot ? c.controlHover : c.control, alpha), kControlRadius);
+        StrokeRound(r, c.controlLine, 1.f, kControlRadius);
+        DrawText(text, TextFormat(kControlText), D2D1::RectF(r.left + 12, r.top, r.right - 34, r.bottom), theme::WithAlpha(c.text, alpha));
+        DrawGlyph(open ? 0xE70E : 0xE70D, 11.f, D2D1::RectF(r.right - 30, r.top, r.right - 10, r.bottom), theme::WithAlpha(c.textDim, alpha));   // ChevronUp / ChevronDown
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawListRow(const D2D1_RECT_F& r, std::wstring_view text, bool current, bool hot)
+    {
+        const auto& c = m_colors;
+        if (!m_target)
+            return;
+        if (auto* brush = Brush(c.field))
+            m_target->FillRectangle(r, brush);
+        const auto inner = D2D1::RectF(r.left + 4, r.top + 2, r.right - 4, r.bottom - 2);
+        if (hot || current)
+            FillRound(inner, hot ? c.controlHover : c.selected, kControlRadius);
+        if (current)
+        {
+            const float cy = (r.top + r.bottom) / 2;
+            FillRound(D2D1::RectF(inner.left, cy - 8, inner.left + 3, cy + 8), c.accent, 1.5f);
+        }
+        DrawText(text, TextFormat(kControlText), D2D1::RectF(inner.left + 12, r.top, inner.right - 8, r.bottom), c.text);
+    }
+
+    void ControlKit::FillInside(const D2D1_RECT_F& shape, float radius, const D2D1_RECT_F& r, const D2D1_COLOR_F& color)
+    {
+        Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+        Microsoft::WRL::ComPtr<ID2D1RoundedRectangleGeometry> mask;
+        if (!m_target)
+            return;
+        m_target->GetFactory(&factory);
+        if (!factory || FAILED(factory->CreateRoundedRectangleGeometry(D2D1::RoundedRect(shape, radius, radius), &mask)))
+            return;
+        // A layer without its own bitmap (Windows 8 and later), masked by the rounded shape.
+        m_target->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), mask.Get()), nullptr);
+        if (auto* brush = Brush(color))
+            m_target->FillRectangle(r, brush);
+        m_target->PopLayer();
+    }
+
+    void ControlKit::DrawTextBox(const D2D1_RECT_F& r, bool focused, bool invalid, bool enabled)
+    {
+        const auto& c = m_colors;
+        FillRound(r, theme::WithAlpha(c.field, enabled ? 1.f : kDisabledAlpha), kControlRadius);
+        StrokeRound(r, invalid ? c.danger : c.controlLine, 1.f, kControlRadius);
+        // The line under it follows the rounded corners; thicker while typing or when it is wrong.
+        const float thick = focused || invalid ? 2.f : 1.f;
+        const auto line = invalid ? c.danger : focused ? c.accent : theme::WithAlpha(c.textFaint, enabled ? 1.f : kDisabledAlpha);
+        FillInside(r, kControlRadius, D2D1::RectF(r.left, r.bottom - thick, r.right, r.bottom), line);
+    }
+
+    void ControlKit::DrawExpander(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view title, std::wstring_view detail, std::wstring_view trailing,
+                                  bool open, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        if (hot)
+            FillRound(r, s.pressed ? c.controlDown : c.controlHover, kCardRadius);
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        DrawGlyph(icon, 18.f, D2D1::RectF(r.left + 16, r.top, r.left + 40, r.bottom), theme::WithAlpha(c.text, alpha));
+        const float x = r.left + (icon ? 54.f : 18.f), cy = (r.top + r.bottom) / 2;
+        const float right = r.right - 46 - (trailing.empty() ? 0.f : std::ceil(TextWidth(trailing, kControlText)) + 16);
+        if (detail.empty())
+            DrawText(title, TextFormat(kNavText), D2D1::RectF(x, r.top, right, r.bottom), theme::WithAlpha(c.text, alpha));
+        else
+        {
+            DrawText(title, TextFormat(kNavText), D2D1::RectF(x, cy - 19, right, cy), theme::WithAlpha(c.text, alpha));
+            DrawText(detail, TextFormat(kSmallText), D2D1::RectF(x, cy + 1, right, cy + 18), theme::WithAlpha(c.textDim, alpha));
+        }
+        DrawText(trailing, TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING), D2D1::RectF(right, r.top, r.right - 46, r.bottom),
+                 theme::WithAlpha(c.textDim, alpha));
+        DrawGlyph(open ? 0xE70E : 0xE70D, 11.f, D2D1::RectF(r.right - 42, r.top, r.right - 18, r.bottom), theme::WithAlpha(c.text, alpha));
+        if (s.focused)
+            DrawFocusRing(D2D1::RectF(r.left + 3, r.top + 3, r.right - 3, r.bottom - 3), kCardRadius);
+    }
+
+    void ControlKit::DrawMiniWheel(D2D1_POINT_2F centre, float radius, const std::vector<MiniTile>& tiles, int hot, const theme::Palette& p,
+                                   std::wstring_view centreText, std::wstring_view detail)
+    {
+        if (!m_target)
+            return;
+        Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+        m_target->GetFactory(&factory);
+        // The real wheel's layout: which ring and place each tile takes, the rings' radii, and "More"
+        // when there are more tiles than two rings hold.
+        const auto layout = wheel::Arrange(tiles.size());
+        constexpr float kDiscMargin = 6.f;   // the plate around the outer ring, DIPs at full size
+        const float scale = radius / (layout.OuterEdge() + kDiscMargin);
+        constexpr float kDeg = 180.f / std::numbers::pi_v<float>;
+        const auto polar = [&](float r, float degrees) {
+            return D2D1::Point2F(centre.x + r * std::sin(degrees / kDeg), centre.y - r * std::cos(degrees / kDeg));
+        };
+        if (auto* brush = Brush(p.disc))
+            m_target->FillEllipse(D2D1::Ellipse(centre, radius, radius), brush);
+        if (auto* brush = Brush(p.discLine))
+            m_target->DrawEllipse(D2D1::Ellipse(centre, radius - 0.5f, radius - 0.5f), brush, 1.f);
+        const float gap = wheel::kTileGapDip * scale / 2.f;
+        for (int i = 0; i < static_cast<int>(layout.slots.size()); ++i)
+        {
+            const auto band = layout.BandOf(i);
+            const float in = band.inner * scale, out = band.outer * scale, mid = layout.MidDeg(i), span = layout.SpanDeg(i);
+            Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;
+            Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+            if (!factory || FAILED(factory->CreatePathGeometry(&path)) || FAILED(path->Open(&sink)))
+                return;
+            if (layout.slots[static_cast<size_t>(i)].count == 1)
+            {
+                // A ring with one tile is the whole ring.
+                sink->SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+                for (const float r : { out, in })
+                {
+                    sink->BeginFigure(polar(r, 0.f), D2D1_FIGURE_BEGIN_FILLED);
+                    sink->AddArc(D2D1::ArcSegment(polar(r, 180.f), D2D1::SizeF(r, r), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+                    sink->AddArc(D2D1::ArcSegment(polar(r, 360.f), D2D1::SizeF(r, r), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+                    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                }
+            }
+            else
+            {
+                // Each side `gap` from the radial line, so the gap between tiles is as wide all along.
+                const float a0 = mid - span / 2, a1 = mid + span / 2;
+                const float dOut = std::asin(std::min(1.f, gap / out)) * kDeg, dIn = std::asin(std::min(1.f, gap / std::max(in, gap))) * kDeg;
+                sink->BeginFigure(polar(out, a0 + dOut), D2D1_FIGURE_BEGIN_FILLED);
+                sink->AddArc(D2D1::ArcSegment(polar(out, a1 - dOut), D2D1::SizeF(out, out), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                              span - 2 * dOut > 180.f ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL));
+                sink->AddLine(polar(in, a1 - dIn));
+                sink->AddArc(D2D1::ArcSegment(polar(in, a0 + dIn), D2D1::SizeF(in, in), 0.f, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                                              span - 2 * dIn > 180.f ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL));
+                sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+            }
+            sink->Close();
+            const int index = layout.ContentIndex(i);
+            const bool lit = index >= 0 && index == hot;
+            if (auto* brush = Brush(lit ? p.accent : p.tile))
+                m_target->FillGeometry(path.Get(), brush);
+            if (!lit)
+                if (auto* brush = Brush(p.tileLine))
+                    m_target->DrawGeometry(path.Get(), brush, 1.f);
+            const bool more = layout.IsMore(i);
+            if (!more && (index < 0 || static_cast<size_t>(index) >= tiles.size()))
+                continue;
+            const std::wstring_view label = more ? std::wstring_view(L"More") : std::wstring_view(tiles[static_cast<size_t>(index)].label);
+            const wchar_t icon = more ? wchar_t(0xE712) : tiles[static_cast<size_t>(index)].icon;   // More: three dots
+            const auto at = polar((in + out) / 2, mid);
+            const float width = std::min(out - in, 2.f * (in + out) / 2 * std::sin(std::min(span, 180.f) / 2 / kDeg)) * 0.92f;
+            const float size = std::max(6.f, std::round(13.f * scale * 2) / 2);
+            const auto ink = lit ? p.textOnAccent : p.text;
+            if (icon)
+            {
+                const float iconSize = std::max(7.f, std::round(18.f * scale));
+                DrawGlyph(icon, iconSize, D2D1::RectF(at.x - iconSize, at.y - iconSize - 1, at.x + iconSize, at.y + 1), ink);
+                DrawText(label, TextFormat(size, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
+                         D2D1::RectF(at.x - width / 2, at.y + 1, at.x + width / 2, at.y + 2 + size * 1.4f), ink);
+            }
+            else
+                DrawText(label, TextFormat(size, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
+                         D2D1::RectF(at.x - width / 2, at.y - size, at.x + width / 2, at.y + size), ink);
+        }
+        const float hub = wheel::kCentreDip * scale;
+        if (auto* brush = Brush(p.centre))
+            m_target->FillEllipse(D2D1::Ellipse(centre, hub, hub), brush);
+        if (auto* brush = Brush(p.centreLine))
+            m_target->DrawEllipse(D2D1::Ellipse(centre, hub - 0.5f, hub - 0.5f), brush, 1.f);
+        const float size = std::max(7.f, std::round(15.f * scale * 2) / 2), small = std::max(6.f, std::round(11.f * scale * 2) / 2);
+        DrawText(centreText, TextFormat(size, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(centre.x - hub, centre.y - size * 1.2f, centre.x + hub, centre.y + (detail.empty() ? size * 1.2f : 0.f)), p.text);
+        DrawText(detail, TextFormat(small, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(centre.x - hub + 4, centre.y + 1, centre.x + hub - 4, centre.y + 1 + small * 1.4f), p.subtleText);
     }
 
     int EditorFrame::ButtonAt(D2D1_POINT_2F p) const
