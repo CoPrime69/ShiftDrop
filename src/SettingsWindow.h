@@ -4,6 +4,7 @@
 #include "Settings.h"
 #include "SettingsPages.h"
 #include "WheelContents.h"
+#include "updates/Updates.h"
 
 #include <windows.h>
 
@@ -27,6 +28,9 @@ namespace sd
         std::vector<std::wstring> ocrLanguages;   // the text recognition languages, as Windows names them
         int ocrChoice = 0;                        // 0 automatic, else 1 + the index in ocrLanguages
         bool shellMenuAvailable = false, shellMenuOn = false;
+        updates::Mode updateMode = updates::kDefaultMode;
+        std::wstring updateStatus, updateChecked;   // the line under Check now, and when it last checked
+        bool updateChecking = false;                // a check or a download is under way
     };
 
     // "Settings…" from the tray (App Windows page): navigation on the left (General, Appearance, Wheel,
@@ -52,6 +56,8 @@ namespace sd
 
         // Creates the window or brings it to the front, filled from `tree` and `state`.
         void Show(SettingsTree tree, SettingsState state);
+        // Updates › Check for updates says this now (a check finished while the window is open).
+        void SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking);
 
     private:
         using Item = settings::Item;
@@ -95,6 +101,7 @@ namespace sd
         void SetFeatures(const Features& features);
         void FillWheel();            // the chips, the counts and the section's line, from m_state.features
         void FillNaming();
+        void FillUpdates();
         void SendCommand(UINT id);
 
         // ---- Layout ----
@@ -163,6 +170,9 @@ namespace sd
         std::array<HWND, 4> m_namings{};
         HWND m_example = nullptr, m_exampleNote = nullptr;
         RECT m_exampleBox{};
+        // Updates
+        std::array<HWND, 3> m_updateModes{};
+        HWND m_checkNow = nullptr;
         // Advanced and About
         HWND m_shellMenu = nullptr, m_recipes = nullptr, m_logs = nullptr, m_source = nullptr;
         HWND m_aboutName = nullptr, m_aboutVersion = nullptr, m_aboutFree = nullptr;

@@ -470,7 +470,7 @@ namespace sd::ask
         else
             for (const auto& c : question.choices)
                 buttons.push_back({ c.id, c.label, buttons.empty() });
-        buttons.push_back({ kCancel, L"Cancel", buttons.empty() });
+        buttons.push_back({ kCancel, question.cancel.empty() ? std::wstring(L"Cancel") : question.cancel, buttons.empty() });
         return buttons;
     }
 

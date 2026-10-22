@@ -1,6 +1,8 @@
 #include "HistoryView.h"
 #include "Strings.h"
 
+#include <windows.h>
+
 #include <algorithm>
 #include <format>
 
@@ -123,6 +125,13 @@ namespace sd::history
         {
             return static_cast<int>((std::chrono::sys_days{ to } - std::chrono::sys_days{ from }).count());
         }
+    }
+
+    LocalTime LocalNow()
+    {
+        SYSTEMTIME t{};
+        GetLocalTime(&t);   // RunRecord::started is local time too
+        return { std::chrono::year_month_day{ std::chrono::year{ t.wYear }, std::chrono::month{ t.wMonth }, std::chrono::day{ t.wDay } }, t.wHour, t.wMinute };
     }
 
     std::wstring WhenText(std::wstring_view started, const LocalTime& now)

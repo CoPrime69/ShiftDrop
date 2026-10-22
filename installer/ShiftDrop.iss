@@ -6,8 +6,9 @@
 ;
 ; Per-user install: no admin rights, no UAC prompt. Files go to %LOCALAPPDATA%\Programs\ShiftDrop.
 ; The app is linked with the static CRT, so nothing else (no VC++ redistributable) is installed.
-; ffmpeg.exe and ShiftDropWorker.exe (engines\) are the only other programs; ffmpeg runs when a video or
-; audio file is converted, the worker when an archive is read.
+; ffmpeg.exe and ShiftDropWorker.exe (engines\) and ShiftDrop-Updater.exe are the only other programs;
+; ffmpeg runs when a video or audio file is converted, the worker when an archive is read, and the
+; updater once a day (unless Settings > Updates is Off) or on Check now, to look for a new release.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -17,6 +18,9 @@
 #endif
 #ifndef WorkerExe
   #define WorkerExe "..\build\x64-release\Release\ShiftDropWorker.exe"
+#endif
+#ifndef UpdaterExe
+  #define UpdaterExe "..\build\x64-release\Release\ShiftDrop-Updater.exe"
 #endif
 #ifndef EnginesDir
   #define EnginesDir "..\build\engines"
@@ -95,6 +99,13 @@ Source: "{#EnginesDir}\FFMPEG-LICENSE.txt"; DestDir: "{app}\engines"; Flags: ign
 Source: "{#EnginesDir}\FFMPEG-SOURCE.txt"; DestDir: "{app}\engines"; Flags: ignoreversion
 ; The sandboxed worker: reads archives inside an AppContainer with no file or network access.
 Source: "{#WorkerExe}"; DestDir: "{app}\engines"; Flags: ignoreversion
+; Check for updates: the one program that goes online (GitHub's releases only), started by the app.
+Source: "{#UpdaterExe}"; DestDir: "{app}"; Flags: ignoreversion
+
+[UninstallDelete]
+; What the updater leaves: what the last check found, and a downloaded installer in %TEMP%.
+Type: files; Name: "{localappdata}\{#AppName}\update.json"
+Type: filesandordirs; Name: "{%TEMP}\{#AppName}-update"
 
 [Icons]
 ; The ID and the activator let the app show real toasts with buttons (src/toast/ToastXml.h has both).

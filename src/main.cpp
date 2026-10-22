@@ -53,6 +53,7 @@
 #include "shelf/Carry.h"
 #include "shelf/ShelfWindow.h"
 #include "toast/Toasts.h"
+#include "updates/UpdateController.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -78,6 +79,7 @@ namespace sd
         constexpr UINT_PTR kTimerPoll = 1;           // modifier pressed while the mouse is not moving
         constexpr UINT_PTR kTimerHideFallback = 2;   // button released but OLE never sent Drop/DragLeave
         constexpr UINT_PTR kTimerWatchdog = 3;       // hook silently removed by Windows
+        constexpr UINT_PTR kTimerUpdates = 4;        // is the daily update check due? (updates::UpdateController)
         constexpr size_t kMaxSlices = 60;            // two rings hold 16; past that the wheel pages (keyboard/WheelLayout.h)
 
         // What a finished batch is called in its notification.
@@ -224,6 +226,12 @@ namespace sd
         // Paths that are gone by now (moved, undone) are left out; with none left, their folder opens.
         void OnToastClick(const toast::Activation& click)
         {
+            // An update's toast after ShiftDrop quit: start it, and its tray menu offers the update.
+            if (click.verb == toast::Verb::Update)
+            {
+                ShellExecuteW(nullptr, L"open", ThisExe().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                return;
+            }
             std::vector<std::wstring> present;
             for (const auto& p : click.paths)
                 if (PathExists(p))
@@ -361,7 +369,30 @@ namespace sd
 
             m_tray.Add(m_hwnd.get(), IdleTip());
             // Real toasts need the installer's Start menu shortcut; without it, balloons as before.
-            m_toasts = toast::Start(OnToastClick);
+            m_toasts = toast::Start([this](const toast::Activation& click) {
+                if (click.verb == toast::Verb::Update && m_updates)
+                    m_updates->Offer();
+                else
+                    OnToastClick(click);
+            });
+            // Check for updates: ShiftDrop-Updater.exe does the network part, this copy decides when.
+            m_updates = std::make_unique<updates::UpdateController>(updates::UpdateController::Hooks{
+                .window = m_hwnd.get(),
+                .timer = kTimerUpdates,
+                .busy = [this] { return (m_lanes && m_lanes->Busy()) || !m_pendingDrops.empty(); },
+                .notify = [this](const std::wstring& title, const std::wstring& text, bool warning) { m_tray.Balloon(title, text, warning ? NIIF_WARNING : NIIF_INFO); },
+                .toast = [this](const std::wstring& title, const std::wstring& text) {
+                    toast::Content content{ title, text, {} };
+                    content.update = true;
+                    return m_toasts && toast::Show(content);
+                },
+                .changed = [this] {
+                    if (m_settingsWindow)
+                        m_settingsWindow->SetUpdateStatus(m_updates->StatusLine(), m_updates->CheckedLine(), m_updates->Checking());
+                },
+                .quit = [this] { PostMessageW(m_hwnd.get(), WM_COMMAND, IDM_QUIT, 0); },   // after the controller's call returns
+            });
+            m_updates->Start();
 
             // The predicted-output card, the inspector window, keyboard picking and the wheel on
             // Explorer's selection. None of them is needed for the drag gesture, so a failure only logs.
@@ -505,6 +536,10 @@ namespace sd
             case msg::AnotherInstance:
                 m_tray.Balloon(SD_NAME, L"" SD_NAME L" is already running.");
                 return 0;
+            case msg::UpdaterDone:
+                if (m_updates)
+                    m_updates->OnUpdaterDone(wParam);
+                return 0;
             case msg::QuitRequest:
                 log::Info(L"quit requested by another process (installer or uninstaller)");
                 DestroyWindow(hwnd);
@@ -525,6 +560,8 @@ namespace sd
                 log::Info(L"shutting down");
                 hook::Uninstall();
                 KillTimer(hwnd, kTimerWatchdog);
+                KillTimer(hwnd, kTimerUpdates);
+                m_updates.reset();     // stops waiting for an updater still running (it carries on)
                 ask::UninstallUi();    // an open question closes as Cancel; its job stops with the rest
                 // Stops and joins every lane (results still in flight are freed, see PostBatch): kills a
                 // running ffmpeg, cancels an office export, waits for a move in progress.
@@ -607,6 +644,18 @@ namespace sd
             case IDM_SETTINGS:
                 if (m_settingsWindow)
                     m_settingsWindow->Show(BuildSettingsTree(), SettingsSnapshot());
+                break;
+            case IDM_UPDATE:
+                if (m_updates)
+                    m_updates->Offer();
+                break;
+            case IDM_CHECK_UPDATES:
+                if (m_updates)
+                    m_updates->CheckNow();
+                break;
+            case IDM_UPDATE_MODE_BASE + 0: case IDM_UPDATE_MODE_BASE + 1: case IDM_UPDATE_MODE_BASE + 2:
+                if (m_updates)
+                    m_updates->SetMode(static_cast<updates::Mode>(id - IDM_UPDATE_MODE_BASE));
                 break;
             case IDM_SHOW_SHELF:
                 if (m_shelf)
@@ -757,6 +806,11 @@ namespace sd
                     log::Warn(L"gesture: no Drop/DragLeave after release; hiding");
                     m_overlay->Hide();
                 }
+            }
+            else if (id == kTimerUpdates)
+            {
+                if (m_updates)
+                    m_updates->OnTimer();
             }
             else if (id == kTimerWatchdog)
             {
@@ -1045,6 +1099,13 @@ namespace sd
             }
             state.shellMenuAvailable = m_keyboard != nullptr;
             state.shellMenuOn = m_keyboard && KeyboardController::ShellMenuOn();
+            if (m_updates)
+            {
+                state.updateMode = m_updates->CurrentMode();
+                state.updateStatus = m_updates->StatusLine();
+                state.updateChecked = m_updates->CheckedLine();
+                state.updateChecking = m_updates->Checking();
+            }
             return state;
         }
 
@@ -1577,6 +1638,8 @@ namespace sd
             case NIN_KEYSELECT:
             {
                 TrayExtras extras;
+                if (m_updates)
+                    extras.update = m_updates->TrayText();
                 extras.shelf = m_shelf != nullptr;
                 extras.shelfOn = m_shelf && m_shelf->IsOn();
                 // A text-recognition language choice, only when there is more than one to pick from.
@@ -1650,6 +1713,7 @@ namespace sd
         std::deque<PendingDrop> m_pendingDrops;
         std::vector<std::wstring> m_lastOutputs;
         bool m_toasts = false;               // toast::Start succeeded
+        std::unique_ptr<updates::UpdateController> m_updates;
         POINT m_watchdogPt{};
     };
 }

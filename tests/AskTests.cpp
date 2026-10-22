@@ -235,6 +235,11 @@ TEST(Ask, TheQuestionWindowsButtons)
     buttons = ask::ButtonsOf(q);
     ASSERT_EQ(buttons.size(), 1u);
     EXPECT_TRUE(buttons[0].primary) << "Cancel alone is the one Enter presses";
+
+    // The update window's "Later" is its Cancel.
+    q.cancel = L"Later";
+    EXPECT_EQ(ask::ButtonsOf(q).back().label, L"Later");
+    EXPECT_EQ(ask::ButtonsOf(q).back().id, ask::kCancel);
 }
 
 // With the app's question window: a worker's question and password, and a question asked on the UI

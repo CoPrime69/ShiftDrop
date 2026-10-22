@@ -44,6 +44,7 @@ namespace sd::ask
         // question window lists them to pick one, the first picked, under one `confirm` button.
         bool pickOne = false;
         std::wstring confirm;   // that button's text; "OK" when empty
+        std::wstring cancel;    // the Cancel button's text ("Later"); "Cancel" when empty
     };
 
     // The buttons the question window shows for `question`, in order; the first is the primary one

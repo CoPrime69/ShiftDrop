@@ -14,7 +14,7 @@ namespace sd::settings
         constexpr wchar_t kGear = 0xE713, kPalette = 0xE790, kWheel = 0xE895, kDocument = 0xE8A5, kOptions = 0xE9E9, kInfo = 0xE946;
         constexpr wchar_t kPower = 0xE7E8, kFont = 0xE8D2, kPin = 0xE718, kDownload = 0xE896, kPrompt = 0xE756, kBrightness = 0xE706;
         constexpr wchar_t kPersonalize = 0xE771, kFullScreen = 0xE740, kPanel = 0xE737, kFolder = 0xE8B7, kList = 0xE8FD;
-        constexpr wchar_t kCode = 0xE943, kLock = 0xE72E, kMenu = 0xE700;
+        constexpr wchar_t kCode = 0xE943, kLock = 0xE72E, kMenu = 0xE700, kUpdate = 0xE777, kRefresh = 0xE72C;
 
         using enum Item;
         using enum Page;
@@ -53,24 +53,29 @@ namespace sd::settings
               L"tray menu", L"recipes json custom" },
             { LogsFolder, Advanced, nullptr, L"Logs folder", L"Useful when reporting a problem on GitHub", kList, nullptr, L"tray menu",
               L"log logs problem bug report" },
+            { UpdateMode, Updates, nullptr, L"When an update is available", L"Checked once a day. A new version is offered a week after its release.",
+              kUpdate, L"[Updates] Mode", nullptr, L"update updates upgrade new version automatic install download ask off" },
+            { CheckUpdates, Updates, nullptr, L"Check for updates", L"Asks GitHub for the latest release now", kRefresh,
+              L"[Updates] LastCheck", nullptr, L"update updates upgrade check now latest new version github" },
             { Version, About, nullptr, L"Version", nullptr, 0, nullptr, nullptr, L"about version" },
             { SourceCode, About, nullptr, L"Source code", L"github.com/CoPrime69/" SD_NAME, kCode, nullptr, nullptr,
               L"github source code free open" },
-            { Privacy, About, nullptr, L"Offline \u00B7 No account \u00B7 No telemetry", L"Everything runs on this PC. Nothing is uploaded.",
+            { Privacy, About, nullptr, L"Private \u00B7 No account \u00B7 No telemetry",
+              L"Your files never leave this PC. Only the update check goes online, to GitHub, and sends nothing about you.",
               kLock, nullptr, nullptr, L"privacy offline network" },
         } };
     }
 
     const wchar_t* PageTitle(Page page)
     {
-        constexpr const wchar_t* kTitles[kPageCount] = { L"General", L"Appearance", L"Wheel", L"Output", L"Advanced", L"About" };
+        constexpr const wchar_t* kTitles[kPageCount] = { L"General", L"Appearance", L"Wheel", L"Output", L"Advanced", L"Updates", L"About" };
         const auto i = static_cast<size_t>(page);
         return i < kPageCount ? kTitles[i] : L"";
     }
 
     wchar_t PageIcon(Page page)
     {
-        constexpr wchar_t kIcons[kPageCount] = { kGear, kPalette, kWheel, kDocument, kOptions, kInfo };
+        constexpr wchar_t kIcons[kPageCount] = { kGear, kPalette, kWheel, kDocument, kOptions, kUpdate, kInfo };
         const auto i = static_cast<size_t>(page);
         return i < kPageCount ? kIcons[i] : 0;
     }
@@ -109,6 +114,9 @@ namespace sd::settings
         static constexpr const wchar_t* kSource[] = { L"Open the source code on GitHub" };
         static constexpr const wchar_t* kWheel[] = { L"Find an action", L"Turn off this section", L"Turn on this section", L"Reset to default" };
         static constexpr const wchar_t* kAccent[] = { L"Custom\u2026", L"Delete colour" };
+        // In updates::Mode's order.
+        static constexpr const wchar_t* kUpdateModes[] = { L"Install automatically", L"Ask me first", L"Off" };
+        static constexpr const wchar_t* kCheck[] = { L"Check now" };
         switch (item)
         {
         case Item::Theme: return kTheme;
@@ -121,6 +129,8 @@ namespace sd::settings
         case Item::SourceCode: return kSource;
         case Item::WheelContents: return kWheel;
         case Item::Accent: return kAccent;
+        case Item::UpdateMode: return kUpdateModes;
+        case Item::CheckUpdates: return kCheck;
         default: return {};
         }
     }
@@ -141,6 +151,7 @@ namespace sd::settings
             { L"folder", L"directory" },
             { L"right-click", L"context menu" },
             { L"github", L"source code" },
+            { L"update", L"upgrade", L"new version" },
         };
         std::vector<std::wstring> words{ word };
         for (const auto& group : kGroups)

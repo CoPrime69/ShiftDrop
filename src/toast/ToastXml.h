@@ -15,16 +15,17 @@ namespace sd::toast
     inline constexpr wchar_t kAppId[] = L"CoPrime69.ShiftDrop";
     inline constexpr wchar_t kActivatorClsid[] = L"{AF377B89-066C-4AD3-8387-8B77C419B8EE}";
 
-    // What a click asks for: show the outputs in Explorer (the toast itself, "Open folder"), or open
-    // the one output ("Open").
-    enum class Verb { Reveal, Open };
+    // What a click asks for: show the outputs in Explorer (the toast itself, "Open folder"), open
+    // the one output ("Open"), or show the update window (an update's toast, "Update now…").
+    enum class Verb { Reveal, Open, Update };
     struct Activation
     {
         Verb verb = Verb::Reveal;
         std::vector<std::wstring> paths;   // full paths
     };
 
-    // The arguments a click hands back: "reveal|C:\a.png|C:\b.png" ('|' is never in a path). The
+    // The arguments a click hands back: "reveal|C:\a.png|C:\b.png" ('|' is never in a path), or
+    // "update" alone. The
     // whole toast must stay under 5 KB, so paths stop once `budget` characters are used (the first
     // is always kept); Explorer then selects the ones that fit.
     inline constexpr size_t kArgumentBudget = 1000;
@@ -38,6 +39,7 @@ namespace sd::toast
         std::wstring text;                  // a line or two under it
         std::vector<std::wstring> outputs;  // what the buttons act on; none: a toast with no buttons
         bool failed = false;                // nothing was made: a Dismiss button instead of Open
+        bool update = false;                // an update to offer: "Update now…" and "Later"
     };
     // The line under a batch's title, as the brand kit words it: "photo (converted).webp and 2 more,
     // next to the originals." (`names` are the outputs' file names, `where` SavedWhere's phrase).
