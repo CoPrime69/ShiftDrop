@@ -1,3 +1,8 @@
+// The accessibility GUIDs (CLSID_AccPropServices, PROPID_ACC_*) are defined here: no import library has them.
+#include <windows.h>
+#include <initguid.h>
+#include <oleacc.h>
+
 #include "DialogWindow.h"
 #include "Strings.h"
 #include "resource.h"
