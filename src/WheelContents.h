@@ -69,5 +69,16 @@ namespace sd
         bool Matches(const SettingsTree::Slice& slice, std::wstring_view query);
         // The tiles the group's slices put on the wheel, in order: the ones that are on.
         std::vector<SettingsTree::Slice> PreviewSlices(const Features& features, const SettingsTree::Group& group);
+
+        // What the Wheel page shows on the tab of section `ring` with `query` in Find an action: that
+        // section's kinds of file that have slices (while searching, only those with a match, opened),
+        // each with the places in its `slices` of the chips shown. No other section's card or chip.
+        struct ShownGroup
+        {
+            const SettingsTree::Group* group = nullptr;   // in the tree
+            std::vector<size_t> chips;                     // places in group->slices, in order
+            bool searched = false;                         // shown open because of the query
+        };
+        std::vector<ShownGroup> Shown(const SettingsTree& tree, Ring ring, std::wstring_view query);
     }
 }

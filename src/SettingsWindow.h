@@ -78,8 +78,11 @@ namespace sd
         void ShowPage(Page page);
         void OnCommand(int id, int code, HWND control);
         void OnFind();
+        void FindNow();
         struct GroupView;
         GroupView* FoundGroup(const settings::Found& found);   // the Wheel page's card for what was found
+        GroupView* ViewOf(const SettingsTree::Group* group);    // the card of a kind of file in m_tree
+        bool IsPlaced(HWND control) const;                      // Layout() placed it this time: the page shows it
         void PlaceFound();                                     // in Layout(): the ring and Enter's target
         void ChangePreferences(const Preferences& p);
         void SetAccent(const accent::Setting& setting);

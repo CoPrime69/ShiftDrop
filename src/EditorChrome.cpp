@@ -98,4 +98,46 @@ namespace sd::chrome
             return L"Fit";
         return std::format(L"{:.0f}%", std::max(0.0, zoom) * 100);
     }
+
+    SliderParts SliderOnChannel(const D2D1_RECT_F& channel, const D2D1_RECT_F& thumb, float trackHeight)
+    {
+        SliderParts parts;
+        const float cy = std::round((channel.top + channel.bottom) / 2);
+        parts.track = D2D1::RectF(channel.left, cy - trackHeight / 2, std::max(channel.left, channel.right), cy + trackHeight / 2);
+        const float width = parts.track.right - parts.track.left;
+        const float x = (thumb.left + thumb.right) / 2;
+        parts.value = width > 0 ? std::clamp((x - parts.track.left) / width, 0.f, 1.f) : 0.f;
+        return parts;
+    }
+
+    SliderEnds LayoutSliderEnds(float left, float right, float top, float height, float lowWidth, float highWidth)
+    {
+        right = std::max(left, right);
+        lowWidth = std::max(0.f, lowWidth);
+        highWidth = std::max(0.f, highWidth);
+        // Too short for both: each gets its share of the bar, the line between them where they meet.
+        if (lowWidth + highWidth > right - left)
+        {
+            const float total = lowWidth + highWidth;
+            const float split = total > 0 ? left + (right - left) * lowWidth / total : left;
+            return { D2D1::RectF(left, top, split, top + height), D2D1::RectF(split, top, right, top + height) };
+        }
+        return { D2D1::RectF(left, top, left + lowWidth, top + height), D2D1::RectF(right - highWidth, top, right, top + height) };
+    }
+
+    int WheelScroll(int delta, unsigned lines, int linePx, int pagePx, int& rest)
+    {
+        constexpr int kNotch = 120;   // WHEEL_DELTA
+        if (lines == 0 || delta == 0)
+            return 0;
+        const long long step = lines == kWheelPage ? pagePx : static_cast<long long>(std::min(lines, 100u)) * linePx;
+        // The wheel turned away from the user (delta > 0) scrolls towards the start; turning it back
+        // drops what was left over from the other way.
+        if ((rest > 0 && delta > 0) || (rest < 0 && delta < 0))
+            rest = 0;
+        const long long total = rest - static_cast<long long>(delta) * step;
+        const long long px = total / kNotch;   // towards zero: what is left over stays in `rest`
+        rest = static_cast<int>(total - px * kNotch);
+        return static_cast<int>(px);
+    }
 }

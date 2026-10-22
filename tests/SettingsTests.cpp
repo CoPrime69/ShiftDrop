@@ -10,6 +10,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <vector>
 
 using namespace sd;
 using settings::Item;
@@ -319,4 +320,46 @@ TEST(WheelContents, FindAnActionAndThePreview)
     EXPECT_EQ(section.groups.size(), 3u);
     EXPECT_EQ(SettingsTree{ { section } }.Find(Ring::Convert)->title, L"Convert");
     EXPECT_EQ(SettingsTree{ { section } }.Find(Ring::Files), nullptr);
+}
+
+// The Wheel page shows the chips of the tab it is on and of no other: on File actions, never the
+// Reduce size chips (the list was left over from the tab before).
+TEST(WheelContents, EachTabShowsOnlyItsOwnChips)
+{
+    SettingsTree tree;
+    tree.sections.push_back(Convert());
+    SettingsTree::Section reduce{ Ring::Reduce, L"Reduce size", {} };
+    reduce.groups.push_back({ L"Photos", { { "reduce-90", L"−90%", L"", 0 }, { "reduce-80", L"−80%", L"", 0 } } });
+    reduce.groups.push_back({ L"Video and audio", { { "reduce-av-90", L"−90%", L"", 0 } } });
+    tree.sections.push_back(reduce);
+    SettingsTree::Section files{ Ring::Files, L"File actions", {} };
+    files.groups.push_back({ L"Photos", { { "rename", L"Rename", L"Rename…", 0 }, { "copy", L"Copy", L"Copy to…", 0 }, { "zip", L"Zip", L"", 0 } } });
+    files.groups.push_back({ L"Any file", { { "copy-path", L"Copy path", L"", 0 } } });
+    tree.sections.push_back(files);
+
+    const auto onFiles = contents::Shown(tree, Ring::Files, L"");
+    ASSERT_EQ(onFiles.size(), 2u);
+    EXPECT_EQ(onFiles[0].group, &tree.sections[2].groups[0]);
+    EXPECT_EQ(onFiles[1].group->title, L"Any file");
+    EXPECT_EQ(onFiles[0].chips, (std::vector<size_t>{ 0, 1, 2 }));
+    EXPECT_FALSE(onFiles[0].searched);
+    for (const auto& g : onFiles)
+        for (size_t i : g.chips)
+            EXPECT_EQ(g.group->slices[i].label.find(L'%'), std::wstring::npos) << g.group->slices[i].label;
+
+    // Back to Reduce size: its own two cards; a kind of file without slices has no card.
+    const auto onReduce = contents::Shown(tree, Ring::Reduce, L"");
+    ASSERT_EQ(onReduce.size(), 2u);
+    EXPECT_EQ(onReduce[1].group, &tree.sections[1].groups[1]);
+    EXPECT_EQ(contents::Shown(tree, Ring::Convert, L"").size(), 2u);   // Photos, Video; not Empty
+    EXPECT_TRUE(contents::Shown(tree, Ring::Tools, L"").empty());
+
+    // Searching: only the cards with a match, open, with only the chips that match.
+    const auto copy = contents::Shown(tree, Ring::Files, L"copy");
+    ASSERT_EQ(copy.size(), 2u);
+    EXPECT_TRUE(copy[0].searched);
+    EXPECT_EQ(copy[0].chips, (std::vector<size_t>{ 1 }));
+    EXPECT_EQ(copy[1].chips, (std::vector<size_t>{ 0 }));
+    EXPECT_EQ(contents::Shown(tree, Ring::Files, L"zip").size(), 1u);
+    EXPECT_TRUE(contents::Shown(tree, Ring::Files, L"webp").empty());
 }
