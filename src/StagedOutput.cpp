@@ -139,7 +139,8 @@ namespace sd
     ItemResult RecordFailure(HistoryStore* history, int64_t runId, const std::wstring& source, std::wstring error, bool skipped,
                              int64_t elapsedMs)
     {
-        if (history)
+        // No run (0): a batch History does not keep, such as Edit laying out a document's pages.
+        if (history && runId > 0)
         {
             const auto item = history->BeginItem(runId, source, L"");
             history->FinishItem(item, skipped ? status::Skipped : status::Failed, L"", 0, "", error, elapsedMs);
@@ -152,7 +153,8 @@ namespace sd
 
     void RecordDone(HistoryStore* history, int64_t runId, const std::wstring& source)
     {
-        if (history)
+        // No run (0): a batch History does not keep, such as Edit laying out a document's pages.
+        if (history && runId > 0)
         {
             const auto item = history->BeginItem(runId, source, L"");
             history->FinishItem(item, status::Done, L"", 0, "", L"", 0);
