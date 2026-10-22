@@ -54,7 +54,8 @@ namespace sd::pdf
         class MergeWindow final : public EditorFrame
         {
         public:
-            MergeWindow(const std::vector<std::wstring>& files, bool edit, Done done) : m_files(files), m_edit(edit), m_done(std::move(done))
+            MergeWindow(const std::vector<std::wstring>& files, const std::vector<std::wstring>& names, bool edit, Done done)
+                : m_files(files), m_names(names), m_edit(edit), m_done(std::move(done))
             {
                 for (uint32_t i = 0; i < files.size(); ++i)
                     m_items.push_back(MakeItem(i, files[i]));
@@ -79,7 +80,7 @@ namespace sd::pdf
         private:
             enum ButtonId { kMore, kCancel, kMerge };
 
-            std::wstring Title() const { return m_edit ? L"Edit PDFs" : L"Merge PDFs"; }
+            std::wstring Title() const { return m_edit ? (m_names.empty() ? L"Edit PDFs" : L"Edit files") : L"Merge PDFs"; }
             size_t MinFiles() const { return m_edit ? 1 : 2; }   // a merge needs two files
 
             std::vector<uint32_t> Order() const
@@ -152,6 +153,7 @@ namespace sd::pdf
                 PageViewRequest request;
                 request.kind = m_edit ? PageViewKind::Edit : PageViewKind::Merge;
                 request.files = m_files;
+                request.names = m_names;
                 request.order = Order();
                 if (m_hasPlan)
                     request.plan = m_plan;
@@ -304,6 +306,9 @@ namespace sd::pdf
                 ListChanged();
             }
 
+            // The document's name for its laid-out pages (Edit on a Word file), else the file's.
+            std::wstring Name(const Item& item) const { return item.file < m_names.size() && !m_names[item.file].empty() ? m_names[item.file] : FileName(item.path); }
+
             std::wstring Details(const Item& item) const
             {
                 std::wstring pages = item.pages == -1 ? L"counting pages…" : item.pages == -2 ? L"cannot be read" : item.pages == 1 ? L"1 page" : std::format(L"{} pages", item.pages);
@@ -325,7 +330,7 @@ namespace sd::pdf
                 }
                 if (m_hasPlan)
                     total = static_cast<long long>(InListOrder(m_plan, Order()).size());
-                const std::wstring heading = m_edit ? std::format(L"Edit {} PDFs, top to bottom", m_items.size()) : std::format(L"Merge {} PDFs, top to bottom", m_items.size());
+                const std::wstring heading = m_edit ? std::format(L"Edit {} {}, top to bottom", m_items.size(), m_names.empty() ? L"PDFs" : L"files") : std::format(L"Merge {} PDFs, top to bottom", m_items.size());
                 DrawText(heading, TextFormat(chrome::kPanelTitle, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kMargin, 8.f, size.width - kMargin, 34.f), c.text);
                 std::wstring hint = L"Drag to reorder · Alt+↑/↓ moves · Delete leaves one out · More… (Alt+M) shows every page";
                 bool notice = true;
@@ -358,7 +363,7 @@ namespace sd::pdf
                     if (auto* b = Brush(FileTagColor(item.file)))
                         rt->FillRoundedRectangle(D2D1::RoundedRect(tag, 4.f, 4.f), b);
                     DrawText(letter, TextFormat(11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER), tag, D2D1::ColorF(1, 1, 1, 1));
-                    DrawText(FileName(item.path), TextFormat(13.f), D2D1::RectF(tag.right + 10.f, cy - 17.f, row.right - 12.f, cy + 1.f), c.text);
+                    DrawText(Name(item), TextFormat(13.f), D2D1::RectF(tag.right + 10.f, cy - 17.f, row.right - 12.f, cy + 1.f), c.text);
                     DrawText(Details(item), TextFormat(11.5f), D2D1::RectF(tag.right + 10.f, cy, row.right - 12.f, cy + 16.f), c.textDim);
                 }
                 if (m_drag.dragging)
@@ -499,6 +504,7 @@ namespace sd::pdf
             }
 
             std::vector<std::wstring> m_files;   // as dropped; Item::file and the plan point here
+            std::vector<std::wstring> m_names;   // what each is called (OpenMerge's `names`)
             bool m_edit = false;
             Done m_done;
             std::vector<Item> m_items;
@@ -516,7 +522,7 @@ namespace sd::pdf
             DragGesture m_drag;
         };
 
-        void OpenMerge(HWND, const std::vector<std::wstring>& files, bool pageView, Done done)
+        void OpenMerge(HWND, const std::vector<std::wstring>& files, const std::vector<std::wstring>& names, bool pageView, Done done)
         {
             if (pageView && files.size() == 1)
             {
@@ -524,6 +530,7 @@ namespace sd::pdf
                 PageViewRequest request;
                 request.kind = PageViewKind::Edit;
                 request.files = files;
+                request.names = names;
                 // Files added there come after it, in the page view's order.
                 request.save = [done = std::move(done)](PageViewResult result) {
                     std::vector<std::wstring> ordered;
@@ -535,7 +542,7 @@ namespace sd::pdf
                     log::Warn(L"edit: the window could not open");
                 return;
             }
-            auto window = std::make_unique<MergeWindow>(files, pageView, std::move(done));
+            auto window = std::make_unique<MergeWindow>(files, names, pageView, std::move(done));
             if (window->Open(pageView))
                 window.release();   // owns itself now
             else

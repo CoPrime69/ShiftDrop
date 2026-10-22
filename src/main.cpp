@@ -99,6 +99,9 @@ namespace sd
             std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();   // a long one also gets a toast
             bool cancelled = false;
             std::vector<FileOutcome> files;
+            // A batch that makes an editor's input (IEngine::EditorInput): called with this batch when it
+            // ends, before (and, once every file is done, instead of) its result.
+            std::function<void(const BatchResult&)> then;
         };
 
         struct BatchState
@@ -1213,10 +1216,24 @@ namespace sd
                 // Trim, crop, annotate...: the engine's window asks first, then the batch runs with the
                 // user's choices in the recipe's params.
                 m_island->HideSwitcher();
-                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files,
-                                   [this, dragged = drop.virtualDrop](Recipe adjusted, std::vector<std::wstring> files) {
-                                       StartBatch(adjusted, std::move(files), dragged);
-                                   });
+                auto run = [this, dragged = drop.virtualDrop](Recipe adjusted, std::vector<std::wstring> files) {
+                    StartBatch(adjusted, std::move(files), dragged);
+                };
+                // Edit on a document: its pages are laid out first, as a batch with progress and ×.
+                if (auto input = engine->EditorInput(*recipe, drop.files))
+                {
+                    StartBatch(*input, drop.files, drop.virtualDrop, [this, engine, recipe = *recipe, run](const BatchResult& batch) {
+                        std::vector<std::wstring> files, made;
+                        for (const auto& f : batch.files)
+                        {
+                            files.push_back(f.source);
+                            made.push_back(f.result.ok ? f.result.output : std::wstring());
+                        }
+                        engine->OpenEditorOn(m_hwnd.get(), recipe, files, made, batch.cancelled, run);
+                    });
+                    return;
+                }
+                engine->OpenEditor(m_hwnd.get(), *recipe, drop.files, run);
                 return;
             }
             StartBatch(*recipe, std::move(drop.files), std::move(drop.virtualDrop));
@@ -1225,7 +1242,9 @@ namespace sd
 
         // `dragged`: the files were dragged out of an app and saved in its drop folder, which the
         // batch keeps until its last file is done.
-        void StartBatch(const Recipe& recipe, std::vector<std::wstring> files, std::shared_ptr<VirtualDrop> dragged = nullptr)
+        // `then`: the batch makes an editor's input (BatchResult::then); History does not keep it.
+        void StartBatch(const Recipe& recipe, std::vector<std::wstring> files, std::shared_ptr<VirtualDrop> dragged = nullptr,
+                        std::function<void(const BatchResult&)> then = {})
         {
             auto state = std::make_shared<BatchState>();
             state->notify = m_hwnd.get();
@@ -1235,7 +1254,8 @@ namespace sd
             state->virtualDrop = std::move(dragged);
             state->result.kind = recipe.IsFileAction() ? BatchKind::Duplicate : recipe.ring == RingId(Ring::Convert) ? BatchKind::Convert : BatchKind::Tools;
             state->result.label = recipe.label;
-            state->result.runId = m_history ? m_history->BeginRun(recipe, static_cast<int>(files.size())) : 0;
+            state->result.runId = m_history && !then ? m_history->BeginRun(recipe, static_cast<int>(files.size())) : 0;
+            state->result.then = std::move(then);
             state->result.token = m_islandBatch = m_nextBatch++;
             state->result.files.resize(files.size());
             state->done.assign(files.size(), 0.0);
@@ -1406,6 +1426,23 @@ namespace sd
         void OnBatchDone(std::unique_ptr<BatchResult> batch)
         {
             m_tray.SetTip(IdleTip());
+            // An editor's input is made (Edit's pages laid out): the editor opens on it. A file that
+            // failed, or the ×, is reported below as any run's is.
+            if (auto then = std::move(batch->then))
+            {
+                then(*batch);
+                if (!batch->cancelled && std::all_of(batch->files.begin(), batch->files.end(), [](const FileOutcome& f) { return f.result.ok; }))
+                {
+                    m_lastOutputs.clear();   // a click on the line shows the documents
+                    for (const auto& f : batch->files)
+                        m_lastOutputs.push_back(f.source);
+                    if (batch->token == m_islandBatch)
+                        m_island->ShowResult(Island::Outcome::Success, batch->files.size() == 1 ? std::format(L"{} is ready to edit", FileName(batch->files[0].source))
+                                                                                                : std::format(L"{} ready to edit", Count(batch->files.size(), L"file")),
+                                             {});
+                    return;
+                }
+            }
             size_t ok = 0, skipped = 0, failed = 0;
             std::vector<std::wstring> outputs;
             std::wstring details;

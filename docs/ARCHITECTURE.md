@@ -296,7 +296,12 @@ callback and moves the panel's bar.
 
 Some tools need the user first: a trim range, a crop box, a page order. Their engine returns true
 from `NeedsEditor` and opens its own window on the UI thread. When the user confirms, the recipe
-goes back into the queue with their choices in its parameters.
+goes back into the queue with their choices in its parameters. An editor that works on something
+made from the files says so with `EditorInput`: Edit on a Word file, a spreadsheet or a deck first
+runs a batch (with the panel's bar and ×) that lays the document out as PDF pages through the same
+code as Convert's PDF or Exact PDF ([DocumentPages.h](../src/pdf/DocumentPages.h)), into a temporary
+folder; `OpenEditorOn` then opens the PDF page editor on those pages, and Save writes
+"name (edited).pdf" next to the document.
 
 Other questions only come up once a job is running: an archive turns out to be encrypted, a
 spreadsheet bound for PDF has more than 20,000 rows, a GIF bound for a folder of pictures has more

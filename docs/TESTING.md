@@ -661,6 +661,18 @@ Office bridge (with Microsoft Office)
 - [ ] Start an Exact PDF of a large deck and press × in the top panel: it stops, nothing is left next to the deck, and PowerPoint (if we started it) is gone from Task Manager
 - [ ] Start an Exact PDF of a large deck, then drop another file on **Move to folder** (or **Rename**): the move is done at once, while the export keeps running
 
+Edit any document (the PDF page editor of section N)
+- [ ] Drag `report.docx`, `book.xlsx`, `notes.md`, a `.txt`, an `.html`, the CSV and the WordPad RTF with **Shift** and scroll to Tools: each has **Edit** (same icon and words as for a PDF), its label whole on the slice. A photo's Tools have no such Edit (Edit Photos instead); a video, a zip and an `.srt` have none
+- [ ] Drop `report.docx` on **Edit** without Office or LibreOffice: the top panel shows "Edit: 1 file" with a bar and ×, then "report.docx is ready to edit"; the page editor opens titled "Edit · report.docx", its pages laid out as **PDF** on the Convert wheel lays them out
+- [ ] The same with Word installed: the pages look as Word prints them (as **Exact PDF** makes them); no Word window appears, and none is left in Task Manager
+- [ ] Redact a line, add a signature with **Fill and sign…**, turn a page, **Save**: `report (edited).pdf` appears next to `report.docx` with the edits; `report.docx` is unchanged (same date and size); Save again: a second file, the first is not replaced. History lists the edit and Undo removes it
+- [ ] Drop the deck on **Edit** (PowerPoint or LibreOffice installed): every slide is a page; with neither installed the deck has no Edit
+- [ ] Drop `report.docx` and a PDF on **Edit** together: one view, both files' pages, the list (Back) shows "report.docx" and the PDF by name, **Merge and export** writes `report (merged).pdf`
+- [ ] The CSV with more than 20,000 rows on **Edit**: it asks first, titled "Edit spreadsheet"; **Cancel** opens nothing and the panel says nothing was printed
+- [ ] Drop a password-protected DOCX on **Edit** (with Word), or a newer `.pages` with no preview: the panel fails with the same words **Exact PDF** / **PDF** use, and no editor opens
+- [ ] Drop a long deck on **Edit** and press × while it is laid out: nothing opens, nothing is left next to the deck; close an editor of a document with **Cancel**: nothing is saved and `%TEMP%\ShiftDrop pages` holds no copy of its pages
+- [ ] Turn off "Microsoft Print to PDF": **Edit** on `notes.md` is dimmed and says the printer is missing (a PDF's Edit still works)
+
 Office bridge (LibreOffice only, no Microsoft Office)
 - [ ] The deck shows **Exact PDF** but not the slide pictures; the PDF comes out right, no LibreOffice window appears, and a LibreOffice window you already had open is not disturbed
 - [ ] With neither installed, no Office bridge slices appear at all

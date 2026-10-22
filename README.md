@@ -65,6 +65,10 @@ takes a second or two.
 - **Text:** Copy text (OCR from pictures and scanned PDFs, to the clipboard) and Searchable PDF.
 - **PDF:** Merge (More… shows every page to reorder, turn and edit), Organize (reorder, rotate,
   duplicate and delete pages), Edit (redact, annotate, fill and sign, crop or adjust pages), Compress, Smallest.
+- **Edit any document:** Word, Excel, PowerPoint, OpenDocument, RTF, Markdown, HTML, TXT, CSV and
+  Pages files get the same Edit. Their pages are laid out as Convert's PDF lays them out (exactly as
+  Office or LibreOffice prints them when one is installed) and open in the PDF page editor; Save
+  writes `name (edited).pdf` next to the document, which stays as it was.
 - **Video:** Compress, 50% size, Under 10 MB, Under 25 MB, and a timeline editor for Trim, Crop,
   Speed, Join, Frames, Split and Redact.
 - **Audio:** the same Compress slices, Normalize, and a waveform editor for Trim, Channels, Bleep
@@ -154,6 +158,9 @@ file is never replaced.
   from the Microsoft Store. Without them the HEIC slices are dimmed and say what to install. Edits to
   a HEIC (Rotate, Crop and so on) are saved as HEIC when Windows can save HEIC, and as JPG otherwise.
 - **RAR** files can be extracted and converted to other archive formats, but not created.
+- **Editing a document** saves a PDF. The edits are not written back into the DOCX, XLSX or PPTX.
+  PowerPoint, older Word and Excel files (DOC, XLS through Office) and OpenDocument files need
+  Microsoft Office or LibreOffice to be edited.
 - **Pages** files can be read only when they carry the preview PDF most of them have. ShiftDrop
   can't write Pages files.
 - **PDF to DOCX, EPUB or HTML** gives the text, reflowed with its headings and lists, and the

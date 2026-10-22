@@ -82,16 +82,18 @@ namespace sd::docs
                 if (progress)
                     progress(0.02);
 
-                // Pages to PDF is the preview PDF itself.
-                if (input == DocInput::Pages && target == "pdf")
+                // PDF: the pages Edit opens too (DocumentPdf).
+                if (target == "pdf")
                 {
                     StagedOutput out(m_history, runId, source);
                     if (!out.Ready())
                         return out.Fail(out.Error());
                     std::string pdf;
                     std::wstring error;
-                    if (!PagesPreviewPdf(source, pdf, error) || !WriteFileBytes(out.Path(), pdf, WriteMode::Existing, &error))
-                        return out.Fail(error);
+                    if (!DocumentPdf(source, pdf, stop, progress, error) || !WriteFileBytes(out.Path(), pdf, WriteMode::Existing, &error))
+                        return out.Fail(error, stop.stop_requested());
+                    if (progress)
+                        progress(1.0);
                     return out.Commit(recipe.suffix, t->extension);
                 }
 
@@ -140,15 +142,6 @@ namespace sd::docs
                 }
                 else if (target == "txt")
                     bytes = WritePlainText(doc);
-                else if (target == "pdf")
-                {
-                    const ProgressFn inner = [&](double p) {
-                        if (progress)
-                            progress(0.3 + 0.7 * p);
-                    };
-                    if (!DocumentToPdf(doc, Widen(TitleOf(doc, fallbackTitle)), false, 11, stop, inner, bytes, error))
-                        return out.Fail(error, stop.stop_requested());
-                }
                 else
                     return out.Fail(L"unknown output format");
 
@@ -312,6 +305,42 @@ namespace sd::docs
             error = L"not a document";
             return false;
         }
+    }
+
+    bool DocumentPdf(const std::wstring& source, std::string& pdf, std::stop_token stop, const ProgressFn& progress, std::wstring& error)
+    {
+        const auto input = InputOf(source);
+        if (progress)
+            progress(0.02);
+        // A Pages file's pages are its preview PDF itself.
+        if (input == DocInput::Pages)
+            return PagesPreviewPdf(source, pdf, error);
+        if (input == DocInput::None || input == DocInput::Pdf)
+        {
+            error = L"not a document";
+            return false;
+        }
+        Document doc;
+        if (!ReadDocument(source, input, doc, stop, error))
+        {
+            if (error.empty())
+                error = L"cannot read this document";
+            return false;
+        }
+        if (stop.stop_requested())
+        {
+            error = L"cancelled";
+            return false;
+        }
+        if (progress)
+            progress(0.3);
+        if (doc.title.empty())
+            doc.title = TitleOf(doc, Narrow(std::filesystem::path(source).stem().wstring()));
+        const ProgressFn inner = [&](double p) {
+            if (progress)
+                progress(0.3 + 0.7 * p);
+        };
+        return DocumentToPdf(doc, Widen(doc.title), false, 11, stop, inner, pdf, error);
     }
 
     FeatureModule Module()
