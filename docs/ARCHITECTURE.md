@@ -84,7 +84,8 @@ folder:
 | `HistoryStore`, `HistoryView`, `Hash`, `Undo`, `HistoryWindow` | SQLite history, what the History window shows, SHA-256, undo, the History window |
 | `JobQueue` | The worker threads |
 | `FileActions`, `FileMove` | Copy, Copy path, Terminal, Move to folder |
-| `Settings`, `Features`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, the Settings window, start with Windows, the tray icon |
+| `Settings`, `Features`, `SettingsPages`, `WheelContents`, `SettingsWindow`, `Startup`, `Tray` | settings.ini, which page and card each setting is on (unit-tested), the Wheel page's chips over the Features store (unit-tested), the Settings window, start with Windows, the tray icon |
+| `DialogWindow`, `EditorFrame` | The one way every window is drawn: real child controls painted by the shared kit (cards, navigation, switches, segmented choices, chips, tabs, drop-downs, fields, sliders, list rows), with focus rings, per-monitor DPI, light and dark and the accent |
 | `Ask`, `Secret.h` | Questions a running job asks the user (a password, print every row?) and passwords that wipe themselves |
 | `Log`, `Brand.h`, `Utf.h`, `Messages.h`, `resource.h`, `ShiftDrop.rc`, `app.manifest` | Plumbing |
 | `Strings`, `PathUtil`, `FileIo`, `ErrorText`, `WinRtError.h`, `TempPath`, `FormatText` | The small helpers every area shares: text, paths, whole-file reads and writes, error codes, %TEMP%, sizes and times |
@@ -486,7 +487,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 | `[Gesture]` | `Convert`, `Tools`, `Reduce`, `Files`: the key that opens each section (`Shift`, `Ctrl`, `Alt` or `None`; never the Win key). Only Shift by default |
 | `[Keyboard]` | `ExplorerHotkey`, for example `Ctrl+Shift+Space` |
 | `[Appearance]` | `Size` (auto, small, medium, large; default medium), `Style` (solid, glass), `Theme`, `PanelSize` (the top panel's size in percent on top of `Size`, 50 to 300 in steps of 10, default 100; Settings › Top panel size), `Accent` (tide, blue, purple, pink, red, orange, green, graphite, custom, windows; default windows (the user's Windows accent colour), and anything else reads as windows; Settings › Accent colour), `AccentCustom` (the colour of your own as `#RRGGBB`, kept while a preset is chosen). An older `HideCursor` key is ignored and removed |
-| `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`) |
+| `[Features]` | Sections turned off (`Convert=0` and so on) and single slices turned off (`Off=to-tiff,to-bmp`); a section turned off keeps its slices' choices (Settings › Wheel) |
 | `[Output]` | `Naming` (output name style), `VirtualFiles` (desktop, downloads, ask) |
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |
 | `[Startup]` | `StartWithWindows` (1 or 0) |

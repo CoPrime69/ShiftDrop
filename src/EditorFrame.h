@@ -68,6 +68,62 @@ namespace sd
         void DrawFocusRing(const D2D1_RECT_F& r, float radius);
         void FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius);
         void StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius);   // inside `r`
+        // `r` filled with `color` where it is inside the rounded rectangle `shape` (a line along a box's edge).
+        void FillInside(const D2D1_RECT_F& shape, float radius, const D2D1_RECT_F& r, const D2D1_COLOR_F& color);
+
+        // ---- The windows' pieces (App Windows page: Settings, History, Rename, the inspector and the
+        // questions). Each draws one control in `r`; the window says where and in what state. ----
+        static constexpr float kCardRadius = 6.f;
+        static constexpr float kNavText = 14.f;     // navigation, tabs, a card's title
+        static constexpr float kSmallText = 12.f;   // a card's description, hints
+        // A glyph of the icon font, centred in `r`.
+        void DrawGlyph(wchar_t glyph, float sizeDip, const D2D1_RECT_F& r, const D2D1_COLOR_F& color);
+        // Text that wraps at the width of `r`, from its top; and how tall it is at `width`.
+        void DrawParagraph(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, const D2D1_RECT_F& r, const D2D1_COLOR_F& color,
+                           DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING);
+        float TextHeight(std::wstring_view text, float sizeDip, DWRITE_FONT_WEIGHT weight, float width);
+        // A card: one setting, a group of rows, a list.
+        void DrawCard(const D2D1_RECT_F& r);
+        // An item of the navigation on the left: its glyph and name; the selected one has a fill and the
+        // accent's bar at its start.
+        void DrawNavItem(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view text, bool selected, ControlState s);
+        // A switch with "On" or "Off" before it, at the right of `r`.
+        void DrawToggle(const D2D1_RECT_F& r, bool on, ControlState s);
+        // One option of a segmented choice (Windows 11's): a grey track around the options, the
+        // selected one raised in the card colour with the accent under it. Each option draws its part
+        // of the track, so the options side by side make the whole.
+        enum class Part { Only, First, Middle, Last };
+        void DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool selected, Part part, ControlState s);
+        float SegmentWidth(std::wstring_view text);
+        // A radio button: a round mark, its text, and `detail` after it in the subtle colour.
+        void DrawRadio(const D2D1_RECT_F& r, std::wstring_view text, std::wstring_view detail, bool selected, ControlState s);
+        // A tab: its name, with the accent's bar under the selected one.
+        void DrawTab(const D2D1_RECT_F& r, std::wstring_view text, bool selected, ControlState s);
+        float TabWidth(std::wstring_view text);
+        // A chip that turns something on or off: a pill, ticked and in the accent's tint while on.
+        void DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool on, ControlState s);
+        float ChipWidth(std::wstring_view text);
+        // A closed drop-down list: its value and a chevron; and one row of the open list (`current` is
+        // the value it has now: the accent's bar; `hot` under the mouse or the arrow keys).
+        void DrawDropDown(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s);
+        void DrawListRow(const D2D1_RECT_F& r, std::wstring_view text, bool current, bool hot);
+        // The box around a text field (a native edit inside it): a line under it, the accent's while
+        // the field has the focus, the error colour when what is typed can't be used.
+        void DrawTextBox(const D2D1_RECT_F& r, bool focused, bool invalid, bool enabled = true);
+        // The header of a card that folds open (Settings › Wheel's kinds of file, the accent colours):
+        // glyph, title, a line under it, a count at the end, and a chevron.
+        void DrawExpander(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view title, std::wstring_view detail, std::wstring_view trailing,
+                          bool open, ControlState s);
+        // A small picture of the wheel: `tiles` placed where the real wheel places them
+        // (keyboard/WheelLayout.h), in the wheel's own colours (`palette`), tile `hot` in the accent,
+        // and `centre` over `detail` in the middle.
+        struct MiniTile
+        {
+            std::wstring label;
+            wchar_t icon = 0;
+        };
+        void DrawMiniWheel(D2D1_POINT_2F centre, float radius, const std::vector<MiniTile>& tiles, int hot, const theme::Palette& palette,
+                           std::wstring_view centreText, std::wstring_view detail);
 
     private:
         ID2D1RenderTarget* m_target = nullptr;
@@ -86,8 +142,10 @@ namespace sd
             int weight, align;
             bool icon;
             Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
+            bool wrap = false;   // DrawParagraph's: wraps, from the top
         };
         std::vector<CachedFormat> m_formats;
+        IDWriteTextFormat* WrapFormat(float sizeDip, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align);
     };
 }
 
