@@ -39,6 +39,7 @@ namespace sd::redact
         RedactTool(std::vector<std::wstring> files, Mode mode);
 
         std::wstring Title() const override;
+        wchar_t Icon() const override { return m_mode == Mode::Review ? wchar_t(0xEA18) : wchar_t(0xED1A); }   // Shield; the wheel's Redact
         std::wstring ApplyLabel() const override;
         bool PerFile() const override { return true; }
         void ImageReady(size_t index, int width, int height) override;

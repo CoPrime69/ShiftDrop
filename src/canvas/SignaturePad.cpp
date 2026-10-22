@@ -2,6 +2,7 @@
 // (EditorFrame.h), so it looks like the picture editor it opens over, light or dark, at every DPI.
 // The writing area is white whatever the theme: it stands for the paper.
 #include "canvas/SignaturePad.h"
+#include "EditorChrome.h"
 #include "EditorFrame.h"
 #include "Log.h"
 #include "Utf.h"
@@ -106,7 +107,8 @@ namespace sd::canvas
         private:
             // ---- Layout -----------------------------------------------------------------------------
             D2D1_RECT_F Card(D2D1_SIZE_F size) const { return D2D1::RectF(kPad, 96, size.width - kPad, size.height - 112); }
-            D2D1_RECT_F Tab(int i) const { return D2D1::RectF(kPad + i * 124.f, 52, kPad + i * 124.f + 118, 80); }
+            // Draw and From a photo: a segmented choice (its track, then the two options; Layout).
+            D2D1_RECT_F Tab(int i) const { return m_tabs[static_cast<size_t>(i) + 1]; }
             D2D1_RECT_F ToolRow(D2D1_SIZE_F size) const { return D2D1::RectF(kPad, size.height - 100, size.width - kPad, size.height - 100 + kRow); }
             D2D1_RECT_F ClearButton(D2D1_SIZE_F size) const
             {
@@ -136,6 +138,11 @@ namespace sd::canvas
 
             void Layout(D2D1_SIZE_F size) override
             {
+                const auto tabs = chrome::Segments({ TextWidth(L"Draw", kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD),
+                                                     TextWidth(L"From a photo", kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD) },
+                                                   kPad, 50, std::max(200.f, size.width - 2 * kPad));
+                for (size_t i = 0; i < tabs.size() && i < std::size(m_tabs); ++i)
+                    m_tabs[i] = tabs[i];
                 if (m_buttons.size() < 2)
                     return;
                 const float y = size.height - kPad - kRow;
@@ -153,10 +160,11 @@ namespace sd::canvas
                 const auto& c = Theme();
                 if (m_buttons.size() >= 2)
                     m_buttons[1].enabled = HasInk() && !m_saving;
-                DrawText(L"Add a signature", TextFormat(20.f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kPad, 12, size.width - kPad, 44), c.text);
+                DrawText(L"Add a signature", TextFormat(chrome::kPanelTitle, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(kPad, 14, size.width - kPad, 40), c.text);
                 const wchar_t* tabs[] = { L"Draw", L"From a photo" };
+                DrawSegmentTrack(m_tabs[0]);
                 for (int i = 0; i < 2; ++i)
-                    DrawChoice(Tab(i), tabs[i], m_picture == (i == 1), { true, m_hot == 10 + i, false, false });
+                    DrawSegment(Tab(i), tabs[i], m_picture == (i == 1), { true, m_hot == 10 + i, false, false });
                 DrawText(L"Stays on this PC", TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
                          D2D1::RectF(size.width - 220, 52, size.width - kPad, 80), c.textDim);
 
@@ -184,13 +192,10 @@ namespace sd::canvas
                     DrawButton(ClearButton(size), L"Clear", 0xE894, false, { !m_strokes.empty(), m_hot == 1, false, false });   // Clear
                     for (int i = 0; i < 2; ++i)
                     {
+                        // The ink colours are the signature's, not the theme's.
                         const auto r = Swatch(size, i);
-                        const auto centre = D2D1::Point2F((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-                        if (static_cast<int>(m_ink) == i)
-                            if (auto* b = Brush(c.accent))
-                                rt->DrawEllipse(D2D1::Ellipse(centre, 13.f, 13.f), b, 2.f);
-                        if (auto* b = Brush(D2D1::ColorF(kInks[i])))
-                            rt->FillEllipse(D2D1::Ellipse(centre, 10.f, 10.f), b);
+                        DrawSwatch(D2D1::RectF(r.left - 3, r.top - 3, r.right + 3, r.bottom + 3), D2D1::ColorF(kInks[i]), 0, c.text, static_cast<int>(m_ink) == i,
+                                   { true, false, false, false });
                     }
                 }
                 const auto remember = RememberToggle(size);
@@ -565,6 +570,7 @@ namespace sd::canvas
             unsigned m_bitmapGeneration = 0;
             const Raster* m_bitmapOf = nullptr;
             int m_hot = -1;
+            D2D1_RECT_F m_tabs[3]{};
         };
     }
 

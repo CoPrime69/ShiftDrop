@@ -77,6 +77,8 @@ namespace sd::photo
         EditTool(std::vector<std::wstring> files, const nlohmann::json& params);
 
         std::wstring Title() const override { return L"Edit Photos"; }
+        std::wstring ToolName() const override { return L"Edit"; }
+        wchar_t Icon() const override { return 0xE706; }   // Brightness
         std::wstring ApplyLabel() const override { return m_files.size() > 1 ? L"Save all" : L"Save"; }
         canvas::SizeD Size() const override { return { double(m_width), double(m_height) }; }
         bool Render(ID2D1DeviceContext* dc, double scale, unsigned device) override;
@@ -126,6 +128,8 @@ namespace sd::photo
         explicit AnnotateTool(std::vector<std::wstring> files, AnnotateOptions options = {});
 
         std::wstring Title() const override;
+        std::wstring ToolName() const override;
+        wchar_t Icon() const override { return 0xE70F; }   // Edit
         std::wstring ApplyLabel() const override { return m_files.size() > 1 ? L"Save all" : L"Save"; }
         bool PerFile() const override { return true; }
         void ImageReady(size_t index, int width, int height) override;
@@ -255,6 +259,8 @@ namespace sd::photo
         BackgroundTool(std::vector<std::wstring> files, const nlohmann::json& params);
 
         std::wstring Title() const override { return L"Add a Background"; }
+        std::wstring ToolName() const override { return L"Background"; }
+        wchar_t Icon() const override { return 0xE790; }   // Color
         std::wstring ApplyLabel() const override { return m_files.size() > 1 ? L"Save all" : L"Save"; }
         canvas::SizeD Size() const override;
         bool Render(ID2D1DeviceContext* dc, double scale, unsigned device) override;
@@ -292,6 +298,8 @@ namespace sd::photo
         CollageTool(std::vector<std::wstring> files, const nlohmann::json& params);
 
         std::wstring Title() const override { return L"Create a Collage"; }
+        std::wstring ToolName() const override { return L"Collage"; }
+        wchar_t Icon() const override { return 0xE80A; }   // Tiles
         std::wstring ApplyLabel() const override { return L"Save"; }
         canvas::SizeD Size() const override;
         bool Render(ID2D1DeviceContext* dc, double scale, unsigned device) override;

@@ -1,5 +1,6 @@
 #include "EditorFrame.h"
 #include "Brand.h"
+#include "EditorChrome.h"
 #include "UiThread.h"
 #include "resource.h"
 
@@ -209,8 +210,11 @@ namespace sd
         {
             const auto& b = m_buttons[i];
             const bool hot = static_cast<int>(i) == m_hot;
-            if (b.visible)
-                DrawButton(b.rect, b.text, b.icon, b.primary, { b.enabled, hot, hot && static_cast<int>(i) == m_pressed, false });
+            const ControlState state{ b.enabled, hot, hot && static_cast<int>(i) == m_pressed, false };
+            if (b.visible && b.flat)
+                DrawIconButton(b.rect, b.icon, false, state);
+            else if (b.visible)
+                DrawButton(b.rect, b.text, b.icon, b.primary, state);
         }
     }
 
@@ -247,10 +251,15 @@ namespace sd
         const float alpha = s.enabled ? 1.f : kDisabledAlpha;
         FillRound(r, theme::WithAlpha(fill, alpha), kControlRadius);
         if (!primary)
+        {
             StrokeRound(r, c.controlLine, 1.f, kControlRadius);
+            // The kit's buttons sit on the surface: their bottom edge a shade stronger.
+            if (auto* brush = m_target && r.right - r.left > 2 * kControlRadius ? Brush(theme::WithAlpha(c.controlLine, alpha)) : nullptr)
+                m_target->DrawLine(D2D1::Point2F(r.left + kControlRadius, r.bottom - 1.5f), D2D1::Point2F(r.right - kControlRadius, r.bottom - 1.5f), brush, 1.f);
+        }
         const D2D1_COLOR_F ink = theme::WithAlpha(primary ? c.onAccent : c.text, alpha);
         // Icon and text centred together; a label too long for the button ends in "...".
-        auto* label = TextFormat(kControlText);
+        auto* label = TextFormat(kControlText, primary ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
         const float iconWidth = icon ? (text.empty() ? 16.f : 22.f) : 0.f;
         const float total = iconWidth + (text.empty() ? 0.f : theme::TextWidth(m_dwrite.Get(), text, label));
         const float x = std::max(r.left + 8.f, (r.left + r.right - total) / 2.f);
@@ -307,12 +316,15 @@ namespace sd
             FillRound(r, theme::WithAlpha(hot ? c.accentHover : c.accent, alpha), radius);
         else
         {
-            FillRound(r, theme::WithAlpha(hot ? c.controlHover : c.control, alpha), radius);
-            StrokeRound(r, theme::WithAlpha(c.textDim, alpha), 1.f, radius);
+            if (hot)
+                FillRound(r, theme::WithAlpha(c.controlHover, alpha), radius);
+            StrokeRound(r, theme::WithAlpha(c.outline, alpha), 1.f, radius);
         }
-        const float knob = on ? 7.f : 6.f;
-        const auto centre = D2D1::Point2F(on ? r.right - radius : r.left + radius, (r.top + r.bottom) / 2);
-        if (auto* brush = m_target ? Brush(theme::WithAlpha(on ? c.onAccent : c.textDim, alpha)) : nullptr)
+        // A 12 DIP knob, 4 DIPs in from the end (the kit's switch), a little larger while pressed.
+        const float knob = hot && s.pressed ? 7.f : 6.f;
+        const float inset = 4.f + knob;
+        const auto centre = D2D1::Point2F(on ? r.right - inset : r.left + inset, (r.top + r.bottom) / 2);
+        if (auto* brush = m_target ? Brush(theme::WithAlpha(on ? c.onAccent : c.outline, alpha)) : nullptr)
             m_target->FillEllipse(D2D1::Ellipse(centre, knob, knob), brush);
         if (s.focused)
             DrawFocusRing(r, radius);
@@ -329,16 +341,20 @@ namespace sd
         const float x = track.left + std::clamp(value, 0.f, 1.f) * width;
         const float start = track.left + std::clamp(from, 0.f, 1.f) * width;
         const float y = (track.top + track.bottom) / 2;
-        FillRound(track, theme::WithAlpha(c.dark ? c.controlHover : c.controlDown, alpha), 2.f);
+        FillRound(track, theme::WithAlpha(c.chipLine, alpha), 2.f);
         FillRound(D2D1::RectF(std::min(start, x), track.top, std::max(start, x), track.bottom), theme::WithAlpha(c.accent, alpha), 2.f);
-        const float radius = s.pressed ? 8.f : hot ? 7.5f : 7.f;
+        // A 16 DIP knob on the surface with an 8 DIP accent dot (larger while hovered or dragged).
+        const float radius = 8.f;
+        const float dot = s.pressed ? 5.f : hot ? 4.5f : 4.f;
         const auto thumb = D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius);
+        if (auto* brush = Brush(theme::WithAlpha(c.shadow, alpha * 0.5f)))
+            m_target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y + 1), radius, radius), brush);
         if (auto* brush = Brush(theme::WithAlpha(c.thumb, alpha)))
             m_target->FillEllipse(thumb, brush);
-        if (auto* brush = Brush(theme::WithAlpha(c.controlLine, alpha)))
-            m_target->DrawEllipse(thumb, brush, 1.f);
+        if (auto* brush = Brush(theme::WithAlpha(c.chipLine, alpha)))
+            m_target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius - 0.5f, radius - 0.5f), brush, 1.f);
         if (auto* brush = Brush(theme::WithAlpha(c.accent, alpha)))
-            m_target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), radius - 3.5f, radius - 3.5f), brush);
+            m_target->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x, y), dot, dot), brush);
         if (s.focused)
             DrawFocusRing(D2D1::RectF(x - radius, y - radius, x + radius, y + radius), radius);
     }
@@ -351,6 +367,9 @@ namespace sd
         StrokeRound(r, invalid ? c.danger : c.controlLine, invalid ? 1.5f : 1.f, kControlRadius);
         if (editing)
             FillRound(D2D1::RectF(r.left + 2, r.bottom - 2, r.right - 2, r.bottom), invalid ? c.danger : c.accent, 1.f);
+        else if (!invalid && r.right - r.left > 2 * kControlRadius)
+            FillRound(D2D1::RectF(r.left + kControlRadius - 1, r.bottom - 1, r.right - kControlRadius + 1, r.bottom),
+                      theme::WithAlpha(c.fieldLine, s.enabled ? 1.f : kDisabledAlpha), 0.5f);
         if (s.focused && !editing)
             DrawFocusRing(r, kControlRadius);
     }
@@ -368,7 +387,7 @@ namespace sd
         const bool hot = s.enabled && s.hot;
         const float dot = selected ? outer - 4.5f : hot && s.pressed ? outer : hot ? outer - 0.5f : outer - 1.5f;
         if (selected)
-            if (auto* brush = Brush(theme::WithAlpha(c.text, alpha)))
+            if (auto* brush = Brush(theme::WithAlpha(c.accent, alpha)))
                 m_target->DrawEllipse(D2D1::Ellipse(centre, outer - 1.f, outer - 1.f), brush, 2.f);
         if (auto* brush = Brush(theme::WithAlpha(colour, alpha)))
             m_target->FillEllipse(D2D1::Ellipse(centre, dot, dot), brush);
@@ -383,6 +402,175 @@ namespace sd
         }
         if (s.focused)
             DrawFocusRing(D2D1::RectF(centre.x - outer, centre.y - outer, centre.x + outer, centre.y + outer), outer);
+    }
+
+    // ---- The editors' frame -------------------------------------------------------------------------
+
+    void ControlKit::DrawToolBar(const D2D1_RECT_F& r)
+    {
+        if (!m_target)
+            return;
+        if (auto* brush = Brush(m_colors.window))
+            m_target->FillRectangle(r, brush);
+        if (auto* brush = Brush(m_colors.line))
+            m_target->DrawLine(D2D1::Point2F(r.left, r.bottom - 0.5f), D2D1::Point2F(r.right, r.bottom - 0.5f), brush, 1.f);
+    }
+
+    void ControlKit::DrawToolTab(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool selected, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        if (selected)
+            FillRound(r, c.selected, kControlRadius);
+        else if (hot)
+            FillRound(r, s.pressed ? c.controlDown : c.controlHover, kControlRadius);
+        // Icon 16 DIPs, 3 between it and the name, 3 between the name and the bar (the kit's tab).
+        const float top = r.top + 6.f;
+        if (icon)
+        {
+            const wchar_t glyph[2] = { icon, 0 };
+            DrawText(glyph, IconFormat(16.f), D2D1::RectF(r.left, top, r.right, top + 16.f), theme::WithAlpha(selected ? c.accent : c.text, alpha));
+        }
+        DrawText(label, TextFormat(12.f, selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(r.left + 2, top + 19.f, r.right - 2, top + 35.f), theme::WithAlpha(selected ? c.text : c.textDim, alpha));
+        if (selected)
+        {
+            const float cx = (r.left + r.right) / 2;
+            FillRound(D2D1::RectF(cx - 8.f, top + 38.f, cx + 8.f, top + 41.f), theme::WithAlpha(c.accent, alpha), 1.5f);
+        }
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawToolBarDivider(const D2D1_RECT_F& r)
+    {
+        if (m_target && r.bottom > r.top)
+            if (auto* brush = Brush(m_colors.line))
+                m_target->FillRectangle(r, brush);
+    }
+
+    void ControlKit::DrawDropField(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        FillRound(r, theme::WithAlpha(hot && s.pressed ? c.controlDown : hot || open ? c.controlHover : c.control, alpha), kControlRadius);
+        StrokeRound(r, open ? c.accent : c.controlLine, 1.f, kControlRadius);
+        DrawText(text, TextFormat(kControlText), D2D1::RectF(r.left + 12.f, r.top, r.right - 28.f, r.bottom), theme::WithAlpha(c.text, alpha));
+        const wchar_t chevron[2] = { open ? wchar_t(0xE70E) : wchar_t(0xE70D), 0 };   // ChevronUp / ChevronDown
+        DrawText(chevron, IconFormat(10.f), D2D1::RectF(r.right - 28.f, r.top, r.right - 8.f, r.bottom), theme::WithAlpha(c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawSidePanel(const D2D1_RECT_F& r, std::wstring_view title)
+    {
+        if (!m_target)
+            return;
+        if (auto* brush = Brush(m_colors.panel))
+            m_target->FillRectangle(r, brush);
+        if (auto* brush = Brush(m_colors.line))
+            m_target->DrawLine(D2D1::Point2F(r.left + 0.5f, r.top), D2D1::Point2F(r.left + 0.5f, r.bottom), brush, 1.f);
+        const float top = r.top + chrome::kPanelPadY;
+        DrawText(title, TextFormat(chrome::kPanelTitle, DWRITE_FONT_WEIGHT_SEMI_BOLD),
+                 D2D1::RectF(r.left + chrome::kPanelPadX, top, r.right - chrome::kPanelPadX, top + chrome::kPanelTitleHeight), m_colors.text);
+    }
+
+    void ControlKit::DrawSectionLabel(const D2D1_RECT_F& r, std::wstring_view text)
+    {
+        DrawText(text, TextFormat(chrome::kSectionLabel, DWRITE_FONT_WEIGHT_SEMI_BOLD), r, m_colors.textDim);
+    }
+
+    void ControlKit::DrawFooterBar(const D2D1_RECT_F& r, std::wstring_view status, float textRight)
+    {
+        if (!m_target)
+            return;
+        if (auto* brush = Brush(m_colors.window))
+            m_target->FillRectangle(r, brush);
+        if (auto* brush = Brush(m_colors.line))
+            m_target->DrawLine(D2D1::Point2F(r.left, r.top + 0.5f), D2D1::Point2F(r.right, r.top + 0.5f), brush, 1.f);
+        DrawText(status, TextFormat(12.5f), D2D1::RectF(r.left + chrome::kFooterPadX, r.top, std::max(r.left + chrome::kFooterPadX, textRight - 12.f), r.bottom),
+                 m_colors.textDim);
+    }
+
+    void ControlKit::DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        const float radius = (r.bottom - r.top) / 2;
+        if (chosen)
+            FillRound(r, theme::WithAlpha(c.accentSoft, alpha), radius);
+        else if (hot)
+            FillRound(r, theme::WithAlpha(s.pressed ? c.controlDown : c.controlHover, alpha), radius);
+        StrokeRound(r, theme::WithAlpha(chosen ? c.accent : c.chipLine, alpha), 1.f, radius);
+        float x = r.left + chrome::kChipPadX;
+        if (chosen)
+        {
+            x = r.left + 10.f;
+            const wchar_t check[2] = { wchar_t(0xE73E), 0 };   // CheckMark
+            DrawText(check, IconFormat(12.f), D2D1::RectF(x, r.top, x + 12.f, r.bottom), theme::WithAlpha(c.accent, alpha));
+            x += chrome::kChipCheck;
+        }
+        DrawText(text, TextFormat(kControlText, chosen ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL),
+                 D2D1::RectF(x, r.top, r.right - chrome::kChipPadX + 6.f, r.bottom), theme::WithAlpha(chosen ? c.text : c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(r, radius);
+    }
+
+    void ControlKit::DrawToolTile(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool chosen, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        if (chosen)
+        {
+            FillRound(r, theme::WithAlpha(c.accentSoft, alpha), kControlRadius);
+            StrokeRound(r, theme::WithAlpha(c.accent, alpha), 1.f, kControlRadius);
+        }
+        else if (hot)
+            FillRound(r, theme::WithAlpha(s.pressed ? c.controlDown : c.controlHover, alpha), kControlRadius);
+        const float h = r.bottom - r.top, top = r.top + std::max(2.f, (h - 34.f) / 2);
+        const wchar_t glyph[2] = { icon, 0 };
+        DrawText(glyph, IconFormat(16.f), D2D1::RectF(r.left, top, r.right, top + 18.f), theme::WithAlpha(chosen ? c.accent : c.text, alpha));
+        DrawText(label, TextFormat(10.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), D2D1::RectF(r.left + 1, top + 19.f, r.right - 1, top + 34.f),
+                 theme::WithAlpha(chosen ? c.text : c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
+    }
+
+    void ControlKit::DrawSegmentTrack(const D2D1_RECT_F& r)
+    {
+        FillRound(r, m_colors.window, kControlRadius + 1);
+        StrokeRound(r, m_colors.controlLine, 1.f, kControlRadius + 1);
+    }
+
+    void ControlKit::DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s)
+    {
+        const auto& c = m_colors;
+        const bool hot = s.enabled && s.hot;
+        const float alpha = s.enabled ? 1.f : kDisabledAlpha;
+        if (chosen)
+        {
+            // Raised on the track, with the accent along its bottom.
+            FillRound(D2D1::RectF(r.left, r.top + 1, r.right, r.bottom + 1), theme::WithAlpha(c.shadow, 0.5f * alpha), kControlRadius);
+            FillRound(r, theme::WithAlpha(c.control, alpha), kControlRadius);
+            if (m_target)
+                if (auto* brush = Brush(theme::WithAlpha(c.accent, alpha)))
+                {
+                    // The bar follows the rounded corners: clip a 2 DIP strip of the rounded shape.
+                    m_target->PushAxisAlignedClip(D2D1::RectF(r.left, r.bottom - 2.f, r.right, r.bottom), D2D1_ANTIALIAS_MODE_ALIASED);
+                    m_target->FillRoundedRectangle(D2D1::RoundedRect(r, kControlRadius, kControlRadius), brush);
+                    m_target->PopAxisAlignedClip();
+                }
+        }
+        else if (hot)
+            FillRound(r, theme::WithAlpha(s.pressed ? c.controlDown : c.controlHover, alpha), kControlRadius);
+        DrawText(text, TextFormat(kControlText, chosen ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
+                 D2D1::RectF(r.left + 2, r.top, r.right - 2, r.bottom), theme::WithAlpha(chosen ? c.text : c.textDim, alpha));
+        if (s.focused)
+            DrawFocusRing(r, kControlRadius);
     }
 
     int EditorFrame::ButtonAt(D2D1_POINT_2F p) const

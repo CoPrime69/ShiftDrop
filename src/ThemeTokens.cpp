@@ -217,7 +217,7 @@ namespace sd::theme
         c.controlDown = t.controlDown;
         c.controlLine = t.controlLine;
         c.field = t.field;
-        c.thumb = dark ? t.controlHover : t.card;
+        c.thumb = dark ? t.control : t.card;
         c.selected = t.navSelected;
         c.border = t.border;
         c.danger = t.error;
@@ -232,6 +232,9 @@ namespace sd::theme
         c.paperText = t.paperText;
         c.paperFaint = t.paperFaint;
         c.paperLine = t.paperLine;
+        c.chipLine = dark ? Rgb(0x353A44) : Rgb(kN200);
+        c.outline = t.strongBorder;
+        c.fieldLine = dark ? Rgb(kDarkText3) : Rgb(kN500);
         return c;
     }
 

@@ -130,6 +130,9 @@ namespace sd::theme
         D2D1_COLOR_F danger, dangerSoft, onDanger, focus, shadow;
         D2D1_COLOR_F ok, warn, info;      // status text
         D2D1_COLOR_F paper, paperText, paperFaint, paperLine;   // a light card for dark ink, in both themes (Tokens)
+        // The kit's controls (App Editors page): a chip's outline and a slider's bar; an off switch's
+        // outline and knob; the line under a text field.
+        D2D1_COLOR_F chipLine, outline, fieldLine;
     };
     EditorPalette EditorColors();
     EditorPalette MakeEditorColors(bool dark, const accent::Variants& tones);

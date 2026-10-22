@@ -66,6 +66,35 @@ namespace sd
         // (an icon font character, 0 for none) on it in `ink`, and a ring around it when `selected`.
         void DrawSwatch(const D2D1_RECT_F& r, const D2D1_COLOR_F& colour, wchar_t glyph, const D2D1_COLOR_F& ink, bool selected, ControlState s);
         void DrawFocusRing(const D2D1_RECT_F& r, float radius);
+
+        // ---- The editors' frame (App Editors page; sizes and layout maths in EditorChrome.h) ----------
+        // The tool bar's background, with a line under it.
+        void DrawToolBar(const D2D1_RECT_F& r);
+        // A tool's tab on the tool bar: its icon over its name, and while `selected` a tinted
+        // background, a semibold name and a short accent bar under it. Width: chrome::TabWidth.
+        void DrawToolTab(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool selected, ControlState s);
+        // The 1 DIP line between groups of the tool bar.
+        void DrawToolBarDivider(const D2D1_RECT_F& r);
+        // A drop-down's closed field: its value and a chevron (the zoom: "Fit", "100%").
+        void DrawDropField(const D2D1_RECT_F& r, std::wstring_view text, bool open, ControlState s);
+        // The options panel: a card with a line on its left and the tool's name at the top. Its rows
+        // start chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap below r.top.
+        void DrawSidePanel(const D2D1_RECT_F& r, std::wstring_view title);
+        // A small semibold heading over a group of the panel's controls ("Ratio", "Size").
+        void DrawSectionLabel(const D2D1_RECT_F& r, std::wstring_view text);
+        // The footer: a line over it, `status` on the left (what will be saved; ends in "..." before
+        // `textRight`). The window draws Cancel and Apply on its right.
+        void DrawFooterBar(const D2D1_RECT_F& r, std::wstring_view status, float textRight);
+        // One option of a choice shown as a row of round chips (aspect ratios, presets): outlined, and
+        // tinted with a check mark when `chosen`. Width: chrome::ChipWidth.
+        void DrawChip(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s);
+        // One option of a choice shown as tiles of an icon over a short name (Annotate's Arrow, Text...):
+        // tinted and outlined in the accent when `chosen`.
+        void DrawToolTile(const D2D1_RECT_F& r, wchar_t icon, std::wstring_view label, bool chosen, ControlState s);
+        // A segmented choice: its track (chrome::Segments' first rectangle), then each option on it.
+        void DrawSegmentTrack(const D2D1_RECT_F& r);
+        void DrawSegment(const D2D1_RECT_F& r, std::wstring_view text, bool chosen, ControlState s);
+
         void FillRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float radius);
         void StrokeRound(const D2D1_RECT_F& r, const D2D1_COLOR_F& color, float width, float radius);   // inside `r`
 
@@ -139,6 +168,7 @@ namespace sd
             D2D1_RECT_F rect{};        // DIPs, set by the subclass's layout
             std::function<void()> action;
             bool visible = true;       // hidden buttons are neither drawn nor clicked
+            bool flat = false;         // an icon alone with no box, like the tool bar's undo and redo (DrawIconButton)
         };
 
         // ---- For subclasses ----------------------------------------------------------------------

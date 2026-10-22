@@ -9,6 +9,7 @@
 #include "Clipboard.h"
 #include "DialogWindow.h"
 #include "ErrorText.h"
+#include "FormatText.h"
 #include "Log.h"
 #include "PathUtil.h"
 #include "Theme.h"
@@ -16,6 +17,7 @@
 #include "Utf.h"
 #include "canvas/Covers.h"
 #include "canvas/SignaturePad.h"
+#include "EditorChrome.h"
 #include "EditorFrame.h"
 
 #include <d2d1_1.h>
@@ -41,11 +43,9 @@ namespace sd::canvas
         constexpr UINT kLayerReady = WM_APP + 44;       // lParam: Layer*, ours to delete
         constexpr UINT kThumbReady = WM_APP + 45;       // lParam: Thumb*, ours to delete
 
-        constexpr float kPanelW = 300.f;     // the side panel, DIPs
-        constexpr float kPad = 16.f;
-        constexpr float kGap = 8.f;
-        constexpr float kRow = 32.f;
-        constexpr float kFooter = 104.f;     // status line and the Cancel / Apply row
+        constexpr float kPad = 16.f;         // DIPs
+        constexpr float kGap = chrome::kPanelGap;   // between the panel's rows
+        constexpr float kRow = chrome::kControlHeight;
         constexpr double kFitMargin = 24.0;  // around the picture when it is fit to the window
         constexpr UINT kPreviewEdge = 4096;  // the on-screen copy of the picture (D2D's safe bitmap size)
         constexpr UINT kLayerEdge = 1600;    // blur and pixelation previews
@@ -123,6 +123,7 @@ namespace sd::canvas
             std::shared_ptr<const Raster> full;
             Pixels preview;
             bool alpha = false;
+            uint64_t bytes = 0;   // the file's size, for the footer
             std::wstring error;
         };
 
@@ -276,10 +277,10 @@ namespace sd::canvas
             {
                 m_mode = Mode::Editor;
                 m_buttons.clear();
-                m_buttons.push_back(Button{ L"", 0xE7A7, false, true, {}, [this] { Undo(); } });           // Undo
-                m_buttons.push_back(Button{ L"", 0xE7A6, false, true, {}, [this] { Redo(); } });           // Redo
-                m_buttons.push_back(Button{ L"", 0xE76B, false, true, {}, [this] { ShowFile(m_index ? m_index - 1 : m_files.size() - 1); } });
-                m_buttons.push_back(Button{ L"", 0xE76C, false, true, {}, [this] { ShowFile((m_index + 1) % m_files.size()); } });
+                m_buttons.push_back(Button{ L"", 0xE7A7, false, true, {}, [this] { Undo(); }, true, true });   // Undo
+                m_buttons.push_back(Button{ L"", 0xE7A6, false, true, {}, [this] { Redo(); }, true, true });   // Redo
+                m_buttons.push_back(Button{ L"", 0xE76B, false, true, {}, [this] { ShowFile(m_index ? m_index - 1 : m_files.size() - 1); }, true, true });
+                m_buttons.push_back(Button{ L"", 0xE76C, false, true, {}, [this] { ShowFile((m_index + 1) % m_files.size()); }, true, true });
                 m_buttons.push_back(Button{ L"Cancel", 0, false, true, {}, [this] { Close(); } });
                 m_buttons.push_back(Button{ m_tool->ApplyLabel(), 0, true, true, {}, [this] { Apply(); } });
                 Layout(ClientDip());
@@ -316,6 +317,7 @@ namespace sd::canvas
                 m_layerBitmaps[1].Reset();
                 m_layerPending[0] = m_layerPending[1] = false;
                 m_loadError.clear();
+                m_fileBytes = 0;
                 ++m_generation;
                 UpdateTitle();
                 std::thread([hwnd = Hwnd(), path = m_files[index], generation = m_generation, index, alive = m_alive] {
@@ -323,6 +325,9 @@ namespace sd::canvas
                     auto out = std::make_unique<Loaded>();
                     out->generation = generation;
                     out->index = index;
+                    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+                    if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes))
+                        out->bytes = (uint64_t{ attributes.nFileSizeHigh } << 32) | attributes.nFileSizeLow;
                     auto full = std::make_shared<Raster>();
                     if (SUCCEEDED(LoadRaster(path, *full, out->error)))
                     {
@@ -353,6 +358,7 @@ namespace sd::canvas
                     return;
                 }
                 m_full = loaded->full;
+                m_fileBytes = loaded->bytes;
                 m_preview = std::move(loaded->preview);
                 m_alpha = loaded->alpha;
                 m_tool->ImageReady(loaded->index, static_cast<int>(m_full->width), static_cast<int>(m_full->height));
@@ -367,7 +373,7 @@ namespace sd::canvas
                 if (!Hwnd() || m_files.empty())
                     return;
                 const auto name = FileName(m_files[m_index]);
-                SetWindowTextW(Hwnd(), (m_tool->Title() + L" – " + name).c_str());
+                SetWindowTextW(Hwnd(), (name + L" · " + m_tool->Title()).c_str());
             }
 
             // The picture's size in tool coordinates (after the tool's quarter turns).
@@ -403,8 +409,11 @@ namespace sd::canvas
             }
 
             // ---- Layout -----------------------------------------------------------------------------
-            D2D1_RECT_F CanvasRect(D2D1_SIZE_F size) const { return D2D1::RectF(0, 0, std::max(0.f, size.width - kPanelW), size.height); }
-            D2D1_RECT_F PanelRect(D2D1_SIZE_F size) const { return D2D1::RectF(std::max(0.f, size.width - kPanelW), 0, size.width, size.height); }
+            // The tool bar, the picture, the options panel and the footer (EditorChrome.h).
+            static chrome::FrameRects Frame(D2D1_SIZE_F size) { return chrome::LayoutFrame(size.width, size.height); }
+            D2D1_RECT_F CanvasRect(D2D1_SIZE_F size) const { return Frame(size).stage; }
+            D2D1_RECT_F PanelRect(D2D1_SIZE_F size) const { return Frame(size).panel; }
+            bool Switcher() const { return m_tool->PerFile() && m_files.size() > 1; }
 
             void Layout(D2D1_SIZE_F size) override
             {
@@ -414,26 +423,49 @@ namespace sd::canvas
                         m_buttons[0].rect = D2D1::RectF(size.width - kPad - 96, size.height - kPad - kRow, size.width - kPad, size.height - kPad);
                     return;
                 }
-                const auto canvas = CanvasRect(size);
+                const auto frame = Frame(size);
+                const auto& canvas = frame.stage;
                 m_view.SetViewport({ canvas.left, canvas.top, canvas.right - canvas.left, canvas.bottom - canvas.top });
-                const auto panel = PanelRect(size);
-                const float right = panel.right - kPad;
+                // The tool bar: the tool's tab, the file switcher; undo, redo and the zoom on the right.
+                const auto& bar = frame.toolBar;
+                const auto right = chrome::LayoutToolBarRight(bar, true, true);
+                const float cy = (bar.top + bar.bottom) / 2;
+                const float tabW = chrome::TabWidth(TextWidth(m_tool->ToolName(), 12.f, DWRITE_FONT_WEIGHT_SEMI_BOLD));
+                m_tab = D2D1::RectF(bar.left + chrome::kBarPadX, cy - chrome::kTabHeight / 2, bar.left + chrome::kBarPadX + tabW, cy + chrome::kTabHeight / 2);
+                m_zoomField = right.zoom;
+                m_barDivider = right.divider;
+                m_barText = D2D1::RectF(m_tab.right + 16, bar.top, std::max(m_tab.right + 16, right.left - 12), bar.bottom);
                 if (m_buttons.size() >= 6)
                 {
-                    m_buttons[0].rect = D2D1::RectF(right - 72, kPad, right - 38, kPad + 30);   // undo
-                    m_buttons[1].rect = D2D1::RectF(right - 34, kPad, right, kPad + 30);        // redo
-                    const bool switcher = m_tool->PerFile() && m_files.size() > 1;
-                    const float sy = kPad + 40;
-                    m_buttons[2].rect = switcher ? D2D1::RectF(panel.left + kPad, sy, panel.left + kPad + 32, sy + 30) : D2D1::RectF();
-                    m_buttons[3].rect = switcher ? D2D1::RectF(right - 32, sy, right, sy + 30) : D2D1::RectF();
-                    const float by = size.height - kPad - kRow;
-                    const float mid = (panel.left + kPad + right) / 2;
-                    m_buttons[4].rect = D2D1::RectF(panel.left + kPad, by, mid - 4, by + kRow);
-                    m_buttons[5].rect = D2D1::RectF(mid + 4, by, right, by + kRow);
+                    m_buttons[0].rect = right.undo;
+                    m_buttons[1].rect = right.redo;
+                    const float sx = m_tab.right + 16;
+                    m_buttons[2].rect = Switcher() ? D2D1::RectF(sx, cy - 16, sx + 32, cy + 16) : D2D1::RectF();
+                    m_buttons[3].rect = Switcher() ? D2D1::RectF(sx + 36, cy - 16, sx + 68, cy + 16) : D2D1::RectF();
+                    if (Switcher())
+                        m_barText.left = sx + 80;
+                    LayoutFooter(frame.footer);
                 }
             }
 
-            float ContentTop() const { return kPad + 40 + (m_tool->PerFile() && m_files.size() > 1 ? 40.f : 0.f); }
+            // Cancel and Apply on the footer's right; Apply's label can change (Redact, Redact all).
+            void LayoutFooter(const D2D1_RECT_F& footer)
+            {
+                if (m_buttons.size() < 6)
+                    return;
+                const float by = (footer.top + footer.bottom - kRow) / 2;
+                const float applyW = std::max(80.f, TextWidth(m_buttons[5].text, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD) + 28);
+                const float cancelW = std::max(72.f, TextWidth(m_buttons[4].text, kControlText) + 28);
+                const float ax = footer.right - chrome::kFooterPadX;
+                m_buttons[5].rect = D2D1::RectF(ax - applyW, by, ax, by + kRow);
+                m_buttons[4].rect = D2D1::RectF(ax - applyW - 8 - cancelW, by, ax - applyW - 8, by + kRow);
+            }
+
+            // Where the panel's controls start: under the tool's name.
+            float ContentTop() const
+            {
+                return PanelRect(ClientDip()).top + chrome::kPanelPadY + chrome::kPanelTitleHeight + chrome::kPanelGap;
+            }
 
             // ---- Painting ---------------------------------------------------------------------------
             void Paint(ID2D1RenderTarget* rt, D2D1_SIZE_F size) override
@@ -466,10 +498,30 @@ namespace sd::canvas
                     const std::wstring text = m_loadError.empty() ? std::wstring(L"Opening…") : L"Can't open this picture: " + m_loadError;
                     DrawText(text, TextFormat(14.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), canvas, Theme().textDim);
                 }
-                PaintZoomChip(rt, canvas);
                 rt->PopAxisAlignedClip();
+                PaintToolBar(rt, size);
                 PaintPanel(rt, size);
                 PaintDrop(rt, size);
+            }
+
+            // The tool's tab, the file switcher or the number of pictures, and the zoom.
+            void PaintToolBar(ID2D1RenderTarget* rt, D2D1_SIZE_F size)
+            {
+                const auto& c = Theme();
+                DrawToolBar(Frame(size).toolBar);
+                DrawToolTab(m_tab, m_tool->Icon(), m_tool->ToolName(), true, {});
+                std::wstring text;
+                if (Switcher())
+                    text = std::format(L"{} of {} · {}", m_index + 1, m_files.size(), FileName(m_files[m_index]));
+                else if (m_files.size() > 1)
+                    text = std::format(L"{} pictures", m_files.size());
+                else if (!m_files.empty())
+                    text = FileName(m_files[0]);
+                DrawText(text, TextFormat(12.5f), m_barText, c.textDim);
+                DrawToolBarDivider(m_barDivider);
+                DrawDropField(m_zoomField, chrome::ZoomLabel(m_view.Zoom(), m_view.IsFit()), m_drop.id == kZoomDrop,
+                              { m_full != nullptr, In(m_zoomField, m_mouse), false, false });
+                (void)rt;
             }
 
             void PaintPrepass(ID2D1RenderTarget* rt, D2D1_SIZE_F size)
@@ -662,25 +714,13 @@ namespace sd::canvas
                 return nullptr;
             }
 
-            void PaintZoomChip(ID2D1RenderTarget* rt, const D2D1_RECT_F& canvas)
-            {
-                if (!m_full)
-                    return;
-                const std::wstring text = std::format(L"{}{:.0f}%", m_view.IsFit() ? L"Fit · " : L"", m_view.Zoom() * 100);
-                m_zoomChip = D2D1::RectF(canvas.left + 12, canvas.bottom - 40, canvas.left + 12 + (m_view.IsFit() ? 96.f : 64.f), canvas.bottom - 12);
-                if (auto* b = Brush(theme::WithAlpha(Theme().panel, 0.92f)))
-                    rt->FillRoundedRectangle(D2D1::RoundedRect(m_zoomChip, 6, 6), b);
-                if (auto* b = Brush(Theme().line))
-                    rt->DrawRoundedRectangle(D2D1::RoundedRect(m_zoomChip, 6, 6), b);
-                DrawText(text, TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER), m_zoomChip, Theme().text);
-            }
-
             // ---- The side panel ---------------------------------------------------------------------
             struct Item
             {
                 size_t control = 0;
                 D2D1_RECT_F rect{};
                 std::vector<D2D1_RECT_F> parts;   // chips, swatches, a slider's track
+                D2D1_RECT_F track{};              // a segmented choice's track
             };
 
             float TextHeight(const std::wstring& text, float width, float sizeDip)
@@ -707,7 +747,7 @@ namespace sd::canvas
                 m_controls.clear();
                 m_tool->BuildPanel(m_controls);
                 m_items.clear();
-                const float left = panel.left + kPad, right = panel.right - kPad, width = right - left;
+                const float left = panel.left + chrome::kPanelPadX, right = panel.right - chrome::kPanelPadX, width = right - left;
                 float y = ContentTop() - m_scroll;
                 for (size_t i = 0; i < m_controls.size(); ++i)
                 {
@@ -729,9 +769,9 @@ namespace sd::canvas
                     switch (c.kind)
                     {
                     case ControlKind::Section:
-                        y += 10;
-                        item.rect = D2D1::RectF(left, y, right, y + 22);
-                        y += 26;
+                        y += 6;
+                        item.rect = D2D1::RectF(left, y, right, y + 16);
+                        y += 16 + kGap;
                         break;
                     case ControlKind::Note:
                     {
@@ -749,39 +789,59 @@ namespace sd::canvas
                         break;
                     case ControlKind::Choice:
                     {
-                        float x = left, rowTop = y;
-                        for (const auto& option : c.options)
+                        std::vector<float> widths;
+                        if (c.icons.size() == c.options.size() && !c.icons.empty())
                         {
-                            const float w = std::min(width, TextWidth(option, kControlText) + 24.f);
-                            if (x + w > right + 0.5f && x > left)
-                            {
-                                x = left;
-                                rowTop += 28 + 6;
-                            }
-                            item.parts.push_back(D2D1::RectF(x, rowTop, x + w, rowTop + 28));
-                            x += w + 6;
+                            // Tiles of an icon over a name, five to a row.
+                            const float w = (width - 4 * 4) / 5;
+                            widths.assign(c.options.size(), w);
+                            item.parts = chrome::Flow(widths, left, right, y, 50, 4, 4);
                         }
-                        item.rect = D2D1::RectF(left, y, right, rowTop + 28);
-                        y = rowTop + 28 + kGap;
+                        else
+                        {
+                            for (const auto& option : c.options)
+                                widths.push_back(TextWidth(option, kControlText, DWRITE_FONT_WEIGHT_SEMI_BOLD));
+                            // One segmented control when it fits (its track is the item's rectangle), else chips.
+                            if (auto segments = c.chips ? std::vector<D2D1_RECT_F>{} : chrome::Segments(widths, left, y, width); !segments.empty())
+                            {
+                                item.track = segments.front();
+                                item.parts.assign(segments.begin() + 1, segments.end());
+                            }
+                            else
+                            {
+                                for (size_t k = 0; k < widths.size(); ++k)
+                                    widths[k] = std::min(width, chrome::ChipWidth(widths[k], static_cast<int>(k) == c.selected));
+                                item.parts = chrome::Flow(widths, left, right, y, kRow, 6, 6);
+                            }
+                        }
+                        float bottom = y;
+                        for (const auto& part : item.parts)
+                            bottom = std::max(bottom, part.bottom);
+                        if (item.track.bottom > item.track.top)
+                            bottom = std::max(bottom, item.track.bottom);
+                        item.rect = D2D1::RectF(left, y, right, bottom);
+                        y = bottom + kGap;
                         break;
                     }
                     case ControlKind::Slider:
-                        item.rect = D2D1::RectF(left, y, right, y + 46);
-                        item.parts.push_back(D2D1::RectF(left + 8, y + 30, right - 8, y + 34));
-                        y += 46 + kGap;
+                        // The label and value over the bar; the knob is 16 DIPs.
+                        item.rect = D2D1::RectF(left, y, right, y + 32);
+                        item.parts.push_back(D2D1::RectF(left + 8, y + 24, right - 8, y + 28));
+                        y += 32 + kGap;
                         break;
                     case ControlKind::Swatches:
                     {
-                        float x = left;
+                        // 26 DIP colours 8 apart; the kit's swatch keeps room for its ring around them.
+                        float x = left - 4;
                         if (!c.label.empty())
                             x += 60;
                         for (size_t s = 0; s < c.swatches.size(); ++s)
                         {
-                            item.parts.push_back(D2D1::RectF(x, y + 2, x + 28, y + 30));
-                            x += 36;
+                            item.parts.push_back(D2D1::RectF(x, y, x + 34, y + 34));
+                            x += 34;
                         }
-                        item.rect = D2D1::RectF(left, y, right, y + kRow);
-                        y += kRow + kGap;
+                        item.rect = D2D1::RectF(left, y, right, y + 34);
+                        y += 34 + kGap;
                         break;
                     }
                     case ControlKind::Icons:
@@ -820,67 +880,56 @@ namespace sd::canvas
 
             void PaintPanel(ID2D1RenderTarget* rt, D2D1_SIZE_F size)
             {
-                const auto& c = Theme();
-                const auto panel = PanelRect(size);
-                if (auto* b = Brush(c.panel))
-                    rt->FillRectangle(panel, b);
-                if (auto* b = Brush(c.line))
-                    rt->DrawLine(D2D1::Point2F(panel.left + 0.5f, 0), D2D1::Point2F(panel.left + 0.5f, size.height), b);
-                const float left = panel.left + kPad, right = panel.right - kPad;
-                DrawText(m_tool->Title(), TextFormat(20.f, DWRITE_FONT_WEIGHT_SEMI_BOLD), D2D1::RectF(left, kPad, right - 80, kPad + 30), c.text);
-                const bool switcher = m_tool->PerFile() && m_files.size() > 1;
-                if (switcher)
-                {
-                    const auto name = FileName(m_files[m_index]);
-                    DrawText(std::format(L"{} of {} · {}", m_index + 1, m_files.size(), name), TextFormat(12.f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER),
-                             D2D1::RectF(left + 40, kPad + 40, right - 40, kPad + 70), c.textDim);
-                }
-                else if (m_files.size() > 1)
-                {
-                    DrawText(std::format(L"{} pictures", m_files.size()), TextFormat(12.f), D2D1::RectF(left, kPad + 30, right - 80, kPad + 46), c.textDim);
-                }
+                const auto frame = Frame(size);
+                const auto& panel = frame.panel;
+                DrawSidePanel(panel, m_tool->ToolName());
 
-                // The tool's controls, scrollable between the header and the footer.
+                // The tool's controls, scrollable under its name.
                 LayoutPanel(panel);
-                const float top = ContentTop() - 4, bottom = size.height - kFooter;
-                const float overflow = std::max(0.f, m_contentHeight - (bottom - top));
+                const float top = ContentTop() - 4, bottom = panel.bottom;
+                const float overflow = std::max(0.f, m_contentHeight - (bottom - top) + chrome::kPanelPadY);
                 if (m_scroll > overflow)
                 {
                     m_scroll = overflow;
                     LayoutPanel(panel);
                 }
-                rt->PushAxisAlignedClip(D2D1::RectF(panel.left, top, panel.right, bottom), D2D1_ANTIALIAS_MODE_ALIASED);
+                rt->PushAxisAlignedClip(D2D1::RectF(panel.left + 1, top, panel.right, bottom), D2D1_ANTIALIAS_MODE_ALIASED);
                 for (const auto& item : m_items)
                     PaintControl(rt, m_controls[item.control], item);
                 rt->PopAxisAlignedClip();
                 if (m_drop.id.empty())
                     PaintTip(rt);
 
-                // Footer: the status line, Cancel and Apply.
+                // The footer: what the window is doing or will do, Cancel and Apply.
                 std::wstring why;
                 const bool canApply = m_full && m_tool->CanApply(&why);
                 std::wstring status = m_status;
                 if (status.empty())
-                    status = !canApply && !why.empty() ? why : std::wstring(L"Enter applies · Esc cancels · Ctrl+Z undoes");
+                    status = !canApply && !why.empty() ? why : PictureSummary() + L"Enter applies · Esc cancels · Ctrl+Z undoes";
                 if (Busy())
                     status = (m_status.empty() ? std::wstring(L"Working") : m_status);
-                const float statusTop = size.height - kPad - kRow - 44;
-                if (auto* b = Brush(c.line))
-                    rt->DrawLine(D2D1::Point2F(panel.left, bottom + 0.5f), D2D1::Point2F(panel.right, bottom + 0.5f), b);
-                const float h = std::min(40.f, TextHeight(status, right - left, 12.f));
-                if (m_wrapped)
-                    if (auto* b = Brush(c.textDim))
-                        rt->DrawText(status.c_str(), UINT32(status.size()), m_wrapped.Get(), D2D1::RectF(left, statusTop, right, statusTop + h + 2), b,
-                                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 if (m_buttons.size() >= 6)
                 {
                     m_buttons[0].enabled = m_undoAt > 0 || m_tool->TextInput();
                     m_buttons[1].enabled = m_undoAt + 1 < m_undo.size();
-                    m_buttons[2].enabled = m_buttons[3].enabled = switcher && !Busy();
+                    m_buttons[2].enabled = m_buttons[3].enabled = Switcher() && !Busy();
                     m_buttons[5].enabled = canApply && !Busy();
                     m_buttons[5].text = m_tool->ApplyLabel();
+                    LayoutFooter(frame.footer);
                 }
+                DrawFooterBar(frame.footer, status, m_buttons.size() >= 6 ? m_buttons[4].rect.left : frame.footer.right);
                 DrawButtons();
+            }
+
+            // "4032 × 3024 · 3.4 MB · " for the picture on show, or nothing while it loads.
+            std::wstring PictureSummary() const
+            {
+                if (!m_full)
+                    return {};
+                std::wstring text = std::format(L"{} × {} · ", m_full->width, m_full->height);
+                if (m_fileBytes > 0)
+                    text += SizeText(m_fileBytes) + L" · ";
+                return text;
             }
 
             void PaintControl(ID2D1RenderTarget* rt, const Control& c, const Item& item)
@@ -894,7 +943,7 @@ namespace sd::canvas
                 switch (c.kind)
                 {
                 case ControlKind::Section:
-                    DrawText(c.label, TextFormat(13.f, DWRITE_FONT_WEIGHT_SEMI_BOLD), item.rect, ink);
+                    DrawSectionLabel(item.rect, c.label);
                     break;
                 case ControlKind::Note:
                     if (m_wrapped)
@@ -906,15 +955,32 @@ namespace sd::canvas
                     break;
                 case ControlKind::Toggle:
                 {
-                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 52, item.rect.bottom), ink);
+                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 84, item.rect.bottom), ink);
                     const float cy = (item.rect.top + item.rect.bottom) / 2;
+                    DrawText(c.on ? L"On" : L"Off", TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
+                             D2D1::RectF(item.rect.right - 84, item.rect.top, item.rect.right - 52, item.rect.bottom), ink);
                     DrawSwitch(D2D1::RectF(item.rect.right - 40, cy - 10, item.rect.right, cy + 10), c.on, state);
                     break;
                 }
                 case ControlKind::Choice:
+                {
+                    const bool tiles = c.icons.size() == c.options.size() && !c.icons.empty();
+                    const bool segmented = item.track.bottom > item.track.top;
+                    if (segmented)
+                        DrawSegmentTrack(item.track);
                     for (size_t i = 0; i < item.parts.size() && i < c.options.size(); ++i)
-                        DrawChoice(item.parts[i], c.options[i], static_cast<int>(i) == c.selected, { c.enabled, hot && m_hotPart == static_cast<int>(i), false, false });
+                    {
+                        const bool chosen = static_cast<int>(i) == c.selected;
+                        const ControlState part{ c.enabled, hot && m_hotPart == static_cast<int>(i), false, false };
+                        if (tiles)
+                            DrawToolTile(item.parts[i], c.icons[i], c.options[i], chosen, part);
+                        else if (segmented)
+                            DrawSegment(item.parts[i], c.options[i], chosen, part);
+                        else
+                            DrawChip(item.parts[i], c.options[i], chosen, part);
+                    }
                     break;
+                }
                 case ControlKind::Number:
                 {
                     const bool editing = m_editId == c.id;
@@ -931,9 +997,9 @@ namespace sd::canvas
                 }
                 case ControlKind::Slider:
                 {
-                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 70, item.rect.top + 20), ink);
+                    DrawText(c.label, TextFormat(kControlText), D2D1::RectF(item.rect.left, item.rect.top, item.rect.right - 70, item.rect.top + 18), ink);
                     DrawText(Number(c.value, c.decimals) + c.text, TextFormat(kControlText, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING),
-                             D2D1::RectF(item.rect.right - 70, item.rect.top, item.rect.right, item.rect.top + 20), dim);
+                             D2D1::RectF(item.rect.right - 70, item.rect.top, item.rect.right, item.rect.top + 18), dim);
                     const auto fraction = [&](double v) { return c.max > c.min ? float((v - c.min) / (c.max - c.min)) : 0.f; };
                     // Filled from the middle when the range is centred on zero (straighten), else from the left.
                     DrawSlider(item.parts[0], fraction(c.value), c.min < 0 && c.max > 0 ? fraction(0) : 0.f, { c.enabled, hot, m_sliderId == c.id, false });
@@ -946,23 +1012,17 @@ namespace sd::canvas
                     for (size_t i = 0; i < item.parts.size(); ++i)
                     {
                         const auto& r = item.parts[i];
-                        const auto centre = D2D1::Point2F((r.left + r.right) / 2, (r.top + r.bottom) / 2);
                         const bool selected = static_cast<int>(i) == c.selected;
-                        if (selected)
-                            if (auto* b = Brush(t.accent))
-                                rt->DrawEllipse(D2D1::Ellipse(centre, 13.f, 13.f), b, 2.f);
-                        if (auto* b = Brush(theme::WithAlpha(D2(c.swatches[i]), alpha)))
-                            rt->FillEllipse(D2D1::Ellipse(centre, 10.f, 10.f), b);
-                        if (auto* b = Brush(t.line))
-                            rt->DrawEllipse(D2D1::Ellipse(centre, 10.f, 10.f), b);
+                        DrawSwatch(r, D2(c.swatches[i]), 0, t.text, selected, { c.enabled, hot && m_hotPart == static_cast<int>(i), false, false });
                         if (c.custom && i + 1 == item.parts.size())
                         {
                             // The colour picker chip: a small "+" badge.
-                            const auto badge = D2D1::Point2F(r.right - 4, r.bottom - 4);
+                            const auto badge = D2D1::Point2F(r.right - 7, r.bottom - 7);
                             if (auto* b = Brush(t.panel))
                                 rt->FillEllipse(D2D1::Ellipse(badge, 6.f, 6.f), b);
-                            DrawText(L"+", TextFormat(11.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER),
-                                     D2D1::RectF(badge.x - 6, badge.y - 7, badge.x + 6, badge.y + 6), t.text);
+                            if (auto* b = Brush(t.chipLine))
+                                rt->DrawEllipse(D2D1::Ellipse(badge, 5.5f, 5.5f), b);
+                            DrawText(std::wstring(1, wchar_t(0xE710)), IconFormat(7.f), D2D1::RectF(badge.x - 6, badge.y - 6, badge.x + 6, badge.y + 6), t.text);   // Add
                         }
                     }
                     break;
@@ -1124,6 +1184,7 @@ namespace sd::canvas
                 std::string id;
                 std::vector<std::wstring> options;
                 bool fonts = false;
+                bool search = true;       // a search line on top (not for the zoom's short list)
                 int selected = -1;
                 std::wstring filter;
                 std::vector<int> shown;   // indexes into options
@@ -1200,10 +1261,51 @@ namespace sd::canvas
                 e.id = m_drop.id;
                 e.index = m_drop.shown[row];
                 CloseDrop();
-                Handle(m_tool->OnControl(e));
+                if (e.id == kZoomDrop)
+                    PickZoom(e.index);
+                else
+                    Handle(m_tool->OnControl(e));
             }
 
-            float DropRowsTop() const { return m_drop.rect.top + 36; }
+            float DropRowsTop() const { return m_drop.rect.top + (m_drop.search ? 36.f : 6.f); }
+
+            // The zoom field's list: Fit and a few sizes.
+            static constexpr char kZoomDrop[] = "\x01zoom";   // not a tool control's id
+
+            void OpenZoomDrop()
+            {
+                if (m_drop.id == kZoomDrop)
+                {
+                    CloseDrop();
+                    return;
+                }
+                Control zoom;
+                zoom.id = kZoomDrop;
+                const auto choices = chrome::ZoomChoices();
+                for (size_t i = 0; i < choices.size(); ++i)
+                {
+                    zoom.options.push_back(choices[i].label);
+                    if ((choices[i].zoom == 0 && m_view.IsFit()) || (!m_view.IsFit() && std::abs(choices[i].zoom - m_view.Zoom()) < 1e-3))
+                        zoom.selected = static_cast<int>(i);
+                }
+                OpenDrop(zoom, m_zoomField);
+                m_drop.search = false;
+                KillTimer(Hwnd(), 2);
+            }
+
+            void PickZoom(int option)
+            {
+                const auto choices = chrome::ZoomChoices();
+                if (option < 0 || option >= static_cast<int>(choices.size()))
+                    return;
+                const auto canvas = CanvasRect(ClientDip());
+                const PointD centre{ (canvas.left + canvas.right) / 2, (canvas.top + canvas.bottom) / 2 };
+                if (choices[option].zoom == 0)
+                    m_view.Fit(kFitMargin);
+                else
+                    m_view.ZoomAt(choices[option].zoom, centre);
+                Invalidate();
+            }
 
             int DropRowAt(D2D1_POINT_2F p) const
             {
@@ -1219,7 +1321,8 @@ namespace sd::canvas
                     return;
                 const auto& t = Theme();
                 const int rows = std::max(1, std::min(kDropRows, static_cast<int>(m_drop.shown.size())));
-                const float h = 36 + rows * kDropRow + 6, w = std::max(280.f, m_drop.field.right - m_drop.field.left);
+                const float h = (m_drop.search ? 36.f : 6.f) + rows * kDropRow + 6;
+                const float w = std::max(m_drop.search ? 280.f : 120.f, m_drop.field.right - m_drop.field.left);
                 const float x = std::max(8.f, std::min(m_drop.field.right - w, size.width - w - 8));
                 float top = m_drop.field.bottom + 4;
                 if (top + h > size.height - 8)
@@ -1228,7 +1331,19 @@ namespace sd::canvas
                 FillRound(D2D1::RectF(x - 1, top + 1, x + w + 1, top + h + 4), t.shadow, 8.f);
                 FillRound(m_drop.rect, t.window, 8.f);
                 StrokeRound(m_drop.rect, t.controlLine, 1.f, 8.f);
-                // The search line.
+                if (m_drop.search)
+                    PaintDropSearch(x, top, w);
+                if (m_drop.shown.empty())
+                {
+                    DrawText(L"No match", TextFormat(12.f), D2D1::RectF(x + 14, DropRowsTop(), x + w - 14, DropRowsTop() + kDropRow), t.textDim);
+                    return;
+                }
+                PaintDropRows(rt, x, w, top, h, rows);
+            }
+
+            void PaintDropSearch(float x, float top, float w)
+            {
+                const auto& t = Theme();
                 const auto search = D2D1::RectF(x + 6, top + 6, x + w - 6, top + 32);
                 FillRound(search, t.control, kControlRadius);
                 DrawText(std::wstring(1, wchar_t(0xE721)), IconFormat(12.f), D2D1::RectF(search.left + 8, search.top, search.left + 26, search.bottom), t.textDim);
@@ -1237,11 +1352,11 @@ namespace sd::canvas
                     DrawText(m_drop.fonts ? L"Type to find a font" : L"Type to search", TextFormat(12.f), searchText, t.textFaint);
                 else
                     DrawText(m_drop.filter + ((GetTickCount64() / 530) % 2 == 0 ? L"|" : L""), TextFormat(kControlText), searchText, t.text);
-                if (m_drop.shown.empty())
-                {
-                    DrawText(L"No match", TextFormat(12.f), D2D1::RectF(x + 14, DropRowsTop(), x + w - 14, DropRowsTop() + kDropRow), t.textDim);
-                    return;
-                }
+            }
+
+            void PaintDropRows(ID2D1RenderTarget* rt, float x, float w, float top, float h, int rows)
+            {
+                const auto& t = Theme();
                 rt->PushAxisAlignedClip(D2D1::RectF(x, DropRowsTop(), x + w, top + h - 4), D2D1_ANTIALIAS_MODE_ALIASED);
                 for (int i = 0; i < rows && m_drop.first + i < static_cast<int>(m_drop.shown.size()); ++i)
                 {
@@ -1301,7 +1416,8 @@ namespace sd::canvas
             const Item* ItemAt(D2D1_POINT_2F p, int* part) const
             {
                 const auto size = ClientDip();
-                if (p.y < ContentTop() - 4 || p.y > size.height - kFooter)
+                const auto panel = PanelRect(size);
+                if (p.y < ContentTop() - 4 || p.y > panel.bottom || p.x < panel.left)
                     return nullptr;
                 for (const auto& item : m_items)
                 {
@@ -1659,7 +1775,7 @@ namespace sd::canvas
                         LPCWSTR id = IDC_ARROW;
                         if (m_panning)
                             id = IDC_SIZEALL;
-                        else if (OverCanvas(p) && !In(m_zoomChip, p) && m_full)
+                        else if (OverCanvas(p) && m_full)
                             id = m_space ? IDC_HAND : CursorId(Busy() ? CursorShape::Busy : m_tool->CursorAt(PointerAt(p)));
                         else if (ItemAt(p, nullptr))
                             id = IDC_HAND;
@@ -1700,6 +1816,13 @@ namespace sd::canvas
                         if (inList || onField || msg != WM_LBUTTONDOWN || OverCanvas(p))
                             return true;
                     }
+                    if (msg == WM_LBUTTONDOWN && In(m_zoomField, p))
+                    {
+                        CommitEdit();
+                        if (m_full)
+                            OpenZoomDrop();
+                        return true;
+                    }
                     if (!OverCanvas(p))
                     {
                         if (msg != WM_MBUTTONDOWN)
@@ -1707,11 +1830,6 @@ namespace sd::canvas
                         return true;
                     }
                     CommitEdit();
-                    if (msg == WM_LBUTTONDOWN && In(m_zoomChip, p))
-                    {
-                        ToggleZoom();
-                        return true;
-                    }
                     if (!m_full)
                         return true;
                     if (msg == WM_MBUTTONDOWN || m_space)
@@ -1733,6 +1851,8 @@ namespace sd::canvas
                 case WM_MOUSEMOVE:
                 {
                     const auto p = DipFromLParam(lParam);
+                    if (In(m_zoomField, p) != In(m_zoomField, m_mouse))
+                        Invalidate();   // the zoom field's hover
                     m_mouse = p;
                     if (!m_drop.id.empty())
                     {
@@ -1914,16 +2034,6 @@ namespace sd::canvas
                 }
             }
 
-            void ToggleZoom()
-            {
-                const auto canvas = CanvasRect(ClientDip());
-                const PointD centre{ (canvas.left + canvas.right) / 2, (canvas.top + canvas.bottom) / 2 };
-                if (m_view.IsFit())
-                    m_view.ZoomAt(1.0, centre);
-                else
-                    m_view.Fit(kFitMargin);
-                Invalidate();
-            }
 
             void OnKey(UINT vk)
             {
@@ -2165,7 +2275,8 @@ namespace sd::canvas
 
             ViewTransform m_view;
             SizeD m_viewImage;
-            D2D1_RECT_F m_zoomChip{};
+            D2D1_RECT_F m_tab{}, m_zoomField{}, m_barDivider{}, m_barText{};   // on the tool bar
+            uint64_t m_fileBytes = 0;   // the picture's file, for the footer
             bool m_dragging = false, m_panning = false, m_space = false;
             D2D1_POINT_2F m_panFrom{};
             int m_wheel = 0;
