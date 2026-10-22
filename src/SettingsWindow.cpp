@@ -28,6 +28,7 @@ namespace sd
         constexpr int kIdAccentHeader = 140, kIdSwatch = 141, kIdCustom = 141 + accent::kPresetCount, kIdWindowsAccent = 150;
         constexpr int kIdFindAction = 160, kIdTab = 161, kIdSectionOff = 166, kIdReset = 167;
         constexpr int kIdNaming = 170, kIdShellMenu = 180, kIdRecipes = 181, kIdLogs = 182, kIdSource = 183;
+        constexpr int kIdUpdateMode = 190, kIdCheckNow = 195;
         constexpr int kIdGroup = 1000, kIdChip = 2000, kIdCustomSwatch = 0x4000;   // a colour of your own: kIdCustomSwatch + its place
         constexpr UINT kIdDeleteColour = 1;   // the custom swatch's right-click menu
 
@@ -36,7 +37,7 @@ namespace sd
         constexpr int kNavItem = 38, kNavGap = 4, kCardGap = 4, kRowMin = 68, kControlH = 32, kSegmentH = 36;
         constexpr int kSwatchCell = 54, kSwatchH = 62, kPreviewH = 250, kWheelPreview = 210;
 
-        constexpr wchar_t kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphAdd = 0xE710;
+        constexpr wchar_t kGlyphRefresh = 0xE72C, kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphAdd = 0xE710;
         constexpr wchar_t kSourceUrl[] = L"https://github.com/CoPrime69/" SD_NAME;
 
         // Choices, in the order of the enums in Settings.h and OutputPath.h (their labels: settings::Options).
@@ -232,6 +233,11 @@ namespace sd
         m_logs = keep(KitButton(Look::Button, Option(Item::LogsFolder, 0), kIdLogs, Surface::Card, kGlyphOpen));
         MakeRow(Item::LogsFolder, m_logs);
 
+        // Updates
+        segments(Item::UpdateMode, m_updateModes, settings::Options(Item::UpdateMode), kIdUpdateMode);
+        m_checkNow = keep(KitButton(Look::Button, Option(Item::CheckUpdates, 0), kIdCheckNow, Surface::Card, kGlyphRefresh));
+        MakeRow(Item::CheckUpdates, m_checkNow);
+
         // About
         m_aboutName = keep(Label(SD_NAME, TextRole::Heading));
         m_aboutVersion = keep(Label(versionText.c_str(), TextRole::Value));
@@ -335,7 +341,31 @@ namespace sd
         FillAccent();
         FillNaming();
         FillWheel();
+        FillUpdates();
         m_updating = false;
+    }
+
+    void SettingsWindow::FillUpdates()
+    {
+        CheckOne(m_updateModes, static_cast<int>(m_state.updateMode));
+        // The card's second line: what the last check found, then when it ran.
+        if (const auto& row = m_rows[Item::CheckUpdates]; row.description)
+            SetWindowTextW(row.description, (m_state.updateStatus + L"\n" + m_state.updateChecked).c_str());
+        EnableWindow(m_checkNow, !m_state.updateChecking);
+        Describe(m_checkNow, Option(Item::CheckUpdates, 0), m_state.updateStatus);
+    }
+
+    void SettingsWindow::SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking)
+    {
+        m_state.updateStatus = status;
+        m_state.updateChecked = checked;
+        m_state.updateChecking = checking;
+        if (!m_hwnd)
+            return;
+        Rebuild([this] {
+            FillUpdates();
+            Layout();   // the line may wrap differently
+        });
     }
 
     void SettingsWindow::SyncCustomSwatches()
@@ -819,6 +849,18 @@ namespace sd
             ChangePreferences(p);
             FillNaming();
         }
+        else if (id >= kIdUpdateMode && id < kIdUpdateMode + 3 && clicked && Checked(control))
+        {
+            CheckOne(m_updateModes, id - kIdUpdateMode);
+            const auto mode = static_cast<updates::Mode>(id - kIdUpdateMode);
+            if (mode != m_state.updateMode)
+            {
+                m_state.updateMode = mode;
+                SendCommand(IDM_UPDATE_MODE_BASE + static_cast<UINT>(mode));
+            }
+        }
+        else if (id == kIdCheckNow && clicked)
+            SendCommand(IDM_CHECK_UPDATES);
         else if (id == kIdRecipes && clicked)
             SendCommand(IDM_OPEN_RECIPES);
         else if (id == kIdLogs && clicked)
@@ -1067,6 +1109,10 @@ namespace sd
             card(Item::ShellMenu, Px(96), Px(kControlH));
             card(Item::RecipesFolder, buttonWidth(m_recipes, true), Px(kControlH));
             card(Item::LogsFolder, buttonWidth(m_logs, true), Px(kControlH));
+            break;
+        case Page::Updates:
+            segmented(Item::UpdateMode, m_updateModes);
+            card(Item::CheckUpdates, buttonWidth(m_checkNow, true), Px(kControlH));
             break;
         case Page::About:
         {

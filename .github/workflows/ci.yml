@@ -185,8 +185,8 @@ jobs:
           save-caches: 'true'
           options: -DSHIFTDROP_COMMIT=${{ github.event.pull_request.head.sha || github.sha }} -DSHIFTDROP_RELEASE=${{ needs.reuse.outputs.release == 'true' && 'ON' || 'OFF' }}
 
-      # ShiftDrop.exe, and ShiftDropWorker.exe with it, first: the installer job waits for them (and
-      # for vcpkg's copyright files, for the third-party notices).
+      # ShiftDrop.exe, and ShiftDropWorker.exe and ShiftDrop-Updater.exe with it, first: the installer
+      # job waits for them (and for vcpkg's copyright files, for the third-party notices).
       - name: Build the app
         run: cmake --build --preset ci --target ShiftDrop
 
@@ -196,13 +196,17 @@ jobs:
         run: |
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
+          # The one program allowed online (check for updates): WinHTTP and nothing else.
+          ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop-Updater.exe -Updater
 
       # The exe states VERSION (and the commit, except on the release build), CHANGELOG.md has its
       # heading (a version bump adds its notes in the same change) and vcpkg.json states no version.
       - name: Version check
         if: ${{ !inputs.cache-only }}
         shell: pwsh
-        run: ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop.exe -Changelog -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
+        run: |
+          ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop.exe -Changelog -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
+          ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop-Updater.exe -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
 
       - uses: actions/upload-artifact@v7
         if: ${{ !inputs.cache-only }}
@@ -211,6 +215,7 @@ jobs:
           path: |
             build/ci/ShiftDrop.exe
             build/ci/ShiftDropWorker.exe
+            build/ci/ShiftDrop-Updater.exe
             build/vcpkg_installed/x64-windows-static/share/*/copyright
           if-no-files-found: error
           compression-level: 1
@@ -382,11 +387,11 @@ jobs:
           $version = (Get-Item build/ci/ShiftDrop.exe).VersionInfo.ProductVersion
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
-          & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" installer/ShiftDrop.iss
+          & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" "/DUpdaterExe=..\build\ci\ShiftDrop-Updater.exe" installer/ShiftDrop.iss
           if ($LASTEXITCODE) { exit 1 }
           $setup = Get-Item "build/installer/ShiftDrop-Setup-$version.exe"
           $lines = @("### Installer: $([math]::Round($setup.Length / 1MB, 1)) MB", '', '| Packaged file | MB |', '|---|---:|')
-          foreach ($f in @(Get-Item build/ci/ShiftDrop.exe, build/ci/ShiftDropWorker.exe) + @(Get-ChildItem build/engines -File)) {
+          foreach ($f in @(Get-Item build/ci/ShiftDrop.exe, build/ci/ShiftDropWorker.exe, build/ci/ShiftDrop-Updater.exe) + @(Get-ChildItem build/engines -File)) {
             $lines += "| $($f.Name) | $([math]::Round($f.Length / 1MB, 2)) |"
           }
           $lines | ForEach-Object { Write-Host $_ }

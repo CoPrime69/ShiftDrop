@@ -68,7 +68,8 @@ namespace sd::toast
             IFACEMETHODIMP Activate(LPCWSTR, LPCWSTR invokedArgs, const NOTIFICATION_USER_INPUT_DATA*, ULONG) override
             {
                 const auto activation = ParseArguments(invokedArgs ? invokedArgs : L"");
-                log::Info(L"toast: clicked ({})", activation ? (activation->verb == Verb::Open ? L"open" : L"show in Explorer") : L"nothing to do");
+                log::Info(L"toast: clicked ({})", activation ? (activation->verb == Verb::Open ? L"open" : activation->verb == Verb::Update ? L"update" : L"show in Explorer")
+                                                           : L"nothing to do");
                 // The click gave us the right to take the foreground; pass it on to Explorer or the app
                 // that opens the file.
                 AllowSetForegroundWindow(ASFW_ANY);

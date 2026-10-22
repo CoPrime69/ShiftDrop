@@ -108,3 +108,20 @@ TEST(Toast, WhenABatchGetsAToast)
     // Cancelled from its panel: the user was there.
     EXPECT_FALSE(ShouldNotify(true, 5min, true));
 }
+
+// An update's toast: a click (or "Update now…") brings back "update" and nothing else; Later dismisses.
+TEST(Toast, AnUpdateToastOffersUpdateNow)
+{
+    Content content{ L"ShiftDrop 0.7.1 is available", L"You have 0.7.0.", {} };
+    content.update = true;
+    const auto xml = BuildXml(content);
+    EXPECT_NE(xml.find(L"<toast launch=\"update\" activationType=\"foreground\">"), std::wstring::npos) << xml;
+    EXPECT_NE(xml.find(L"<action content=\"Update now\u2026\" arguments=\"update\" activationType=\"foreground\"/>"), std::wstring::npos) << xml;
+    EXPECT_NE(xml.find(L"<action content=\"Later\" arguments=\"dismiss\" activationType=\"system\"/>"), std::wstring::npos) << xml;
+    EXPECT_EQ(Arguments(Verb::Update, { L"C:\\a.png" }), L"update");
+    const auto click = ParseArguments(L"update");
+    ASSERT_TRUE(click);
+    EXPECT_EQ(click->verb, Verb::Update);
+    EXPECT_TRUE(click->paths.empty());
+    EXPECT_FALSE(ParseArguments(L"update|C:\\a.png"));
+}

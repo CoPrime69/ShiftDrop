@@ -12,7 +12,7 @@ to fit under 25 MB, two PDFs become one. The result lands next to the original, 
 touched.
 
 ShiftDrop is a small native Windows app (C++20, Win32, COM) that lives in the tray. It works
-offline and sends nothing anywhere.
+offline: the only thing that goes online is a daily check for a new version, which you can turn off.
 
 <!-- Demo GIF goes here: docs/images/demo.gif, about 10 seconds. Drag a phone photo out of Explorer,
      press Shift, scroll from Convert to Reduce size, hover -70% (the centre shows the new size),
@@ -135,8 +135,17 @@ file is never replaced.
 
 ## Privacy
 
-- **Offline.** ShiftDrop makes no network connections: no telemetry, no accounts, no update checks.
-  CI fails the build if either exe imports a networking library.
+- **Offline.** ShiftDrop itself makes no network connections: no telemetry, no accounts. CI fails
+  the build if ShiftDrop.exe or the archive worker imports a networking library.
+- **Updates** are the one exception, and only `ShiftDrop-Updater.exe` (installed next to the app)
+  goes online. Once a day, and when you press **Check now**, it sends one GET to
+  `https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest` with the User-Agent
+  `ShiftDrop-Updater/<version>`, no cookies and no sign-in. When you update (or with Install
+  automatically) it downloads that release's `ShiftDrop-Setup-<version>.exe` and `SHA256SUMS.txt`
+  from GitHub's release downloads and refuses the installer unless its SHA-256 matches. Nothing about
+  you, your files or your settings is sent. To turn it off: **Settings › Updates › When an update is
+  available › Off** (or `[Updates] Mode=off` in `settings.ini`); then nothing goes online unless you
+  press Check now.
 - **Video and audio** go through a bundled LGPL build of [FFmpeg](https://ffmpeg.org), run as a
   separate process. It is built without network support, and ShiftDrop only lets it open local
   files.
@@ -212,8 +221,9 @@ Releases are unsigned for now. When you run the installer, Windows SmartScreen m
 protected your PC": choose **More info**, then **Run anyway**. Code signing will be added in a later
 release.
 
-Privacy: this program will not transfer any information to other networked systems unless
-specifically requested by the user or the person installing or operating it. See [Privacy](#privacy).
+Privacy: this program transfers no information about you to other networked systems. Its only
+network use is the daily check for a new version, which asks GitHub for the latest release and can be
+turned off in Settings › Updates. See [Privacy](#privacy).
 
 ## Licence
 

@@ -12,8 +12,8 @@
 // Pure: no Windows calls.
 namespace sd::settings
 {
-    enum class Page { General, Appearance, Wheel, Output, Advanced, About };
-    inline constexpr int kPageCount = 6;
+    enum class Page { General, Appearance, Wheel, Output, Advanced, Updates, About };
+    inline constexpr int kPageCount = 7;
     const wchar_t* PageTitle(Page page);   // "General"...
     wchar_t PageIcon(Page page);           // a Segoe Fluent Icons / MDL2 Assets glyph
 
@@ -26,9 +26,10 @@ namespace sd::settings
         WheelContents,                                                  // Wheel
         OutputNaming,                                                   // Output
         ShellMenu, RecipesFolder, LogsFolder,                           // Advanced
+        UpdateMode, CheckUpdates,                                       // Updates
         Version, SourceCode, Privacy,                                   // About
     };
-    inline constexpr int kItemCount = 20;
+    inline constexpr int kItemCount = 22;
 
     struct Entry
     {

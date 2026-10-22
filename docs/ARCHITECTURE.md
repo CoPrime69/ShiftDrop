@@ -20,17 +20,19 @@ design decisions behind the main choices are in [adr/](adr/).
 - [Plugins](#plugins)
 - [History and undo](#history-and-undo)
 - [Settings, data and logs](#settings-data-and-logs)
+- [Updates](#updates)
 - [Speed](#speed)
 
 ## The big picture
 
-Three programs ship in an install:
+Four programs ship in an install:
 
 | Program | What it is |
 |---|---|
 | `ShiftDrop.exe` | The app: tray icon, mouse hook, wheel, windows, and most of the work |
 | `engines\ShiftDropWorker.exe` | A small sandboxed helper that parses archives. No window, no COM, no file or network access of its own |
 | `engines\ffmpeg.exe` | FFmpeg, started once per video or audio job |
+| `ShiftDrop-Updater.exe` | Checks for, downloads and installs a new release. The only program that goes online ([Updates](#updates)) |
 
 A drop goes through these steps:
 
@@ -62,7 +64,7 @@ A drop goes through these steps:
   share sheet, face detection, toasts). Each file installs itself into a hook in the core when it is
   linked, so the core and its tests build and run without it.
 - **`shiftdrop_pdf_ui`**, the PDF Merge window and the page view (Organize, Merge's More…, Edit).
-- **`ShiftDrop.exe`** and **`ShiftDropWorker.exe`**, plus **`shiftdrop_tests`**.
+- **`ShiftDrop.exe`**, **`ShiftDropWorker.exe`** and **`ShiftDrop-Updater.exe`**, plus **`shiftdrop_tests`**.
 
 In `src/`, the files at the top level are the core and the gesture UI. Each feature has its own
 folder:
@@ -479,6 +481,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 |---|---|
 | `settings.ini` | All settings (below) |
 | `history.db` | Run history for undo |
+| `update.json` | What the updater last found: the newest release, a verified download, how an update went |
 | `recipes\*.json` | Your own recipes; `web-ready.json` is written as an example the first time |
 | `shelf.json` | What is on the Float shelf, where it is, and whether it is switched on |
 | `logs\shiftdrop-YYYYMMDD.log` | One log file per day |
@@ -497,6 +500,7 @@ Everything lives in `%LOCALAPPDATA%\ShiftDrop`, which uninstall leaves in place:
 | `[FileActions]` | `Terminal` (wt, powershell, cmd, custom), `TerminalCommand` |
 | `[Startup]` | `StartWithWindows` (1 or 0) |
 | `[Sandbox]` | `Archives` (1 by default), `Media` (0 by default) |
+| `[Updates]` | `Mode` (auto, ask, off; default ask: Settings › Updates), `LastCheck` (when the daily check last ran, seconds since 1970), `TestFeed` (testing only: a release JSON file read instead of GitHub's) |
 | `[Ocr]` | `Language`: the text recognition language, or `auto` |
 
 **Start with Windows** is a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
@@ -517,6 +521,37 @@ warning. It is the first thing to read when something goes wrong. The mouse hook
 `--wheel <paths>` (the right-click entry), `--register-shell` and `--unregister-shell`, `--quit`
 (asks a running copy to exit) and `--uninstall` (quits and removes the Run value, the right-click
 entry, the toast registration and the sandbox profile).
+
+## Updates
+
+ShiftDrop.exe imports no networking code; `ShiftDrop-Updater.exe` does the network part with WinHTTP,
+and CI checks both (`scripts/check-imports.ps1`, `-Updater` for the one exe allowed WinHTTP). What
+both agree on is in [updates/Updates.h](../src/updates/Updates.h) (pure, unit-tested); when to run the
+updater and what to do with its answer is [updates/UpdateController.h](../src/updates/UpdateController.h).
+
+- **The daily check.** A timer in the app asks every 10 minutes (the first a minute after start)
+  whether a day has passed since `[Updates] LastCheck`; with Mode `off` it never starts the updater.
+  It runs `ShiftDrop-Updater.exe --check` (`--check --download` for Install automatically), which
+  sends one GET to `https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest`: User-Agent
+  `ShiftDrop-Updater/<version>`, no cookies, no credentials (not even to a proxy), https only.
+- **The 7 days.** A release newer than this build (a `+commit` build counts as its base version) is
+  offered by the daily check only once its `published_at` is 7 days old. **Check now**
+  (`--check --manual`) skips the wait.
+- **Ask me first** shows a toast ("Update now…", "Later") and "Update to 0.7.1…" at the top of the
+  tray menu; both open the question window with the release's name and its notes as plain text.
+  **Install automatically** shows nothing before it installs.
+- **Updating.** `--download` fetches the release's `ShiftDrop-Setup-<version>.exe` and
+  `SHA256SUMS.txt` (only from this repository's release downloads) into
+  `%TEMP%\ShiftDrop-update\<version>`, and keeps the installer only if its SHA-256 is the one
+  SHA256SUMS.txt lists (and GitHub's own digest, when it gives one). It copies itself there too. Once
+  no job is running and no editor, Rename, question or wheel is open, the app starts that copy with
+  `--install <setup> --wait <pid> --app <ShiftDrop.exe>` and quits. The copy waits for it to exit,
+  checks the hash again, runs Setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` (per user, no
+  admin) and starts ShiftDrop again. Setup puts every file back if it fails, so that is the old
+  version, which then says the update failed; the new one says it was updated. Settings, history,
+  recipes and the shelf are in `%LOCALAPPDATA%\ShiftDrop`, which Setup never touches.
+- **What happened** goes in `update.json`, written whole and then renamed into place; the updater's
+  exit code says which kind of answer it is.
 
 ## Speed
 

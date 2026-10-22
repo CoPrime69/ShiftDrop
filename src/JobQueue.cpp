@@ -50,6 +50,12 @@ namespace sd
         return m_tasks.size();
     }
 
+    size_t JobQueue::Busy() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_tasks.size() + m_running;
+    }
+
     void JobQueue::Run(std::stop_token stop)
     {
         // An STA thread here never hosts objects other apartments call into, so it needs no message pump.
@@ -67,7 +73,12 @@ namespace sd
                     return;
                 task = std::move(m_tasks.front());
                 m_tasks.pop_front();
+                ++m_running;
             }
+            auto done = wil::scope_exit([this] {
+                std::scoped_lock lock(m_mutex);
+                --m_running;
+            });
             try
             {
                 task(stop);
@@ -112,6 +123,14 @@ namespace sd
         case JobLane::Pool: break;
         }
         return *m_pool;
+    }
+
+    bool JobLanes::Busy() const
+    {
+        for (const auto* queue : { m_pool.get(), m_media.get(), m_audio.get(), m_office.get(), m_shell.get() })
+            if (queue && queue->Busy() > 0)
+                return true;
+        return false;
     }
 
     unsigned JobLanes::Threads(JobLane lane, unsigned poolThreads)

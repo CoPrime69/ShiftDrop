@@ -34,6 +34,8 @@ namespace sd
 
         void Submit(Task task);
         size_t Pending() const;
+        // Tasks waiting or running: 0 when the queue is idle.
+        size_t Busy() const;
 
     private:
         void Run(std::stop_token stop);
@@ -43,6 +45,7 @@ namespace sd
         mutable std::mutex m_mutex;
         std::condition_variable_any m_cv;
         std::deque<Task> m_tasks;
+        size_t m_running = 0;   // tasks a worker has taken and not finished
         std::vector<std::jthread> m_threads;   // last member: destroyed (stopped + joined) first
     };
 
@@ -62,6 +65,8 @@ namespace sd
         JobLanes& operator=(const JobLanes&) = delete;
 
         JobQueue& For(JobLane lane);
+        // Is any lane running or holding a job? (An update waits until none is.)
+        bool Busy() const;
         // How many workers `lane` gets.
         static unsigned Threads(JobLane lane, unsigned poolThreads = JobQueue::PoolThreads());
 

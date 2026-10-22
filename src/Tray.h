@@ -35,6 +35,7 @@ namespace sd
         bool shelfOn = false;              // ...ticked: the shelf is switched on
         std::vector<TrayChoice> choices;
         std::vector<TrayToggle> toggles;
+        std::wstring update;               // "Update to 0.7.1…" (IDM_UPDATE) at the top, or empty
     };
 
     // The notification-area icon, its context menu and balloon notifications.

@@ -5,6 +5,15 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- Check for updates (Settings › Updates). Once a day ShiftDrop-Updater.exe asks GitHub for the latest
+  release; a new version is offered a week after it comes out, with a toast and "Update to 0.7.1…" in
+  the tray menu. Update now downloads the installer, checks its SHA-256 against the release's
+  SHA256SUMS.txt, waits for any job to finish and installs it, keeping settings and history; if
+  Setup fails, the old version starts again. Choose Install automatically, Ask me first (the default)
+  or Off; Check now looks at once and skips the week.
+
 ### Changed
 
 - The version is written in one place (VERSION). The app, its file properties, the installer and the

@@ -150,6 +150,13 @@ namespace sd
             return;
         AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, 0, L"" SD_NAME L": drag a file, press Shift, scroll for sections");
         AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        if (!extras.update.empty())
+        {
+            // An update to offer: first, in bold (the menu's default item).
+            AppendMenuW(menu.get(), MF_STRING, IDM_UPDATE, extras.update.c_str());
+            SetMenuDefaultItem(menu.get(), IDM_UPDATE, FALSE);
+            AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+        }
         // Size and Style submenus, each with a radio-style check on the current choice.
         wil::unique_hmenu size(CreatePopupMenu()), style(CreatePopupMenu());
         const wchar_t* sizes[] = { L"Auto (fits the screen)", L"Small", L"Medium", L"Large" };

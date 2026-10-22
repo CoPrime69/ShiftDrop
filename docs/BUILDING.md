@@ -209,6 +209,8 @@ the Developer PowerShell:
 ```powershell
 ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop.exe
 ./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDropWorker.exe
+# The updater is the one program allowed online: WinHTTP, and no other networking DLL
+./scripts/check-imports.ps1 -Exe build/x64-release/Release/ShiftDrop-Updater.exe -Updater
 ```
 
 What the unit tests can't see (the wheel, the windows, Explorer integration) is in the hand

@@ -117,6 +117,7 @@ add_library(shiftdrop_core STATIC
   src/DropDescription.cpp
   src/rename/RenamePattern.cpp   # File actions › Rename…: names from a pattern
   src/toast/ToastXml.cpp         # what a finished batch's toast says
+  src/updates/Updates.cpp        # check for updates: versions, the release, the 7 days, SHA256SUMS, update.json
   # Keyboard picking and the wheel without a drag, predicted output, metadata inspector
   src/keyboard/Hotkey.cpp
   src/keyboard/KeyNav.cpp
@@ -322,6 +323,7 @@ add_executable(ShiftDrop WIN32
   src/mediaeditor/Playback.cpp
   src/canvas/EditorWindow.cpp
   src/canvas/SignaturePad.cpp   # draw or pick a signature, over the picture editor
+  src/updates/UpdateController.cpp   # when to start the updater, the update window, the tray item
   src/ShiftDrop.rc
   src/app.manifest      # CMake passes .manifest sources to the linker (/MANIFESTINPUT), which embeds it
 )
@@ -342,6 +344,16 @@ add_custom_command(TARGET ShiftDropWorker POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShiftDropWorker>/engines"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ShiftDropWorker>" "$<TARGET_FILE_DIR:ShiftDropWorker>/engines/ShiftDropWorker.exe"
   COMMENT "Copying ShiftDropWorker.exe into engines")
+
+# The updater: checks for, downloads and installs a new release (src/updates/). The one program of an
+# install that goes online, so WinHTTP is linked here and nowhere else (scripts/check-imports.ps1).
+# ShiftDrop.exe starts it from the same folder; every build puts it next to the app.
+add_executable(ShiftDropUpdater WIN32 src/updates/UpdaterMain.cpp src/updates/Http.cpp src/Updater.rc src/app.manifest)
+set_target_properties(ShiftDropUpdater PROPERTIES OUTPUT_NAME ShiftDrop-Updater)
+target_compile_options(ShiftDropUpdater PRIVATE ${SHIFTDROP_OPTIONS})
+target_link_libraries(ShiftDropUpdater PRIVATE shiftdrop_core winhttp)
+add_dependencies(ShiftDropUpdater shiftdrop_version)   # Updater.rc includes Version.h
+add_dependencies(ShiftDrop ShiftDropUpdater)
 
 # Video and audio go through ffmpeg.exe in "engines" next to ShiftDrop.exe. scripts/get-ffmpeg.ps1
 # downloads it into build/engines; when it is there, every build copies it next to the exe so the
@@ -402,6 +414,7 @@ if(SHIFTDROP_TESTS)
     tests/FfmpegComponentsTests.cpp
     tests/HelperTests.cpp
     tests/SettingsTests.cpp
+    tests/UpdatesTests.cpp
     tests/VersionTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})

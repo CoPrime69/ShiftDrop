@@ -65,6 +65,8 @@ namespace sd::history
         int hour = 0, minute = 0;
     };
     bool ParseStarted(std::wstring_view started, LocalTime& out);
+    // The clock now, in local time like RunRecord::started.
+    LocalTime LocalNow();
 
     // When a run started, as the row says it at `now`: "Just now", "12 min ago", "3 h ago" (today),
     // "Yesterday 18:40", "14 Oct 18:40", "14 Oct 2025" (another year); the text as it is when it

@@ -6,7 +6,7 @@ namespace sd::toast
 {
     namespace
     {
-        constexpr std::wstring_view kReveal = L"reveal", kOpen = L"open";
+        constexpr std::wstring_view kReveal = L"reveal", kOpen = L"open", kUpdate = L"update";
 
         // "C:\..." or "\\server\share\...".
         bool IsAbsolute(std::wstring_view path)
@@ -19,6 +19,8 @@ namespace sd::toast
 
     std::wstring Arguments(Verb verb, const std::vector<std::wstring>& paths, size_t budget)
     {
+        if (verb == Verb::Update)
+            return std::wstring(kUpdate);   // no paths
         std::wstring args(verb == Verb::Open ? kOpen : kReveal);
         for (size_t i = 0; i < paths.size(); ++i)
         {
@@ -35,6 +37,11 @@ namespace sd::toast
     std::optional<Activation> ParseArguments(std::wstring_view arguments)
     {
         Activation a;
+        if (arguments == kUpdate)
+        {
+            a.verb = Verb::Update;
+            return a;
+        }
         const size_t bar = arguments.find(L'|');
         const auto verb = arguments.substr(0, bar);
         if (verb == kReveal)
@@ -98,7 +105,9 @@ namespace sd::toast
     std::wstring BuildXml(const Content& content)
     {
         std::wstring xml;
-        if (content.outputs.empty())
+        if (content.update)
+            xml = std::format(L"<toast launch=\"{}\" activationType=\"foreground\">", kUpdate);
+        else if (content.outputs.empty())
             xml = L"<toast>";
         else
             xml = std::format(L"<toast launch=\"{}\" activationType=\"foreground\">", EscapeXml(Arguments(Verb::Reveal, content.outputs)));
@@ -107,7 +116,12 @@ namespace sd::toast
         if (!content.text.empty())
             xml += std::format(L"<text>{}</text>", EscapeXml(content.text));
         xml += L"</binding></visual>";
-        if (content.failed)
+        if (content.update)
+        {
+            xml += std::format(L"<actions><action content=\"Update now\u2026\" arguments=\"{}\" activationType=\"foreground\"/>", kUpdate);
+            xml += L"<action content=\"Later\" arguments=\"dismiss\" activationType=\"system\"/></actions>";
+        }
+        else if (content.failed)
         {
             // Windows' own dismiss: nothing to open.
             xml += L"<actions><action content=\"Dismiss\" arguments=\"dismiss\" activationType=\"system\"/></actions>";

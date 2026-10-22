@@ -33,20 +33,6 @@ namespace sd
         // The When filter, in history::Period order.
         constexpr const wchar_t* kPeriods[] = { L"Any time", L"Today", L"Last 7 days" };
 
-        std::chrono::year_month_day Today()
-        {
-            SYSTEMTIME t{};
-            GetLocalTime(&t);   // RunRecord::started is local time too
-            return std::chrono::year_month_day{ std::chrono::year{ t.wYear }, std::chrono::month{ t.wMonth }, std::chrono::day{ t.wDay } };
-        }
-
-        history::LocalTime Now()
-        {
-            SYSTEMTIME t{};
-            GetLocalTime(&t);
-            return { Today(), t.wHour, t.wMinute };
-        }
-
         // A row's second line: the action and how many files.
         std::wstring Detail(const RunRecord& run)
         {
@@ -233,8 +219,8 @@ namespace sd
     void HistoryWindow::Fill(int64_t keep)
     {
         const auto filter = CurrentFilter();
-        m_shown = history::Apply(m_runs, filter, Today());
-        m_now = Now();
+        m_now = history::LocalNow();
+        m_shown = history::Apply(m_runs, filter, m_now.day);
         SendMessageW(m_list, WM_SETREDRAW, FALSE, 0);
         ListView_DeleteAllItems(m_list);
         ListView_RemoveAllGroups(m_list);

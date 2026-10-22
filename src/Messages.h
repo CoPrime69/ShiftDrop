@@ -16,6 +16,7 @@ namespace sd::msg
     constexpr UINT BatchProgress = WM_APP + 22;  // wParam: batch token, lParam: files finished so far
     constexpr UINT AnotherInstance = WM_APP + 30;
     constexpr UINT QuitRequest = WM_APP + 31;      // "ShiftDrop.exe --quit" (the installer) asks the running copy to exit
+    constexpr UINT UpdaterDone = WM_APP + 32;      // wParam: what ShiftDrop-Updater.exe was started for; it has exited
 
     // Screen coordinates can be negative on multi-monitor setups but always fit in 16 bits,
     // so they travel in an LPARAM like WM_MOUSEMOVE's. Unpack with GET_X_LPARAM / GET_Y_LPARAM.

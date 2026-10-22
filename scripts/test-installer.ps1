@@ -46,6 +46,7 @@ $ffCode = $LASTEXITCODE
 $ffVersion = $ffOut | Select-Object -First 1
 Check ($ffCode -eq 0 -and "$ffVersion" -like 'ffmpeg version*') "installed ffmpeg runs ($ffVersion, exit $ffCode)"
 Check (Test-Path (Join-Path $app 'engines\ShiftDropWorker.exe')) 'sandboxed worker installed in engines'
+Check (Test-Path (Join-Path $app 'ShiftDrop-Updater.exe')) 'updater installed next to the exe'
 Check (Test-Path $shortcut) 'Start menu shortcut'
 Check ((RunValue) -eq "`"$exe`" --autostart") 'Run value points at the installed exe'
 Check ((Get-Content $settings -Raw) -match 'StartWithWindows=1') 'choice saved as on'
@@ -80,6 +81,7 @@ $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', 
 Check ($p.ExitCode -eq 0) "uninstall exits 0 (got $($p.ExitCode))"
 Check (WaitFor { -not (Test-Path $exe) } 60) 'exe removed'
 Check (WaitFor { -not (Test-Path (Join-Path $app 'engines\ffmpeg.exe')) } 30) 'ffmpeg removed'
+Check (WaitFor { -not (Test-Path (Join-Path $app 'ShiftDrop-Updater.exe')) } 30) 'updater removed'
 Check (-not (Test-Path $shortcut)) 'shortcut removed'
 Check ($null -eq (RunValue)) 'Run value removed'
 Check (-not (Test-Path -LiteralPath 'HKCU:\Software\Classes\*\shell\ShiftDrop')) 'right-click entry removed'

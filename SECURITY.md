@@ -29,6 +29,8 @@ Some examples of what is in scope:
   limits.
 - Anything that lets the sandboxed worker read the user's files or reach the network.
 - Anything that makes ShiftDrop, or the bundled ffmpeg run it starts, connect to the network.
+- Anything that makes ShiftDrop-Updater.exe send more than its one GET to GitHub's releases API and
+  the release's own downloads, or install a file whose SHA-256 is not the one SHA256SUMS.txt lists.
 - An output that replaces an existing file, or an undo that deletes a file the user changed.
 
 Out of scope: problems that need an attacker who already runs code as the same Windows user, and
