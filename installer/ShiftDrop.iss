@@ -2,7 +2,7 @@
 ; a Release build (see docs/BUILDING.md, "Build the installer"):
 ;   ./scripts/get-ffmpeg.ps1
 ;   ./scripts/make-notices.ps1
-;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.5.0 installer\ShiftDrop.iss
+;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.6.0 installer\ShiftDrop.iss
 ;
 ; Per-user install: no admin rights, no UAC prompt. Files go to %LOCALAPPDATA%\Programs\ShiftDrop.
 ; The app is linked with the static CRT, so nothing else (no VC++ redistributable) is installed.

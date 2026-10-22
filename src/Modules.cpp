@@ -11,6 +11,8 @@
 #include "mediaeditor/MediaToolsModule.h"
 #include "photo/PhotoModule.h"
 
+#include <algorithm>
+
 // The list of feature modules. Each module is its own files (src/<area>/...) exposing one
 // FeatureModule; adding a feature is one include and one line here.
 namespace sd
@@ -45,7 +47,20 @@ namespace sd
         for (const auto& m : FeatureModules())
             if (m.builtInRecipes)
                 for (auto& recipe : nlohmann::json::parse(m.builtInRecipes()))
-                    builtIns.push_back(std::move(recipe));
+                {
+                    // "after": a slice with a long label goes right after the one named, so on a full
+                    // wheel it lands where its two lines fit (the end of the list is the outer ring).
+                    auto at = builtIns.end();
+                    if (const auto after = recipe.find("after"); after != recipe.end())
+                    {
+                        const auto id = after->get<std::string>();
+                        at = std::find_if(builtIns.begin(), builtIns.end(), [&](const nlohmann::json& r) { return r.value("id", "") == id; });
+                        if (at != builtIns.end())
+                            ++at;
+                        recipe.erase("after");
+                    }
+                    builtIns.insert(at, std::move(recipe));
+                }
     }
 
     std::vector<std::unique_ptr<IEngine>> MakeModuleEngines(const EngineServices& services)

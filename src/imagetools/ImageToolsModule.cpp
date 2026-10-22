@@ -28,8 +28,8 @@ namespace sd
     "icon": "ED1A", "steps": [ { "action": "redact.image" } ] },
   { "id": "share-safe", "label": "Private", "description": "A copy without location, camera or personal details", "ring": "tools",
     "suffix": "share-safe", "icon": "EA18", "steps": [ { "action": "sharesafe.clean" } ] },
-  { "id": "remove-metadata", "label": "No EXIF", "description": "A copy without EXIF, GPS or tags", "ring": "files",
-    "suffix": "no metadata", "icon": "E8EC", "steps": [ { "action": "metadata.remove" } ] }
+  { "id": "remove-metadata", "label": "Remove metadata", "description": "A copy without EXIF, GPS or tags", "ring": "files",
+    "after": "duplicate", "suffix": "no metadata", "icon": "E8EC", "steps": [ { "action": "metadata.remove" } ] }
 ])";
         }
 

@@ -5,6 +5,8 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-22
+
 ### Added
 
 - Merge PDFs has More…: every page in one view to reorder across files, turn, leave out, preview
@@ -18,6 +20,15 @@ until 1.0, a minor version may change behaviour.
 
 ### Changed
 
+- A new look across the app in the ShiftDrop brand: new app and tray icons, the wheel, top panel,
+  result card, Float shelf and notifications, Settings with pages, cards and a Wheel page, History,
+  Rename, the inspector, the question windows and every editor.
+- The accent colour follows your Windows accent by default; pick a preset or add colours of your own.
+- The wheel's Size is Auto by default.
+- Video and audio editors gain Remove a part with fades, Keep pitch, frame sequences, Split every,
+  Add clips, Duck and six visualizer styles. History gains search, filters and Clear history;
+  Rename can change the extension; Background can Fit to picture; the PDF page view can Add files.
+- The Float shelf stays on screen while it's on, takes files dropped on it, and has Clear all.
 - The top panel is about 1.4 times larger, so it reads at a glance on large screens; it follows the
   tray Size setting and still fits a 1366 px screen.
 - The dragged item's picture (its icon or thumbnail and name) stays visible over the wheel again,
@@ -70,5 +81,6 @@ The first public release.
 - Office exports run on their own thread, so Move and Copy never wait behind them.
 - Dropping a ZIP on the ZIP slice is skipped instead of crashing.
 
-[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.5.0
