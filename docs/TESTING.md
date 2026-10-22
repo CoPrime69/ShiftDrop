@@ -417,7 +417,7 @@ Share-safe
 - [ ] Drop an already clean file (a Share-safe output): it is skipped with "already clean"
 
 Remove metadata (File actions)
-- [ ] Drop the phone photo on **No EXIF**: `photo (no metadata).jpg`, no editor, the result line lists what went
+- [ ] Drop the phone photo on **Remove metadata**: `photo (no metadata).jpg`, no editor, the result line lists what went
 - [ ] Drop the MP3: `song (no metadata).mp3` has no title, artist or cover art in Explorer, and still plays
 - [ ] Drop a WebP and a PNG with text chunks: both come out clean (check with Inspect)
 
