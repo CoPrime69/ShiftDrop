@@ -2,15 +2,25 @@
 ; a Release build (see docs/BUILDING.md, "Build the installer"):
 ;   ./scripts/get-ffmpeg.ps1
 ;   ./scripts/make-notices.ps1
-;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=0.6.0 installer\ShiftDrop.iss
+;   $version = (Get-Item build\x64-release\Release\ShiftDrop.exe).VersionInfo.ProductVersion
+;   & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer\ShiftDrop.iss
 ;
 ; Per-user install: no admin rights, no UAC prompt. Files go to %LOCALAPPDATA%\Programs\ShiftDrop.
 ; The app is linked with the static CRT, so nothing else (no VC++ redistributable) is installed.
 ; ffmpeg.exe and ShiftDropWorker.exe (engines\) are the only other programs; ffmpeg runs when a video or
 ; audio file is converted, the worker when an archive is read.
 
+; AppVersion is the built exe's ProductVersion, which comes from VERSION: "0.6.0" for the release
+; build, "0.6.0+<commit>" for any other (the installer's file name carries it too). CI checks that
+; they agree (scripts/check-version.ps1).
 #ifndef AppVersion
-  #define AppVersion "0.0.0"
+  #error Pass /DAppVersion=<the built ShiftDrop.exe's ProductVersion> (see the top of this file)
+#endif
+; The numbers alone ("0.6.0"), for Windows' version resource of the installer exe.
+#if Pos("+", AppVersion) > 0
+  #define AppVersionBase Copy(AppVersion, 1, Pos("+", AppVersion) - 1)
+#else
+  #define AppVersionBase AppVersion
 #endif
 #ifndef AppExe
   #define AppExe "..\build\x64-release\Release\ShiftDrop.exe"
@@ -35,7 +45,9 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=CoPrime69
 AppPublisherURL=https://github.com/CoPrime69/ShiftDrop
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#AppVersionBase}
+VersionInfoTextVersion={#AppVersion}
+VersionInfoProductTextVersion={#AppVersion}
 ; lowest = install for the current user only; {autopf} then means %LOCALAPPDATA%\Programs.
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\{#AppName}

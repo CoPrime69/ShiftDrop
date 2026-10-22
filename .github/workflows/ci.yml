@@ -31,19 +31,37 @@ permissions:
 jobs:
   # A push to main is normally a pull request's head, fast-forwarded once its run passed. That run
   # already built and tested this exact tree, so its installer and exe are taken over instead of
-  # building again. A push no passed pull-request run covers (and every tag) builds in full.
+  # building again. A push no passed pull-request run covers (and every tag) builds in full, and so
+  # does the release build: the first push whose VERSION has no release yet builds once more with
+  # SHIFTDROP_RELEASE, so the released app shows "0.6.0" where every other build shows "0.6.0+<commit>".
   reuse:
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.cache-only) || (github.event_name == 'workflow_dispatch' && inputs.reuse) }}
+    if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && !inputs.cache-only) || (github.event_name == 'workflow_dispatch' && inputs.reuse) }}
     runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
     outputs:
       run-id: ${{ steps.find.outputs.run-id }}
+      release: ${{ steps.release.outputs.release }}
     steps:
+      # The release job publishes v<VERSION> when it has no release yet; this run then builds it.
+      - name: Is this the release build?
+        id: release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          base=$(gh api "repos/$REPO/contents/VERSION?ref=$GITHUB_SHA" --jq .content | base64 -d | head -n 1 | tr -d '[:space:]')
+          if [ -n "$base" ] && ! gh release view "v$base" --repo "$REPO" --json tagName > /dev/null 2>&1; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "No release v$base yet: building in full as the release build (version $base, no +commit)." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Pull-request runs mark the tree they tested with an artifact named tested-tree-<tree>.
       - name: Find a passed pull-request run of this tree
         id: find
+        if: steps.release.outputs.release != 'true' && github.ref_type != 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -160,9 +178,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The commit shown after the version (the pull request's head, not its test merge), or none
+      # for the release build.
       - uses: ./.github/actions/configure
         with:
           save-caches: 'true'
+          options: -DSHIFTDROP_COMMIT=${{ github.event.pull_request.head.sha || github.sha }} -DSHIFTDROP_RELEASE=${{ needs.reuse.outputs.release == 'true' && 'ON' || 'OFF' }}
 
       # ShiftDrop.exe, and ShiftDropWorker.exe with it, first: the installer job waits for them (and
       # for vcpkg's copyright files, for the third-party notices).
@@ -175,6 +196,13 @@ jobs:
         run: |
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop.exe
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDropWorker.exe
+
+      # The exe states VERSION (and the commit, except on the release build), CHANGELOG.md has its
+      # heading (a version bump adds its notes in the same change) and vcpkg.json states no version.
+      - name: Version check
+        if: ${{ !inputs.cache-only }}
+        shell: pwsh
+        run: ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop.exe -Changelog -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
 
       - uses: actions/upload-artifact@v7
         if: ${{ !inputs.cache-only }}
@@ -350,7 +378,8 @@ jobs:
       - name: Build the installer
         shell: pwsh
         run: |
-          $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
+          # The version the exe states (checked against VERSION in the build job and below).
+          $version = (Get-Item build/ci/ShiftDrop.exe).VersionInfo.ProductVersion
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
           & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" installer/ShiftDrop.iss
@@ -363,6 +392,10 @@ jobs:
           $lines | ForEach-Object { Write-Host $_ }
           $lines | Add-Content $env:GITHUB_STEP_SUMMARY
           "SD_SETUP=build/installer/ShiftDrop-Setup-$version.exe" >> $env:GITHUB_ENV
+
+      - name: Version check
+        shell: pwsh
+        run: ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop.exe -Setup $env:SD_SETUP -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
 
       - name: Installer smoke test
         shell: pwsh
@@ -451,15 +484,15 @@ jobs:
 
       - uses: ./.github/actions/configure
         with:
-          options: -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF
+          options: -DSHIFTDROP_M0=ON -DSHIFTDROP_TESTS=OFF -DSHIFTDROP_COMMIT=${{ github.event.pull_request.head.sha || github.sha }} -DSHIFTDROP_RELEASE=${{ needs.reuse.outputs.release == 'true' && 'ON' || 'OFF' }}
 
       - name: Build the placeholder gesture build
         run: cmake --build --preset ci --target ShiftDrop
 
-  # Publishes a GitHub Release for SD_VERSION (src/Brand.h) once it has passed everything above:
-  # on a push to main (the reused pull-request build or a full one) when there is no release
-  # v<SD_VERSION> yet, which also creates that tag, and on a pushed v* tag. A version that already
-  # has its release is left alone.
+  # Publishes a GitHub Release for VERSION once it has passed everything above: on a push to main
+  # when there is no release v<VERSION> yet (the reuse job then had it built as the release build),
+  # which also creates that tag, and on a pushed v* tag. A version that already has its release is
+  # left alone.
   release:
     needs: [reuse, ffmpeg, build, tests, installer, placeholder]
     if: ${{ !cancelled() && !inputs.cache-only && github.event_name == 'push' && ((needs.reuse.result == 'success' && needs.reuse.outputs.run-id != '') || (needs.ffmpeg.result != 'failure' && needs.build.result == 'success' && needs.tests.result == 'success' && needs.installer.result == 'success' && needs.placeholder.result == 'success')) }}
@@ -476,8 +509,10 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = (Select-String -Path src/Brand.h -Pattern '#define SD_VERSION L"([^"]+)"').Matches[0].Groups[1].Value
-          if ("${{ github.ref_type }}" -eq 'tag' -and "${{ github.ref_name }}" -ne "v$version") { throw "Tag ${{ github.ref_name }} does not match SD_VERSION $version in src/Brand.h" }
+          $version = (Get-Content VERSION -TotalCount 1).Trim()
+          # The tag (the pushed one, or the one this creates) and the CHANGELOG's notes heading state VERSION.
+          $tag = if ("${{ github.ref_type }}" -eq 'tag') { "${{ github.ref_name }}" } else { "v$version" }
+          ./scripts/check-version.ps1 -Tag $tag -Changelog
           "version=$version" >> $env:GITHUB_OUTPUT
           gh release view "v$version" --repo $env:REPO --json tagName 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) {
@@ -509,8 +544,9 @@ jobs:
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.version }}'
+          # The release build's installer: the plain version, no +commit.
           $setup = "build/installer/ShiftDrop-Setup-$version.exe"
-          if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts" }
+          if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts (was this run the release build?)" }
           # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).
           $files = @($setup)
           if (Test-Path build/ffmpeg-custom/ffmpeg-sources.tar.xz) {
