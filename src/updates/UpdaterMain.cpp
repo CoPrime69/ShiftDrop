@@ -19,6 +19,7 @@
 #include <wil/resource.h>
 
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <string>
 #include <vector>
@@ -93,8 +94,20 @@ namespace sd::updates
 
         // ---- --check ----------------------------------------------------------------------------------
 
+        // %TEMP%\ShiftDrop-update: the downloads, and the copy of this exe that ran Setup.
+        std::wstring DownloadRoot()
+        {
+            return TempDirectory() + L"" SD_NAME L"-update";
+        }
+
         Result Check(const Source& source, State& state, bool manual)
         {
+            // What an earlier update left (that run has long finished: ShiftDrop started this one).
+            if (state.outcome != Outcome::Downloaded)
+            {
+                std::error_code ec;
+                std::filesystem::remove_all(DownloadRoot(), ec);
+            }
             state = {};
             state.checked = Now();
             state.checkedLocal = NowLocal();
@@ -153,7 +166,7 @@ namespace sd::updates
                 return fail(std::format(L"The release has no {}", kSumsName));
 
             // %TEMP%\ShiftDrop-update\<version>, emptied of anything an earlier try left.
-            const std::wstring root = TempDirectory() + L"" SD_NAME L"-update", folder = root + L"\\" + ToText(r.version);
+            const std::wstring root = DownloadRoot(), folder = root + L"\\" + ToText(r.version);
             CreateDirectoryW(root.c_str(), nullptr);
             CreateDirectoryW(folder.c_str(), nullptr);
             const std::wstring setup = folder + L"\\" + setupName, part = setup + L".part";

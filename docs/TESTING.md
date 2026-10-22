@@ -70,6 +70,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - X. Settings and tray entries
 - Y. Toasts, more settings, Rename and screen readers
 - Z. Install, upgrade, uninstall
+- ZA. Check for updates
 
 ### A. Startup
 - [ ] A tray icon appears (the page with a folded corner, in one colour) and a notification says ShiftDrop is running, naming the version (the placeholder build says "M0 placeholder build")
@@ -823,3 +824,23 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
      one of the places above says plain `0.6.0`, with nothing after it
    - [ ] Install a main build over the release, then the release over it: each time About shows the
      version of the installer just run, never the one before
+
+### ZA. Check for updates
+Before the first real newer release, test with a local one: `./scripts/make-test-feed.ps1 -Setup <a CI installer>`
+makes `ShiftDrop-Setup-9.9.9.exe`, its `SHA256SUMS.txt` and a `latest.json` like GitHub's (8 days old by default)
+and prints the `[Updates] TestFeed=` line to add to settings.ini. Quit and start ShiftDrop after each change to
+settings.ini. Watch `%LOCALAPPDATA%\ShiftDrop\logs` (lines starting `updates:` and `updater:`).
+- [ ] A fresh install: Settings has an **Updates** page (Find a setting: "update", "upgrade", "check now"); **When an update is available** shows Install automatically / Ask me first / Off with **Ask me first** chosen; the Check for updates card says "Not checked yet" and "Never checked"
+- [ ] No test feed, Check now: the line says "Checking…", then "You have the latest version" (or "0.x.y is available") and "Last checked: Just now". The log has one `updater: GET https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest`
+- [ ] Network off (Airplane mode), Check now: "Couldn't reach GitHub"; nothing else happens
+- [ ] Ask me first, a test feed 8 days old, set `[Updates] LastCheck=0` and restart: about a minute later a toast "ShiftDrop 9.9.9 is available" with **Update now…** and **Later**; the tray menu starts with **Update to 9.9.9…** in bold
+- [ ] **Update to 9.9.9…**: the question window shows "ShiftDrop 9.9.9 is available", the notes as plain text (no `**` or `##`), **Update now** and **Later**. Later closes it; the tray item stays
+- [ ] **Update now** with a conversion running: a balloon says it installs once the job is done; when it finishes ShiftDrop quits, Setup runs with no window, ShiftDrop starts again by itself and says "Setup for 9.9.9 finished". Settings, History, recipes and the shelf are as before
+- [ ] The same with an editor (Crop, the PDF page view) open: it waits until the editor is closed
+- [ ] `make-test-feed.ps1 -BadHash`, Update now: "Couldn't download ShiftDrop 9.9.9" saying the SHA-256 doesn't match; nothing is installed and ShiftDrop keeps running
+- [ ] `-DaysOld 2`, LastCheck=0, restart: no toast and no tray item (Settings: "9.9.9 is out. It is offered a week after its release…"); **Check now** offers it at once
+- [ ] Install automatically, `-DaysOld 8`, LastCheck=0, restart: no window; about a minute later ShiftDrop restarts on its own and says Setup finished
+- [ ] Off, LastCheck=0, restart and wait 15 minutes: the log has no `updater:` line; Check now still works
+- [ ] Setup failing (`make-test-feed.ps1 -Setup C:\Windows\win.ini`: an "installer" that can't run), Update now: ShiftDrop quits, comes back as the same version and says "Couldn't install ShiftDrop 9.9.9 … still installed"
+- [ ] After 0.7.0 is released: an installed 0.7.0 offers 0.7.1 a week after 0.7.1 comes out; Update now installs it and About says 0.7.1
+- [ ] Uninstall: ShiftDrop-Updater.exe, `update.json` and `%TEMP%\ShiftDrop-update` are gone; settings.ini is kept

@@ -85,6 +85,8 @@ namespace sd::updates
             const std::wstring v = m_state.hasRelease ? ToText(m_state.release.version) : L"";
             if (m_state.outcome == Outcome::Installed && m_state.hasRelease && Compare(m_state.release.version, m_running) == 0)
                 m_hooks.notify(std::format(L"" SD_NAME L" is updated to {}", v), L"Your settings and history are as you left them.", false);
+            else if (m_state.outcome == Outcome::Installed)   // an installer that holds another version (a test feed's)
+                m_hooks.notify(std::format(L"Setup for {} finished", v), std::format(L"This is " SD_NAME L" {}.", RunningVersion()), false);
             else
                 m_hooks.notify(std::format(L"Couldn’t install " SD_NAME L" {}", v),
                                std::format(L"{}{}" SD_NAME L" {} is still installed.", m_state.error, m_state.error.empty() ? L"" : L". ", ToText(m_running)), true);
