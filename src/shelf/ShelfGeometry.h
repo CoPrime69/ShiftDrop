@@ -58,6 +58,7 @@ namespace sd::shelf
         float button;        // round icon buttons
         float clearAll;      // the "Clear all" button's width (as high as a round one)
         float radius;        // panel corners
+        float label;         // a heading row in the list ("Pinned", "Recent conversions")
         float tabThickness, tabLength;
         float snap;          // how close to an edge counts as pinning to it
         size_t maxRows = 5;  // more items scroll
@@ -65,7 +66,25 @@ namespace sd::shelf
     float PanelHeight(const Metrics& m, size_t count);
     float MaxScroll(const Metrics& m, size_t count);
 
-    enum class Part { None, Header, Pin, Clear, Close, Item, Reveal, Remove, Footer };
+    // What the list holds and which of the panel's parts show. The shelf's own list is items only,
+    // with Clear all and the drag-out footer while it has any and the drop box while it has none. The
+    // header's drop-down (Pinned and Recent conversions) is a list of headings and items, with neither.
+    enum class RowKind { Item, Label };
+    struct ListShape
+    {
+        std::vector<RowKind> rows;
+        bool clear = false, footer = false, drop = false;
+        float dropDown = 0;   // the header's drop-down button (the title and its chevron), pixels wide; 0 for none
+    };
+    ListShape ShelfShape(size_t count);   // the shelf's own list, no drop-down button
+    float ContentHeight(const Metrics& m, const ListShape& shape);
+    float PanelHeight(const Metrics& m, const ListShape& shape);
+    float MaxScroll(const Metrics& m, const ListShape& shape);
+    // Where row `index` starts in the list, and how tall it is (scrolled 0).
+    float RowTop(const Metrics& m, const ListShape& shape, size_t index);
+    float RowHeight(const Metrics& m, const ListShape& shape, size_t index);
+
+    enum class Part { None, Header, Pin, Clear, Close, Item, Reveal, Remove, Footer, DropDown, Open, PinItem, Label };
     struct Hit
     {
         Part part = Part::None;
@@ -73,14 +92,20 @@ namespace sd::shelf
         bool operator==(const Hit&) const = default;
     };
 
+    // An item's buttons, from the left: pin, Open, Show in folder, × (shown while it is hovered or
+    // focused). A heading row has only `row` and `name`.
     struct RowBox
     {
         size_t index;
-        Box row, thumb, name, detail, reveal, remove;
+        RowKind kind = RowKind::Item;
+        Box row, thumb, name, detail, pin, open, reveal, remove;
     };
+    // The buttons of a row in the order the keyboard (Left and Right) goes through them.
+    inline constexpr Part kRowButtons[] = { Part::PinItem, Part::Open, Part::Reveal, Part::Remove };
+    const Box& ButtonBox(const RowBox& row, Part part);
     struct Layout
     {
-        Box panel, header, title, pin, clear, close, list, footer;
+        Box panel, header, title, dropDown, pin, clear, close, list, footer;
         Box drop;                   // an empty shelf's drop target, over the list and the footer
         std::vector<RowBox> rows;   // rows at least partly inside the list, top to bottom
     };
@@ -89,6 +114,8 @@ namespace sd::shelf
     // footer (both empty boxes, never hit; the pin moves next to close): the space below the header is
     // one drop target instead.
     Layout LayOut(const Box& panel, const Metrics& m, size_t count, float scroll);
+    // The same for any list (`shape`); `index` of a row is its place in shape.rows.
+    Layout LayOut(const Box& panel, const Metrics& m, const ListShape& shape, float scroll);
     // What is under a point. Rows only count inside the list (a scrolled-away row is not hit).
     Hit HitTest(const Layout& layout, float x, float y);
 }

@@ -16,6 +16,7 @@
 #include <wil/resource.h>
 #include <wrl/client.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +33,11 @@ namespace sd
     // target); its close button and the tray's "Show Float shelf" switch it off and on
     // (shelf::Visibility). It remembers its files, its place and whether it is on across restarts
     // (shelf.json next to settings.ini), and drops files that disappear.
+    //
+    // Its title is a drop-down: Pinned (items pinned from the shelf or from the list, kept across
+    // restarts) and Recent conversions (the latest outputs in History, HistoryStore::RecentOutputs).
+    // Their items are dragged out, opened and shown in their folder like the shelf's; × takes one off
+    // its list only (never the file, never its History entry).
     //
     // Like the wheel and the top panel it is a layered window drawn with Direct2D (Canvas): pixels
     // with alpha 0 let clicks through, so the folded tab takes no more room than it shows. Unlike
@@ -62,6 +68,11 @@ namespace sd
         // the shelf, copy them. The actions do nothing once the shelf is gone.
         Island::ResultActions CarryActions(std::vector<std::wstring> outputs);
 
+        // Where Recent conversions come from: called on the shelf's worker thread with how many it
+        // wants, newest first (the app reads History). Set once, after Create().
+        using RecentSource = std::function<std::vector<std::wstring>(size_t limit)>;
+        void SetRecentSource(RecentSource source) { m_recentSource = std::move(source); }
+
         // Puts the files on the clipboard; a single image also as a picture, a moment later.
         // Returns the line to show ("Copied ...").
         std::wstring Copy(const std::vector<std::wstring>& files);
@@ -89,6 +100,31 @@ namespace sd
         struct CheckResult;
         struct ClipboardJob;
         struct KeepJob;
+        struct RecentResult;
+
+        // What the list shows: the shelf's items, or (the header's drop-down) the Pinned items and the
+        // Recent conversions under their headings. A row of the list is an Entry; in the shelf's own
+        // list entry i is item i.
+        enum class List { Shelf, Pinned, Recent };
+        struct Entry
+        {
+            List list = List::Shelf;
+            size_t index = 0;
+            bool label = false;   // the heading over `list`'s items
+        };
+        std::vector<Entry> Entries() const;
+        shelf::ListShape Shape(const std::vector<Entry>& entries) const;
+        shelf::Layout CurrentLayout() const;
+        float DropDownWidth() const;   // the header's drop-down button, from the title's start
+        std::vector<Item>& ItemsOf(List list);
+        const std::vector<Item>& ItemsOf(List list) const;
+        const Item* ItemAt(const std::vector<Entry>& entries, size_t entry) const;
+        bool IsPinned(const std::wstring& path) const;
+        void SetPinned(const std::wstring& path, bool pin);
+        void RunButton(shelf::Part part, size_t entry);   // a row's pin, Open, Show in folder or ×
+        void ToggleDropDown();
+        void RefreshRecent();
+        void OnRecent(std::unique_ptr<RecentResult> result);
 
         static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
         LRESULT Handle(UINT msg, WPARAM wParam, LPARAM lParam);
@@ -131,12 +167,12 @@ namespace sd
         void OnContextMenu(POINT pt, bool fromKeyboard);
         void OnKey(UINT vk);
         void OnWheel(int delta);
-        void StartDragOut(std::vector<size_t> indices);
+        void StartDragOut(const std::vector<std::wstring>& files);
         void EndMove();
         void TogglePin();
         void Press(shelf::Part part);           // a header button, by click or keyboard
         void MoveButtonFocus(bool back);        // Tab and Shift+Tab: the list, then the header buttons
-        void Open(const std::vector<size_t>& indices);
+        void Open(const std::vector<std::wstring>& files);
         void MoveFocus(int delta, bool extend);
         void ScrollIntoView(size_t index);
 
@@ -173,6 +209,12 @@ namespace sd
         // Content.
         shelf::Visibility m_shown;   // switched on (on screen) or off
         std::vector<Item> m_items;   // newest first
+        std::vector<Item> m_pinned, m_recent;   // the drop-down's lists, newest first
+        std::vector<std::wstring> m_hidden;     // recent conversions taken off its list
+        bool m_dropDown = false;                // the list shows the drop-down's lists
+        int m_rowButton = -1;                   // Left and Right: the focused row's button (shelf::kRowButtons), or -1
+        RecentSource m_recentSource;
+        bool m_recentBusy = false, m_recentAgain = false;
         shelf::Selection m_selection;
         size_t m_focus = 0;          // the keyboard's current item
         unsigned m_thumbPx = 0;      // thumbnail size requested, in pixels

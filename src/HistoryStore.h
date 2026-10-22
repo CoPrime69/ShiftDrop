@@ -70,6 +70,10 @@ namespace sd
 
         std::vector<RunRecord> RecentRuns(int limit);
         std::vector<ItemRecord> Items(int64_t runId);
+        // The files the latest conversions made, newest first, each once: items that are done (not
+        // undone) with an output, from runs that convert (not Move, Copy to, Rename and the other file
+        // actions). At most `limit`. The Float shelf's Recent conversions list reads it.
+        std::vector<std::wstring> RecentOutputs(int limit);
         void SetItemStatus(int64_t itemId, const char* itemStatus);
         void SetRunStatus(int64_t runId, const char* runStatus);
 

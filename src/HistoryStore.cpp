@@ -196,6 +196,20 @@ namespace sd
         return runs;
     }
 
+    std::vector<std::wstring> HistoryStore::RecentOutputs(int limit)
+    {
+        std::scoped_lock lock(m_mutex);
+        std::vector<std::wstring> outputs;
+        // A file action's recipe is one "file.*" step (RecipeStore): its outputs are moves and copies.
+        Statement s(m_db, R"(SELECT i.output FROM items i JOIN runs r ON r.id = i.run_id
+                             WHERE i.status = 'done' AND i.output <> '' AND r.recipe_json NOT LIKE '%"action":"file.%'
+                             GROUP BY i.output ORDER BY MAX(i.id) DESC LIMIT ?)");
+        s.Bind(1, static_cast<int64_t>(std::max(0, limit)));
+        while (s.Step())
+            outputs.push_back(s.WText(0));
+        return outputs;
+    }
+
     std::vector<ItemRecord> HistoryStore::Items(int64_t runId)
     {
         std::scoped_lock lock(m_mutex);

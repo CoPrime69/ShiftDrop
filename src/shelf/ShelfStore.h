@@ -9,7 +9,8 @@
 
 // What the Float shelf keeps between runs, and the list operations behind its buttons. No Win32
 // UI here, so it is unit-tested. Saved as %LOCALAPPDATA%\ShiftDrop\shelf.json:
-//   { "version": 1, "items": [ "C:\\a.png", ... ], "edge": "right", "x": 1500, "y": 300, "shown": true }
+//   { "version": 1, "items": [ "C:\\a.png", ... ], "edge": "right", "x": 1500, "y": 300, "shown": true,
+//     "pinned": [ "C:\\b.pdf", ... ], "hidden": [ "C:\\c (converted).png", ... ] }
 namespace sd::shelf
 {
     struct SavedShelf
@@ -18,6 +19,8 @@ namespace sd::shelf
         Edge edge = Edge::Right;
         std::optional<int> x, y;           // the panel's top-left corner in screen pixels; none = first run
         bool shown = true;                 // the tray's "Show Float shelf" (a file without it: on)
+        std::vector<std::wstring> pinned;  // the drop-down's Pinned list, newest first
+        std::vector<std::wstring> hidden;  // recent conversions taken off the drop-down's list (× on them)
     };
 
     std::string ToJson(const SavedShelf& shelf);
@@ -35,6 +38,18 @@ namespace sd::shelf
     // Puts `added` at the top in the order given; a path already on the shelf moves up instead of
     // appearing twice. Returns how many were new. Never holds more than `limit` (the oldest go).
     size_t AddToTop(std::vector<std::wstring>& items, const std::vector<std::wstring>& added, size_t limit = 500);
+    // Pinned items (the header's drop-down): pinning puts a path at the top of `pinned` (once);
+    // unpinning takes it off. Returns whether it is pinned now. Never more than `limit`.
+    bool IsPinned(const std::vector<std::wstring>& pinned, std::wstring_view path);
+    bool SetPinned(std::vector<std::wstring>& pinned, const std::wstring& path, bool pin, size_t limit = 100);
+    // The drop-down's Recent conversions from History's outputs (HistoryStore::RecentOutputs, newest
+    // first): each path once, none of `hidden` (taken off the list with ×; the file and its History
+    // entry stay), at most `limit`. A recent output pinned as well shows in both lists.
+    std::vector<std::wstring> RecentList(const std::vector<std::wstring>& outputs, const std::vector<std::wstring>& hidden, size_t limit);
+    // × on a recent conversion: remembered, newest first, the oldest forgotten past `limit`.
+    void HideRecent(std::vector<std::wstring>& hidden, const std::wstring& path, size_t limit = 200);
+    inline constexpr size_t kRecentCount = 10;   // the drop-down lists this many recent conversions
+
     // Removes the items `gone` says are gone; returns how many went.
     size_t RemoveIf(std::vector<std::wstring>& items, const std::function<bool(const std::wstring&)>& gone);
 

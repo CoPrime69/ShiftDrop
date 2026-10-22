@@ -36,16 +36,22 @@ namespace sd
     public:
         enum class Outcome { Success, Partial, Failure };
 
-        // Convert-and-carry: what a finished job's result offers besides showing the files (a click).
-        // Each is optional; the code behind them lives with the Float shelf (src/shelf).
+        // Convert-and-carry: what a finished job's result offers. Each is optional; the code behind them
+        // lives with the Float shelf (src/shelf/Carry.h). A result with any of them has its buttons at
+        // its end, left to right: Open, Show in folder, Float, Copy, and × (put the panel away).
         struct ResultActions
         {
             std::function<void()> drag;              // the result was dragged: drag the outputs out (modal)
+            std::function<void()> open;              // the Open button: the file itself in its default app
+            std::function<void()> reveal;            // the Show in folder button (a click on the result does it too)
             std::function<std::wstring()> toShelf;   // the Float button; returns the line shown afterwards
             std::function<std::wstring()> copy;      // the Copy button; returns the line shown afterwards
             size_t files;                            // how many outputs they carry ("drag the files out"); 0 in ResultActions{}
-            bool Any() const { return drag || toShelf || copy; }
+            bool Any() const { return drag || open || reveal || toShelf || copy; }
         };
+        // The result's buttons, in their order.
+        enum class Button { Open, Reveal, Float, Copy, Dismiss };
+        static std::vector<Button> ButtonsFor(const ResultActions& actions);
 
         Island(HINSTANCE instance, std::vector<WheelRing> rings, std::function<void()> onClick);
         ~Island();
@@ -87,8 +93,9 @@ namespace sd
         panel::Switcher FitSwitcher() const;          // the tabs measured and fitted to the screen
         void OnMouse(UINT msg, POINT pt);
         void OnResultMouse(UINT msg, POINT pt);
-        int ActionAt(POINT pt) const;                 // index into m_actionRects, or -1
-        size_t ActionCount() const;
+        int ActionAt(POINT pt) const;                 // index into m_buttons, or -1
+        size_t ActionCount() const { return m_buttons.size(); }
+        void Run(size_t button);                      // a result's button was clicked
         std::wstring ResultLine() const;              // the subtitle, or a hint while hovered
         bool TwoLines() const;                        // the result has a second line (or a hint for one)
         std::wstring DragHint() const;
@@ -137,9 +144,11 @@ namespace sd
         bool m_cancelled = false;             // × clicked: shows "Cancelling…" until the result arrives
         bool m_tracking = false;              // TrackMouseEvent armed for WM_MOUSELEAVE
         Outcome m_outcome = Outcome::Success;
-        ResultActions m_actions;                // carry: drag out, Float, Copy (empty for most results)
-        D2D1_RECT_F m_actionRects[2]{};         // Float, Copy buttons in window pixels, set by DrawResult
-        bool m_actionDone[2]{};                 // clicked: shows a tick
+        ResultActions m_actions;                // carry: drag out, Open, Show in folder, Float, Copy (empty for most results)
+        std::vector<Button> m_buttons;          // ButtonsFor(m_actions)
+        static constexpr size_t kMaxButtons = 5;
+        D2D1_RECT_F m_actionRects[kMaxButtons]{};   // m_buttons in window pixels, set by DrawResult
+        bool m_actionDone[kMaxButtons]{};           // Float and Copy clicked: show a tick
         int m_actionHover = -1;
         int m_pressAction = -1;                 // the button the press started on, or -1 (the chip itself)
         bool m_pressed = false;
