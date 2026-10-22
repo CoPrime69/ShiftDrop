@@ -39,4 +39,9 @@ namespace sd::docs
     // Reads any supported input into the model. RTF goes through RichEdit on the calling thread;
     // PDF and Pages through the PDF module's text reader (PdfSource.h).
     bool ReadDocument(const std::wstring& path, DocInput input, Document& doc, std::stop_token stop, std::wstring& error);
+
+    // The document as PDF pages, laid out as Convert's PDF does it: our own layout printed through
+    // Microsoft Print to PDF (PdfPrint.h), or a Pages file's preview PDF as it is. Convert writes
+    // these bytes as "name (converted).pdf"; Edit opens them in the PDF page editor. Any worker.
+    bool DocumentPdf(const std::wstring& source, std::string& pdf, std::stop_token stop, const ProgressFn& progress, std::wstring& error);
 }

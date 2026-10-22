@@ -42,7 +42,7 @@ namespace sd::sheets
         };
 
         // A PDF of a very long sheet takes a while and runs to thousands of pages: ask first.
-        int AskRows(const std::wstring& source, const Workbook& book, std::stop_token stop)
+        int AskRows(const std::wstring& source, const Workbook& book, const std::wstring& title, std::stop_token stop)
         {
             size_t total = 0, cut = 0;
             for (const auto& s : book.sheets)
@@ -52,7 +52,7 @@ namespace sd::sheets
             }
             const auto left = RowsLeftOut(book);
             ask::Question q;
-            q.title = L"Spreadsheet to PDF";
+            q.title = title;
             q.heading = std::format(L"{} has {} rows", FileName(source), Thousands(total));
             q.text = L"Printing every row can take a while and makes a long PDF.";
             q.choices = { { kAllRows, L"Print all rows", std::format(L"All {} rows", Thousands(total)) },
@@ -118,17 +118,20 @@ namespace sd::sheets
                 if (progress)
                     progress(0.3);
 
-                size_t maxRows = kPdfRowLimit;
-                if (target == "pdf" && RowsLeftOut(book) > 0)
+                // PDF: the pages Edit opens too (WorkbookPdf).
+                if (target == "pdf")
                 {
-                    const int answer = AskRows(source, book, stop);
-                    if (answer != kAllRows && answer != kFirstRows)
-                    {
-                        StagedOutput out(m_history, runId, source);
-                        return out.Fail(L"cancelled, nothing was printed", true);
-                    }
-                    if (answer == kAllRows)
-                        maxRows = SIZE_MAX;
+                    StagedOutput out(m_history, runId, source);
+                    if (!out.Ready())
+                        return out.Fail(out.Error());
+                    std::string pdf;
+                    bool declined = false;
+                    if (!WorkbookPdf(source, book, L"Spreadsheet to PDF", stop, progress, pdf, error, declined) ||
+                        !WriteFileBytes(out.Path(), pdf, WriteMode::Existing, &error))
+                        return out.Fail(error, declined || stop.stop_requested());
+                    if (progress)
+                        progress(1.0);
+                    return out.Commit(recipe.suffix, t->extension);
                 }
 
                 // Several sheets to CSV/TSV: one file per sheet in a folder.
@@ -174,19 +177,6 @@ namespace sd::sheets
                 {
                     if (!WriteOds(book, bytes))
                         return out.Fail(L"cannot build the ODS package");
-                }
-                else if (target == "pdf")
-                {
-                    const auto doc = WorkbookToDocument(book, maxRows);
-                    size_t cols = 0;
-                    for (const auto* s : sheets)
-                        cols = std::max(cols, s->Columns());
-                    const ProgressFn inner = [&](double p) {
-                        if (progress)
-                            progress(0.3 + 0.7 * p);
-                    };
-                    if (!docs::DocumentToPdf(doc, std::filesystem::path(source).stem().wstring(), cols > 6, cols > 10 ? 8.f : 9.5f, stop, inner, bytes, error))
-                        return out.Fail(error, stop.stop_requested());
                 }
                 else
                     return out.Fail(L"unknown output format");
@@ -346,6 +336,35 @@ namespace sd::sheets
             doc.blocks.push_back(std::move(note));
         }
         return doc;
+    }
+
+    bool WorkbookPdf(const std::wstring& source, const Workbook& book, const std::wstring& question, std::stop_token stop,
+                     const ProgressFn& progress, std::string& pdf, std::wstring& error, bool& declined)
+    {
+        declined = false;
+        size_t maxRows = kPdfRowLimit;
+        if (RowsLeftOut(book) > 0)
+        {
+            const int answer = AskRows(source, book, question, stop);
+            if (answer != kAllRows && answer != kFirstRows)
+            {
+                declined = true;
+                error = L"cancelled, nothing was printed";
+                return false;
+            }
+            if (answer == kAllRows)
+                maxRows = SIZE_MAX;
+        }
+        // Wide sheets print across the paper, in a smaller size.
+        size_t cols = 0;
+        for (const auto& s : book.sheets)
+            cols = std::max(cols, s.Columns());
+        const ProgressFn inner = [&](double p) {
+            if (progress)
+                progress(0.3 + 0.7 * p);
+        };
+        return docs::DocumentToPdf(WorkbookToDocument(book, maxRows), std::filesystem::path(source).stem().wstring(), cols > 6, cols > 10 ? 8.f : 9.5f,
+                                   stop, inner, pdf, error);
     }
 
     std::wstring SafeFileName(const std::string& name)

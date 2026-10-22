@@ -1,5 +1,5 @@
 // The PDF engine: PDF -> JPG/PNG/TXT/Markdown, Images -> PDF, Merge PDFs, Organize PDF Pages, Edit
-// PDF and Compress PDF. Every output goes through StagedOutput, so it is named "name (suffix).ext", never
+// (a PDF, or any document laid out as PDF pages first: DocumentPages.h) and Compress PDF. Every output goes through StagedOutput, so it is named "name (suffix).ext", never
 // overwrites anything and can be undone.
 #include "ErrorText.h"
 #include "FileIo.h"
@@ -9,7 +9,10 @@
 #include "PathUtil.h"
 #include "StagedOutput.h"
 #include "Utf.h"
+#include "docs/DocsModule.h"
+#include "docs/PdfPrint.h"
 #include "formats/Frames.h"
+#include "pdf/DocumentPages.h"
 #include "pdf/ImagePdf.h"
 #include "pdf/PageEdits.h"
 #include "pdf/PageRenderer.h"
@@ -37,10 +40,27 @@ namespace sd::pdf
 
         std::wstring Pages(size_t n) { return n == 1 ? L"1 page" : std::format(L"{} pages", n); }
 
+        bool EditsPages(const std::string& action) { return action == "pdf.edit" || action == "pdf.lay_out"; }
+
+        // The PDFs laid out for one Edit (each in a folder of its own, made by NewEditFolder). They go
+        // with their folders when the editor closes without saving; Save hands them to the export,
+        // which removes them once it has read them.
+        struct LaidOutPages
+        {
+            std::vector<std::wstring> pdfs;
+            bool kept = false;
+            ~LaidOutPages()
+            {
+                if (!kept)
+                    for (const auto& pdf : pdfs)
+                        RemoveEditFolder(std::filesystem::path(pdf).parent_path().wstring());
+            }
+        };
+
         class PdfEngine final : public IEngine
         {
         public:
-            explicit PdfEngine(const EngineServices& services) : m_history(services.history) {}
+            explicit PdfEngine(const EngineServices& services) : m_history(services.history), m_apps(office::DetectApps()) {}
 
             bool Handles(const Recipe& recipe) const override
             {
@@ -49,7 +69,12 @@ namespace sd::pdf
 
             bool Applies(const Recipe& recipe, const std::wstring& path) const override
             {
-                return ActionOf(recipe) == "pdf.from_images" ? IsReadableImage(path) : HasPdfExtension(path);
+                const auto& action = ActionOf(recipe);
+                if (action == "pdf.from_images")
+                    return IsReadableImage(path);
+                if (EditsPages(action))
+                    return PageSourceOf(path, m_apps) != PageSource::None;
+                return HasPdfExtension(path);
             }
 
             bool Accepts(const Recipe& recipe, const std::wstring& path, std::wstring* why) const override
@@ -71,6 +96,9 @@ namespace sd::pdf
                     }
                     return true;
                 }
+                if (EditsPages(action))
+                    if (const auto from = PageSourceOf(path, m_apps); from != PageSource::Pdf)
+                        return CanLayOut(path, from, why);
                 if (!LooksLikePdf(path, why))
                     return false;
                 if (action == "pdf.to_images" && !RenderingAvailable())
@@ -80,6 +108,12 @@ namespace sd::pdf
                     return false;
                 }
                 return true;
+            }
+
+            // Office's COM objects need its STA lane; our own layout runs anywhere.
+            JobLane Lane(const Recipe& recipe) const override
+            {
+                return ActionOf(recipe) == "pdf.lay_out" && recipe.steps.front().params.value("office", false) ? JobLane::Office : JobLane::Pool;
             }
 
             bool IsBatch(const Recipe& recipe) const override
@@ -106,7 +140,7 @@ namespace sd::pdf
                         done(recipe, files);
                         return;
                     }
-                    Editors().merge(owner, files, action == "pdf.edit", [recipe, done](std::vector<std::wstring> ordered, PagePlan plan) {
+                    Editors().merge(owner, files, {}, action == "pdf.edit", [recipe, done](std::vector<std::wstring> ordered, PagePlan plan) {
                         Recipe adjusted = recipe;
                         if (!plan.empty())
                             adjusted.steps.front().params["plan"] = PlanToJson(plan);
@@ -128,6 +162,78 @@ namespace sd::pdf
                     });
             }
 
+            // Edit with documents among the files: their pages are laid out first, as a batch with
+            // progress and × in the top panel.
+            std::optional<Recipe> EditorInput(const Recipe& recipe, const std::vector<std::wstring>& files) const override
+            {
+                if (ActionOf(recipe) != "pdf.edit")
+                    return std::nullopt;
+                bool documents = false, office = false;
+                for (const auto& f : files)
+                {
+                    const auto from = PageSourceOf(f, m_apps);
+                    documents |= from != PageSource::Pdf;
+                    office |= from == PageSource::Office;
+                }
+                if (!documents)
+                    return std::nullopt;
+                Recipe layOut;
+                layOut.id = "pdf-lay-out";
+                layOut.label = recipe.label;
+                layOut.description = L"Lay out the pages to edit";
+                layOut.ring = recipe.ring;
+                layOut.suffix = recipe.suffix;
+                layOut.builtIn = true;
+                layOut.steps.push_back(RecipeStep{ "pdf.lay_out", nlohmann::json{ { "office", office } } });
+                return layOut;
+            }
+
+            void OpenEditorOn(HWND owner, const Recipe& recipe, const std::vector<std::wstring>& files, const std::vector<std::wstring>& made,
+                              bool cancelled, std::function<void(Recipe, std::vector<std::wstring>)> done) const override
+            {
+                // The files whose pages are there, and those pages: a PDF is its own.
+                std::vector<std::wstring> sources, pages, names;
+                auto laidOut = std::make_shared<LaidOutPages>();
+                for (size_t i = 0; i < files.size() && i < made.size(); ++i)
+                {
+                    if (made[i].empty())
+                        continue;
+                    sources.push_back(files[i]);
+                    pages.push_back(made[i]);
+                    names.push_back(FileName(files[i]));
+                    if (made[i] != files[i])
+                        laidOut->pdfs.push_back(made[i]);
+                }
+                if (cancelled || pages.empty())
+                    return;   // laidOut removes what was made
+                // Save: the files go back to the documents (so the output is named after the first and
+                // saved next to it), each one's laid-out pages listed in the recipe for the export.
+                auto finish = [recipe, done, sources, pages, laidOut](std::vector<std::wstring> ordered, PagePlan plan) {
+                    laidOut->kept = true;
+                    Recipe adjusted = recipe;
+                    auto& params = adjusted.steps.front().params;
+                    if (!plan.empty())
+                        params["plan"] = PlanToJson(plan);
+                    params["laidOut"] = nlohmann::json::object();
+                    for (auto& f : ordered)
+                        for (size_t k = 0; k < pages.size(); ++k)
+                            if (f == pages[k])
+                            {
+                                if (pages[k] != sources[k])
+                                    params["laidOut"][Narrow(sources[k])] = Narrow(pages[k]);
+                                f = sources[k];
+                                break;
+                            }
+                    done(std::move(adjusted), std::move(ordered));
+                };
+                if (!Editors().merge)
+                {
+                    finish(pages, {});   // no editor (unit tests): every page as it is
+                    return;
+                }
+                Editors().merge(owner, pages, names, true, std::move(finish));
+            }
+
             ItemResult Run(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                            const ProgressFn& progress) const override
             {
@@ -140,6 +246,8 @@ namespace sd::pdf
                         return ToText(recipe, runId, source, stop, progress);
                     if (a == "pdf.compress")
                         return Compress(recipe, runId, source, stop, progress);
+                    if (a == "pdf.lay_out")
+                        return LayOut(source, stop, progress);
                 }
                 catch (const std::exception& e)
                 {
@@ -169,6 +277,62 @@ namespace sd::pdf
             }
 
         private:
+            // A document Edit can lay out now: it is there, and the PDF printer our own layout prints
+            // through is installed (Convert's PDF asks the same).
+            static bool CanLayOut(const std::wstring& path, PageSource from, std::wstring* why)
+            {
+                if (from == PageSource::None)
+                {
+                    if (why)
+                        *why = L"not a document";
+                    return false;
+                }
+                if (!PathExists(path))
+                {
+                    if (why)
+                        *why = L"file not found";
+                    return false;
+                }
+                if (from != PageSource::Office && docs::InputOf(path) != docs::DocInput::Pages && !docs::FindPdfPrinter(nullptr, why))
+                    return false;
+                return true;
+            }
+
+            // Edit's first step for one file: a PDF is its own pages; a document is laid out into a
+            // folder of its own under %TEMP% (the page view's, PageEdits.h). Nothing goes next to the
+            // document and nothing is recorded: the edit's export is the run History keeps.
+            ItemResult LayOut(const std::wstring& source, std::stop_token stop, const ProgressFn& progress) const
+            {
+                ItemResult result;
+                if (PageSourceOf(source, m_apps) == PageSource::Pdf)
+                {
+                    result.ok = true;
+                    result.output = source;
+                    return result;
+                }
+                const auto folder = NewEditFolder();
+                if (folder.empty())
+                {
+                    result.error = L"cannot write a temporary file";
+                    return result;
+                }
+                const auto pdf = (std::filesystem::path(folder) / (std::filesystem::path(source).stem().wstring() + L".pdf")).wstring();
+                const auto outcome = LayOutPages(source, m_apps, pdf, stop, progress);
+                if (!outcome.ok)
+                {
+                    RemoveEditFolder(folder);
+                    result.skipped = outcome.cancelled;
+                    result.error = outcome.error.empty() ? L"cannot lay out the pages" : outcome.error;
+                    return result;
+                }
+                if (progress)
+                    progress(1.0);
+                result.ok = true;
+                result.output = pdf;
+                result.size = FileSize(pdf);
+                return result;
+            }
+
             ItemResult ToImages(const Recipe& recipe, int64_t runId, const std::wstring& source, std::stop_token stop,
                                 const ProgressFn& progress) const
             {
@@ -379,18 +543,33 @@ namespace sd::pdf
                 const bool merge = ActionOf(recipe) == "pdf.merge" || (ActionOf(recipe) == "pdf.edit" && sources.size() > 1);
                 if (ActionOf(recipe) == "pdf.merge" && sources.size() < 2)
                     return RecordFailure(m_history, runId, sources.front(), L"drop two or more PDFs to merge them");
-                for (const auto& s : sources)
+                // Edit on a document: its laid-out pages stand in for it (OpenEditorOn), and go once read.
+                // The output is still named after the first file and saved next to it.
+                const auto& params = recipe.steps.front().params;
+                std::vector<std::wstring> pdfs = sources;
+                std::set<std::wstring> laidOutFolders;
+                if (const auto laidOut = params.find("laidOut"); laidOut != params.end() && laidOut->is_object())
+                    for (auto& pdf : pdfs)
+                        if (const auto it = laidOut->find(Narrow(pdf)); it != laidOut->end() && it->is_string())
+                        {
+                            pdf = Widen(it->get<std::string>());
+                            laidOutFolders.insert(std::filesystem::path(pdf).parent_path().wstring());
+                        }
+                const auto removeLaidOut = wil::scope_exit([&] {
+                    for (const auto& folder : laidOutFolders)
+                        RemoveEditFolder(folder);   // only ever a folder the page view's code made
+                });
+                for (size_t i = 0; i < pdfs.size(); ++i)
                 {
                     std::wstring why;
-                    if (!LooksLikePdf(s, &why))
-                        return RecordFailure(m_history, runId, sources.front(), std::format(L"{}: {}", FileName(s), why));
+                    if (!LooksLikePdf(pdfs[i], &why))
+                        return RecordFailure(m_history, runId, sources.front(), std::format(L"{}: {}", FileName(sources[i]), why));
                 }
                 std::vector<uint32_t> counts;
                 std::wstring error;
-                if (!CountPages(sources, counts, error))
+                if (!CountPages(pdfs, counts, error))
                     return RecordFailure(m_history, runId, sources.front(), error);
                 PagePlan plan = AllPages(counts);
-                const auto& params = recipe.steps.front().params;
                 if (params.contains("plan"))
                 {
                     std::string problem;
@@ -414,12 +593,12 @@ namespace sd::pdf
                 StagedOutput out(m_history, runId, sources.front());
                 if (!out.Ready())
                     return out.Fail(out.Error());
-                if (!AssemblePages(sources, plan, out.Path(), stop, progress, error))
+                if (!AssemblePages(pdfs, plan, out.Path(), stop, progress, error))
                     return out.Fail(error, error == kCancelled);
                 const size_t edited = EditedPages(plan);
                 auto result = out.Commit(merge && ActionOf(recipe) == "pdf.edit" ? std::wstring(L"merged") : recipe.suffix, L".pdf");
                 if (result.ok)
-                    result.message = merge ? std::format(L"Merged {} PDFs into {}", sources.size(), Pages(plan.size()))
+                    result.message = merge ? std::format(L"Merged {} {} into {}", sources.size(), laidOutFolders.empty() ? L"PDFs" : L"files", Pages(plan.size()))
                                            : std::format(L"Saved {}", Pages(plan.size()));
                 if (result.ok && edited > 0)
                     result.message += std::format(L", {} edited", edited);
@@ -427,6 +606,7 @@ namespace sd::pdf
             }
 
             HistoryStore* m_history;
+            office::Apps m_apps;   // who can lay out office files (Edit), found once
         };
     }
 

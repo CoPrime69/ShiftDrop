@@ -36,6 +36,9 @@ namespace sd::pdf
     {
         PageViewKind kind = PageViewKind::Organize;
         std::vector<std::wstring> files;   // the plan's file indices point here
+        // What each file is called in the window: the document a laid-out PDF was made from (Edit on a
+        // Word file). Missing or empty: the file's own name.
+        std::vector<std::wstring> names;
         std::vector<uint32_t> order;       // the files shown, in list order; empty: all of them
         PagePlan plan;                     // empty: every page of the files shown
         bool changed = false;              // the plan already holds the user's changes (Cancel asks)
@@ -51,6 +54,9 @@ namespace sd::pdf
 
     // Opens the page view; false (and nothing called) when its window could not be made.
     bool OpenPageView(PageViewRequest request);
+
+    // The name a page view shows for file `file` of `request`.
+    std::wstring ShownName(const PageViewRequest& request, uint32_t file);
 
     // "Close without saving?" for a window whose page changes would be lost; true to close.
     bool ConfirmDiscard(HWND window, const std::wstring& title);

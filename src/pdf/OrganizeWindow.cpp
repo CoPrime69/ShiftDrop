@@ -228,7 +228,15 @@ namespace sd::pdf
                 case PageViewKind::Merge:
                     return std::format(L"Merge {} PDFs · every page", m_request.order.size());
                 case PageViewKind::Edit:
-                    return Several() ? std::format(L"Edit {} PDFs", m_request.order.size()) : std::format(L"Edit PDF · {}", FileName(files[m_request.order.front()]));
+                {
+                    // Edit on a document names the document: "Edit · report.docx".
+                    bool pdfs = true;
+                    for (const auto f : m_request.order)
+                        pdfs &= HasPdfExtension(ShownName(m_request, f));
+                    if (Several())
+                        return std::format(L"Edit {} {}", m_request.order.size(), pdfs ? L"PDFs" : L"files");
+                    return std::format(L"{} · {}", pdfs ? L"Edit PDF" : L"Edit", ShownName(m_request, m_request.order.front()));
+                }
                 }
                 return {};
             }
@@ -939,7 +947,7 @@ namespace sd::pdf
                 const size_t k = std::min(m_focus, m_plan.size() - 1);
                 const auto& ref = m_plan[k];
                 // Caption: where the page comes from.
-                std::wstring from = Several() ? std::format(L"{} · page {}", FileName(m_request.files[ref.file]), ref.page + 1)
+                std::wstring from = Several() ? std::format(L"{} · page {}", ShownName(m_request, ref.file), ref.page + 1)
                                               : std::format(L"Page {} of the original", ref.page + 1);
                 if (!ref.edited.empty())
                     from += L" · edited";
@@ -1675,6 +1683,13 @@ namespace sd::pdf
             return false;
         window.release();   // owns itself now
         return true;
+    }
+
+    std::wstring ShownName(const PageViewRequest& request, uint32_t file)
+    {
+        if (file < request.names.size() && !request.names[file].empty())
+            return request.names[file];
+        return file < request.files.size() ? FileName(request.files[file]) : std::wstring();
     }
 
     bool ConfirmDiscard(HWND window, const std::wstring& title)

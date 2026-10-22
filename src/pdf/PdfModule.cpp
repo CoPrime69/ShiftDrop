@@ -36,6 +36,9 @@ namespace sd::pdf
             registry.Add(ActionDescriptor{ "pdf.organize", L"Organize PDF pages", StepKind::Engine, {} });
             // The page plan (with any edited pages) is added by the page view.
             registry.Add(ActionDescriptor{ "pdf.edit", L"Edit PDF", StepKind::Engine, {} });
+            // Edit on a document: its pages laid out as a PDF first (DocumentPages.h). Made by the
+            // engine for Edit, never a slice of its own.
+            registry.Add(ActionDescriptor{ "pdf.lay_out", L"Lay out pages", StepKind::Engine, {} });
             registry.Add(ActionDescriptor{ "pdf.compress", L"Compress PDF", StepKind::Engine,
                                            { ParamSpec{ "dpi", ParamType::Int, 36, 600, {}, 150 },
                                              ParamSpec{ "quality", ParamType::Int, 10, 100, {}, 70 },
@@ -123,6 +126,12 @@ namespace sd::pdf
                             std::function<void(Recipe, std::vector<std::wstring>)> done) const override
             {
                 For(r)->OpenEditor(owner, r, files, std::move(done));
+            }
+            std::optional<Recipe> EditorInput(const Recipe& r, const std::vector<std::wstring>& files) const override { return For(r)->EditorInput(r, files); }
+            void OpenEditorOn(HWND owner, const Recipe& r, const std::vector<std::wstring>& files, const std::vector<std::wstring>& made, bool cancelled,
+                              std::function<void(Recipe, std::vector<std::wstring>)> done) const override
+            {
+                For(r)->OpenEditorOn(owner, r, files, made, cancelled, std::move(done));
             }
 
         private:
