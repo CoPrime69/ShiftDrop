@@ -1,4 +1,5 @@
 #include "ocr/TextLayer.h"
+#include "pdf/FontSubset.h"
 #include "pdf/PdfWriter.h"
 
 #include <algorithm>
@@ -106,6 +107,33 @@ namespace sd::ocr
         }
         cmap += "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
         return cmap;
+    }
+
+    std::string GlyphlessCidToGidMap()
+    {
+        std::string map(0x10000 * 2, '\0');
+        for (size_t cid = 1; cid < 0x10000; ++cid)
+            map[cid * 2 + 1] = 1;   // big-endian glyph 1
+        return map;
+    }
+
+    void MakeGlyphlessFont(const std::function<std::string(const std::string& dict, const std::string* data)>& make)
+    {
+        const std::string program = pdf::GlyphlessTrueType(), cidToGid = GlyphlessCidToGidMap(), toUnicode = IdentityToUnicodeCMap();
+        const std::string file = make(std::format("/Length1 {}", program.size()), &program);
+        const std::string descriptor = make(std::format("/Type /FontDescriptor /FontName /SDGlyphless /Flags 4 /FontBBox [0 0 500 1000] "
+                                                        "/ItalicAngle 0 /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80 /FontFile2 {}",
+                                                        file),
+                                            nullptr);
+        const std::string map = make("", &cidToGid);
+        const std::string cid = make(std::format("/Type /Font /Subtype /CIDFontType2 /BaseFont /SDGlyphless /CIDSystemInfo << /Registry (Adobe) "
+                                                 "/Ordering (Identity) /Supplement 0 >> /FontDescriptor {} /DW 500 /CIDToGIDMap {}",
+                                                 descriptor, map),
+                                     nullptr);
+        const std::string unicode = make("", &toUnicode);
+        make(std::format("/Type /Font /Subtype /Type0 /BaseFont /SDGlyphless /Encoding /Identity-H /DescendantFonts [{}] /ToUnicode {}", cid,
+                         unicode),
+             nullptr);
     }
 
     std::vector<PlacedWord> PlaceOnImagePage(const Result& ocr, double pageW, double pageH)

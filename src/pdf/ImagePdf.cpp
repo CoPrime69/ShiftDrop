@@ -198,17 +198,14 @@ namespace sd::pdf
     {
         if (m_font)
             return m_font;
-        const int descriptor = m_writer.NewObject(), cid = m_writer.NewObject(), toUnicode = m_writer.NewObject();
-        m_font = m_writer.NewObject();
-        m_writer.Object(descriptor, "<< /Type /FontDescriptor /FontName /SDGlyphless /Flags 4 /FontBBox [0 0 500 1000] /ItalicAngle 0 "
-                                    "/Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80 >>");
-        m_writer.Object(cid, std::format("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /SDGlyphless /CIDSystemInfo << /Registry (Adobe) "
-                                         "/Ordering (Identity) /Supplement 0 >> /FontDescriptor {} 0 R /DW 500 /CIDToGIDMap /Identity >>",
-                                         descriptor));
-        m_writer.FlateStream(toUnicode, "", ocr::IdentityToUnicodeCMap());
-        m_writer.Object(m_font, std::format("<< /Type /Font /Subtype /Type0 /BaseFont /SDGlyphless /Encoding /Identity-H "
-                                            "/DescendantFonts [{} 0 R] /ToUnicode {} 0 R >>",
-                                            cid, toUnicode));
+        ocr::MakeGlyphlessFont([&](const std::string& dict, const std::string* data) {
+            m_font = m_writer.NewObject();
+            if (data)
+                m_writer.FlateStream(m_font, dict, *data);
+            else
+                m_writer.Object(m_font, "<< " + dict + " >>");
+            return std::format("{} 0 R", m_font);
+        });
         return m_font;
     }
 

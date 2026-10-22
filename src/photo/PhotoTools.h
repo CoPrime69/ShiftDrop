@@ -15,6 +15,10 @@
 namespace sd::photo
 {
     std::unique_ptr<canvas::ICanvasTool> MakeEditTool(const std::vector<std::wstring>& files, const nlohmann::json& params);
+    // The size every new text box and callout starts at, until one is set in the editor (which then
+    // holds for the rest of that editor's session): points on a PDF page, pixels on a photo.
+    inline constexpr double kDefaultTextSize = 32;
+
     // How Annotate opens: on photos, or on the pages of a PDF (`document`: sizes in points, dark ink),
     // as Fill and sign (`sign`: the text box first, the signatures in view).
     struct AnnotateOptions

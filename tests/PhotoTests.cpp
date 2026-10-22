@@ -561,6 +561,52 @@ TEST(Photo, EditToolSettingsBecomeParams)
     EXPECT_GE(panel.size(), 8u);
 }
 
+TEST(Photo, TextBoxesStartAt32UntilASizeIsChosen)
+{
+    // On a photo (sizes in pixels) and on a PDF page (points at 200 dpi): text, dates and callouts
+    // start at 32; a size picked with nothing selected holds for the next box.
+    for (const bool document : { false, true })
+    {
+        AnnotateTool tool({ L"C:\\one.png" }, AnnotateOptions{ document, false });
+        auto picture = std::make_shared<Raster>(Solid(1700, 2200, 255, 255, 255));
+        picture->dpiX = picture->dpiY = 200;
+        tool.SetPicture(0, picture);
+        const double unit = document ? 200 / 72.0 : 1.0;
+        canvas::Pointer p;
+        p.tolerance = 4;
+        const auto click = [&](AnnotateTool::Mode mode, canvas::PointD at) {
+            tool.SetMode(mode);
+            p.at = at;
+            tool.PointerDown(p);
+            tool.PointerUp(p);
+        };
+        click(AnnotateTool::Mode::Text, { 300, 300 });
+        tool.Char(L'a');
+        ASSERT_NE(tool.Marks().Find(tool.Editing()), nullptr);
+        EXPECT_NEAR(tool.Marks().Find(tool.Editing())->fontSize, 32 * unit, 1e-6) << document;
+        tool.Key(VK_ESCAPE, false, false);
+        click(AnnotateTool::Mode::Date, { 300, 700 });
+        EXPECT_NEAR(tool.Marks().Items().back().fontSize, 32 * unit, 1e-6) << document;
+        tool.SetMode(AnnotateTool::Mode::Callout);
+        p.at = { 300, 1200 };
+        tool.PointerDown(p);
+        p.at = { 700, 1500 };
+        tool.PointerMove(p);
+        tool.PointerUp(p);
+        EXPECT_EQ(tool.Marks().Items().back().kind, Mark::Callout);
+        EXPECT_NEAR(tool.Marks().Items().back().fontSize, 32 * unit, 1e-6) << document;
+        tool.Key(VK_ESCAPE, false, false);
+        tool.SetMode(AnnotateTool::Mode::Text);   // nothing selected now
+        canvas::ControlEvent size{ "textSize" };
+        size.value = 20;
+        tool.OnControl(size);
+        click(AnnotateTool::Mode::Text, { 300, 1900 });
+        tool.Char(L'b');
+        ASSERT_NE(tool.Marks().Find(tool.Editing()), nullptr);
+        EXPECT_NEAR(tool.Marks().Find(tool.Editing())->fontSize, 20 * unit, 1e-6) << document;
+    }
+}
+
 TEST(Photo, AnnotateToolDrawsTypesAndKeepsMarksPerFile)
 {
     AnnotateTool tool({ L"C:\\one.png", L"C:\\two.png" });
@@ -602,6 +648,7 @@ TEST(Photo, AnnotateToolDrawsTypesAndKeepsMarksPerFile)
     EXPECT_FALSE(tool.TextInput());
     ASSERT_EQ(tool.Marks().Items().size(), 2u);
     EXPECT_EQ(tool.Marks().Items()[1].text, L"Hi\n?");
+    EXPECT_DOUBLE_EQ(tool.Marks().Items()[1].fontSize, 32);   // a photo's text starts at 32 px
     // An empty text goes away.
     p.at = { 50, 700 };
     tool.PointerDown(p);

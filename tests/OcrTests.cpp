@@ -5,6 +5,7 @@
 #include "ocr/TextLayer.h"
 #include "pdf/PageRenderer.h"
 #include "pdf/PdfContent.h"
+#include "pdf/FontSubset.h"
 #include "pdf/PdfDoc.h"
 #include "pdf/TextLayout.h"
 #include "pdf/Wic.h"
@@ -238,6 +239,42 @@ TEST(OcrTextLayer, IdentityCMapSkipsSurrogates)
     EXPECT_FALSE(map.contains(0xD800));
 }
 
+TEST(OcrTextLayer, GlyphlessFontIsACompleteTrueTypeFile)
+{
+    const std::string font = pdf::GlyphlessTrueType();
+    EXPECT_LT(font.size(), 1024u);
+    const auto tables = SfntTables(font);
+    for (const char* t : { "OS/2", "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name", "post" })
+        EXPECT_TRUE(tables.contains(t)) << t;
+    const auto u16 = [](const std::string& t, size_t at) { return unsigned(uint8_t(t[at]) << 8 | uint8_t(t[at + 1])); };
+    const auto sum = [](std::string_view t) {
+        uint32_t s = 0;
+        for (size_t i = 0; i < t.size(); i += 4)
+        {
+            uint32_t v = 0;
+            for (size_t k = 0; k < 4; ++k)
+                v = (v << 8) | (i + k < t.size() ? uint8_t(t[i + k]) : 0);
+            s += v;
+        }
+        return s;
+    };
+    EXPECT_EQ(sum(font), 0xB1B0AFBAu);   // head's checkSumAdjustment balances the file
+    const auto& head = tables.at("head");
+    ASSERT_EQ(head.size(), 54u);
+    EXPECT_EQ(u16(head, 18), 1000u);     // units per em
+    EXPECT_EQ(u16(tables.at("maxp"), 4), 2u);
+    EXPECT_EQ(u16(tables.at("hhea"), 34), 2u);
+    EXPECT_EQ(u16(tables.at("hmtx"), 4), 500u);   // glyph 1 is half an em, the font's /DW
+    EXPECT_EQ(tables.at("loca").size(), 12u);     // long offsets, glyph 1 empty
+    EXPECT_EQ(tables.at("OS/2").size(), 96u);
+    EXPECT_EQ(u16(tables.at("OS/2"), 8), 0u);     // fsType: installable, no embedding limits
+    const auto map = GlyphlessCidToGidMap();
+    ASSERT_EQ(map.size(), 0x20000u);
+    EXPECT_EQ(u16(map, 0), 0u);
+    EXPECT_EQ(u16(map, 2), 1u);
+    EXPECT_EQ(u16(map, 0x4E2D * 2), 1u);
+}
+
 TEST(OcrTextLayer, OperatorsUseRenderModeThreeAndStretch)
 {
     PlacedWord w;
@@ -343,6 +380,11 @@ TEST(OcrSearchable, ImageBecomesAPdfWhoseTextReadsBack)
         all.append(reinterpret_cast<const char*>(buf->getBuffer()), buf->getSize());
     }
     EXPECT_NE(all.find("3 Tr"), std::string::npos);
+    // ...with a font PDF readers can find: embedded, complete, and copying gives the words.
+    int fonts = 0;
+    const auto problems = FontProblems(result.output, "SDOcr", fonts);
+    EXPECT_EQ(fonts, 1);
+    EXPECT_TRUE(problems.empty()) << problems.front();
 }
 
 TEST(OcrSearchable, ScannedPagesGetTextAndTextPagesAreLeftAlone)
@@ -365,6 +407,10 @@ TEST(OcrSearchable, ScannedPagesGetTextAndTextPagesAreLeftAlone)
     EXPECT_EQ(Joined(PageText(result.output, 0)), L"This page has text|");
     // The sideways page reads upright again (the extractor turns it to reading order).
     EXPECT_EQ(Joined(PageText(result.output, 1)), L"Hello world|Second line|");
+    int fonts = 0;
+    const auto problems = FontProblems(result.output, "SDOcr", fonts);
+    EXPECT_EQ(fonts, 1);
+    EXPECT_TRUE(problems.empty()) << problems.front();
 
     // A PDF that already has text everywhere is skipped, not copied.
     const auto done = dir / L"done.pdf";
