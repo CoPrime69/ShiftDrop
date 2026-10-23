@@ -5,8 +5,20 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-22
+
 ### Added
 
+- Edit for every document: Word, Excel, PowerPoint, OpenDocument, RTF, Markdown, HTML, text and
+  CSV files get the Edit slice. The document is laid out into pages the way Convert makes a PDF, then
+  opens in the PDF page editor (Redact, Annotate, Fill and sign, reorder, turn); Save writes
+  "name (edited).pdf" next to it and leaves the document as it was. Formats only an office app can
+  lay out need Office or LibreOffice.
+- Float shelf: a chevron in the header shows Pinned items (kept across restarts) and Recent
+  conversions (the last 10). Items there can be pinned, dragged out, opened or removed; removing one
+  from Recent never deletes the file.
+- Open, Show in folder and close on every result in the top panel and every Float shelf item: Open
+  starts the file in its own app.
 - Check for updates (Settings › Updates). Once a day ShiftDrop-Updater.exe asks GitHub for the latest
   release; a new version is offered a week after it comes out, with a toast and "Update to 0.7.1…" in
   the tray menu. Update now downloads the installer, checks its SHA-256 against the release's
@@ -20,6 +32,12 @@ until 1.0, a minor version may change behaviour.
   release all take it from there, and CI fails if any of them disagree. Builds that aren't a release
   show the commit they came from, such as 0.6.0+b950d51 in About and in the installer's name, so a
   test build never looks like the release it follows.
+
+### Fixed
+
+- Settings: switching tabs and pages no longer flashes an in-between frame, scrolling is plain
+  Windows scrolling, the Top panel size slider no longer leaves streaks and its 300% label sits at
+  the end, and each Wheel tab shows its own actions (File actions showed the Reduce size ones).
 
 ## [0.6.0] - 2026-10-22
 
@@ -97,6 +115,7 @@ The first public release.
 - Office exports run on their own thread, so Move and Copy never wait behind them.
 - Dropping a ZIP on the ZIP slice is skipped instead of crashing.
 
-[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.0
 [0.6.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.5.0
