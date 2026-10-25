@@ -5,6 +5,8 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-25
+
 ### Changed
 
 - Version numbers follow Semantic Versioning 2.0.0 strictly. A build that isn't a release is a
@@ -15,6 +17,9 @@ until 1.0, a minor version may change behaviour.
 
 ### Fixed
 
+- Scrolling works again while dragging with Shift held: selecting text or moving a window with
+  Shift down no longer stops the mouse wheel from scrolling the window under the cursor. Only an
+  open wheel takes the mouse wheel.
 - Float shelf: comes back where it was left (the edge it was pinned to, or the spot it floated at)
   after a restart, even when the resolution, scaling or monitors changed meanwhile; a monitor that
   is gone puts it on the nearest one, fully on screen. The first run still pins it to the right edge.
@@ -129,7 +134,8 @@ The first public release.
 - Office exports run on their own thread, so Move and Copy never wait behind them.
 - Dropping a ZIP on the ZIP slice is skipped instead of crashing.
 
-[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.1
 [0.7.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.0
 [0.6.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.5.0
