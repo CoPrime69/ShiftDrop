@@ -94,6 +94,17 @@ Only the maintainer pushes to this repository. To send a change:
   [docs/TESTING.md](docs/TESTING.md) and say which ones in the pull request.
 - Write commit messages that say what changed and why, in the imperative: "Keep EXIF on cropped
   HEIC files", not "fixes".
+- Add a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Fixed or
+  Removed) for anything a person would notice. Don't change [VERSION](VERSION): the maintainer does
+  that when releasing.
+
+## Versions
+
+ShiftDrop follows [Semantic Versioning 2.0.0](https://semver.org/): PATCH for fixes only, MINOR for
+new features (before 1.0 a minor release may also change behaviour), MAJOR for breaking changes
+(from 1.0 on). Releases are tagged `vX.Y.Z`; every other build is a pre-release of the next version,
+such as `0.7.1-dev.3+af953b2`. [docs/BUILDING.md](docs/BUILDING.md#version-numbers) has the details
+and how to release.
 
 ## Licence
 

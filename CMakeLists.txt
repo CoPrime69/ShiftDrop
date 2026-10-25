@@ -18,9 +18,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SHIFTDROP_M0 "Build the placeholder gesture build: plain circle, every drop only logs + notifies" OFF)
 option(SHIFTDROP_TESTS "Build the unit tests (ctest)" ON)
-# Only CI's release build turns this on: it shows "0.6.0"; every other build shows "0.6.0+<commit>".
-option(SHIFTDROP_RELEASE "The build that publishes the release: the version without +commit" OFF)
-set(SHIFTDROP_COMMIT "" CACHE STRING "Commit shown after the version (empty: git's HEAD at build time)")
+# Only CI's release build turns this on: it shows "0.7.0"; every other build is a pre-release of the
+# next version, "0.7.1-dev.3+<commit>" (scripts/make-version-header.cmake).
+option(SHIFTDROP_RELEASE "The build that publishes the release: the version without -dev.N+commit" OFF)
+set(SHIFTDROP_COMMIT "" CACHE STRING "Commit the version names and counts from (empty: git's HEAD at build time)")
 
 if(NOT MSVC)
   message(FATAL_ERROR "ShiftDrop is built with MSVC (Visual Studio 2022). Use the presets in CMakePresets.json.")

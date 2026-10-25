@@ -18,4 +18,9 @@ namespace sd::version
     {
         return SD_VERSION_COMMIT;
     }
+
+    unsigned Build()
+    {
+        return SD_VERSION_BUILD;
+    }
 }
