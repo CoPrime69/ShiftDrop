@@ -177,22 +177,23 @@ html { scrollbar-color: var(--border-strong) transparent; }
 /* ---- Buttons --------------------------------------------------------------------------------- */
 
 .button {
-  display: inline-flex; align-items: center; gap: 12px;
-  min-height: 48px; padding: 10px 20px 10px 16px;
+  display: inline-flex; align-items: center; gap: 14px;
+  min-height: 60px; padding: 14px 28px 14px 22px;
   border-radius: var(--radius-button);
   text-decoration: none; font-weight: 500; line-height: 1.2;
   transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
 }
 .button:active { transform: scale(0.97); }
-.button-text { display: flex; flex-direction: column; gap: 2px; }
-.button-text > span { font: 600 1.0625rem/1.2 var(--font-display); letter-spacing: -0.01em; }
-.button-text small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
+.button-text { display: flex; flex-direction: column; gap: 3px; }
+.button .icon { width: 22px; height: 22px; }
+.button-text > span { font: 600 1.25rem/1.2 var(--font-display); letter-spacing: -0.01em; }
+.button-text small { font-size: 0.8125rem; font-weight: 400; opacity: 0.8; }
 .button-ink { background: var(--button-ink); color: var(--button-ink-text); }
 .button-ink:hover { color: var(--button-ink-text); background: color-mix(in srgb, var(--button-ink) 86%, var(--tide)); }
 .button-line { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); }
 .button-line:hover { color: var(--text); border-color: var(--text-3); }
 .button-small { min-height: 38px; padding: 8px 16px; font: 600 0.9375rem/1 var(--font-display); }
-.cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 14px; }
 
 /* ---- Hero ---------------------------------------------------------------------------------- */
 
@@ -201,7 +202,7 @@ html { scrollbar-color: var(--border-strong) transparent; }
 .display { font-size: clamp(3.25rem, 9vw, 6rem); line-height: 0.98; letter-spacing: -0.04em; }
 .hero-side { display: grid; gap: 32px; padding-bottom: 8px; }
 .lede { font-size: 1.1875rem; line-height: 1.55; color: var(--text-2); max-width: 36em; }
-.fineprint { font-size: 0.875rem; color: var(--text-3); }
+.fineprint { font-size: 1rem; color: var(--text-3); }
 
 /* ---- The demo desktop -------------------------------------------------------------------- */
 
