@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -132,6 +133,8 @@ namespace sd
         // Items and saving.
         void Restore();
         void Save() const;
+        void RememberPlace();          // the user finished moving or pinning it: keep where it is now
+        HMONITOR SavedMonitor() const; // the monitor m_place goes back to (or the nearest one)
         void RemoveAt(std::vector<size_t> indices);
         void Clear();
         std::vector<std::wstring> PathsOf(const std::vector<size_t>& indices) const;
@@ -230,6 +233,8 @@ namespace sd
         shelf::Edge m_edge = shelf::Edge::Right;
         float m_x = 0.f, m_y = 0.f;    // the open panel's top-left corner at rest
         bool m_placed = false;         // m_x/m_y mean something (saved, or shown before)
+        std::optional<shelf::Place> m_place;   // where the user left it (saved); none until first shown
+        std::wstring m_device;         // m_monitor's device name
         POINT m_origin{};              // window position, pixels
         SIZE m_size{};
 

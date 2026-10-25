@@ -10,7 +10,10 @@
 // What the Float shelf keeps between runs, and the list operations behind its buttons. No Win32
 // UI here, so it is unit-tested. Saved as %LOCALAPPDATA%\ShiftDrop\shelf.json:
 //   { "version": 1, "items": [ "C:\\a.png", ... ], "edge": "right", "x": 1500, "y": 300, "shown": true,
-//     "pinned": [ "C:\\b.pdf", ... ], "hidden": [ "C:\\c (converted).png", ... ] }
+//     "pinned": [ "C:\\b.pdf", ... ], "hidden": [ "C:\\c (converted).png", ... ],
+//     "place": { "edge": "right", "device": "\\\\.\\DISPLAY1", "work": [ 0, 0, 1920, 1032 ], "x": 1.0, "y": 0.2 } }
+// "place" is where the user left the shelf (see shelf::Place); "edge", "x" and "y" are the pixels of
+// files written before it, still read when "place" is missing.
 namespace sd::shelf
 {
     struct SavedShelf
@@ -21,6 +24,7 @@ namespace sd::shelf
         bool shown = true;                 // the tray's "Show Float shelf" (a file without it: on)
         std::vector<std::wstring> pinned;  // the drop-down's Pinned list, newest first
         std::vector<std::wstring> hidden;  // recent conversions taken off the drop-down's list (× on them)
+        std::optional<Place> place;        // where the user left it; none = first run (or an older file)
     };
 
     std::string ToJson(const SavedShelf& shelf);

@@ -13,6 +13,12 @@ until 1.0, a minor version may change behaviour.
   comes out and never offers 0.7.0 again. File properties show four numbers, the last release and
   the build number (0.7.0.3), so Windows orders builds correctly too. Releases still say plain 0.7.0.
 
+### Fixed
+
+- Float shelf: comes back where it was left (the edge it was pinned to, or the spot it floated at)
+  after a restart, even when the resolution, scaling or monitors changed meanwhile; a monitor that
+  is gone puts it on the nearest one, fully on screen. The first run still pins it to the right edge.
+
 ## [0.7.0] - 2026-10-22
 
 ### Added
