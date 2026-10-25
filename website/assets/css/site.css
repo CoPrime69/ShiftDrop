@@ -518,6 +518,40 @@ kbd {
 .thumb.lifted figcaption { color: var(--accent); font-weight: 500; }
 .illus-pages { flex-direction: column; gap: 22px; }
 
+.illus-video { flex-direction: column; gap: 14px; }
+.clip { position: relative; width: min(340px, 100%); padding: 10px 0; overflow: hidden; }
+.clip-frames { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; height: 54px; border-radius: 6px; overflow: hidden; }
+.clip-frames i { background: linear-gradient(160deg, color-mix(in srgb, var(--tide) 22%, var(--surface-2)), var(--surface-2) 70%); box-shadow: inset 0 0 0 1px var(--border); }
+.clip-frames i:nth-child(even) { background: linear-gradient(200deg, color-mix(in srgb, var(--tide) 14%, var(--surface-2)), var(--surface-2) 75%); }
+.clip-keep { position: absolute; top: 4px; bottom: 4px; left: 14%; width: 42%; border: 2px solid var(--accent); border-radius: 8px; box-shadow: 0 0 0 999px color-mix(in srgb, var(--surface) 55%, transparent); }
+.clip-keep b { position: absolute; top: 50%; width: 8px; height: 26px; margin-top: -13px; border-radius: 4px; background: var(--accent); }
+.clip-keep b:first-child { left: -5px; }
+.clip-keep b:last-child { right: -5px; }
+.clip-head { position: absolute; top: 0; bottom: 0; left: 38%; width: 2px; border-radius: 1px; background: var(--text); }
+.clip-times { display: flex; justify-content: space-between; width: min(340px, 100%); font-size: 11px; color: var(--text-3); margin-bottom: 8px; }
+
+.illus-audio { flex-direction: column; gap: 26px; }
+.wave { position: relative; display: flex; align-items: center; gap: 4px; height: 110px; width: min(340px, 100%); justify-content: center; }
+.wave i { flex: none; width: 6px; height: calc(var(--h) * 1%); border-radius: 3px; background: color-mix(in srgb, var(--text) 30%, transparent); }
+.wave i:nth-child(n+11):nth-child(-n+15) { background: var(--accent); }
+.wave-bleep { position: absolute; top: -14px; left: 50%; transform: translateX(-62%); padding: 2px 8px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 600 11px var(--font-app); }
+.illus-docs { gap: 22px; }
+.doc-stack { display: grid; gap: 12px; }
+.doc-stack .big-file { grid-template-columns: auto auto; align-items: center; justify-items: start; gap: 12px; text-align: left; }
+.doc-stack .page-tile { transform: scale(0.72); transform-origin: left center; margin-right: -12px; }
+.illus-photo { gap: 28px; }
+.photo { position: relative; width: 210px; height: 160px; flex: none; border-radius: 6px; overflow: hidden; background: linear-gradient(180deg, color-mix(in srgb, var(--tide) 16%, var(--surface)), var(--surface-2)); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-md); }
+.photo-sun { position: absolute; top: 28px; left: 36px; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--tide) 45%, var(--surface)); }
+.photo-hill { position: absolute; left: -20px; right: 30px; bottom: -40px; height: 110px; border-radius: 50%; background: color-mix(in srgb, var(--tide) 38%, var(--surface-2)); }
+.photo-hill.back { left: 70px; right: -40px; bottom: -50px; height: 120px; background: color-mix(in srgb, var(--tide) 24%, var(--surface-2)); z-index: -0; }
+.photo-crop { position: absolute; inset: 18px 26px 22px 46px; border: 1.5px solid var(--surface); box-shadow: 0 0 0 999px rgba(15, 18, 24, 0.38); z-index: 2; }
+.photo-crop i { position: absolute; width: 12px; height: 12px; border: 3px solid var(--surface); }
+.photo-crop i:nth-child(1) { top: -3px; left: -3px; border-right: 0; border-bottom: 0; }
+.photo-crop i:nth-child(2) { top: -3px; right: -3px; border-left: 0; border-bottom: 0; }
+.photo-crop i:nth-child(3) { bottom: -3px; left: -3px; border-right: 0; border-top: 0; }
+.photo-crop i:nth-child(4) { bottom: -3px; right: -3px; border-left: 0; border-top: 0; }
+.photo-arrow { position: absolute; z-index: 3; right: 40px; bottom: 34px; width: 60px; height: 40px; fill: none; stroke: #F2F4F7; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); font: 500 13px var(--font-app); color: var(--text); white-space: nowrap; }
 .chip .icon { width: 15px; height: 15px; stroke-width: 1.8; margin-left: -2px; }
