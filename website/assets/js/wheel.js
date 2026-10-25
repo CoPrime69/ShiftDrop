@@ -5,7 +5,7 @@
 // (tile shape, lift on hover, the open spring, the section switch). Lengths are DIPs; the SVG's
 // viewBox is in DIPs and CSS scales it.
 
-import { icon } from './icons.js?v=10';
+import { icon } from './icons.js?v=11';
 
 const SVG = 'http://www.w3.org/2000/svg';
 

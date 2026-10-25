@@ -1,7 +1,7 @@
-import { startDemo } from './demo.js?v=10';
-import { Wheel } from './wheel.js?v=10';
-import { SAMPLE_FILES, wheelFor } from './content.js?v=10';
-import { iconSvg } from './icons.js?v=10';
+import { startDemo } from './demo.js?v=11';
+import { Wheel } from './wheel.js?v=11';
+import { SAMPLE_FILES, wheelFor } from './content.js?v=11';
+import { iconSvg } from './icons.js?v=11';
 
 const REPO = 'CoPrime69/ShiftDrop';
 
@@ -56,7 +56,10 @@ if (header) {
     const asset = release.assets?.find((a) => /^ShiftDrop-Setup-.*\.exe$/i.test(a.name));
     if (!asset) return;
     const version = String(release.tag_name || '').replace(/^v/i, '');
-    for (const b of buttons) b.href = asset.browser_download_url;
+    for (const b of buttons) {
+      b.href = asset.browser_download_url;
+      b.removeAttribute('target'); // a straight download needs no new tab
+    }
     for (const v of document.querySelectorAll('[data-version]')) v.textContent = version;
     for (const s of document.querySelectorAll('[data-size]')) s.textContent = `${Math.round(asset.size / 1048576)} MB`;
   } catch {
