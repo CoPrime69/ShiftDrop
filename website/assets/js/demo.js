@@ -1,11 +1,10 @@
 // The live demo in the hero: a small desktop with a Downloads window. Drag a file and press Shift
 // (or click or tap it) and the real wheel opens at the pointer. Nothing leaves the page.
 
-import { Wheel, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js';
+import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js';
 import { SAMPLE_FILES, wheelFor, formatSize } from './content.js';
 import { iconSvg } from './icons.js';
 
-const PLATE_DIP = 4;
 const DRAG_START_PX = 5;
 const MAX_ADDED = 4;
 
@@ -81,10 +80,11 @@ export function startDemo(stage) {
     return overlay.getBoundingClientRect();
   }
 
-  // Fit the wheel, its top panel above and the result card below, inside the desktop.
+  // Fit the wheel, its top panel above and the result card below, inside the desktop. Sized for the
+  // file's biggest section, so the wheel, the panel and the card stay put while sections switch.
   function place(atX, atY) {
     const r = overlayRect();
-    const layoutEdge = outerEdge(wheel.layout) + PLATE_DIP;
+    const layoutEdge = wheel.extent - 26;
     const panelH = panel.offsetHeight || 36;
     const cardH = 64;
     const need = (extra) => 2 * layoutEdge * extra + panelH + cardH + 40;
@@ -157,6 +157,7 @@ export function startDemo(stage) {
   function openWheel(atClientX, atClientY, clicked) {
     sections = wheelFor(file);
     section = 0;
+    wheel.frameRings = Math.max(...sections.map((s) => arrange(s.slices.length).rings));
     byClick = clicked;
     mode = 'wheel';
     overlay.classList.add('is-open');
@@ -165,8 +166,6 @@ export function startDemo(stage) {
     centre = { x: atClientX - r.left, y: atClientY - r.top };
     showSection(0, 1, false);
     wheel.open();
-    keycap.classList.add('is-down');
-    setTimeout(() => keycap.classList.remove('is-down'), 180);
     say(clicked
       ? (isTouch ? 'Tap a slice to run it. Tap the middle to cancel.' : 'Click a slice. Scroll for the other sections. Esc cancels.')
       : 'Drop on a slice. Scroll for the other sections.');
@@ -284,14 +283,23 @@ export function startDemo(stage) {
     mode = 'pressed';
     if (e.pointerType !== 'touch') {
       el.setPointerCapture(e.pointerId);
-      e.preventDefault(); // no text selection or native drag while the demo drags
+      // No preventDefault: the press must move keyboard focus into the page (from the address bar,
+      // say), or the Shift key never reaches it. The stage's user-select: none stops text selection.
+      el.focus({ preventScroll: true });
     }
   });
 
   window.addEventListener('pointermove', (e) => {
     pointer = { x: e.clientX, y: e.clientY };
     if (mode === 'pressed' && press && press.pointerType !== 'touch' &&
-        Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_START_PX) beginDrag();
+        Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_START_PX) {
+      beginDrag();
+      // Shift already held when the drag started: open straight away.
+      if (e.shiftKey) {
+        openWheel(pointer.x, pointer.y, false);
+        updateHot();
+      }
+    }
     if (mode === 'dragging' || (mode === 'wheel' && !byClick)) moveGhost();
     if (mode === 'wheel') {
       if (keyHot && !attract && Math.hypot(e.movementX, e.movementY) > 2) keyHot = false;
@@ -358,6 +366,7 @@ export function startDemo(stage) {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Shift' && !e.repeat) {
       keycap.classList.add('is-down');
+      if (mode === 'pressed' && press && press.pointerType !== 'touch') beginDrag();
       if (mode === 'dragging') {
         openWheel(pointer.x, pointer.y, false);
         updateHot();
@@ -422,7 +431,8 @@ export function startDemo(stage) {
     const now = performance.now();
     if (now - wheelAt > 300) wheelAcc = 0;
     wheelAt = now;
-    wheelAcc += e.deltaY;
+    // Holding Shift turns a mouse wheel's scroll sideways (deltaX) in most browsers; it counts the same.
+    wheelAcc += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
     if (Math.abs(wheelAcc) >= 40) {
       const dir = Math.sign(wheelAcc);
       wheelAcc = 0;

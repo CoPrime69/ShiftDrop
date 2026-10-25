@@ -69,6 +69,8 @@ const P = {
   arrow: '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
   sign: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 20h6"/>',
   cursor: '<path d="M5 3l14 8-6 2-3 6z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.9 4.9l1.4 1.4"/><path d="M17.7 17.7l1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.9 19.1l1.4-1.4"/><path d="M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
 };
 

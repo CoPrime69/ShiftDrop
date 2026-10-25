@@ -10,6 +10,13 @@ for (const el of document.querySelectorAll('[data-icon]')) {
   el.insertAdjacentHTML('afterbegin', iconSvg(el.dataset.icon, el.dataset.iconClass || 'icon'));
 }
 
+// The sun/moon button in the header.
+for (const b of document.querySelectorAll('[data-theme-toggle]')) {
+  const label = () => b.setAttribute('aria-label', document.documentElement.dataset.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  label();
+  b.addEventListener('click', () => { window.toggleTheme?.(); label(); });
+}
+
 // Labels are measured to fit their tiles, so the wheels wait for the fonts.
 await Promise.all([document.fonts.load('600 13px "IBM Plex Sans"'), document.fonts.load('400 12px "IBM Plex Sans"')]).catch(() => {});
 await document.fonts.ready;

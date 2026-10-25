@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ShiftDrop: drag, press Shift, drop. Free file tools for Windows</title>
   <meta name="description" content="A wheel of file tools at your cursor. Start dragging a file, press Shift, and drop it on an action: convert, shrink, edit PDFs, copy text from images and strip metadata. Offline, no account, free and open source for Windows 10 and 11.">
-  <meta name="theme-color" content="#F6F7F9" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0E1014" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F6F7F9">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
@@ -19,6 +18,7 @@
   <link rel="preload" href="assets/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/site.css">
+  <script src="assets/js/theme.js"></script>
   <script type="module" src="assets/js/site.js"></script>
 </head>
 <body>
@@ -38,6 +38,7 @@
         <a href="#faq">FAQ</a>
       </nav>
       <div class="header-actions">
+        <button type="button" class="icon-link theme-toggle" data-theme-toggle aria-label="Switch to dark mode"><span data-icon="moon" data-icon-class="icon theme-moon"></span><span data-icon="sun" data-icon-class="icon theme-sun"></span></button>
         <a class="icon-link" href="https://github.com/CoPrime69/ShiftDrop" aria-label="ShiftDrop on GitHub" data-icon="github"></a>
         <a class="button button-ink button-small" href="#download">Download</a>
       </div>

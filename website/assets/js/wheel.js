@@ -235,8 +235,9 @@ export class Wheel {
     this.shadowGrad = el('radialGradient', { id: `${this.id}-shadow`, gradientUnits: 'userSpaceOnUse', cx: 0, cy: 5 }, defs);
     this.defs = defs;
     this.root = el('g', { class: 'wheel-root' }, this.svg);
-    this.shadow = el('circle', { cx: 0, cy: 5, fill: `url(#${this.id}-shadow)` }, this.root);
-    this.plate = el('circle', { class: 'wheel-plate', cx: 0, cy: 0 }, this.root);
+    this.under = el('g', { class: 'wheel-under' }, this.root);
+    this.shadow = el('circle', { cx: 0, cy: 5, fill: `url(#${this.id}-shadow)` }, this.under);
+    this.plate = el('circle', { class: 'wheel-plate', cx: 0, cy: 0 }, this.under);
     this.prevLayer = el('g', { class: 'wheel-tiles prev' }, this.root);
     this.layer = el('g', { class: 'wheel-tiles' }, this.root);
     this.centre = el('g', { class: 'wheel-centre' }, this.root);
@@ -264,11 +265,16 @@ export class Wheel {
     this.title = '';
     this.frame = null;
     this.last = 0;
+    this.builds = 0;
+    this.prevEdge = 0;
+    // The rings the drawing area is sized for. A wheel whose sections differ (one ring here, two
+    // there) sets this to the most, so switching never resizes or moves it.
+    this.frameRings = 1;
     this.onClosed = null;
   }
 
   get reach() { return outerEdge(this.layout) + LIFT; }
-  get extent() { return outerEdge(this.layout) + PLATE + 26; }
+  get extent() { return band(Math.max(this.layout.rings, this.frameRings) - 1)[1] + PLATE + 26; }
 
   // Show a section: its slices, the centre's main line and the section's title.
   set(content, { animate = false, dir = 1 } = {}) {
@@ -277,6 +283,7 @@ export class Wheel {
       this.prevLayer.style.opacity = '1';
       this.switchT = 0;
       this.switchDir = dir;
+      this.prevEdge = outerEdge(this.layout);
     } else {
       this.prevLayer.replaceChildren();
       this.switchT = 1;
@@ -308,16 +315,19 @@ export class Wheel {
     this.shadowGrad.replaceChildren(...stops.map(([o, a]) => el('stop', { offset: o, class: 'wheel-shadow-stop', 'stop-opacity': a })));
 
     this.layer.replaceChildren();
-    this.defs.querySelectorAll('.tile-grad').forEach((g) => g.remove());
+    // Each build has its own gradients; the turning-away tiles keep theirs until the switch ends.
+    const build = ++this.builds;
+    this.defs.querySelectorAll('.tile-grad').forEach((g) => { if (Number(g.dataset.build) < build - 1) g.remove(); });
     this.tiles = this.slices.map((slice, i) => {
       const slot = this.layout.slots[i];
       const fit = fitLabel(slot, slice.label, Boolean(slice.icon));
       const g = el('g', { class: 'tile' + (slice.enabled === false ? ' is-dim' : '') }, this.layer);
-      const grad = el('linearGradient', { id: `${this.id}-g${i}`, class: 'tile-grad', gradientUnits: 'userSpaceOnUse' }, this.defs);
+      const gid = `${this.id}-b${build}-g${i}`;
+      const grad = el('linearGradient', { id: gid, class: 'tile-grad', 'data-build': build, gradientUnits: 'userSpaceOnUse' }, this.defs);
       el('stop', { offset: 0, class: 'tile-accent-hi' }, grad);
       el('stop', { offset: 1, class: 'tile-accent' }, grad);
       const base = el('path', { class: 'tile-base' }, g);
-      const hotFill = el('path', { class: 'tile-hot', fill: `url(#${this.id}-g${i})`, opacity: 0 }, g);
+      const hotFill = el('path', { class: 'tile-hot', fill: `url(#${gid})`, opacity: 0 }, g);
       const line = el('path', { class: 'tile-line' }, g);
       const label = el('g', { class: 'tile-label' }, g);
       if (slice.icon) {
@@ -484,12 +494,19 @@ export class Wheel {
     // Switching sections: the old tiles turn away and fade while the new ones turn in.
     if (this.switchT < 1) {
       const e = easeOutCubic(this.switchT), turn = 24 * this.switchDir;
+      // The plate and its shadow grow or shrink to the new rings instead of jumping.
+      const edge = outerEdge(this.layout);
+      const k = (this.prevEdge + (edge - this.prevEdge) * e + PLATE) / (edge + PLATE);
+      this.under.setAttribute('transform', `scale(${k.toFixed(4)})`);
       this.prevLayer.setAttribute('transform', `rotate(${(-turn * e).toFixed(2)})`);
-      this.prevLayer.setAttribute('opacity', (1 - e).toFixed(3));
+      // The old labels are gone before the new ones show, so the two sets never read as one jumble.
+      const t = this.switchT;
+      this.prevLayer.setAttribute('opacity', Math.max(0, 1 - t / 0.3).toFixed(3));
       this.layer.setAttribute('transform', `rotate(${(turn * (1 - e)).toFixed(2)})`);
-      this.layer.setAttribute('opacity', e.toFixed(3));
+      this.layer.setAttribute('opacity', easeOutCubic((t - 0.3) / 0.7).toFixed(3));
     } else {
       if (this.prevLayer.childNodes.length) this.prevLayer.replaceChildren();
+      this.under.removeAttribute('transform');
       this.layer.removeAttribute('transform');
       this.layer.setAttribute('opacity', 1);
     }
