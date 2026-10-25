@@ -1,7 +1,7 @@
-import { startDemo } from './demo.js?v=21';
-import { Wheel } from './wheel.js?v=21';
-import { SAMPLE_FILES, wheelFor } from './content.js?v=21';
-import { iconSvg } from './icons.js?v=21';
+import { startDemo } from './demo.js?v=22';
+import { Wheel } from './wheel.js?v=22';
+import { SAMPLE_FILES, wheelFor } from './content.js?v=22';
+import { iconSvg } from './icons.js?v=22';
 
 const REPO = 'CoPrime69/ShiftDrop';
 
@@ -36,6 +36,20 @@ for (const host of document.querySelectorAll('[data-still-wheel]')) {
 const stage = document.querySelector('[data-stage]');
 // Phones and tablets get a still wheel instead (no mouse to drag with, no Shift key).
 if (stage && getComputedStyle(stage).display !== 'none') startDemo(stage);
+else {
+  // They get a short silent loop of the app instead, loaded only here. Reduced motion: the still
+  // frame, with controls to play it.
+  const loop = document.querySelector('[data-loop]');
+  if (loop) {
+    for (const s of loop.querySelectorAll('source[data-src]')) s.src = s.dataset.src;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) loop.controls = true;
+    else {
+      loop.preload = 'auto';
+      loop.load();
+      loop.play().catch(() => { loop.controls = true; });
+    }
+  }
+}
 
 // The header gains a line once the page scrolls under it.
 const header = document.querySelector('.site-header');

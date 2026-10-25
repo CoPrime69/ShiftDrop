@@ -17,9 +17,9 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="preload" href="assets/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="assets/fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="assets/css/site.css?v=21">
-  <script src="assets/js/theme.js?v=21"></script>
-  <script type="module" src="assets/js/site.js?v=21"></script>
+  <link rel="stylesheet" href="assets/css/site.css?v=22">
+  <script src="assets/js/theme.js?v=22"></script>
+  <script type="module" src="assets/js/site.js?v=22"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -104,7 +104,10 @@
           <p class="sr-only" aria-live="polite" data-live></p>
         </div>
         <div class="hero-still">
-          <span class="still-wheel" data-still-wheel="1" aria-hidden="true"></span>
+          <video class="hero-loop" muted loop playsinline preload="none" poster="assets/video/loop-poster.jpg" data-loop aria-label="A photo is dragged in a Downloads window, Shift is pressed and the wheel opens at the cursor.">
+            <source data-src="assets/video/loop.webm" type="video/webm">
+            <source data-src="assets/video/loop.mp4" type="video/mp4">
+          </video>
           <p>Open this page on a PC to try the live wheel: drag a file, press Shift and scroll through the sections.</p>
         </div>
         <p class="stage-note">This is the real wheel, drawn in your browser with the app's own layout. Ctrl+click picks several files, and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> opens the wheel for them. Nothing is uploaded or converted here.</p>
@@ -144,6 +147,21 @@
           </li>
         </ol>
         <p class="steps-alt">Rather not drag? Select files in Explorer and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>.</p>
+      </div>
+    </section>
+
+    <!-- The launch video -->
+    <section id="watch" class="section section-watch" aria-labelledby="watch-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="watch-title" class="h2">See it in under a minute.</h2>
+          <p class="section-lede">Drag, Shift, drop: converting, shrinking, editing and the keyboard way, all in the real app.</p>
+        </div>
+        <figure class="film">
+          <video controls playsinline preload="none" poster="assets/video/shiftdrop-poster.jpg" aria-label="ShiftDrop launch video, 55 seconds">
+            <source src="assets/video/shiftdrop.mp4" type="video/mp4">
+          </video>
+        </figure>
       </div>
     </section>
 
@@ -379,7 +397,7 @@ Total      6.70</pre>
               </a>
             </div>
           </div>
-          <img class="download-icon" src="assets/img/app-icon.svg?v=21" alt="" width="200" height="200">
+          <img class="download-icon" src="assets/img/app-icon.svg?v=22" alt="" width="200" height="200">
           <ol class="install">
             <li><strong>Download</strong> <span class="mono">ShiftDrop-Setup-<span data-version>0.7.0</span>.exe</span> and run it. It installs for your user only, with no admin rights needed.</li>
             <li><strong>If Windows says "Windows protected your PC",</strong> choose More info, then Run anyway. The installer isn't code-signed yet, so SmartScreen doesn't know it.</li>

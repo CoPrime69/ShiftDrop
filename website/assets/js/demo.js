@@ -2,9 +2,9 @@
 // (or tap it on a phone) and the real wheel opens at the pointer. Ctrl+click picks several files;
 // drag them, or press Ctrl+Shift+Space, for one wheel over all of them. Nothing leaves the page.
 
-import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=21';
-import { SAMPLE_FILES, wheelFor, wheelForMany, formatSize } from './content.js?v=21';
-import { iconSvg } from './icons.js?v=21';
+import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=22';
+import { SAMPLE_FILES, wheelFor, wheelForMany, formatSize } from './content.js?v=22';
+import { iconSvg } from './icons.js?v=22';
 
 const DRAG_START_PX = 5;
 const MAX_ADDED = 4;
