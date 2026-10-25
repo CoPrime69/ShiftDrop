@@ -1,7 +1,7 @@
-import { startDemo } from './demo.js?v=22';
-import { Wheel } from './wheel.js?v=22';
-import { SAMPLE_FILES, wheelFor } from './content.js?v=22';
-import { iconSvg } from './icons.js?v=22';
+import { startDemo } from './demo.js?v=23';
+import { Wheel } from './wheel.js?v=23';
+import { SAMPLE_FILES, wheelFor } from './content.js?v=23';
+import { iconSvg } from './icons.js?v=23';
 
 const REPO = 'CoPrime69/ShiftDrop';
 
@@ -41,6 +41,7 @@ else {
   // frame, with controls to play it.
   const loop = document.querySelector('[data-loop]');
   if (loop) {
+    loop.poster = loop.dataset.poster;
     for (const s of loop.querySelectorAll('source[data-src]')) s.src = s.dataset.src;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) loop.controls = true;
     else {
@@ -58,6 +59,23 @@ if (header) {
   onScroll();
   window.addEventListener('scroll', onScroll, { passive: true });
 }
+
+// The header's Star button shows the repository's star count, when GitHub answers.
+(async () => {
+  const count = document.querySelector('[data-stars]');
+  if (!count) return;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) return;
+    const stars = (await res.json()).stargazers_count;
+    if (!Number.isFinite(stars) || stars < 1) return; // no count rather than a 0
+    count.textContent = stars >= 1000 ? `${(stars / 1000).toFixed(stars >= 10000 ? 0 : 1)}k` : String(stars);
+    count.hidden = false;
+    count.parentElement.setAttribute('aria-label', `Star ShiftDrop on GitHub (${stars} stars)`);
+  } catch {
+    // Offline or rate-limited: the button still opens the repository.
+  }
+})();
 
 // Point the download buttons straight at the latest installer. Without script, or if GitHub doesn't
 // answer, they open the latest release page, which has the same file.
