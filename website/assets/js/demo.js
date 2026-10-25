@@ -435,10 +435,12 @@ export function startDemo(stage) {
   // ---- Scrolling turns the sections --------------------------------------------------------------
 
   let wheelAcc = 0, wheelAt = 0;
-  stage.addEventListener('wheel', (e) => {
+  // Listened for on the whole window, before anything else sees it: while a drag holds the mouse,
+  // some browsers send the scroll to the dragged tile or elsewhere rather than to the wheel.
+  window.addEventListener('wheel', (e) => {
     if (mode !== 'wheel' || sections.length < 2) return;
     // The opening pose only takes the scroll over the wheel itself, so the page still scrolls.
-    if (attract && !e.target.closest('[data-wheel], [data-panel]')) return;
+    if (attract && !e.target.closest?.('[data-wheel], [data-panel]')) return;
     e.preventDefault();
     const now = performance.now();
     if (now - wheelAt > 300) wheelAcc = 0;
@@ -451,7 +453,7 @@ export function startDemo(stage) {
       wheelAcc = 0;
       showSection(section + dir, dir);
     }
-  }, { passive: false });
+  }, { passive: false, capture: true });
 
   // The on-screen Shift key: tap it with a file picked (touch), or it lights with the real key.
   keycap.addEventListener('click', () => {
