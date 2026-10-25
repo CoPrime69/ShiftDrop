@@ -1,7 +1,7 @@
-import { startDemo } from './demo.js?v=11';
-import { Wheel } from './wheel.js?v=11';
-import { SAMPLE_FILES, wheelFor } from './content.js?v=11';
-import { iconSvg } from './icons.js?v=11';
+import { startDemo } from './demo.js?v=17';
+import { Wheel } from './wheel.js?v=17';
+import { SAMPLE_FILES, wheelFor } from './content.js?v=17';
+import { iconSvg } from './icons.js?v=17';
 
 const REPO = 'CoPrime69/ShiftDrop';
 
@@ -34,7 +34,8 @@ for (const host of document.querySelectorAll('[data-still-wheel]')) {
 }
 
 const stage = document.querySelector('[data-stage]');
-if (stage) startDemo(stage);
+// Phones and tablets get a still wheel instead (no mouse to drag with, no Shift key).
+if (stage && getComputedStyle(stage).display !== 'none') startDemo(stage);
 
 // The header gains a line once the page scrolls under it.
 const header = document.querySelector('.site-header');

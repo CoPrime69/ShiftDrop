@@ -186,6 +186,7 @@ html { scrollbar-color: var(--border-strong) transparent; }
 .button:active { transform: scale(0.97); }
 .button-text { display: flex; flex-direction: column; gap: 3px; }
 .button .icon { width: 22px; height: 22px; }
+.button > [data-icon] { flex: none; display: inline-flex; }
 .button-text > span { font: 600 1.25rem/1.2 var(--font-display); letter-spacing: -0.01em; }
 .button-text small { font-size: 0.8125rem; font-weight: 400; opacity: 0.8; }
 .button-ink { background: var(--button-ink); color: var(--button-ink-text); }
@@ -664,4 +665,51 @@ html { scrollbar-color: var(--border-strong) transparent; }
   .keycap.is-ready { animation: none; }
   .island-bar span { animation-duration: 1ms; }
   .button:active { transform: none; }
+}
+
+/* ---- Phones and tablets: no live demo, a calmer centred layout ---------------------------------- */
+
+.hero-still { display: none; }
+@media (max-width: 900px), (hover: none) and (pointer: coarse) {
+  .stage, .stage-note { display: none; }
+  .hero-still { display: grid; justify-items: center; gap: 28px; text-align: center; padding-top: 8px; }
+  .hero-still .still-wheel { width: min(340px, 84vw); }
+  .hero-still p { max-width: 30ch; color: var(--text-2); font-size: 1rem; }
+}
+@media (max-width: 900px) {
+  .hero-top { text-align: center; justify-items: center; gap: 28px; }
+  .hero-side { justify-items: center; }
+  .hero-side .lede { margin-inline: auto; }
+  .hero-side .cta-row { justify-content: center; }
+  .h2, .section-lede { margin-inline: auto; text-align: center; }
+  .section-head { justify-items: center; }
+  .step, .feature { text-align: center; }
+  .step h3, .feature h3 { justify-content: center; }
+  .step p { padding-left: 0; margin-inline: auto; }
+  .feature p { margin-inline: auto; }
+  .button { text-align: left; }
+  .download { text-align: center; justify-items: center; }
+  .download-main { justify-items: center; }
+  .download-main .badge { justify-self: center; }
+  .download-main .cta-row { justify-content: center; }
+  .install { text-align: left; }
+}
+@media (max-width: 640px) {
+  .header-actions a.icon-link { display: none; }
+  .display { font-size: clamp(3rem, 15vw, 4rem); }
+  .lede { font-size: 1.0625rem; }
+  .steps, .features, .pair { gap: 72px; }
+  .formats li .page-tile { display: none; }
+  .formats li { padding: 22px 24px; }
+  .download { padding: 40px 20px; }
+  .download .button-text > span { font-size: 1.125rem; }
+}
+
+/* Grid items may shrink below their content on very narrow phones; illustrations clip instead. */
+.hero-top > *, .steps > *, .features > *, .pair > *, .formats > *, .download > * { min-width: 0; }
+.illus { overflow: hidden; }
+.download-main > * { min-width: 0; max-width: 100%; }
+@media (max-width: 400px) {
+  .h2-big { font-size: 2.25rem; }
+  .button-text small.mono { display: none; }
 }
