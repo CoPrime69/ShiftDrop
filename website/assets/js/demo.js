@@ -1,9 +1,10 @@
 // The live demo in the hero: a small desktop with a Downloads window. Drag a file and press Shift
-// (or tap it on a phone) and the real wheel opens at the pointer. Nothing leaves the page.
+// (or tap it on a phone) and the real wheel opens at the pointer. Ctrl+click picks several files;
+// drag them, or press Ctrl+Shift+Space, for one wheel over all of them. Nothing leaves the page.
 
-import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=17';
-import { SAMPLE_FILES, wheelFor, formatSize } from './content.js?v=17';
-import { iconSvg } from './icons.js?v=17';
+import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=18';
+import { SAMPLE_FILES, wheelFor, wheelForMany, formatSize } from './content.js?v=18';
+import { iconSvg } from './icons.js?v=18';
 
 const DRAG_START_PX = 5;
 const MAX_ADDED = 4;
@@ -30,7 +31,10 @@ export function startDemo(stage) {
 
   // ---- State ------------------------------------------------------------------------------------
 
-  let file = null;          // the file picked up
+  let file = null;          // the file picked up (the first, when there are several)
+  let batch = [];           // every file the wheel works on
+  let selected = [];        // names of the selected tiles, in the order picked
+  let anchor = null;        // where a Shift+click range starts
   let sections = [];        // its wheel
   let section = 0;
   let mode = 'idle';        // idle | pressed | dragging | wheel | closing
@@ -58,7 +62,16 @@ export function startDemo(stage) {
   function renderFiles() {
     grid.innerHTML = files.map((f) => tileHtml(f)).join('') +
       added.map((a) => tileHtml(a, ' file-new')).join('');
+    renderSelection();
   }
+
+  function renderSelection() {
+    selected = selected.filter((name) => grid.querySelector(`[data-name="${name}"]`));
+    grid.querySelectorAll('.file').forEach((el) => el.classList.toggle('is-selected', selected.includes(el.dataset.name)));
+  }
+
+  const tileNames = () => [...grid.querySelectorAll('.file')].map((el) => el.dataset.name);
+  const totalMb = () => batch.reduce((sum, f) => sum + f.mb, 0);
 
   const findFile = (name) => files.find((f) => `${f.base}.${f.ext}` === name);
 
@@ -125,16 +138,17 @@ export function startDemo(stage) {
       return;
     }
     const c = slice.card;
+    const more = batch.length > 1 && !slice.single ? ` +${batch.length - 1}` : '';
     card.innerHTML = `<span class="card-icon">${iconSvg(file.icon, 'icon')}</span>
-      <span class="card-text"><strong>${c.title}</strong><span class="mono">${c.file}</span></span>
-      <span class="card-size">${formatSize(c.size)} · was ${formatSize(file.mb)}</span>`;
+      <span class="card-text"><strong>${c.title}</strong><span class="mono">${c.file}${more}</span></span>
+      <span class="card-size">${formatSize(c.size)} · was ${formatSize(totalMb())}</span>`;
     card.classList.add('is-on');
   }
 
   function showSection(i, dir = 1, animate = true) {
     section = (i + sections.length) % sections.length;
     const s = sections[section];
-    const centreText = s.key === 'reduce' ? formatSize(file.mb) : '1 file';
+    const centreText = s.key === 'reduce' ? formatSize(totalMb()) : batch.length > 1 ? `${batch.length} files` : '1 file';
     wheel.set({ slices: s.slices, centre: centreText, title: s.title, sections: sections.length, section }, { animate, dir });
     renderPanel();
     place(centre.x, centre.y);
@@ -155,7 +169,8 @@ export function startDemo(stage) {
   // ---- Open, run, cancel --------------------------------------------------------------------------
 
   function openWheel(atClientX, atClientY, clicked) {
-    sections = wheelFor(file);
+    if (!batch.includes(file)) batch = [file];
+    sections = batch.length > 1 ? wheelForMany(batch) : wheelFor(file);
     section = 0;
     wheel.frameRings = Math.max(...sections.map((s) => arrange(s.slices.length).rings));
     byClick = clicked;
@@ -195,10 +210,12 @@ export function startDemo(stage) {
     const slice = wheel.slices[slot];
     if (!slice) return cancel();
     const source = file;
+    const sources = batch.slice();
+    const key = sections[section].key;
     closeWheel(true);
     // The top panel shows the progress, then what happened.
     clearTimeout(islandTimer);
-    const working = slice.card ? `Working on ${source.base}.${source.ext}…` : `${slice.label}…`;
+    const working = !slice.card ? `${slice.label}…` : sources.length > 1 ? `Working on ${sources.length} files…` : `Working on ${source.base}.${source.ext}…`;
     island.innerHTML = `<span class="island-mark">${iconSvg(source.icon, 'icon')}</span><span class="island-text">${working}</span><span class="island-bar"><span></span></span>`;
     island.classList.add('is-on', 'is-busy');
     say(`${slice.label}: working on it…`);
@@ -206,7 +223,14 @@ export function startDemo(stage) {
       island.classList.remove('is-busy');
       island.innerHTML = `<span class="island-mark is-done">${iconSvg('check', 'icon')}</span><span class="island-text">${slice.done}</span>`;
       announce(slice.done);
-      if (slice.card) addResult(source, slice.card);
+      if (slice.card && (slice.single || sources.length === 1)) addResult(source, slice.card);
+      else if (slice.card) {
+        // One result per file, each from that file's own wheel.
+        for (const f of sources) {
+          const own = wheelFor(f).find((x) => x.key === key)?.slices.find((x) => x.label === slice.label);
+          if (own?.card) addResult(f, own.card);
+        }
+      }
       say(slice.card ? 'Saved next to the original, which is untouched. Try another file.' : 'Done. Try another file, or another section.');
       islandTimer = setTimeout(() => island.classList.remove('is-on'), 3200);
     }, reducedMotion ? 300 : 900);
@@ -247,9 +271,16 @@ export function startDemo(stage) {
 
   function beginDrag() {
     mode = 'dragging';
-    grid.querySelectorAll('.is-selected').forEach((x) => x.classList.remove('is-selected'));
+    // A selected tile carries the whole selection with it, as in Explorer.
+    const name = press.el.dataset.name;
+    batch = selected.length > 1 && selected.includes(name)
+      ? [file, ...selected.filter((x) => x !== name).map(fileFor).filter(Boolean)]
+      : [file];
+    selected = [];
+    renderSelection();
+    for (const f of batch) grid.querySelector(`[data-name="${f.base}.${f.ext}"]`)?.classList.add('is-dragging');
     press.el.classList.add('is-dragging');
-    ghost.innerHTML = `${iconSvg(file.icon, 'icon')}<span class="mono">${file.base}.${file.ext}</span>`;
+    ghost.innerHTML = `${iconSvg(file.icon, 'icon')}<span class="mono">${batch.length > 1 ? `${batch.length} files` : `${file.base}.${file.ext}`}</span>`;
     ghost.classList.add('is-on');
     moveGhost();
     say('Now press Shift.');
@@ -280,7 +311,8 @@ export function startDemo(stage) {
     const f = fileFor(el.dataset.name);
     if (!f) return;
     file = f;
-    press = { x: e.clientX, y: e.clientY, id: e.pointerId, el, pointerType: e.pointerType };
+    batch = [f];
+    press = { x: e.clientX, y: e.clientY, id: e.pointerId, el, pointerType: e.pointerType, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey };
     pointer = { x: e.clientX, y: e.clientY };
     mode = 'pressed';
     if (e.pointerType !== 'touch') {
@@ -312,13 +344,27 @@ export function startDemo(stage) {
   window.addEventListener('pointerup', (e) => {
     pointer = { x: e.clientX, y: e.clientY };
     if (mode === 'pressed' && press.pointerType !== 'touch') {
-      // A plain click only selects the file, as in Explorer: the wheel needs Shift.
-      const el = press.el;
+      // A click only selects, as in Explorer: Ctrl+click adds or removes a file, Shift+click takes
+      // a range. The wheel needs Shift during a drag, or Ctrl+Shift+Space.
+      const { el, ctrl, shift } = press;
+      const name = el.dataset.name;
       endDrag();
       mode = 'idle';
-      grid.querySelectorAll('.is-selected').forEach((x) => x.classList.remove('is-selected'));
-      el.classList.add('is-selected');
-      say('Now drag it and press Shift while you hold it.');
+      if (ctrl) {
+        selected = selected.includes(name) ? selected.filter((x) => x !== name) : [...selected, name];
+        anchor = name;
+      } else if (shift && anchor) {
+        const names = tileNames();
+        const [a, b] = [names.indexOf(anchor), names.indexOf(name)].sort((x, y) => x - y);
+        selected = a < 0 ? [name] : names.slice(a, b + 1);
+      } else {
+        selected = [name];
+        anchor = name;
+      }
+      renderSelection();
+      say(selected.length > 1
+        ? `${selected.length} files selected. Press Ctrl+Shift+Space, or drag them and press Shift.`
+        : selected.length ? 'Now drag it and press Shift. Ctrl+click picks more files.' : 'Drag a file and press Shift.');
       return;
     }
     if (mode === 'pressed') {
@@ -376,6 +422,15 @@ export function startDemo(stage) {
   // ---- Keyboard ---------------------------------------------------------------------------------
 
   window.addEventListener('keydown', (e) => {
+    // Ctrl+Shift+Space: the wheel for the selected files, without dragging (the app's hotkey).
+    if (e.code === 'Space' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      if (e.repeat || (mode !== 'idle' && !(mode === 'wheel' && attract))) return;
+      if (!selected.length) return say('Select files first: click one, Ctrl+click for more.');
+      if (mode === 'wheel') closeWheel(false);
+      openForSelection();
+      return;
+    }
     if (e.key === 'Shift' && !e.repeat) {
       keycap.classList.add('is-down');
       if (mode === 'pressed' && press && press.pointerType !== 'touch') beginDrag();
@@ -417,14 +472,31 @@ export function startDemo(stage) {
     if (e.key === 'Shift') keycap.classList.remove('is-down');
   });
 
+  // The wheel opens at the pointer when it is over the desktop, else over the last selected file.
+  function openForSelection() {
+    batch = selected.map(fileFor).filter(Boolean);
+    if (!batch.length) return;
+    file = batch[0];
+    const r = overlayRect();
+    const inside = pointer.x > r.left && pointer.x < r.right && pointer.y > r.top && pointer.y < r.bottom;
+    const el = grid.querySelector(`[data-name="${selected[selected.length - 1]}"]`);
+    const t = el.getBoundingClientRect();
+    openWheel(inside ? pointer.x : t.left + t.width / 2, inside ? pointer.y : t.top + t.height / 2, true);
+    if (!inside) pointer = { x: -1e4, y: -1e4 };
+    updateHot();
+    selected = [];
+    renderSelection();
+  }
+
   // Enter or Space on a focused file opens the wheel over it.
   grid.addEventListener('keydown', (e) => {
     const el = e.target.closest('.file');
-    if (!el || (e.key !== 'Enter' && e.key !== ' ') || mode === 'wheel') return;
+    if (!el || (e.key !== 'Enter' && e.key !== ' ') || mode === 'wheel' || e.ctrlKey || e.metaKey) return;
     const f = fileFor(el.dataset.name);
     if (!f) return;
     e.preventDefault();
     file = f;
+    batch = [f];
     const r = el.getBoundingClientRect();
     openWheel(r.left + r.width / 2, r.top + r.height / 2, true);
     keyHot = true;
@@ -459,6 +531,7 @@ export function startDemo(stage) {
   keycap.addEventListener('click', () => {
     if (mode === 'wheel') return cancel();
     if (!file) file = findFile('photo.jpg');
+    batch = [file];
     const el = grid.querySelector(`[data-name="${file.base}.${file.ext}"]`) ?? grid.querySelector('.file');
     const r = el.getBoundingClientRect();
     openWheel(r.left + r.width / 2, r.top + r.height / 2, true);
@@ -493,6 +566,7 @@ export function startDemo(stage) {
     const room = r.right - explorer.right;
     if (room < 360 || mode !== 'idle') return;
     file = findFile('photo.jpg');
+    batch = [file];
     openWheel(explorer.right + room / 2, r.top + r.height * 0.47, true);
     attract = true;
     overlay.classList.add('is-attract');

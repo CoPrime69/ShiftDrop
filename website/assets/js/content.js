@@ -184,6 +184,40 @@ export function wheelFor(file) {
   return SECTIONS.filter((s) => sets[s.key]?.length).map((s) => ({ ...s, slices: sets[s.key] }));
 }
 
+// Several files at once (a multi-file drag, or a selection and Ctrl+Shift+Space). Files of one kind
+// get that kind's wheel, run on each of them; two or more PDFs also get Merge. A mix of kinds gets
+// File actions only. Cards show the first file's result; `single` slices make one file for all.
+export function wheelForMany(list) {
+  if (list.length === 1) return wheelFor(list[0]);
+  const n = list.length;
+  const total = list.reduce((sum, f) => sum + f.mb, 0);
+  const first = list[0];
+  const same = list.every((f) => f.kind === first.kind);
+  const plural = (w) => (/s$/.test(w) ? w : `${w}s`);
+  const files = [
+    { label: 'Copy', icon: 'copy', detail: 'Copy them to the clipboard', done: `${n} files copied` },
+    { label: 'Move to folder', icon: 'move', detail: 'Move them to a folder you pick', done: 'Pick a folder for them' },
+    { label: 'Copy path', icon: 'link', detail: 'Copy every full path', done: `Copied ${n} paths` },
+    { label: 'Rename', icon: 'rename', detail: 'Rename with a pattern: {name}, {n}, {date}', done: `Pick a name pattern for ${n} files` },
+    { label: 'Float', icon: 'float', detail: 'Keep them on the Float shelf', done: `${n} files on the Float shelf` },
+    { label: 'Zip', icon: 'zip', single: true, detail: 'One ZIP of everything', card: { title: 'ZIP', file: 'files.zip', size: total * 0.7 }, done: `${n} files saved in files.zip` },
+    { label: 'Share', icon: 'share', detail: 'Nearby sharing, Phone Link, mail, apps', done: 'Windows share opened' },
+  ];
+  if (!same) return SECTIONS.filter((s) => s.key === 'files').map((s) => ({ ...s, slices: files }));
+  const sets = BUILD[first.kind]({ ...first, mb: total });
+  const many = (s) => ({
+    ...s,
+    detail: s.detail?.replace(/^Save an? (\S+) copy next to it$/, 'Save $1 copies next to them'),
+    done: s.card ? s.done.replace(/^1 (\w+)/, (m, w) => `${n} ${plural(w)}`) : s.done,
+  });
+  for (const key of ['convert', 'tools', 'reduce']) if (sets[key]) sets[key] = sets[key].map(many);
+  if (first.kind === 'pdf') {
+    sets.tools.splice(1, 0, { label: 'Merge', icon: 'merge', single: true, detail: 'One PDF, in the order you choose', card: { title: 'PDF', file: out(first.base, 'merged', 'pdf'), size: total * 0.97 }, done: `${n} PDFs merged into one` });
+  }
+  sets.files = files.filter((s) => s.label !== 'Zip' || first.kind !== 'archive');
+  return SECTIONS.filter((s) => sets[s.key]?.length).map((s) => ({ ...s, slices: sets[s.key] }));
+}
+
 export const SAMPLE_FILES = [
   { base: 'receipt-0412', ext: 'jpg', kind: 'photo', mb: 1.8, icon: 'image' },
   { base: 'photo', ext: 'jpg', kind: 'photo', mb: 3.4, icon: 'image' },
@@ -192,5 +226,5 @@ export const SAMPLE_FILES = [
   { base: 'demo-cut', ext: 'mov', kind: 'video', mb: 248, icon: 'video' },
   { base: 'notes', ext: 'docx', kind: 'document', mb: 0.24, icon: 'document' },
   { base: 'assets', ext: 'zip', kind: 'archive', mb: 12, icon: 'archive' },
-  { base: 'scan-07', ext: 'png', kind: 'photo', mb: 5.1, icon: 'image' },
+  { base: 'invoice-0918', ext: 'pdf', kind: 'pdf', mb: 0.9, icon: 'pdf' },
 ];
