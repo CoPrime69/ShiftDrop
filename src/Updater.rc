@@ -8,10 +8,10 @@
 IDI_APPICON ICON "ShiftDrop.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
- PRODUCTVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
+ FILEVERSION SD_FILEVERSION
+ PRODUCTVERSION SD_FILEVERSION
  FILEFLAGSMASK 0x3fL
- FILEFLAGS 0x0L
+ FILEFLAGS SD_FILEFLAGS
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
  FILESUBTYPE VFT2_UNKNOWN
@@ -22,7 +22,7 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "ShiftDrop"
             VALUE "FileDescription", "ShiftDrop Updater - checks for and installs new versions"
-            VALUE "FileVersion", SD_VERSION_BASE_A
+            VALUE "FileVersion", SD_FILEVERSION_A
             VALUE "InternalName", "ShiftDrop-Updater"
             VALUE "OriginalFilename", "ShiftDrop-Updater.exe"
             VALUE "ProductName", "ShiftDrop"

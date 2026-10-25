@@ -1,62 +1,125 @@
 # Writes Version.h from VERSION (the one place the version is written) and the commit being built.
 # CMakeLists.txt runs it at every build (and once at configure, so the file exists for editors); the
 # file is only rewritten when its text changes, so an unchanged version recompiles nothing.
+# scripts/check-version.ps1 runs it too, to know what the exe and the installer must state.
 #   cmake -DSOURCE_DIR=<repo> -DOUT=<build>/generated/Version.h [-DRELEASE=ON] [-DCOMMIT=<sha>] -P make-version-header.cmake
-# RELEASE: the build that publishes the release, which shows the plain version ("0.6.0"). Any other
-# build shows where it came from: "0.6.0+b950d51", the commit's first 7 characters (COMMIT when given,
-# else git's HEAD), or "0.6.0+dev" outside a git checkout.
+#
+# The version follows Semantic Versioning 2.0.0 (docs/BUILDING.md, "Version numbers"):
+# - RELEASE (the build that publishes the release): VERSION alone, "0.7.0".
+# - Any other build is a pre-release of the next version, so it sorts above the release it follows
+#   and below the one it leads to: "0.7.1-dev.3+af953b2". The next version is the patch after VERSION
+#   when tag v<VERSION> exists (VERSION is released), else VERSION itself (a bump not released yet).
+#   dev.N counts the commits since the last release tag; +af953b2 is the commit (COMMIT when given,
+#   else git's HEAD), "+dev" outside a git checkout. Without tags (a shallow clone) N is 0.
+# - Windows' four version numbers (FILEVERSION, PRODUCTVERSION): the last release and N, "0.7.0.3",
+#   so Explorer orders every build between the release it follows (0.7.0.0) and the next release
+#   (0.7.1.0). The release build's are VERSION and 0.
 cmake_minimum_required(VERSION 3.24)
 
 file(STRINGS "${SOURCE_DIR}/VERSION" base LIMIT_COUNT 1)
 string(STRIP "${base}" base)
-if(NOT base MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+if(NOT base MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
   message(FATAL_ERROR "VERSION must hold one version like 0.6.0, not \"${base}\"")
 endif()
 set(major ${CMAKE_MATCH_1})
 set(minor ${CMAKE_MATCH_2})
 set(patch ${CMAKE_MATCH_3})
 
-set(commit "")
-if(NOT RELEASE)
-  if(NOT COMMIT)
-    find_package(Git QUIET)
-    if(GIT_FOUND)
-      execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD WORKING_DIRECTORY "${SOURCE_DIR}"
-        OUTPUT_VARIABLE COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE failed)
-      if(failed)
-        set(COMMIT "")
-      endif()
+# Runs git in the checkout; `out` is empty when git fails or there is no git.
+function(git out)
+  set(${out} "" PARENT_SCOPE)
+  if(GIT_EXECUTABLE)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" ${ARGN} WORKING_DIRECTORY "${SOURCE_DIR}"
+      OUTPUT_VARIABLE text OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE failed)
+    if(NOT failed)
+      set(${out} "${text}" PARENT_SCOPE)
     endif()
   endif()
+endfunction()
+
+set(full "${base}")
+set(commit "")
+set(build 0)
+set(file_version "${base}")
+set(file_flags 0x0L)
+if(NOT RELEASE)
+  set(file_flags 0x2L)   # VS_FF_PRERELEASE
+  find_package(Git QUIET)
+  # The commit: COMMIT (CI passes the pull request's head, not its test merge) or HEAD.
   string(TOLOWER "${COMMIT}" COMMIT)
+  set(ref "")
   if(COMMIT MATCHES "^[0-9a-f]+$")
     string(SUBSTRING "${COMMIT}" 0 7 commit)
+    git(ref rev-parse --verify --quiet "${COMMIT}^{commit}")
+  endif()
+  if(NOT ref)
+    git(ref rev-parse --verify --quiet "HEAD^{commit}")
+    if(ref AND NOT commit)
+      string(SUBSTRING "${ref}" 0 7 commit)
+    endif()
+  endif()
+
+  # The last release tag before it (vX.Y.Z; a tag like v1.0.0-rc.1 is no release) and how far back.
+  set(last "")
+  set(next "${base}")
+  if(ref)
+    git(last describe --tags --abbrev=0 --match "v[0-9]*.[0-9]*.[0-9]*" --exclude "*-*" "${ref}")
+    if(last MATCHES "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+      set(file_version "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+      git(build rev-list --count "${last}..${ref}")
+    else()
+      set(last "")
+    endif()
+    git(released rev-parse --verify --quiet "refs/tags/v${base}")
+    if(released)
+      math(EXPR next_patch "${patch} + 1")
+      set(next "${major}.${minor}.${next_patch}")
+      set(patch ${next_patch})
+      set(file_version "${base}")
+    endif()
+  endif()
+  # CI must see the tags (actions/checkout with fetch-depth: 0), or every build there would be dev.0.
+  if(NOT last AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+    message(FATAL_ERROR "No release tag (vX.Y.Z) is reachable from \"${ref}\": check out with fetch-depth: 0")
+  endif()
+  if(NOT build MATCHES "^[0-9]+$")
+    set(build 0)
+  elseif(build GREATER 65535)
+    set(build 65535)   # Windows keeps 16 bits per version number
+  endif()
+  if(commit)
+    set(full "${next}-dev.${build}+${commit}")
+  else()
+    set(full "${next}-dev.${build}+dev")
   endif()
 endif()
-
-if(RELEASE)
-  set(full "${base}")
-elseif(commit)
-  set(full "${base}+${commit}")
-else()
-  set(full "${base}+dev")
-endif()
+set(file_version "${file_version}.${build}")
+string(REPLACE "." "," file_version_rc "${file_version}")
 
 file(CONFIGURE OUTPUT "${OUT}" @ONLY NEWLINE_STYLE LF CONTENT [[
 #pragma once
 // Generated by scripts/make-version-header.cmake from VERSION; do not edit. Plain macros, so the
 // resource compiler can read it too. The commit changes with every commit: include this only where
 // the version is needed (sd::version in AppVersion.h is the way for app code).
+// The version this build is: VERSION for the release build, the next version for any other.
 #define SD_VERSION_MAJOR @major@
 #define SD_VERSION_MINOR @minor@
 #define SD_VERSION_PATCH @patch@
-// The release this build is or comes from, as VERSION states it.
+// VERSION as written.
 #define SD_VERSION_BASE L"@base@"
 #define SD_VERSION_BASE_A "@base@"
-// What the app shows: the base for the release build, base+commit for any other build.
+// What the app shows (Semantic Versioning 2.0.0): "0.7.0" for the release build,
+// "0.7.1-dev.3+af953b2" (the next version's pre-release) for any other.
 #define SD_VERSION L"@full@"
 #define SD_VERSION_A "@full@"
 // The commit's first 7 characters; empty for the release build and outside a git checkout.
 #define SD_VERSION_COMMIT L"@commit@"
 #define SD_VERSION_COMMIT_A "@commit@"
+// Commits since the last release tag (the N of dev.N); 0 for the release build.
+#define SD_VERSION_BUILD @build@
+// Windows' four numbers: the last release and the build number, "0.7.0.3" (the release: "0.7.0.0").
+#define SD_FILEVERSION @file_version_rc@
+#define SD_FILEVERSION_A "@file_version@"
+// VS_FF_PRERELEASE on any build but the release.
+#define SD_FILEFLAGS @file_flags@
 ]])

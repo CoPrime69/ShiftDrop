@@ -85,26 +85,85 @@ TEST(Updates, VersionsCompareAsSemver)
     EXPECT_GT(Compare(V(L"0.10.0"), V(L"0.9.9")), 0);
     EXPECT_GT(Compare(V(L"1.0.0"), V(L"0.99.99")), 0);
     EXPECT_EQ(Compare(V(L"0.7.0"), V(L"V0.7.0")), 0);
-    // A main or pull-request build counts as its base version.
-    EXPECT_EQ(Compare(V(L"0.6.0+b950d51"), V(L"0.6.0")), 0);
-    EXPECT_EQ(ToText(V(L"0.6.0+b950d51")), L"0.6.0");
-    // A pre-release comes before its release; numbers by value.
-    EXPECT_LT(Compare(V(L"0.7.0-rc.1"), V(L"0.7.0")), 0);
-    EXPECT_LT(Compare(V(L"0.7.0-rc.1"), V(L"0.7.0-rc.2")), 0);
-    EXPECT_LT(Compare(V(L"0.7.0-rc.2"), V(L"0.7.0-rc.10")), 0);
-    EXPECT_LT(Compare(V(L"0.7.0-1"), V(L"0.7.0-alpha")), 0);
-    EXPECT_LT(Compare(V(L"0.7.0-rc"), V(L"0.7.0-rc.1")), 0);
     EXPECT_EQ(ToText(V(L"0.7.0-rc.1")), L"0.7.0-rc.1");
-    for (const wchar_t* bad : { L"", L"0.7", L"1.2.3.4", L"a.b.c", L"0.7.1-", L"0..1", L"-1.0.0", L"0.7.x", L"latest", L"0.7.1-rc!" })
+}
+
+// semver.org 2.0.0, item 11: "1.0.0 < 2.0.0 < 2.1.0 < 2.1.1" and "1.0.0-alpha < 1.0.0-alpha.1 <
+// 1.0.0-alpha.beta < 1.0.0-beta < 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0".
+TEST(Updates, VersionsOrderAsTheSemverSpecsExamples)
+{
+    for (const auto& chain : { std::vector<const wchar_t*>{ L"1.0.0", L"2.0.0", L"2.1.0", L"2.1.1" },
+                               std::vector<const wchar_t*>{ L"1.0.0-alpha", L"1.0.0-alpha.1", L"1.0.0-alpha.beta", L"1.0.0-beta",
+                                                            L"1.0.0-beta.2", L"1.0.0-beta.11", L"1.0.0-rc.1", L"1.0.0" } })
+    {
+        for (size_t i = 0; i < chain.size(); ++i)
+            for (size_t j = 0; j < chain.size(); ++j)
+            {
+                const int c = Compare(V(chain[i]), V(chain[j]));
+                EXPECT_EQ(c < 0, i < j) << Narrow(chain[i]) << " vs " << Narrow(chain[j]);
+                EXPECT_EQ(c == 0, i == j) << Narrow(chain[i]) << " vs " << Narrow(chain[j]);
+            }
+    }
+    // Item 11.4: numeric identifiers by value, and before alphanumeric ones.
+    EXPECT_LT(Compare(V(L"0.7.1-dev.3"), V(L"0.7.1-dev.10")), 0);
+    EXPECT_LT(Compare(V(L"0.7.0-1"), V(L"0.7.0-alpha")), 0);
+    EXPECT_LT(Compare(V(L"0.7.0-9"), V(L"0.7.0-10")), 0);
+    EXPECT_LT(Compare(V(L"0.7.0-rc"), V(L"0.7.0-rc.1")), 0);
+    EXPECT_LT(Compare(V(L"0.7.0-Zeta"), V(L"0.7.0-alpha")), 0) << "ASCII order: upper case first";
+    EXPECT_GT(Compare(V(L"0.7.0-a-b"), V(L"0.7.0-a.b")), 0) << "'-' is part of an identifier: \"a-b\" > \"a\"";
+    // Item 10: build metadata never takes part, "1.0.0+20130313144700" and "1.0.0-beta+exp.sha.5114f85".
+    EXPECT_EQ(Compare(V(L"1.0.0+20130313144700"), V(L"1.0.0")), 0);
+    EXPECT_EQ(Compare(V(L"1.0.0-beta+exp.sha.5114f85"), V(L"1.0.0-beta")), 0);
+    EXPECT_EQ(Compare(V(L"0.7.1-dev.3+af953b2"), V(L"0.7.1-dev.3+0000000")), 0);
+    EXPECT_EQ(ToText(V(L"0.7.1-dev.3+af953b2")), L"0.7.1-dev.3");
+    EXPECT_EQ(ToText(V(L"0.7.0+b950d51")), L"0.7.0");
+}
+
+TEST(Updates, OnlyValidSemverParses)
+{
+    for (const wchar_t* good : { L"0.0.0", L"1.2.3", L"10.20.30", L"1.1.2-prerelease+meta", L"1.0.0-alpha.0valid", L"1.0.0-0A.is.legal",
+                                 L"1.0.0-rc.1+build.1", L"2.0.0-rc.1+build.123", L"1.0.0-alpha-a.b-c-somethinglong+build.1-aef.1-its-okay",
+                                 L"1.0.0+0.build.1-rc.10000aaa-kk-0.1", L"1.0.0-x-y-z.--", L"0.7.1-dev.0+dev", L"v0.7.1" })
+        EXPECT_TRUE(ParseVersion(good)) << Narrow(good);
+    for (const wchar_t* bad : { L"", L"0.7", L"1.2.3.4", L"a.b.c", L"0.7.1-", L"0.7.1+", L"0..1", L"-1.0.0", L"0.7.x", L"latest",
+                                L"0.7.1-rc!", L"01.1.1", L"1.01.1", L"1.1.01", L"1.2.3-0123", L"1.2.3-0123.0123", L"1.0.0-alpha..1",
+                                L"1.0.0-alpha_beta", L"1.2.3-.123", L"1.0.0+..", L"1.0.0-\u00e9", L"+invalid", L"-invalid", L"1.2.3+meta+meta" })
         EXPECT_FALSE(ParseVersion(bad)) << Narrow(bad);
+    // Build metadata may have leading zeros; a pre-release number may not.
+    EXPECT_TRUE(ParseVersion(L"1.0.0+001"));
+    EXPECT_FALSE(ParseVersion(L"1.0.0-001"));
+}
+
+// What every build is for updates: main and pull-request builds after v0.7.0 are 0.7.1-dev.N, so the
+// release 0.7.1 is offered to them and 0.7.0 never is.
+TEST(Updates, AMainBuildIsOfferedTheNextReleaseOnly)
+{
+    const Version dev = V(L"0.7.1-dev.3+af953b2");
+    EXPECT_GT(Compare(dev, V(L"0.7.0")), 0);
+    EXPECT_LT(Compare(dev, V(L"0.7.1")), 0);
+    EXPECT_EQ(Judge(dev, Newer(L"0.7.0", kPublished), kPublished + 30 * kDay, true), Verdict::UpToDate);
+    EXPECT_EQ(Judge(dev, Newer(L"0.7.1", kPublished), kPublished + 30 * kDay, true), Verdict::Available);
+    EXPECT_EQ(Judge(dev, Newer(L"0.8.0", kPublished), kPublished + 30 * kDay, false), Verdict::Available);
+    // A bump in progress (VERSION 0.8.0, not released yet): 0.8.0-dev.N, offered 0.8.0, not 0.7.1.
+    const Version bump = V(L"0.8.0-dev.12+1234567");
+    EXPECT_EQ(Judge(bump, Newer(L"0.7.1", kPublished), kPublished + 30 * kDay, true), Verdict::UpToDate);
+    EXPECT_EQ(Judge(bump, Newer(L"0.8.0", kPublished), kPublished + 30 * kDay, true), Verdict::Available);
+    // A later build of the same line is newer than an earlier one.
+    EXPECT_GT(Compare(V(L"0.7.1-dev.10+aaaaaaa"), dev), 0);
 }
 
 TEST(Updates, RunningVersionIsThisBuilds)
 {
     const auto running = ParseVersion(RunningVersion());
-    ASSERT_TRUE(running);
-    EXPECT_EQ(Compare(RunningBase(), *running), 0);
-    EXPECT_TRUE(RunningBase().pre.empty()) << "a build of ShiftDrop is never a pre-release";
+    ASSERT_TRUE(running) << Narrow(RunningVersion());
+    EXPECT_EQ(Compare(Running(), *running), 0);
+    EXPECT_EQ(ToText(Running()), ToText(*running));
+    // The release build is a release; every other build is a pre-release ("dev.N").
+    const std::wstring display = RunningVersion();
+    if (display.find(L'+') == std::wstring::npos)
+        EXPECT_TRUE(Running().pre.empty()) << Narrow(display);
+    else
+        EXPECT_EQ(Running().pre.rfind(L"dev.", 0), 0u) << Narrow(display);
 }
 
 TEST(Updates, ParsesTheReleaseGitHubSends)
@@ -165,7 +224,7 @@ TEST(Updates, ReadsGitHubsTimes)
 // The daily check offers a release once it is a week old; Check now at once.
 TEST(Updates, AReleaseIsOfferedAfterSevenDays)
 {
-    const Version running = V(L"0.7.0+abc1234");
+    const Version running = V(L"0.7.0");
     const auto r = Newer(L"0.7.1", kPublished);
     EXPECT_EQ(Judge(running, r, kPublished, false), Verdict::Settling);
     EXPECT_EQ(Judge(running, r, kPublished + 6 * kDay, false), Verdict::Settling);
@@ -175,7 +234,7 @@ TEST(Updates, AReleaseIsOfferedAfterSevenDays)
     EXPECT_EQ(Judge(running, r, kPublished, true), Verdict::Available) << "Check now ignores the 7 days";
     // Not newer: never offered.
     EXPECT_EQ(Judge(V(L"0.7.1"), r, kPublished + 30 * kDay, true), Verdict::UpToDate);
-    EXPECT_EQ(Judge(V(L"0.7.1+abc1234"), r, kPublished + 30 * kDay, false), Verdict::UpToDate);
+    EXPECT_EQ(Judge(V(L"0.7.2-dev.1+abc1234"), r, kPublished + 30 * kDay, false), Verdict::UpToDate);
     EXPECT_EQ(Judge(V(L"0.8.0"), r, kPublished + 30 * kDay, true), Verdict::UpToDate);
 }
 

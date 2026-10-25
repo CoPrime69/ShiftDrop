@@ -121,16 +121,15 @@ CMake options, if you need them (pass with `-D` on the configure line):
 | `SHIFTDROP_TESTS` | `ON` | Build `shiftdrop_tests` and register the tests with CTest |
 | `SHIFTDROP_M0` | `OFF` | The placeholder build (set by the `x64-release-m0` preset) |
 | `SHIFTDROP_ENGINES_DIR` | `build/engines` | Where CMake looks for `ffmpeg.exe` |
-| `SHIFTDROP_COMMIT` | empty | The commit shown after the version; empty means git's `HEAD` at build time |
-| `SHIFTDROP_RELEASE` | `OFF` | The release build: the version alone, no `+commit` (only CI's release build sets it) |
+| `SHIFTDROP_COMMIT` | empty | The commit the version names (`+af953b2`) and counts from; empty means git's `HEAD` at build time |
+| `SHIFTDROP_RELEASE` | `OFF` | The release build: the version alone, no `-dev.N+commit` (only CI's release build sets it) |
 
-The version is written once, in [VERSION](../VERSION) at the root (`0.6.0`). Every build generates
-`Version.h` from it into `<build folder>\generated` (with
+The version is written once, in [VERSION](../VERSION) at the root (`0.7.0`). Every build generates
+`Version.h` from it and git into `<build folder>\generated` (with
 [scripts/make-version-header.cmake](../scripts/make-version-header.cmake)); the app, its version
-resource and the installer all take the version from there. A build shows where it came from:
-About, the startup notification, the log and the exe's ProductVersion say `0.6.0+b950d51` (the
-commit), or `0.6.0+dev` outside a git checkout, so a test build never looks like the release. Only the
-build that publishes a release says plain `0.6.0`.
+resource and the installer all take the version from there. Only the build that publishes a release
+says plain `0.7.0`; any other build is a pre-release of the next version, such as `0.7.1-dev.3+af953b2`
+(see [Version numbers](#version-numbers)), so a test build never looks like the release it follows.
 
 The build makes:
 
@@ -225,19 +224,21 @@ The installer is an [Inno Setup](https://jrsoftware.org/isinfo.php) script,
 ```powershell
 ./scripts/get-ffmpeg.ps1       # if you haven't already
 ./scripts/make-notices.ps1
-$version = (Get-Item build\x64-release\Release\ShiftDrop.exe).VersionInfo.ProductVersion
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$version" installer\ShiftDrop.iss
+$info = (Get-Item build\x64-release\Release\ShiftDrop.exe).VersionInfo
+$version = $info.ProductVersion
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$version" "/DAppFileVersion=$($info.FileVersion)" installer\ShiftDrop.iss
 ./scripts/check-version.ps1 -Exe build\x64-release\Release\ShiftDrop.exe -Setup "build\installer\ShiftDrop-Setup-$version.exe"
 ```
 
 - [scripts/make-notices.ps1](../scripts/make-notices.ps1) writes `build\installer\THIRD-PARTY-NOTICES.txt`
   from the copyright files vcpkg installed under `build\x64-release\vcpkg_installed`, plus ffmpeg's
   notices from `build\engines`. It stops if one is missing.
-- The version is the one the exe states (from [VERSION](../VERSION)), commit included:
-  `build\installer\ShiftDrop-Setup-0.6.0+b950d51.exe`. Only CI's release build makes
-  `ShiftDrop-Setup-0.6.0.exe`.
+- The version is the one the exe states, commit included:
+  `build\installer\ShiftDrop-Setup-0.7.1-dev.3+af953b2.exe`. Only CI's release build makes
+  `ShiftDrop-Setup-0.7.0.exe` (the name the updater downloads).
 - [scripts/check-version.ps1](../scripts/check-version.ps1) fails if the exe or the installer
-  disagree with `VERSION`; CI runs it on every build.
+  disagree with what `VERSION` and git make of this build; CI runs it on every build. It works the
+  version out again with CMake and git, so run it in the checkout you built from.
 
 CI then runs [scripts/test-installer.ps1](../scripts/test-installer.ps1) on it: install, upgrade over a
 running copy, keep a saved "start with Windows" choice, uninstall. It uses the real per-user install
@@ -340,9 +341,9 @@ The speed benchmark runs only when asked: label a pull request `bench`, or start
 
 **Releases.** The version lives in [VERSION](../VERSION) and nowhere else. On a push to main the
 reuse job first asks whether `v<VERSION>` has a release yet. If it has, the push reuses its pull
-request's run as above, and its exe and installer say `<VERSION>+<commit>`. If it hasn't, that push
-is the release build: it skips the reuse, builds in full with `SHIFTDROP_RELEASE=ON` (the version
-alone, no `+commit`) and, once everything passed, the release job creates the release on that
+request's run as above, and its exe and installer say `<next version>-dev.<N>+<commit>`. If it
+hasn't, that push is the release build: it skips the reuse, builds in full with
+`SHIFTDROP_RELEASE=ON` (the version alone, no `-dev.N+commit`) and, once everything passed, the release job creates the release on that
 commit, which also creates the tag, with the installer, for our own ffmpeg build the ffmpeg
 source tarball, and `SHA256SUMS.txt` (the SHA-256 of each of those files, in `sha256sum` format,
 so `sha256sum -c SHA256SUMS.txt` checks a download). The notes say how to install, list the titles of the
@@ -352,18 +353,76 @@ and the job checks them against a list of names that must not appear before it p
 pushed tag `v<version>` builds in full as the release build and publishes the same way.
 
 What CI checks against `VERSION` ([scripts/check-version.ps1](../scripts/check-version.ps1)): that
-[CHANGELOG.md](../CHANGELOG.md) has its release heading (`## [0.6.0] - <date>`), the exe's file and
-product version (with the commit, or without it on the release build), the installer's name and
-version, on the release job the tag, and that `vcpkg.json` states no version of its own (it needs
-none, and leaving it out keeps vcpkg's caches across a version bump).
+[CHANGELOG.md](../CHANGELOG.md) has its release heading (`## [0.7.0] - <date>`), the exe's four
+version numbers, its FileVersion and ProductVersion strings and its pre-release flag, the installer's
+name and versions (all as in [Version numbers](#version-numbers)), on the release job the tag, and
+that `vcpkg.json` states no version of its own (it needs none, and leaving it out keeps vcpkg's caches
+across a version bump). The jobs that build or check the version check out all of history and the
+tags (`fetch-depth: 0`), since the version counts commits since the last release tag; without a
+release tag the version script stops the build on CI.
+
+## Version numbers
+
+ShiftDrop's versions follow [Semantic Versioning 2.0.0](https://semver.org/), the way most large
+apps number theirs: every version is `MAJOR.MINOR.PATCH`, releases are tagged `vMAJOR.MINOR.PATCH`,
+and every build that is not a release is a pre-release of the release it leads to, so any two builds
+order correctly and the updater (src/updates) never takes a test build for the release before it.
+
+### What each build shows
+
+[VERSION](../VERSION) holds the version being worked on; git supplies the rest. With `VERSION` at
+`0.7.0`, after `v0.7.0` was released and 3 commits later at `af953b2`:
+
+| Build | Version (About, the log, ProductVersion, installer) | Four numbers (FileVersion) |
+|---|---|---|
+| The release (CI's first main build of a new `VERSION`) | `0.7.0` | `0.7.0.0` |
+| Main, and pull requests | `0.7.1-dev.3+af953b2` | `0.7.0.3` |
+| Your own build in a clone with the tags | `0.7.1-dev.3+af953b2` | `0.7.0.3` |
+| A build without the tags (a shallow clone) | `0.7.0-dev.0+af953b2` | `0.7.0.0` |
+| A build outside a git checkout (a source zip) | `0.7.0-dev.0+dev` | `0.7.0.0` |
+
+- **The next version.** When the tag `v<VERSION>` exists, `VERSION` is released, and the next version
+  is the patch after it (`0.7.1`). When it doesn't, `VERSION` is ahead of the last release (a bump
+  in progress, `0.8.0`), and the next version is `VERSION` itself: `0.8.0-dev.12+…`.
+- **`dev.N`** is the number of commits since the last release tag (`git describe`), so a later build
+  is newer: `dev.3` < `dev.10`. Without tags it is 0.
+- **`+af953b2`** is the commit (the pull request's head on a pull request), or `+dev` outside git.
+  It is build metadata: it never takes part in the order.
+- **The four numbers** (Explorer's File version, `FILEVERSION`/`PRODUCTVERSION`) can't hold a
+  pre-release, so they are the last release and `N`: `0.7.0.3` sorts after `0.7.0.0` and before
+  `0.7.1.0`, as `0.7.1-dev.3` does. Builds that aren't the release are also marked as pre-release
+  in their file flags. The FileVersion string is the four numbers; the ProductVersion string, the
+  installer's version (Settings > Apps) and its file name are the full version.
+
+So the order is `0.7.0` < `0.7.1-dev.1` < `0.7.1-dev.10` < `0.7.1` < `0.7.2-dev.1` < `0.8.0-dev.1` <
+`0.8.0`. A main build is offered `0.7.1` when it comes out and is never offered `0.7.0`.
+
+### Which number to bump
+
+- **PATCH** (`0.7.0` to `0.7.1`): fixes only. Nothing new to learn, nothing behaves differently on
+  purpose.
+- **MINOR** (`0.7.1` to `0.8.0`, patch back to 0): new features, settings or slices, in a way that
+  keeps what exists working. Before 1.0 a minor release may also change behaviour (say so in the
+  CHANGELOG's "Changed" section).
+- **MAJOR** (from 1.0 on; `1.4.2` to `2.0.0`): a breaking change, such as a setting or file format
+  that no longer reads the old way, or a removed feature.
+- Never reuse or move a tag. A release that went wrong is fixed by the next patch.
+
+[CHANGELOG.md](../CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/): every
+pull request that changes what a person sees adds a line under `## [Unreleased]` (Added, Changed,
+Fixed, Removed); each release gets its own `## [X.Y.Z] - <date>` section.
 
 ### How to release
 
-1. In one pull request, change [VERSION](../VERSION) (`0.6.0` to `0.7.0`) and in
-   [CHANGELOG.md](../CHANGELOG.md) turn `## [Unreleased]` into `## [0.7.0] - <date>` (with a new
-   empty `## [Unreleased]` above it). Its CI fails if the CHANGELOG has no heading for the new
-   version.
-2. Merge it. The push to main builds the release and publishes `v0.7.0`; nothing else to do.
+1. In one pull request, change [VERSION](../VERSION) and in [CHANGELOG.md](../CHANGELOG.md) turn
+   `## [Unreleased]` into `## [<version>] - <date>` (with a new empty `## [Unreleased]` above it).
+   Its CI fails if the CHANGELOG has no heading for the new version. Its builds already say
+   `<version>-dev.N+<commit>`.
+   - A patch release (fixes only since the last release): `0.7.0` to `0.7.1`.
+   - A minor release (anything under Added or Changed): `0.7.0` to `0.8.0`.
+2. Merge it. The push to main builds the release (`SHIFTDROP_RELEASE=ON`, plain `0.8.0`) and
+   publishes `v0.8.0` with `ShiftDrop-Setup-0.8.0.exe`; nothing else to do. Every build after it is
+   `0.8.1-dev.N+<commit>`.
 
 ## When something goes wrong
 

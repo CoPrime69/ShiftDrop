@@ -816,16 +816,23 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
    not start.
 6. Uninstall from Settings > Apps while it runs: the tray icon goes away, the folder and Start menu
    entry are removed, `HKCU\…\Run` has no ShiftDrop value, and `%LOCALAPPDATA%\ShiftDrop` is still there.
-7. One version everywhere. With a pull request's or main's installer (`ShiftDrop-Setup-0.6.0+<commit>.exe`,
-   the version in [VERSION](../VERSION) plus the first 7 characters of the commit it was built from):
+7. One version everywhere. With a pull request's or main's installer made after `v0.7.0`
+   (`ShiftDrop-Setup-0.7.1-dev.<N>+<commit>.exe`: the next version, N commits since `v0.7.0`, the
+   first 7 characters of the commit it was built from):
    - [ ] The welcome page, Settings > Apps, the startup notification, Settings' top left and About
-     all say `0.6.0+<commit>`, the same commit as the file name and the run's commit
+     all say `0.7.1-dev.<N>+<commit>`, the same as the file name and the run's commit
    - [ ] Right-click the installed `ShiftDrop.exe` > Properties > Details: Product version
-     `0.6.0+<commit>`, File version `0.6.0.0`; the setup exe's Details say the same
-   - [ ] With the release's installer from the Releases page (`ShiftDrop-Setup-0.6.0.exe`): every
-     one of the places above says plain `0.6.0`, with nothing after it
+     `0.7.1-dev.<N>+<commit>`, File version `0.7.0.<N>`; the setup exe's Details say the same, and so
+     do `ShiftDrop-Updater.exe`'s
+   - [ ] In a folder with the release's exe and two main builds' exes, Explorer's Details view sorted
+     by File version puts the release first, then the builds in the order they were made
+   - [ ] With the release's installer from the Releases page (`ShiftDrop-Setup-0.7.0.exe`): every
+     one of the places above says plain `0.7.0` (File version `0.7.0.0`), with nothing after it
    - [ ] Install a main build over the release, then the release over it: each time About shows the
      version of the installer just run, never the one before
+   - [ ] On a main build, Settings > Updates > Check now says "You have the latest version" while
+     `0.7.0` is the latest release (it is not offered `0.7.0`); with a test feed for `0.7.1`
+     (`./scripts/make-test-feed.ps1 -Setup <a CI installer> -Version 0.7.1`), it says "0.7.1 is available"
 
 ### ZA. Check for updates
 Before the first real newer release, test with a local one: `./scripts/make-test-feed.ps1 -Setup <a CI installer>`

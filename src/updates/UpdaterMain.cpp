@@ -135,10 +135,10 @@ namespace sd::updates
             }
             state.hasRelease = true;
             state.release = *release;
-            const auto verdict = Judge(RunningBase(), *release, state.checked, manual);
+            const auto verdict = Judge(Running(), *release, state.checked, manual);
             state.outcome = verdict == Verdict::Available ? Outcome::Available : verdict == Verdict::Settling ? Outcome::Settling : Outcome::UpToDate;
             log::Info(L"updater: latest is {} (published {} days ago); this is {}: {}", ToText(release->version), (state.checked - release->published) / 86400,
-                      RunningVersion(), ResultLine(state, RunningBase()));
+                      RunningVersion(), ResultLine(state, Running()));
             SaveState(state, StatePath());
             return verdict == Verdict::Available ? Result::Available : Result::Ok;
         }
@@ -156,7 +156,7 @@ namespace sd::updates
                 SaveState(state, StatePath());
                 return Result::Failed;
             };
-            if (!HasUpdate(state, RunningBase()))
+            if (!HasUpdate(state, Running()))
                 return fail(L"There is no newer version to download");
             const auto& r = state.release;
             const std::wstring setupName = SetupName(r.version);
@@ -231,7 +231,7 @@ namespace sd::updates
 
         Result Install(State& state, const std::wstring& setup, DWORD pid, const std::wstring& app)
         {
-            const std::wstring from = ToText(RunningBase());
+            const std::wstring from = ToText(Running());
             const auto finish = [&](Outcome outcome, std::wstring why) {
                 state.outcome = outcome;
                 state.error = std::move(why);

@@ -33,7 +33,8 @@ jobs:
   # already built and tested this exact tree, so its installer and exe are taken over instead of
   # building again. A push no passed pull-request run covers (and every tag) builds in full, and so
   # does the release build: the first push whose VERSION has no release yet builds once more with
-  # SHIFTDROP_RELEASE, so the released app shows "0.6.0" where every other build shows "0.6.0+<commit>".
+  # SHIFTDROP_RELEASE, so the released app shows "0.7.0" where every other build is a pre-release of
+  # the next version, "0.7.1-dev.3+<commit>" (scripts/make-version-header.cmake).
   reuse:
     if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag') && !inputs.cache-only) || (github.event_name == 'workflow_dispatch' && inputs.reuse) }}
     runs-on: ubuntu-24.04
@@ -55,7 +56,7 @@ jobs:
           base=$(gh api "repos/$REPO/contents/VERSION?ref=$GITHUB_SHA" --jq .content | base64 -d | head -n 1 | tr -d '[:space:]')
           if [ -n "$base" ] && ! gh release view "v$base" --repo "$REPO" --json tagName > /dev/null 2>&1; then
             echo "release=true" >> "$GITHUB_OUTPUT"
-            echo "No release v$base yet: building in full as the release build (version $base, no +commit)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "No release v$base yet: building in full as the release build (version $base, no -dev or +commit)." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
       # Pull-request runs mark the tree they tested with an artifact named tested-tree-<tree>.
@@ -176,7 +177,10 @@ jobs:
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     runs-on: windows-2022
     steps:
+      # All of history and the tags: the version counts the commits since the last release tag.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # The commit shown after the version (the pull request's head, not its test merge), or none
       # for the release build.
@@ -199,8 +203,9 @@ jobs:
           # The one program allowed online (check for updates): WinHTTP and nothing else.
           ./scripts/check-imports.ps1 -Exe build/ci/ShiftDrop-Updater.exe -Updater
 
-      # The exe states VERSION (and the commit, except on the release build), CHANGELOG.md has its
-      # heading (a version bump adds its notes in the same change) and vcpkg.json states no version.
+      # The exe states this build's version (VERSION for the release build, else the next version's
+      # -dev.N+commit), CHANGELOG.md has VERSION's heading (a version bump adds its notes in the same
+      # change) and vcpkg.json states no version.
       - name: Version check
         if: ${{ !inputs.cache-only }}
         shell: pwsh
@@ -336,7 +341,10 @@ jobs:
       actions: read   # scripts/wait-for-artifact.ps1
       contents: read
     steps:
+      # All of history and the tags, for the version check (it works the version out again).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # The pinned ffmpeg zip (scripts/get-ffmpeg.ps1) is 170 MB: download it once, keyed on the script
       # that pins its URL and hash. Only needed without our own build.
@@ -383,11 +391,12 @@ jobs:
       - name: Build the installer
         shell: pwsh
         run: |
-          # The version the exe states (checked against VERSION in the build job and below).
-          $version = (Get-Item build/ci/ShiftDrop.exe).VersionInfo.ProductVersion
+          # The version the exe states and its four numbers (checked in the build job and below).
+          $info = (Get-Item build/ci/ShiftDrop.exe).VersionInfo
+          $version = $info.ProductVersion
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y; if ($LASTEXITCODE) { exit 1 } }
-          & $iscc /Qp "/DAppVersion=$version" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" "/DUpdaterExe=..\build\ci\ShiftDrop-Updater.exe" installer/ShiftDrop.iss
+          & $iscc /Qp "/DAppVersion=$version" "/DAppFileVersion=$($info.FileVersion)" "/DAppExe=..\build\ci\ShiftDrop.exe" "/DWorkerExe=..\build\ci\ShiftDropWorker.exe" "/DUpdaterExe=..\build\ci\ShiftDrop-Updater.exe" installer/ShiftDrop.iss
           if ($LASTEXITCODE) { exit 1 }
           $setup = Get-Item "build/installer/ShiftDrop-Setup-$version.exe"
           $lines = @("### Installer: $([math]::Round($setup.Length / 1MB, 1)) MB", '', '| Packaged file | MB |', '|---|---:|')
@@ -486,6 +495,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: ./.github/actions/configure
         with:
@@ -549,7 +560,7 @@ jobs:
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.version }}'
-          # The release build's installer: the plain version, no +commit.
+          # The release build's installer: the plain version, no -dev or +commit.
           $setup = "build/installer/ShiftDrop-Setup-$version.exe"
           if (-not (Test-Path $setup)) { throw "$setup is missing from this run's artifacts (was this run the release build?)" }
           # The complete source of our ffmpeg.exe goes next to the installer (LGPL; FFMPEG-SOURCE.txt points here).

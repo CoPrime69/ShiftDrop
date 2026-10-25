@@ -5,6 +5,14 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- Version numbers follow Semantic Versioning 2.0.0 strictly. A build that isn't a release is a
+  pre-release of the next version, such as 0.7.1-dev.3+af953b2 (3 commits after 0.7.0), so it sorts
+  above the release it follows and below the next one: Check for updates offers it 0.7.1 when that
+  comes out and never offers 0.7.0 again. File properties show four numbers, the last release and
+  the build number (0.7.0.3), so Windows orders builds correctly too. Releases still say plain 0.7.0.
+
 ### Fixed
 
 - Float shelf: comes back where it was left (the edge it was pinned to, or the spot it floated at)
