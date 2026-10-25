@@ -1,5 +1,5 @@
 // The live demo in the hero: a small desktop with a Downloads window. Drag a file and press Shift
-// (or click or tap it) and the real wheel opens at the pointer. Nothing leaves the page.
+// (or tap it on a phone) and the real wheel opens at the pointer. Nothing leaves the page.
 
 import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js';
 import { SAMPLE_FILES, wheelFor, formatSize } from './content.js';
@@ -72,7 +72,7 @@ export function startDemo(stage) {
   function announce(text) {
     live.textContent = text;
   }
-  const idleHint = () => say(isTouch ? 'Tap a file to open the wheel.' : 'Drag a file and press Shift. Or click it.');
+  const idleHint = () => say(isTouch ? 'Tap a file to open the wheel.' : 'Drag a file and press Shift.');
 
   // ---- Geometry ---------------------------------------------------------------------------------
 
@@ -247,6 +247,7 @@ export function startDemo(stage) {
 
   function beginDrag() {
     mode = 'dragging';
+    grid.querySelectorAll('.is-selected').forEach((x) => x.classList.remove('is-selected'));
     press.el.classList.add('is-dragging');
     ghost.innerHTML = `${iconSvg(file.icon, 'icon')}<span class="mono">${file.base}.${file.ext}</span>`;
     ghost.classList.add('is-on');
@@ -310,8 +311,18 @@ export function startDemo(stage) {
 
   window.addEventListener('pointerup', (e) => {
     pointer = { x: e.clientX, y: e.clientY };
+    if (mode === 'pressed' && press.pointerType !== 'touch') {
+      // A plain click only selects the file, as in Explorer: the wheel needs Shift.
+      const el = press.el;
+      endDrag();
+      mode = 'idle';
+      grid.querySelectorAll('.is-selected').forEach((x) => x.classList.remove('is-selected'));
+      el.classList.add('is-selected');
+      say('Now drag it and press Shift while you hold it.');
+      return;
+    }
     if (mode === 'pressed') {
-      // A click or a tap: the wheel opens over the file, as Ctrl+Shift+Space does in Explorer.
+      // A tap (no Shift key on a phone): the wheel opens over the file.
       const el = press.el;
       endDrag();
       const r = el.getBoundingClientRect();
