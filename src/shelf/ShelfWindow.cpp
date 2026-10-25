@@ -163,6 +163,8 @@ namespace sd
 
     Shelf::~Shelf()
     {
+        if (m_hwnd)
+            Save();   // on exit, so it comes back where it was left
         *m_alive = false;
         SetInstantFileAction("file.float", nullptr);
         m_worker.reset();   // joins: nothing posts to the window after this
@@ -237,8 +239,12 @@ namespace sd
     {
         const auto saved = shelf::Load(m_storePath);
         m_edge = saved.edge;
-        if (saved.x && saved.y)
+        m_place = saved.place;
+        if (m_place)
+            m_edge = m_place->edge;   // placed on first show (Refresh), on whichever monitor fits
+        else if (saved.x && saved.y)
         {
+            // A file from before "place": its pixels, remembered as a place once shown.
             m_x = static_cast<float>(*saved.x);
             m_y = static_cast<float>(*saved.y);
             m_placed = true;
@@ -274,7 +280,38 @@ namespace sd
             saved.x = static_cast<int>(std::lround(m_x));
             saved.y = static_cast<int>(std::lround(m_y));
         }
+        saved.place = m_place;
         shelf::Save(m_storePath, saved);
+    }
+
+    void Shelf::RememberPlace()
+    {
+        m_place = shelf::PlaceOf(Expanded(), m_work, m_edge, m_device);
+    }
+
+    HMONITOR Shelf::SavedMonitor() const
+    {
+        struct Found
+        {
+            std::vector<HMONITOR> monitors;
+            std::vector<shelf::Screen> screens;
+        } found;
+        EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL {
+            auto& f = *reinterpret_cast<Found*>(data);
+            MONITORINFOEXW mi{};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(monitor, &mi))
+            {
+                f.monitors.push_back(monitor);
+                f.screens.push_back({ Box{ static_cast<float>(mi.rcWork.left), static_cast<float>(mi.rcWork.top), static_cast<float>(mi.rcWork.right),
+                                           static_cast<float>(mi.rcWork.bottom) },
+                                      mi.szDevice });
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&found));
+        if (!m_place || found.monitors.empty())
+            return MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+        return found.monitors[shelf::PickScreen(found.screens, *m_place)];
     }
 
     void Shelf::Add(const std::vector<std::wstring>& files)
@@ -792,8 +829,10 @@ namespace sd
     void Shelf::UseMonitor(HMONITOR monitor)
     {
         m_monitor = monitor;
-        MONITORINFO mi{ sizeof(mi) };
+        MONITORINFOEXW mi{};
+        mi.cbSize = sizeof(mi);
         GetMonitorInfoW(monitor, &mi);
+        m_device = mi.szDevice;
         m_work = Box{ static_cast<float>(mi.rcWork.left), static_cast<float>(mi.rcWork.top), static_cast<float>(mi.rcWork.right),
                       static_cast<float>(mi.rcWork.bottom) };
         m_screen = Box{ static_cast<float>(mi.rcMonitor.left), static_cast<float>(mi.rcMonitor.top), static_cast<float>(mi.rcMonitor.right),
@@ -820,16 +859,14 @@ namespace sd
 
     void Shelf::Refresh()
     {
-        if (!m_placed)
+        const bool place = !m_placed;
+        if (place)
         {
-            // First time: pinned to the right edge of the screen the mouse is on, a fifth of the way down.
+            // Where the user left it, on that monitor or the nearest one; the first time (nothing
+            // saved) on the screen the mouse is on.
             POINT cursor{};
             GetCursorPos(&cursor);
-            UseMonitor(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST));
-            m_edge = Edge::Right;
-            m_x = m_work.right - m_metrics.width;
-            m_y = m_work.top + std::round(m_work.Height() * 0.2f);
-            m_placed = true;
+            UseMonitor(m_place ? SavedMonitor() : MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST));
         }
         else
         {
@@ -841,10 +878,23 @@ namespace sd
         m_motion = AnimationsOn();
         if (m_h <= 0.f)
             m_h = shelf::PanelHeight(m_metrics, Shape(Entries()));
-        // Back inside the (possibly changed) work area.
+        if (place)
+        {
+            // With nothing saved, shelf::Place's default: pinned to the right edge, a fifth of the way down.
+            const shelf::Place to = m_place.value_or(shelf::Place{});
+            const Box b = shelf::PlaceIn(to, m_work, m_metrics.width, m_h);
+            m_edge = to.edge;
+            m_x = b.left;
+            m_y = b.top;
+            m_placed = true;
+        }
+        // Back inside the (possibly changed) work area. Clamping here never changes the saved place:
+        // only the user's own moves do.
         const Box rest = Expanded();
         m_x = rest.left;
         m_y = rest.top;
+        if (!m_place && !m_moving)
+            RememberPlace();
     }
 
     Box Shelf::Expanded() const
@@ -1176,6 +1226,7 @@ namespace sd
             m_slideY = dropped.top - rest.top;
         }
         log::Info(L"shelf: moved, pinned to {}", Widen(shelf::EdgeName(edge)));
+        RememberPlace();
         Save();
         Animate();
     }
@@ -1237,6 +1288,7 @@ namespace sd
             m_slideY = before.top - after.top;
         }
         m_wantOpen = true;
+        RememberPlace();
         Save();
         Animate();
     }
@@ -1515,6 +1567,10 @@ namespace sd
         case WM_CLOSE:
             SwitchOn(false);   // Alt+F4 closes it like its × (DefWindowProc would destroy the window)
             return 0;
+        case WM_ENDSESSION:
+            if (wParam)
+                Save();   // signing out or shutting down: the process may end without another message
+            return 0;
         case WM_NOTIFY:
         {
             const auto* header = reinterpret_cast<const NMHDR*>(lParam);
@@ -1577,7 +1633,10 @@ namespace sd
             return 0;
         case WM_DISPLAYCHANGE:
         case WM_SETTINGCHANGE:
-            // Resolution, taskbar, DPI or light/dark theme changed.
+            // Resolution, taskbar, DPI or light/dark theme changed. Placed again from where the user
+            // left it, so a monitor that went away for a moment (sleep, a cable) gets it back.
+            if ((msg == WM_DISPLAYCHANGE || wParam == SPI_SETWORKAREA) && m_place && !m_moving)
+                m_placed = false;   // hidden, it is placed when shown
             if (m_visible)
             {
                 Refresh();

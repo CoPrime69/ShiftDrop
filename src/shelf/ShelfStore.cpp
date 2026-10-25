@@ -35,7 +35,44 @@ namespace sd::shelf
             for (const auto& path : *list)
                 out.push_back(Narrow(path));
         }
+        if (shelf.place)
+        {
+            const auto& p = *shelf.place;
+            j["place"] = { { "edge", EdgeName(p.edge) }, { "device", Narrow(p.device) },
+                           { "work", { p.work.left, p.work.top, p.work.right, p.work.bottom } }, { "x", p.x }, { "y", p.y } };
+        }
         return j.dump(2);
+    }
+
+    namespace
+    {
+        // A "place" object, or none when it is not one (a bad place is a first run, not a bad file).
+        std::optional<Place> PlaceFromJson(const nlohmann::json& j)
+        {
+            if (!j.is_object())
+                return std::nullopt;
+            const auto work = j.find("work"), x = j.find("x"), y = j.find("y");
+            if (work == j.end() || !work->is_array() || work->size() != 4 || x == j.end() || !x->is_number() || y == j.end() || !y->is_number())
+                return std::nullopt;
+            float side[4]{};
+            for (size_t i = 0; i < 4; ++i)
+            {
+                if (!(*work)[i].is_number())
+                    return std::nullopt;
+                side[i] = (*work)[i].get<float>();
+            }
+            Place p;
+            p.work = Box{ side[0], side[1], side[2], side[3] };
+            if (!(p.work.Width() > 0.f) || !(p.work.Height() > 0.f))
+                return std::nullopt;
+            p.x = std::clamp(x->get<float>(), 0.f, 1.f);
+            p.y = std::clamp(y->get<float>(), 0.f, 1.f);
+            if (const auto edge = j.find("edge"); edge != j.end() && edge->is_string())
+                p.edge = EdgeFromName(edge->get<std::string>());
+            if (const auto device = j.find("device"); device != j.end() && device->is_string())
+                p.device = Widen(device->get<std::string>());
+            return p;
+        }
     }
 
     bool FromJson(std::string_view text, SavedShelf& shelf)
@@ -63,6 +100,8 @@ namespace sd::shelf
         }
         if (const auto shown = j.find("shown"); shown != j.end() && shown->is_boolean())
             out.shown = shown->get<bool>();
+        if (const auto place = j.find("place"); place != j.end())
+            out.place = PlaceFromJson(*place);
         shelf = std::move(out);
         return true;
     }

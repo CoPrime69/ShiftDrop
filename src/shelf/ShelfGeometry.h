@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -43,6 +44,35 @@ namespace sd::shelf
     Box Tab(const Box& panel, const Box& work, Edge edge, float thickness, float length);
     // The way out of the screen from `edge` (unit vector); zero for None. Show and hide slide along it.
     void Outward(Edge edge, float& dx, float& dy);
+
+    // Where the user left the shelf, kept across restarts in a form that survives a change of
+    // resolution, scaling or monitors: the monitor (its work area and device name when it was left)
+    // and the panel's place on it as fractions. `x` runs from flush left (0) to flush right (1) over
+    // the room the panel has to move in; `y` is its top edge as a fraction of the area's height, so
+    // the top stays put when the shelf holds more items. A pinned panel keeps its edge.
+    struct Place
+    {
+        Edge edge = Edge::Right;
+        Box work;              // that monitor's work area, pixels, when it was left
+        std::wstring device;   // that monitor's device name ("\\.\DISPLAY1"); may be empty
+        float x = 1.f, y = 0.2f;   // the default: the right edge, a fifth of the way down
+        bool operator==(const Place&) const = default;
+    };
+    // The place of `panel` (at rest, inside `work`) on the monitor with that work area and device.
+    Place PlaceOf(const Box& panel, const Box& work, Edge edge, std::wstring device = {});
+    // The panel (`width` by `height`, whole pixels) back at `place` on a monitor with work area
+    // `work`: flush against its edge if pinned, always fully inside the area.
+    Box PlaceIn(const Place& place, const Box& work, float width, float height);
+    // A monitor as the shelf sees it.
+    struct Screen
+    {
+        Box work;
+        std::wstring device;
+    };
+    // Which of `screens` (at least one) a saved place goes back to: the monitor with the same work
+    // area (the same device preferred), else the same device (its resolution or scaling changed),
+    // else the work area nearest to where the panel was.
+    size_t PickScreen(const std::vector<Screen>& screens, const Place& place);
 
     // Sizes for a DPI scale (pixels per DIP).
     struct Metrics

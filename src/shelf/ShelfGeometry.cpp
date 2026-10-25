@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <optional>
 
 namespace sd::shelf
 {
@@ -115,6 +117,60 @@ namespace sd::shelf
     {
         dx = edge == Edge::Left ? -1.f : edge == Edge::Right ? 1.f : 0.f;
         dy = edge == Edge::Top ? -1.f : edge == Edge::Bottom ? 1.f : 0.f;
+    }
+
+    Place PlaceOf(const Box& panel, const Box& work, Edge edge, std::wstring device)
+    {
+        Place p;
+        p.edge = edge;
+        p.work = work;
+        p.device = std::move(device);
+        const float room = work.Width() - panel.Width();
+        p.x = room > 0.f ? std::clamp((panel.left - work.left) / room, 0.f, 1.f) : 0.f;
+        p.y = work.Height() > 0.f ? std::clamp((panel.top - work.top) / work.Height(), 0.f, 1.f) : 0.f;
+        return p;
+    }
+
+    Box PlaceIn(const Place& place, const Box& work, float width, float height)
+    {
+        const float x = std::clamp(place.x, 0.f, 1.f), y = std::clamp(place.y, 0.f, 1.f);
+        const float left = work.left + std::round(std::max(0.f, work.Width() - width) * x);
+        const float top = work.top + std::round(work.Height() * y);
+        return Dock(Box{ left, top, left + width, top + height }, work, place.edge);
+    }
+
+    size_t PickScreen(const std::vector<Screen>& screens, const Place& place)
+    {
+        const auto first = [&](auto&& match) -> std::optional<size_t> {
+            for (size_t i = 0; i < screens.size(); ++i)
+                if (match(screens[i]))
+                    return i;
+            return std::nullopt;
+        };
+        const bool named = !place.device.empty();
+        if (const auto i = first([&](const Screen& s) { return s.work == place.work && named && s.device == place.device; }))
+            return *i;
+        if (const auto i = first([&](const Screen& s) { return s.work == place.work; }))
+            return *i;
+        if (const auto i = first([&](const Screen& s) { return named && s.device == place.device; }))
+            return *i;
+        // That monitor is gone: the work area nearest to the spot (0 when the spot is inside one).
+        const float px = place.work.left + place.work.Width() * std::clamp(place.x, 0.f, 1.f);
+        const float py = place.work.top + place.work.Height() * std::clamp(place.y, 0.f, 1.f);
+        size_t best = 0;
+        float bestDistance = std::numeric_limits<float>::max();
+        for (size_t i = 0; i < screens.size(); ++i)
+        {
+            const Box& w = screens[i].work;
+            const float dx = std::max({ w.left - px, 0.f, px - w.right });
+            const float dy = std::max({ w.top - py, 0.f, py - w.bottom });
+            if (const float d = dx * dx + dy * dy; d < bestDistance)
+            {
+                best = i;
+                bestDistance = d;
+            }
+        }
+        return best;
     }
 
     Metrics::Metrics(float s)

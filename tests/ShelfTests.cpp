@@ -8,6 +8,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <cmath>
 #include <format>
 
 using namespace sd;
@@ -343,6 +344,90 @@ TEST(Shelf, DocksFlushAndStaysOnScreen)
     const Box huge = ClampInto(Box{ 100, 100, 2100, 1200 }, kWork);
     EXPECT_EQ(huge.left, 0.f);
     EXPECT_EQ(huge.top, 0.f);
+}
+
+TEST(Shelf, PlaceIsSavedAndLoaded)
+{
+    TempDir dir;
+    const auto path = dir / L"shelf.json";
+    SavedShelf a;
+    a.place = Place{ Edge::Left, Box{ -1920, 0, 0, 1040 }, L"\\.\DISPLAY2", 0.f, 0.35f };
+    ASSERT_TRUE(Save(path, a));
+    const auto b = Load(path);
+    ASSERT_TRUE(b.place.has_value());
+    EXPECT_EQ(*b.place, *a.place);
+
+    // Nothing saved yet (first run): no place, so it goes to the right edge.
+    SavedShelf c;
+    ASSERT_TRUE(FromJson(ToJson(SavedShelf{}), c));
+    EXPECT_FALSE(c.place.has_value());
+
+    // A broken place is a first run, not a broken file; fractions out of range are pulled in.
+    SavedShelf d;
+    ASSERT_TRUE(FromJson(R"({ "items": [ "C:\\a.png" ], "place": { "work": [ 0, 0, 0, 0 ], "x": 0.5, "y": 0.5 } })", d));
+    EXPECT_FALSE(d.place.has_value());
+    EXPECT_EQ(d.items.size(), 1u);
+    ASSERT_TRUE(FromJson(R"({ "place": { "work": [ 0, 0, 1920, 1040 ], "x": 3, "y": -1, "edge": "top" } })", d));
+    ASSERT_TRUE(d.place.has_value());
+    EXPECT_EQ(d.place->x, 1.f);
+    EXPECT_EQ(d.place->y, 0.f);
+    EXPECT_EQ(d.place->edge, Edge::Top);
+    EXPECT_TRUE(d.place->device.empty());
+    ASSERT_TRUE(FromJson(R"({ "place": { "work": [ 0, 0, 1920 ], "x": 0, "y": 0 } })", d));
+    EXPECT_FALSE(d.place.has_value());
+}
+
+TEST(Shelf, ComesBackWhereItWasLeft)
+{
+    // Pinned right, a third of the way down, on a 1920x1040 work area.
+    const Box panel{ 1648, 347, 1920, 647 };
+    const Place p = PlaceOf(panel, kWork, Edge::Right, L"\\.\DISPLAY1");
+    EXPECT_EQ(p.x, 1.f);
+    EXPECT_EQ(PlaceIn(p, kWork, 272, 300), panel);   // same screen: exactly the same spot
+
+    // Floating in the middle comes back to the same pixels too.
+    const Box middle{ 824, 370, 1096, 670 };
+    EXPECT_EQ(PlaceIn(PlaceOf(middle, kWork, Edge::None), kWork, 272, 300), middle);
+
+    // At 150 % on a 4K screen the panel is larger: still flush right, at the same height on the
+    // screen, and inside it.
+    const Box big{ 0, 0, 3840, 2100 };
+    const Box scaled = PlaceIn(p, big, 408, 450);
+    EXPECT_EQ(scaled.right, big.right);
+    EXPECT_EQ(scaled.Width(), 408.f);
+    EXPECT_EQ(scaled.top, std::round(2100.f * p.y));
+
+    // Left floating near the bottom right of a large screen, then shown on a small one: clamped
+    // fully on screen.
+    const Place corner = PlaceOf(Box{ 3500, 1900, 3772, 2200 }, Box{ 0, 0, 3840, 2160 }, Edge::None);
+    const Box onSmall = PlaceIn(corner, Box{ 0, 0, 1366, 728 }, 272, 300);
+    EXPECT_GE(onSmall.left, 0.f);
+    EXPECT_LE(onSmall.right, 1366.f);
+    EXPECT_LE(onSmall.bottom, 728.f);
+    EXPECT_EQ(onSmall.Height(), 300.f);
+
+    // Nothing saved: the right edge, a fifth of the way down (as the first run always was).
+    EXPECT_EQ(PlaceIn(Place{}, kWork, 272, 300), (Box{ 1648, 208, 1920, 508 }));
+}
+
+TEST(Shelf, GoesBackToItsMonitorOrTheNearest)
+{
+    const Box laptop{ 0, 0, 1920, 1040 }, external{ 1920, 0, 4480, 1400 };
+    Place p;
+    p.work = external;
+    p.device = L"\\.\DISPLAY2";
+    p.x = 1.f;
+    p.y = 0.2f;
+    // The same monitor, by its work area, whatever order Windows lists them in.
+    EXPECT_EQ(PickScreen({ { laptop, L"\\.\DISPLAY1" }, { external, L"\\.\DISPLAY2" } }, p), 1u);
+    // Renumbered devices: the work area wins.
+    EXPECT_EQ(PickScreen({ { external, L"\\.\DISPLAY1" }, { laptop, L"\\.\DISPLAY2" } }, p), 0u);
+    // Its resolution or scaling changed: found by device name.
+    EXPECT_EQ(PickScreen({ { laptop, L"\\.\DISPLAY1" }, { Box{ 1920, 0, 3840, 1040 }, L"\\.\DISPLAY2" } }, p), 1u);
+    // Unplugged: the nearest work area that is left.
+    EXPECT_EQ(PickScreen({ { laptop, L"\\.\DISPLAY1" } }, p), 0u);
+    const Box above{ 0, -1080, 1920, 0 }, farLeft{ -5000, 0, -3080, 1080 };
+    EXPECT_EQ(PickScreen({ { farLeft, L"\\.\DISPLAY3" }, { above, L"\\.\DISPLAY4" } }, p), 1u);
 }
 
 TEST(Shelf, FoldsIntoATabOnItsEdge)
