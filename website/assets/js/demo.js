@@ -433,7 +433,8 @@ export function startDemo(stage) {
     if (now - wheelAt > 300) wheelAcc = 0;
     wheelAt = now;
     // Holding Shift turns a mouse wheel's scroll sideways (deltaX) in most browsers; it counts the same.
-    wheelAcc += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    wheelAcc += e.deltaMode === 1 ? delta * 40 : e.deltaMode === 2 ? delta * 400 : delta; // lines, pages
     if (Math.abs(wheelAcc) >= 40) {
       const dir = Math.sign(wheelAcc);
       wheelAcc = 0;

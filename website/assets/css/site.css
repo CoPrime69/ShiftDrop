@@ -196,8 +196,8 @@ html { scrollbar-color: var(--border-strong) transparent; }
 
 /* ---- Hero ---------------------------------------------------------------------------------- */
 
-.hero { padding: clamp(56px, 10vw, 128px) 0 clamp(64px, 9vw, 120px); }
-.hero-top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(24px, 5vw, 72px); align-items: end; margin-bottom: clamp(48px, 7vw, 104px); }
+.hero { padding: clamp(24px, 4vw, 56px) 0 clamp(64px, 9vw, 120px); }
+.hero-top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(24px, 5vw, 72px); align-items: end; margin-bottom: clamp(40px, 5vw, 72px); }
 .display { font-size: clamp(3.25rem, 9vw, 6rem); line-height: 0.98; letter-spacing: -0.04em; }
 .hero-side { display: grid; gap: 32px; padding-bottom: 8px; }
 .lede { font-size: 1.1875rem; line-height: 1.55; color: var(--text-2); max-width: 36em; }

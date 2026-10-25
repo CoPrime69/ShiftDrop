@@ -280,7 +280,6 @@ export class Wheel {
   set(content, { animate = false, dir = 1 } = {}) {
     if (animate && !this.reducedMotion && this.tiles.length) {
       this.prevLayer.replaceChildren(...this.layer.childNodes);
-      this.prevLayer.style.opacity = '1';
       this.switchT = 0;
       this.switchDir = dir;
       this.prevEdge = outerEdge(this.layout);
