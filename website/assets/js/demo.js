@@ -201,6 +201,7 @@ export function startDemo(stage) {
     const working = slice.card ? `Working on ${source.base}.${source.ext}…` : `${slice.label}…`;
     island.innerHTML = `<span class="island-mark">${iconSvg(source.icon, 'icon')}</span><span class="island-text">${working}</span><span class="island-bar"><span></span></span>`;
     island.classList.add('is-on', 'is-busy');
+    say(`${slice.label}: working on it…`);
     islandTimer = setTimeout(() => {
       island.classList.remove('is-busy');
       island.innerHTML = `<span class="island-mark is-done">${iconSvg('check', 'icon')}</span><span class="island-text">${slice.done}</span>`;
