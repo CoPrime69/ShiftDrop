@@ -841,6 +841,7 @@ and prints the `[Updates] TestFeed=` line to add to settings.ini. Quit and start
 settings.ini. Watch `%LOCALAPPDATA%\ShiftDrop\logs` (lines starting `updates:` and `updater:`).
 - [ ] A fresh install: Settings has an **Updates** page (Find a setting: "update", "upgrade", "check now"); **When an update is available** shows Install automatically / Ask me first / Off with **Ask me first** chosen; the Check for updates card says "Not checked yet" and "Never checked"
 - [ ] No test feed, Check now: the line says "Checking…", then "You have the latest version" (or "0.x.y is available") and "Last checked: Just now". The log has one `updater: GET https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest`
+- [ ] Once a check finds an update, the button reads **Update now** (accent colour, download icon); pressing it downloads and installs at once with no question window, ShiftDrop restarts on the new version, and the button reads Check now again
 - [ ] Network off (Airplane mode), Check now: "Couldn't reach GitHub"; nothing else happens
 - [ ] Ask me first, a test feed 8 days old, set `[Updates] LastCheck=0` and restart: about a minute later a toast "ShiftDrop 9.9.9 is available" with **Update now…** and **Later**; the tray menu starts with **Update to 9.9.9…** in bold
 - [ ] **Update to 9.9.9…**: the question window shows "ShiftDrop 9.9.9 is available", the notes as plain text (no `**` or `##`), **Update now** and **Later**. Later closes it; the tray item stays

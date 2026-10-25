@@ -325,9 +325,14 @@ namespace sd::updates
         return L"Last checked: " + history::WhenText(m_state.checkedLocal, history::LocalNow());
     }
 
+    bool UpdateController::CanUpdate() const
+    {
+        return !m_installPending && m_job != Job::Download && HasUpdate(m_state, m_running);
+    }
+
     std::wstring UpdateController::TrayText() const
     {
-        if (m_installPending || m_job == Job::Download || !HasUpdate(m_state, m_running))
+        if (!CanUpdate())
             return {};
         return std::format(L"Update to {}…", ToText(m_state.release.version));
     }

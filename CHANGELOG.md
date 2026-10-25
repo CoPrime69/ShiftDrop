@@ -5,6 +5,11 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings › Updates: once a check finds an update, Check now turns into Update now, so the update
+  can be installed right there instead of only from the tray menu.
+
 ## [0.7.1] - 2026-10-25
 
 ### Changed

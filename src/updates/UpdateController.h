@@ -56,6 +56,8 @@ namespace sd::updates
         std::wstring CheckedLine() const;
         // The tray menu's "Update to 0.7.1…", or empty when there is nothing to offer.
         std::wstring TrayText() const;
+        // There is an update to install and nothing is downloading or waiting to install it.
+        bool CanUpdate() const;
 
     private:
         enum class Job : WPARAM { None, DailyCheck, ManualCheck, Download };

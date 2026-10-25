@@ -37,7 +37,8 @@ namespace sd
         constexpr int kNavItem = 38, kNavGap = 4, kCardGap = 4, kRowMin = 68, kControlH = 32, kSegmentH = 36;
         constexpr int kSwatchCell = 54, kSwatchH = 62, kPreviewH = 250, kWheelPreview = 210;
 
-        constexpr wchar_t kGlyphRefresh = 0xE72C, kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphAdd = 0xE710;
+        constexpr wchar_t kGlyphRefresh = 0xE72C, kGlyphOpen = 0xE8A7, kGlyphPower = 0xE7E8, kGlyphCheck = 0xE73E, kGlyphAdd = 0xE710,
+                            kGlyphDownload = 0xE896;
         constexpr wchar_t kSourceUrl[] = L"https://github.com/CoPrime69/" SD_NAME;
 
         // Choices, in the order of the enums in Settings.h and OutputPath.h (their labels: settings::Options).
@@ -351,15 +352,22 @@ namespace sd
         // The card's second line: what the last check found, then when it ran.
         if (const auto& row = m_rows[Item::CheckUpdates]; row.description)
             SetWindowTextW(row.description, (m_state.updateStatus + L"\n" + m_state.updateChecked).c_str());
+        // Once a check has found an update, the same button installs it.
+        const size_t option = m_state.updateReady ? 1 : 0;
+        SetWindowTextW(m_checkNow, Option(Item::CheckUpdates, option));
+        StyleOf(m_checkNow).look = m_state.updateReady ? Look::Primary : Look::Button;
+        StyleOf(m_checkNow).icon = m_state.updateReady ? kGlyphDownload : kGlyphRefresh;
+        Redraw(m_checkNow);
         EnableWindow(m_checkNow, !m_state.updateChecking);
-        Describe(m_checkNow, Option(Item::CheckUpdates, 0), m_state.updateStatus);
+        Describe(m_checkNow, Option(Item::CheckUpdates, option), m_state.updateStatus);
     }
 
-    void SettingsWindow::SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking)
+    void SettingsWindow::SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking, bool ready)
     {
         m_state.updateStatus = status;
         m_state.updateChecked = checked;
         m_state.updateChecking = checking;
+        m_state.updateReady = ready;
         if (!m_hwnd)
             return;
         Rebuild([this] {
@@ -860,7 +868,7 @@ namespace sd
             }
         }
         else if (id == kIdCheckNow && clicked)
-            SendCommand(IDM_CHECK_UPDATES);
+            SendCommand(m_state.updateReady ? IDM_UPDATE_NOW : IDM_CHECK_UPDATES);
         else if (id == kIdRecipes && clicked)
             SendCommand(IDM_OPEN_RECIPES);
         else if (id == kIdLogs && clicked)
