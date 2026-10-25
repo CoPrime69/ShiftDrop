@@ -1,9 +1,9 @@
 // The live demo in the hero: a small desktop with a Downloads window. Drag a file and press Shift
 // (or tap it on a phone) and the real wheel opens at the pointer. Nothing leaves the page.
 
-import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=9';
-import { SAMPLE_FILES, wheelFor, formatSize } from './content.js?v=9';
-import { iconSvg } from './icons.js?v=9';
+import { Wheel, arrange, outerEdge, OUTSIDE, ON_CENTRE } from './wheel.js?v=10';
+import { SAMPLE_FILES, wheelFor, formatSize } from './content.js?v=10';
+import { iconSvg } from './icons.js?v=10';
 
 const DRAG_START_PX = 5;
 const MAX_ADDED = 4;
