@@ -176,6 +176,7 @@ the Tools section. Section Z needs a PC without Visual Studio.
 - [ ] A top panel drops down at the top centre of that monitor with Convert / Tools / File actions (names only, no Shift / Ctrl / Alt keycaps), Convert highlighted
 - [ ] Still dragging, press **Ctrl** or **Alt**: nothing changes (only Shift opens the wheel; Ctrl and Alt keep their usual drag meaning)
 - [ ] Turn the mouse wheel instead: each notch steps to the next or previous wheel in order, Convert, Tools, File actions, Convert... (wraps round both ways, never skips one); the window under the cursor does not scroll; after the drop, scrolling works normally again
+- [ ] With ShiftDrop running, drag something that is not a file with **Shift** held (select text in a browser, move a window, drag inside a web page) and turn the mouse wheel: the window under the cursor scrolls as usual; no wheel opens
 - [ ] No mouse wheel: still dragging with Shift held, tap **1**, **2**, **3** or **4**: the wheel jumps straight to that section (Convert, Tools, Reduce size, File actions); with a section turned off in Settings the numbers follow the sections that are left. The top panel hint reads "Scroll or Shift+1–4"
 - [ ] Drop on a Convert tile with a few files: the panel turns into "Converting N files to …" with a progress bar, then "N files converted to …", and tucks away after about 2 s
 - [ ] Make a batch fail partly (include a `.txt` renamed to `.png`): the result stays, with a warning icon and the reason, until you click it; clicking shows the outputs in Explorer
