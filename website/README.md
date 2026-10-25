@@ -17,3 +17,7 @@ then open http://localhost:8000.
 - `assets/js/content.js` lists what the demo's wheel offers each sample file, in the app's wording.
 - `assets/fonts/` holds Instrument Sans, IBM Plex Sans and JetBrains Mono (SIL Open Font License, see
   `OFL.txt`), served from the site itself so no font service sees visitors.
+
+After changing any CSS or JavaScript, bump the `?v=` number on every reference to it (the `<link>` and
+`<script>` tags in both HTML files, and the `import` lines in `assets/js/`), so that browsers fetch the
+new files instead of reusing cached ones.

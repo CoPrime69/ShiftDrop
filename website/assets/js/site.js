@@ -1,7 +1,7 @@
-import { startDemo } from './demo.js';
-import { Wheel } from './wheel.js';
-import { SAMPLE_FILES, wheelFor } from './content.js';
-import { iconSvg } from './icons.js';
+import { startDemo } from './demo.js?v=7';
+import { Wheel } from './wheel.js?v=7';
+import { SAMPLE_FILES, wheelFor } from './content.js?v=7';
+import { iconSvg } from './icons.js?v=7';
 
 const REPO = 'CoPrime69/ShiftDrop';
 
