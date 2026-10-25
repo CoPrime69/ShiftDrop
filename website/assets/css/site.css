@@ -455,7 +455,7 @@ html { scrollbar-color: var(--border-strong) transparent; }
 .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 3vw, 40px); }
 .step h3, .feature h3 { display: flex; align-items: baseline; gap: 10px; margin: 28px 0 10px; font-size: 1.375rem; letter-spacing: -0.02em; }
 .step p, .feature p { color: var(--text-2); max-width: 40em; }
-.step-n { font-size: 0.875rem; font-weight: 500; color: var(--accent); }
+.step-n { font-size: 1.125rem; font-weight: 600; color: var(--accent); }
 .step p { padding-left: 1.4em; }
 
 .illus-drag .ghosted { opacity: 0.35; }
