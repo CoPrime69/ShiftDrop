@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShiftDrop: drag, press Shift, drop. Free file tools for Windows</title>
+  <meta name="description" content="A wheel of file tools at your cursor. Start dragging a file, press Shift, and drop it on an action: convert, shrink, edit PDFs, copy text from images and strip metadata. Offline, no account, free and open source for Windows 10 and 11.">
+  <meta name="theme-color" content="#F6F7F9">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ShiftDrop: drag, press Shift, drop">
+  <meta property="og:description" content="Free, open-source file tools for Windows 10 and 11. Convert, shrink, edit PDFs and strip metadata from a wheel at your cursor. Everything runs on your PC.">
+  <meta property="og:image" content="https://coprime69.github.io/ShiftDrop/assets/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="assets/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css?v=24">
+  <script src="assets/js/theme.js?v=24"></script>
+  <script type="module" src="assets/js/site.js?v=24"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="lockup" href="./" aria-label="ShiftDrop home">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>
+        <span class="wordmark">ShiftDrop</span>
+      </a>
+      <nav class="nav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#editors">Editors</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#formats">Formats</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" class="icon-link theme-toggle" data-theme-toggle aria-label="Switch to dark mode"><span data-icon="moon" data-icon-class="icon theme-moon"></span><span data-icon="sun" data-icon-class="icon theme-sun"></span></button>
+        <a class="star-link" href="https://github.com/CoPrime69/ShiftDrop" aria-label="Star ShiftDrop on GitHub" target="_blank" rel="noopener"><span data-icon="github"></span><span class="star-label"><span data-icon="star"></span>Star</span><span class="star-count" data-stars hidden></span></a>
+        <a class="button button-ink button-small" href="#download">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero: the offer, the action, and the wheel itself to try. -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap hero-top">
+        <h1 id="hero-title" class="display">Drag. Shift.<br>Drop.</h1>
+        <div class="hero-side">
+          <p class="lede">A wheel of file tools at your cursor. Start dragging a file, press Shift, and drop it on what you want: convert it, shrink it, edit a PDF or strip its metadata. The result is saved next to the original.</p>
+          <div class="cta-row">
+            <a class="button button-ink button-download" href="https://github.com/CoPrime69/ShiftDrop/releases/latest" data-download target="_blank" rel="noopener">
+              <span data-icon="download"></span>
+              <span class="button-text"><span>Download for Windows</span><small>Windows 10 &amp; 11 · Free</small></span>
+            </a>
+            <a class="button button-line" href="https://github.com/CoPrime69/ShiftDrop" target="_blank" rel="noopener">
+              <span data-icon="code"></span>
+              <span class="button-text"><span>View source on GitHub</span><small class="mono">github.com/CoPrime69/ShiftDrop</small></span>
+            </a>
+          </div>
+          <p class="fineprint">Offline. No account. No telemetry. Free and open source.</p>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <div class="stage" data-stage tabindex="-1" aria-label="Try the wheel: a Downloads folder with sample files">
+          <div class="desk">
+            <div class="explorer">
+              <div class="explorer-bar">
+                <span data-icon="files" class="explorer-title"></span><span class="explorer-name">Downloads</span>
+                <span class="explorer-controls" aria-hidden="true"><i></i><i></i><i></i></span>
+              </div>
+              <div class="explorer-body">
+                <ul class="explorer-side" aria-hidden="true">
+                  <li>Home</li><li>Desktop</li><li class="is-on">Downloads</li><li>Documents</li><li>Pictures</li><li>Music</li>
+                </ul>
+                <div class="explorer-files" data-files role="group" aria-label="Sample files. Press Enter on one to open the wheel."></div>
+              </div>
+            </div>
+
+            <div class="overlay" data-overlay>
+              <div class="panel" data-panel></div>
+              <div class="wheel-wrap" data-wheel></div>
+              <div class="result-card" data-card aria-hidden="true"></div>
+              <div class="island" data-island role="status"></div>
+              <div class="ghost" data-ghost aria-hidden="true"></div>
+            </div>
+
+            <button type="button" class="keycap" data-keycap><span data-icon="shift"></span>Shift</button>
+            <p class="hint" data-hint></p>
+          </div>
+          <div class="taskbar" aria-hidden="true">
+            <div class="taskbar-apps">
+              <span data-icon="globe"></span><span data-icon="files" class="is-on"></span><span data-icon="document"></span><span data-icon="code"></span>
+              <svg class="mark taskbar-mark" viewBox="0 0 64 64"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>
+            </div>
+            <div class="taskbar-clock mono" data-clock></div>
+          </div>
+          <p class="sr-only" aria-live="polite" data-live></p>
+        </div>
+        <div class="hero-still">
+          <video class="hero-loop" muted loop playsinline preload="none" data-poster="assets/video/loop-poster.jpg" data-loop aria-label="A photo is dragged in a Downloads window, Shift is pressed and the wheel opens at the cursor.">
+            <source data-src="assets/video/loop.webm" type="video/webm">
+            <source data-src="assets/video/loop.mp4" type="video/mp4">
+          </video>
+          <p>Open this page on a PC to try the live wheel: drag a file, press Shift and scroll through the sections.</p>
+        </div>
+        <p class="stage-note">This is the real wheel, drawn in your browser with the app's own layout. Ctrl+click picks several files, and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> opens the wheel for them. Nothing is uploaded or converted here.</p>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" class="section" aria-labelledby="how-title">
+      <div class="wrap">
+        <h2 id="how-title" class="h2">Three moves. No window to open.</h2>
+        <ol class="steps">
+          <li class="step">
+            <div class="illus illus-drag" aria-hidden="true">
+              <span class="page-tile large ghosted" data-icon="image"></span>
+              <svg class="trail" viewBox="0 0 100 40"><path d="M4 8 C 40 6, 60 20, 96 34"/></svg>
+              <span class="page-tile large lifted" data-icon="image"></span>
+              <span class="cursor" data-icon="cursor"></span>
+            </div>
+            <h3><span class="step-n mono">1</span>Drag</h3>
+            <p>Pick up any file, or several, from Explorer, the desktop or a browser.</p>
+          </li>
+          <li class="step">
+            <div class="illus illus-shift" aria-hidden="true">
+              <span class="keycap keycap-static"><span data-icon="shift"></span>Shift</span>
+              <div class="still-wheel small" data-still-wheel="1"></div>
+            </div>
+            <h3><span class="step-n mono">2</span>Shift</h3>
+            <p>Press Shift once. The wheel opens at your cursor and stays open.</p>
+          </li>
+          <li class="step">
+            <div class="illus illus-drop" aria-hidden="true">
+              <figure class="mini-file"><span class="page-tile" data-icon="image"></span><figcaption class="mono">photo.heic</figcaption></figure>
+              <figure class="mini-file"><span class="page-tile done" data-icon="image"></span><figcaption class="mono">photo (converted).jpg</figcaption></figure>
+            </div>
+            <h3><span class="step-n mono">3</span>Drop</h3>
+            <p>Drop it on an action. A copy is saved next to the original, which stays as it was.</p>
+          </li>
+        </ol>
+        <p class="steps-alt">Rather not drag? Select files in Explorer and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>.</p>
+      </div>
+    </section>
+
+    <!-- The launch video -->
+    <section id="watch" class="section section-watch" aria-labelledby="watch-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="watch-title" class="h2">See it in under a minute.</h2>
+          <p class="section-lede">Drag, Shift, drop: converting, shrinking, editing and the keyboard way, all in the real app.</p>
+        </div>
+        <figure class="film">
+          <video controls playsinline preload="none" poster="assets/video/shiftdrop-poster.jpg?v=6" aria-label="ShiftDrop launch video, 58 seconds">
+            <source src="assets/video/shiftdrop.mp4?v=6" type="video/mp4">
+          </video>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="section" aria-labelledby="features-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="features-title" class="h2">Every file tool, one Shift away.</h2>
+          <p class="section-lede">The wheel shows only what fits the file in your hand: a song gets audio formats, a PDF gets page tools, two PDFs get Merge.</p>
+        </div>
+        <div class="features">
+          <article class="feature">
+            <div class="illus illus-convert" aria-hidden="true">
+              <figure class="big-file"><span class="page-tile large" data-icon="image"></span><figcaption class="mono">photo.heic<br><span class="faint">4032 × 3024</span></figcaption></figure>
+              <span class="round-arrow" data-icon="arrow"></span>
+              <ul class="out-list mono">
+                <li><span class="page-tile tiny done" data-icon="image"></span>photo (converted).jpg</li>
+                <li><span class="page-tile tiny done" data-icon="image"></span>photo (converted).png</li>
+                <li><span class="page-tile tiny done" data-icon="image"></span>photo (converted).webp</li>
+              </ul>
+            </div>
+            <h3>Convert anything</h3>
+            <p>Images, video, audio, PDFs, documents, spreadsheets and archives. The new file lands next to the original.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-smaller" aria-hidden="true">
+              <figure class="big-file"><span class="page-tile large" data-icon="video"></span><figcaption class="mono">demo-cut.mov<br><span class="faint">248 MB</span></figcaption></figure>
+              <span class="round-arrow" data-icon="reduce"></span>
+              <figure class="big-file"><span class="page-tile medium done" data-icon="video"></span><figcaption class="mono">demo-cut (compressed).mp4<br><span class="accent">31 MB · −87%</span></figcaption></figure>
+            </div>
+            <h3>Make it smaller</h3>
+            <p>Shrink video, photos, audio and PDFs for email or upload: from 90% down to 20% smaller, or to a target such as Under 25 MB.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-ocr" aria-hidden="true">
+              <div class="receipt mono">
+                <strong>CORNER CAFE</strong>
+                <span class="sel"><span>Flat white</span><span>3.80</span><span>Croissant</span><span>2.90</span><span>Total</span><span>6.70</span></span>
+                <small>22.10.2026 08:14</small>
+              </div>
+              <div class="copied">
+                <span class="chip chip-done" data-icon="check">Copied 3 lines</span>
+                <pre class="mono">Flat white 3.80
+Croissant  2.90
+Total      6.70</pre>
+              </div>
+            </div>
+            <h3>Copy text from images</h3>
+            <p>Read the text in screenshots, scans and photos straight to the clipboard, or make a scanned PDF searchable.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-safe" aria-hidden="true">
+              <figure class="big-file"><span class="page-tile medium" data-icon="image"></span><figcaption class="mono">IMG_2291.jpg<br><span class="faint">2.4 MB</span></figcaption></figure>
+              <ul class="tags">
+                <li data-icon="tag">GPS location</li><li data-icon="tag">Camera model</li><li data-icon="tag">Date taken</li><li data-icon="tag">Owner name</li>
+              </ul>
+              <figure class="big-file"><span class="page-tile medium done" data-icon="image"></span><figcaption class="mono">IMG_2291 (no metadata).jpg</figcaption></figure>
+            </div>
+            <h3>Share safely</h3>
+            <p>Strip location, camera and author details before a file leaves your hands, and see what was found first.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editors -->
+    <section id="editors" class="section" aria-labelledby="editors-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="editors-title" class="h2">One wheel. Every editor.</h2>
+          <p class="section-lede">Video, photos, audio and PDFs, all in one tool. Trim a clip, clean up a recording, retouch a photo or sign a contract, without opening another app.</p>
+        </div>
+        <div class="features">
+          <article class="feature">
+            <div class="illus illus-video" aria-hidden="true">
+              <div class="clip">
+                <div class="clip-frames"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <span class="clip-keep"><b></b><b></b></span>
+                <span class="clip-head"></span>
+              </div>
+              <div class="clip-times mono"><span>00:00</span><span class="accent">00:12 – 00:41</span><span>01:30</span></div>
+              <div class="chips"><span class="chip is-on" data-icon="trim">Trim</span><span class="chip" data-icon="crop">Crop</span><span class="chip" data-icon="split">Split</span><span class="chip" data-icon="speed">Speed</span><span class="chip" data-icon="redact">Redact</span></div>
+            </div>
+            <h3>Edit video</h3>
+            <p>A timeline editor to trim, crop, join, split or speed up clips, save frames, or blur out an area for just the seconds it shows.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-audio" aria-hidden="true">
+              <div class="wave">
+                <i style="--h:22"></i><i style="--h:40"></i><i style="--h:64"></i><i style="--h:48"></i><i style="--h:80"></i><i style="--h:58"></i><i style="--h:34"></i><i style="--h:70"></i><i style="--h:92"></i><i style="--h:60"></i><i style="--h:44"></i><i style="--h:76"></i><i style="--h:52"></i><i style="--h:30"></i><i style="--h:66"></i><i style="--h:84"></i><i style="--h:46"></i><i style="--h:28"></i><i style="--h:56"></i><i style="--h:72"></i><i style="--h:38"></i><i style="--h:62"></i><i style="--h:88"></i><i style="--h:50"></i><i style="--h:32"></i><i style="--h:68"></i><i style="--h:42"></i><i style="--h:24"></i>
+                <span class="wave-bleep">Bleep</span>
+              </div>
+              <div class="chips"><span class="chip" data-icon="trim">Trim</span><span class="chip" data-icon="channel">Channels</span><span class="chip is-on" data-icon="bleep">Bleep</span><span class="chip" data-icon="normalize">Normalize</span></div>
+            </div>
+            <h3>Edit audio</h3>
+            <p>A waveform editor to trim a recording, fix left and right channels, bleep a word, even out the loudness, or turn a podcast into a video with moving bars.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-photo" aria-hidden="true">
+              <div class="photo">
+                <span class="photo-sun"></span><span class="photo-hill"></span><span class="photo-hill back"></span>
+                <span class="photo-crop"><i></i><i></i><i></i><i></i></span>
+                <svg class="photo-arrow" viewBox="0 0 60 40"><path d="M4 34 C 20 30, 34 20, 50 8"/><path d="M40 7 L 51 7 L 49 18"/></svg>
+              </div>
+              <div class="side-tools"><span class="chip is-on" data-icon="crop">Crop</span><span class="chip" data-icon="edit">Light and colour</span><span class="chip" data-icon="markup">Annotate</span><span class="chip" data-icon="frame">Background</span></div>
+            </div>
+            <h3>Edit photos</h3>
+            <p>Fix light and colour with a live preview, add arrows, text and callouts, put a screenshot on a backdrop, make a collage, or cover faces and details for good. Crop, rotate and resize in one drop.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-pages" aria-hidden="true">
+              <div class="thumbs">
+                <figure class="thumb"><span class="lines"><i></i><i></i><i></i><i></i><i></i></span><figcaption class="mono">1</figcaption></figure>
+                <figure class="thumb lifted"><span class="lines"><i></i><i></i><i></i><i></i><i></i></span><figcaption class="mono">3</figcaption></figure>
+                <figure class="thumb"><span class="lines"><i></i><b></b><i></i><i></i></span><figcaption class="mono">2</figcaption></figure>
+                <figure class="thumb"><span class="lines"><i class="hl"></i><i></i><i></i><i></i></span><figcaption class="mono">4</figcaption></figure>
+              </div>
+              <div class="chips"><span class="chip is-on" data-icon="pages">Reorder</span><span class="chip">Redact</span><span class="chip">Annotate</span></div>
+            </div>
+            <h3>Edit PDFs</h3>
+            <p>Reorder, turn, duplicate and delete pages, then redact, mark up or crop them. Several PDFs merge into one.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-sign" aria-hidden="true">
+              <div class="sheet">
+                <span class="sheet-title"></span>
+                <span class="lines"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                <div class="fields">
+                  <span class="field">CoPrime</span><span class="field">22 Oct 2026</span>
+                  <svg class="signature" viewBox="0 0 120 40"><path d="M6 28c6-14 10-20 12-16s-6 18-2 16 8-14 12-12-2 12 2 10 6-8 10-8 0 8 4 7 6-6 9-6-1 6 3 6 8-4 12-4 4 4 8 3 10-4 14-6"/></svg>
+                </div>
+              </div>
+              <div class="side-tools"><span class="chip" data-icon="document">Text</span><span class="chip is-on" data-icon="sign">Signature</span></div>
+              <span class="chip chip-done" data-icon="check">contract-v3 (edited).pdf</span>
+            </div>
+            <h3>Fill and sign</h3>
+            <p>Add text, ticks, dates and your signature anywhere on a page, then save a signed copy.</p>
+          </article>
+
+          <article class="feature">
+            <div class="illus illus-docs" aria-hidden="true">
+              <div class="doc-stack">
+                <figure class="big-file"><span class="page-tile medium" data-icon="document"></span><figcaption class="mono">notes.docx</figcaption></figure>
+                <figure class="big-file"><span class="page-tile medium" data-icon="document"></span><figcaption class="mono">budget.xlsx</figcaption></figure>
+                <figure class="big-file"><span class="page-tile medium" data-icon="document"></span><figcaption class="mono">pitch.pptx</figcaption></figure>
+              </div>
+              <span class="round-arrow" data-icon="arrow"></span>
+              <figure class="big-file"><span class="page-tile medium done" data-icon="pdf"></span><figcaption class="mono">notes (edited).pdf</figcaption></figure>
+            </div>
+            <h3>Edit any document</h3>
+            <p>Word, Excel, PowerPoint, OpenDocument, Markdown and more open in the same editor. Redact, annotate or sign, and save a PDF next to the original.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Private by design, open source -->
+    <section id="privacy" class="section" aria-labelledby="privacy-title">
+      <div class="wrap">
+        <h2 id="privacy-title" class="h2">Your files stay on your PC.</h2>
+        <div class="pair">
+          <article class="feature">
+            <div class="illus illus-private" aria-hidden="true">
+              <div class="boundary">
+                <span class="boundary-label" data-icon="lock">Your PC</span>
+                <span class="page-tile small" data-icon="image"></span>
+                <span class="flow" data-icon="arrow"></span>
+                <div class="still-wheel tiny" data-still-wheel="1"></div>
+                <span class="flow" data-icon="arrow"></span>
+                <span class="page-tile small done" data-icon="image"></span>
+              </div>
+              <div class="chips"><span class="chip" data-icon="offline">Works offline</span><span class="chip" data-icon="account">No account</span><span class="chip" data-icon="telemetry">No telemetry</span></div>
+            </div>
+            <h3>Private by design</h3>
+            <p>Every action runs on your PC, even with the network off. Nothing is uploaded, and there's no account and no tracking. The only thing that goes online is a daily check for a new version, which sends nothing about you or your files and can be turned off.</p>
+          </article>
+          <article class="feature">
+            <div class="illus illus-source" aria-hidden="true">
+              <div class="code-card">
+                <div class="code-bar mono"><span data-icon="code"></span>github.com/CoPrime69/ShiftDrop</div>
+                <p class="code-big">Read the code.<br>Build it yourself.</p>
+                <div class="chips"><span class="chip is-on" data-icon="check">Free</span><span class="chip" data-icon="branch">Open source</span></div>
+              </div>
+            </div>
+            <h3>Open source</h3>
+            <p>Every line is on GitHub. Read how it handles your files, build it yourself, or add your own slices: each one is a small recipe file.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Formats -->
+    <section id="formats" class="section" aria-labelledby="formats-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="formats-title" class="h2">The formats you already have.</h2>
+          <p class="section-lede">Streams that already fit the new container are copied, not re-encoded, so a phone's MOV becomes an MP4 in a second or two.</p>
+        </div>
+        <ul class="formats">
+          <li><span class="page-tile small" data-icon="image"></span><div><h3>Images</h3><p class="mono">JPG · PNG · WebP · AVIF · HEIC · GIF · TIFF · BMP · SVG</p></div></li>
+          <li><span class="page-tile small" data-icon="video"></span><div><h3>Video</h3><p class="mono">MP4 · MOV · MKV · WebM · AVI · WMV · GIF</p></div></li>
+          <li><span class="page-tile small" data-icon="audio"></span><div><h3>Audio</h3><p class="mono">MP3 · M4A · WAV · FLAC · OGG · Opus · AIFF · WMA</p></div></li>
+          <li><span class="page-tile small" data-icon="pdf"></span><div><h3>PDF</h3><p class="mono">Merge · reorder · redact · sign · to JPG, PNG, DOCX, TXT</p></div></li>
+          <li><span class="page-tile small" data-icon="document"></span><div><h3>Documents</h3><p class="mono">DOCX · XLSX · CSV · MD · HTML · RTF · EPUB · TXT</p></div></li>
+          <li><span class="page-tile small" data-icon="archive"></span><div><h3>Archives</h3><p class="mono">ZIP · 7z · TAR · GZ · RAR (extract)</p></div></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Download -->
+    <section id="download" class="section" aria-labelledby="download-title">
+      <div class="wrap">
+        <div class="download">
+          <div class="download-main">
+            <span class="badge"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>Free and open source</span>
+            <h2 id="download-title" class="h2 h2-big">Free for Windows 10 and 11.</h2>
+            <p class="lede">No account. No telemetry. Works offline.</p>
+            <div class="cta-row">
+              <a class="button button-ink button-download" href="https://github.com/CoPrime69/ShiftDrop/releases/latest" data-download target="_blank" rel="noopener">
+                <span data-icon="download"></span>
+                <span class="button-text"><span>Download for Windows</span><small>Windows 10 &amp; 11 · Free</small></span>
+              </a>
+              <a class="button button-line" href="https://github.com/CoPrime69/ShiftDrop" target="_blank" rel="noopener">
+                <span data-icon="code"></span>
+                <span class="button-text"><span>View source on GitHub</span><small class="mono">github.com/CoPrime69/ShiftDrop</small></span>
+              </a>
+            </div>
+          </div>
+          <img class="download-icon" src="assets/img/app-icon.svg?v=24" alt="" width="200" height="200">
+          <ol class="install">
+            <li><strong>Download</strong> <span class="mono">ShiftDrop-Setup-<span data-version>0.7.0</span>.exe</span> and run it. It installs for your user only, with no admin rights needed.</li>
+            <li><strong>If Windows says "Windows protected your PC",</strong> choose More info, then Run anyway. The installer isn't code-signed yet, so SmartScreen doesn't know it.</li>
+            <li><strong>Start dragging.</strong> ShiftDrop waits in the tray. Drag any file, press Shift, and the wheel opens.</li>
+          </ol>
+          <p class="requirements mono">Windows 10 22H2 or Windows 11 · 64-bit · <a href="https://github.com/CoPrime69/ShiftDrop/releases" target="_blank" rel="noopener">All releases</a> · <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/CHANGELOG.md" target="_blank" rel="noopener">What's new</a></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="section" aria-labelledby="faq-title">
+      <div class="wrap faq-wrap">
+        <h2 id="faq-title" class="h2">Questions, answered.</h2>
+        <div class="faq">
+          <details>
+            <summary>Does anything leave my PC?</summary>
+            <p>No. Every action runs locally, even offline. The only network request is a daily check for a new version, sent by a separate updater with no cookies and no sign-in. Turn it off in Settings › Updates.</p>
+          </details>
+          <details>
+            <summary>Do I need an account?</summary>
+            <p>No. Install it and drag a file.</p>
+          </details>
+          <details>
+            <summary>Is it really free?</summary>
+            <p>Yes. It's free and open source, with no paid tier, no ads and no trial. The code is on GitHub.</p>
+          </details>
+          <details>
+            <summary>Can I use it without dragging?</summary>
+            <p>Yes. Select one or more files in Explorer and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>, or right-click them and choose ShiftDrop. The wheel opens at your cursor; click a slice. Several files work the same way when you drag them, and two or more PDFs can be merged into one.</p>
+          </details>
+          <details>
+            <summary>Will it change my original files?</summary>
+            <p>Never. Each result is a new file next to the original, such as <span class="mono">photo (converted).webp</span>. An existing file is never replaced, and History can undo any run.</p>
+          </details>
+          <details>
+            <summary>Why does Windows warn me when I install it?</summary>
+            <p>The installer isn't code-signed yet, so SmartScreen shows "Windows protected your PC". Choose More info, then Run anyway. You can check the download against the SHA256SUMS file on the release page.</p>
+          </details>
+          <details>
+            <summary>What does it need?</summary>
+            <p>Windows 10 22H2 or Windows 11, 64-bit. Video and audio tools are built in. Exact PDFs of Word, Excel and PowerPoint files need Microsoft Office or LibreOffice, and HEIC needs the free HEIF extensions from the Microsoft Store.</p>
+          </details>
+          <details>
+            <summary>Is there a Mac or Linux version?</summary>
+            <p>Not yet. ShiftDrop is a native Windows app for Windows 10 and 11.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <div class="footer-brand">
+        <a class="lockup" href="./" aria-label="ShiftDrop home">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>
+          <span class="wordmark">ShiftDrop</span>
+        </a>
+        <p>Free, open-source file tools for Windows 10 and 11. Everything runs on your PC.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <div>
+          <h3>Get it</h3>
+          <a href="https://github.com/CoPrime69/ShiftDrop/releases/latest" data-download target="_blank" rel="noopener">Download</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/CHANGELOG.md" target="_blank" rel="noopener">What's new</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/releases" target="_blank" rel="noopener">All releases</a>
+        </div>
+        <div>
+          <h3>Project</h3>
+          <a href="https://github.com/CoPrime69/ShiftDrop" target="_blank" rel="noopener">Source code</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/issues/new/choose" target="_blank" rel="noopener">Report a problem</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+        </div>
+      </nav>
+    </div>
+    <div class="wrap footer-small">
+      <p>Made by <a href="https://github.com/CoPrime69" target="_blank" rel="noopener">CoPrime</a>.</p>
+      <p>Windows is a trademark of Microsoft. ShiftDrop isn't made by or affiliated with Microsoft.</p>
+    </div>
+  </footer>
+</body>
+</html>
