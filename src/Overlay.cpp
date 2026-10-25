@@ -193,7 +193,9 @@ namespace sd
     {
         const bool closed = m_mode == Mode::Wheel && mode != Mode::Wheel;
         m_mode = mode;
-        m_captureScroll = mode == Mode::Probe || mode == Mode::Wheel;
+        // Only an open wheel takes the scroll wheel. The probe is up for any drag with Shift held, files or
+        // not (selecting text, moving a window), so taking it there blocked scrolling everywhere.
+        m_captureScroll = mode == Mode::Wheel;
         if (closed && m_a11y)
             m_a11y->Closed();
     }
