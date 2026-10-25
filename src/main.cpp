@@ -389,7 +389,8 @@ namespace sd
                 },
                 .changed = [this] {
                     if (m_settingsWindow)
-                        m_settingsWindow->SetUpdateStatus(m_updates->StatusLine(), m_updates->CheckedLine(), m_updates->Checking());
+                        m_settingsWindow->SetUpdateStatus(m_updates->StatusLine(), m_updates->CheckedLine(), m_updates->Checking(),
+                                                          m_updates->CanUpdate());
                 },
                 .quit = [this] { PostMessageW(m_hwnd.get(), WM_COMMAND, IDM_QUIT, 0); },   // after the controller's call returns
             });
@@ -653,6 +654,10 @@ namespace sd
             case IDM_CHECK_UPDATES:
                 if (m_updates)
                     m_updates->CheckNow();
+                break;
+            case IDM_UPDATE_NOW:
+                if (m_updates)
+                    m_updates->UpdateNow();
                 break;
             case IDM_UPDATE_MODE_BASE + 0: case IDM_UPDATE_MODE_BASE + 1: case IDM_UPDATE_MODE_BASE + 2:
                 if (m_updates)
@@ -1106,6 +1111,7 @@ namespace sd
                 state.updateStatus = m_updates->StatusLine();
                 state.updateChecked = m_updates->CheckedLine();
                 state.updateChecking = m_updates->Checking();
+                state.updateReady = m_updates->CanUpdate();
             }
             return state;
         }

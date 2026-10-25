@@ -116,7 +116,7 @@ namespace sd::settings
         static constexpr const wchar_t* kAccent[] = { L"Custom\u2026", L"Delete colour" };
         // In updates::Mode's order.
         static constexpr const wchar_t* kUpdateModes[] = { L"Install automatically", L"Ask me first", L"Off" };
-        static constexpr const wchar_t* kCheck[] = { L"Check now" };
+        static constexpr const wchar_t* kCheck[] = { L"Check now", L"Update now" };
         switch (item)
         {
         case Item::Theme: return kTheme;

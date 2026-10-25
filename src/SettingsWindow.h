@@ -31,6 +31,7 @@ namespace sd
         updates::Mode updateMode = updates::kDefaultMode;
         std::wstring updateStatus, updateChecked;   // the line under Check now, and when it last checked
         bool updateChecking = false;                // a check or a download is under way
+        bool updateReady = false;                   // an update can be installed: the button says Update now
     };
 
     // "Settings…" from the tray (App Windows page): navigation on the left (General, Appearance, Wheel,
@@ -57,7 +58,7 @@ namespace sd
         // Creates the window or brings it to the front, filled from `tree` and `state`.
         void Show(SettingsTree tree, SettingsState state);
         // Updates › Check for updates says this now (a check finished while the window is open).
-        void SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking);
+        void SetUpdateStatus(const std::wstring& status, const std::wstring& checked, bool checking, bool ready);
 
     private:
         using Item = settings::Item;

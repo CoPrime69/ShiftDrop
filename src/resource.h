@@ -29,4 +29,5 @@
 // base + the updates::Mode value (see updates/Updates.h)
 #define IDM_UPDATE      40100
 #define IDM_CHECK_UPDATES 40101
+#define IDM_UPDATE_NOW  40102   // Settings > Updates' Update now: no question, it was the answer
 #define IDM_UPDATE_MODE_BASE 40110
