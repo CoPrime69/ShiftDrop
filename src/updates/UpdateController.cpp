@@ -76,7 +76,7 @@ namespace sd::updates
 
     void UpdateController::Start()
     {
-        m_running = RunningBase();
+        m_running = Running();
         m_mode = LoadMode(SettingsPath());
         m_state = LoadState(StatePath());
         // The updater ran Setup and started this copy: say how it went, once.

@@ -20,34 +20,34 @@
 
 namespace sd::updates
 {
-    // The one place that reads the build's version (AppVersion.h, from VERSION): "0.6.0+b950d51" for a
-    // main or pull-request build, which counts as 0.6.0.
+    // The one place that reads the build's version (AppVersion.h, from VERSION): "0.7.0" for the
+    // release, "0.7.1-dev.3+af953b2" for a main or pull-request build, which is a pre-release of 0.7.1.
     std::wstring RunningVersion()
     {
         return version::Display();
     }
 
-    Version RunningBase()
+    Version Running()
     {
-        return ParseVersion(version::Base()).value_or(Version{});
+        return ParseVersion(version::Display()).value_or(Version{});
     }
 
     namespace
     {
-        // A whole non-negative number with no sign or spaces, small enough for an int.
+        bool AllDigits(std::wstring_view s)
+        {
+            return !s.empty() && std::all_of(s.begin(), s.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; });
+        }
+
+        // A SemVer number: digits, no leading zero, small enough for an int.
         bool Number(std::wstring_view text, int& out)
         {
-            if (text.empty() || text.size() > 9 || !std::all_of(text.begin(), text.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; }))
+            if (!AllDigits(text) || text.size() > 9 || (text.size() > 1 && text.front() == L'0'))
                 return false;
             out = 0;
             for (const wchar_t c : text)
                 out = out * 10 + (c - L'0');
             return true;
-        }
-
-        bool AllDigits(std::wstring_view s)
-        {
-            return !s.empty() && std::all_of(s.begin(), s.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; });
         }
 
         std::vector<std::wstring_view> Split(std::wstring_view s, wchar_t at)
@@ -68,16 +68,33 @@ namespace sd::updates
     {
         text = Trim(text);
         if (!text.empty() && (text.front() == L'v' || text.front() == L'V'))
-            text.remove_prefix(1);
+            text.remove_prefix(1);   // a tag, "v0.7.1"
+        // Dot-separated identifiers of [0-9A-Za-z-], none empty; a number one has no leading zero.
+        const auto identifiers = [](std::wstring_view part, bool noLeadingZeros) {
+            for (const auto id : Split(part, L'.'))
+            {
+                if (id.empty() || !std::all_of(id.begin(), id.end(), [](wchar_t c) {
+                        return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || c == L'-';
+                    }))
+                    return false;
+                if (noLeadingZeros && AllDigits(id) && id.size() > 1 && id.front() == L'0')
+                    return false;
+            }
+            return true;
+        };
         if (const size_t plus = text.find(L'+'); plus != std::wstring_view::npos)
-            text = text.substr(0, plus);   // build metadata: never part of the order
+        {
+            if (!identifiers(text.substr(plus + 1), false))   // build metadata: never part of the order
+                return std::nullopt;
+            text = text.substr(0, plus);
+        }
         Version v;
         if (const size_t dash = text.find(L'-'); dash != std::wstring_view::npos)
         {
+            if (!identifiers(text.substr(dash + 1), true))
+                return std::nullopt;
             v.pre = std::wstring(text.substr(dash + 1));
             text = text.substr(0, dash);
-            if (v.pre.empty() || !std::all_of(v.pre.begin(), v.pre.end(), [](wchar_t c) { return std::iswalnum(c) || c == L'.' || c == L'-'; }))
-                return std::nullopt;
         }
         const auto parts = Split(text, L'.');
         if (parts.size() != 3 || !Number(parts[0], v.major) || !Number(parts[1], v.minor) || !Number(parts[2], v.patch))

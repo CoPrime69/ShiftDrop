@@ -7,12 +7,13 @@ IDI_APPICON ICON "ShiftDrop.ico"
 IDI_TRAY_DARK ICON "TrayDarkTaskbar.ico"
 IDI_TRAY_LIGHT ICON "TrayLightTaskbar.ico"
 
-// ProductVersion is what the app shows: "0.6.0" for the release build, "0.6.0+<commit>" for any other.
+// ProductVersion is what the app shows: "0.7.0" for the release build, "0.7.1-dev.3+<commit>" for any
+// other; the four numbers are the last release and the build number (scripts/make-version-header.cmake).
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
- PRODUCTVERSION SD_VERSION_MAJOR,SD_VERSION_MINOR,SD_VERSION_PATCH,0
+ FILEVERSION SD_FILEVERSION
+ PRODUCTVERSION SD_FILEVERSION
  FILEFLAGSMASK 0x3fL
- FILEFLAGS 0x0L
+ FILEFLAGS SD_FILEFLAGS
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
  FILESUBTYPE VFT2_UNKNOWN
@@ -23,7 +24,7 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "ShiftDrop"
             VALUE "FileDescription", "ShiftDrop - drag, press a key, drop to convert"
-            VALUE "FileVersion", SD_VERSION_BASE_A
+            VALUE "FileVersion", SD_FILEVERSION_A
             VALUE "InternalName", "ShiftDrop"
             VALUE "OriginalFilename", "ShiftDrop.exe"
             VALUE "ProductName", "ShiftDrop"

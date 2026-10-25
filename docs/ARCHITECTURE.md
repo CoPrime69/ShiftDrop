@@ -534,7 +534,8 @@ updater and what to do with its answer is [updates/UpdateController.h](../src/up
   It runs `ShiftDrop-Updater.exe --check` (`--check --download` for Install automatically), which
   sends one GET to `https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest`: User-Agent
   `ShiftDrop-Updater/<version>`, no cookies, no credentials (not even to a proxy), https only.
-- **The 7 days.** A release newer than this build (a `+commit` build counts as its base version) is
+- **The 7 days.** A release newer than this build by SemVer precedence (a main build such as
+  `0.7.1-dev.3+af953b2` is a pre-release of 0.7.1: older than 0.7.1, newer than 0.7.0) is
   offered by the daily check only once its `published_at` is 7 days old. **Check now**
   (`--check --manual`) skips the wait.
 - **Ask me first** shows a toast ("Update now…", "Later") and "Update to 0.7.1…" at the top of the

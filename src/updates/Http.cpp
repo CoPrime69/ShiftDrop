@@ -21,7 +21,7 @@ namespace sd::updates::http
 
         std::wstring UserAgent()
         {
-            return L"" SD_NAME L"-Updater/" + ToText(RunningBase());
+            return L"" SD_NAME L"-Updater/" + ToText(Running());
         }
 
         void Option(HINTERNET h, DWORD option, DWORD value)

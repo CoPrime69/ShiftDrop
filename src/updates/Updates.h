@@ -19,23 +19,28 @@ namespace sd::updates
 {
     // ---- Versions ---------------------------------------------------------------------------------
 
-    // major.minor.patch with an optional "-pre" part. "+build" (a CI build's commit) is dropped: a
-    // main or pull-request build of 0.6.0 counts as 0.6.0.
+    // A Semantic Versioning 2.0.0 version: major.minor.patch, an optional "-pre-release" and an
+    // optional "+build", which is dropped (it never takes part in the order). A main or pull-request
+    // build is a pre-release of the next version, "0.7.1-dev.3+af953b2", so it sorts above the release
+    // it follows (0.7.0) and below the one it leads to (0.7.1).
     struct Version
     {
         int major = 0, minor = 0, patch = 0;
-        std::wstring pre;   // "rc.1" of "0.7.0-rc.1"; empty for a release
+        std::wstring pre;   // "dev.3" of "0.7.1-dev.3+af953b2"; empty for a release
     };
-    // "0.7.1", "v0.7.1", "0.6.0+b950d51", "0.7.0-rc.1"; nothing for anything else.
+    // "0.7.1", "v0.7.1", "0.7.1-dev.3+af953b2", "1.0.0-rc.1"; nothing for anything SemVer 2.0.0 rejects
+    // (leading zeros in a number, an empty or non-ASCII identifier, four numbers...).
     std::optional<Version> ParseVersion(std::wstring_view text);
-    // Negative, 0 or positive, as semver orders them: a pre-release comes before its release.
+    // Negative, 0 or positive, by SemVer's precedence: numbers in order, then a pre-release before its
+    // release, then the pre-release identifiers one by one (numbers by value and before words, words
+    // in ASCII order, fewer identifiers first when the rest is equal).
     int Compare(const Version& a, const Version& b);
-    std::wstring ToText(const Version& v);   // "0.7.1", "0.7.0-rc.1"
+    std::wstring ToText(const Version& v);   // "0.7.1", "0.7.1-dev.3" (no build part)
 
-    // The version of this build as About shows it, and the version it counts as for updates.
-    // RunningVersion() is the one place that reads the build's version (see Updates.cpp).
+    // The version of this build as About shows it, and the version it is for updates (the same without
+    // its +build). RunningVersion() is the one place that reads the build's version (see Updates.cpp).
     std::wstring RunningVersion();
-    Version RunningBase();
+    Version Running();
 
     // ---- The release --------------------------------------------------------------------------------
 
