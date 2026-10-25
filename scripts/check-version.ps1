@@ -44,13 +44,13 @@ if ($Exe -or $Setup) {
     if ($LASTEXITCODE) { throw "make-version-header.cmake failed ($LASTEXITCODE)" }
     $text = Get-Content $header -Raw
     Remove-Item $header
-    function Define([string]$name) {
+    function HeaderValue([string]$name) {
         $m = [regex]::Match($text, "(?m)^#define $name ""([^""]*)""")
         if (-not $m.Success) { throw "Version.h has no $name" }
         $m.Groups[1].Value
     }
-    $display = Define 'SD_VERSION_A'
-    $numbers = Define 'SD_FILEVERSION_A'
+    $display = HeaderValue 'SD_VERSION_A'
+    $numbers = HeaderValue 'SD_FILEVERSION_A'
 
     # And that is the scheme: the release build is VERSION and VERSION.0; any other build is
     # <VERSION or the patch after it>-dev.<N>+<commit or dev>, with N as its fourth number.
