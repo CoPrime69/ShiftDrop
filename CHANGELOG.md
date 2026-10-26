@@ -11,6 +11,9 @@ until 1.0, a minor version may change behaviour.
 
 ### Fixed
 
+- Float shelf: stays on top of every app the whole time it's shown, full-screen apps included; it no
+  longer ends up buried under other always-on-top windows. Windows' own menus, Start and pop-ups still
+  open over it.
 - Settings › Updates: once a check finds an update, Check now turns into Update now, so the update
   can be installed right there instead of only from the tray menu.
 
