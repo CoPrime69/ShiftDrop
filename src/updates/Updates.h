@@ -71,6 +71,12 @@ namespace sd::updates
     // https. (GitHub then redirects a download to its file host; WinHTTP follows that, https only.)
     inline constexpr wchar_t kLatestUrl[] = L"https://api.github.com/repos/CoPrime69/ShiftDrop/releases/latest";
     bool IsReleaseDownload(std::wstring_view url);
+    // An answer that may well be different a moment later (a timeout, too many requests, a server
+    // error such as GitHub's 502/503/504), so worth asking again.
+    bool IsWorthRetrying(unsigned long status);
+    // How many times a request is tried, and the wait before each retry.
+    inline constexpr int kTries = 3;
+    inline constexpr unsigned long kRetryWaitMs[] = { 2000, 5000 };
 
     // ---- Is it offered? -----------------------------------------------------------------------------
 
