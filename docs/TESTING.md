@@ -292,6 +292,7 @@ one taken sideways), a PNG with transparency, and a PDF with a password.
 
 ### O. Float shelf, carry and clipboard
 Float shelf:
+- [ ] Always on top: with the shelf shown, open 5 or 6 apps over it (a browser, Explorer, Settings, Task Manager with Options > Always on top, a full-screen video): the shelf stays above every one of them, coming back within half a second at most; Start, the notification centre and right-click menus still open over it
 - [ ] The shelf's look, light and dark: small (8 px) corners; a header with the pin icon, "Float shelf" and "N files" in grey, then Pin, **Clear all** and Close as the Settings window's buttons (square-cornered hover, a push button for Clear all, the same focus ring under Tab); a selected row has a light accent wash with a short accent bar on its left; a hovered row shows the folder and × buttons in the same style
 - [ ] An empty shelf: a dashed grey outline with a blank page and "Drag files here to keep them for later." on two lines; dragging files over it turns the outline and the page's corner accent
 - [ ] The folded tab is wider (30 px) and shows the newest thumbnail over an accent badge with the count in white

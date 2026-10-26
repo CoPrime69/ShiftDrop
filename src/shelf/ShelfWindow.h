@@ -140,6 +140,11 @@ namespace sd
         std::vector<std::wstring> PathsOf(const std::vector<size_t>& indices) const;
         void RequestThumbnails();
         void CheckFiles();
+        // Always on top, from start to end, full-screen apps included: back above any other app's
+        // window that has covered it (another always-on-top window, or one that raised itself). Not
+        // while a drag is under way: the wheel and the top panel sit above it then.
+        void StayOnTop();
+        static void CALLBACK OnForeground(HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG object, LONG child, DWORD thread, DWORD time);
         void OnThumb(std::unique_ptr<ThumbResult> result);
         void OnCheck(std::unique_ptr<CheckResult> result);
         void OnKeep(std::unique_ptr<KeepJob> job);
@@ -204,6 +209,7 @@ namespace sd
         Microsoft::WRL::ComPtr<IDropTarget> m_dropTarget;
         bool m_registered = false;
         HWND m_tips = nullptr;   // tooltips for the header buttons; owned by m_hwnd, destroyed with it
+        HWINEVENTHOOK m_foregroundHook = nullptr;   // another app came forward: StayOnTop
         Microsoft::WRL::ComPtr<ID2D1StrokeStyle> m_dashes;   // the empty shelf's drop outline
         ControlKit m_kit;                                     // its buttons; on m_rt while drawing
         Microsoft::WRL::ComPtr<IDWriteTextFormat> m_titleFont, m_nameFont, m_detailFont, m_iconFont, m_countFont, m_footerFont,

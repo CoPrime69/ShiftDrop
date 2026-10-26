@@ -15,6 +15,7 @@
 #include "shelf/Carry.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <shlguid.h>
 #include <shlobj.h>
@@ -39,6 +40,33 @@ namespace sd
     namespace
     {
         constexpr wchar_t kClassName[] = L"" SD_NAME L".Shelf";
+        Shelf* g_shelf = nullptr;   // for OnForeground, which has no context of its own; one shelf per app
+
+        // A window someone can see: shown, not minimised and not cloaked (a suspended Store app, a
+        // window on another virtual desktop).
+        bool Showing(HWND hwnd)
+        {
+            if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+                return false;
+            DWORD cloaked = 0;
+            return FAILED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) || !cloaked;
+        }
+
+        // Windows' own passing UI the shelf stays under: menus, tooltips, Start, search, Alt+Tab, the
+        // notification centre and the taskbar's pop-ups. Another app's always-on-top window is not one.
+        bool PassingUi(HWND hwnd)
+        {
+            if (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)
+                return true;
+            wchar_t name[64]{};
+            GetClassNameW(hwnd, name, ARRAYSIZE(name));
+            for (const wchar_t* shell : { L"#32768", L"Windows.UI.Core.CoreWindow", L"Shell_TrayWnd", L"Shell_SecondaryTrayWnd",
+                                          L"XamlExplorerHostIslandWindow", L"MultitaskingViewFrame", L"ForegroundStaging",
+                                          L"TopLevelWindowForOverflowXamlIsland" })
+                if (wcscmp(name, shell) == 0)
+                    return true;
+            return false;
+        }
 
         constexpr UINT kMsgThumb = WM_APP + 1;       // lParam: ThumbResult*, owned by the receiver
         constexpr UINT kMsgCheck = WM_APP + 2;       // lParam: CheckResult*
@@ -48,6 +76,8 @@ namespace sd
         constexpr UINT_PTR kTimerFrame = 1;
         constexpr UINT_PTR kTimerFold = 2;
         constexpr UINT_PTR kTimerCheck = 3;
+        constexpr UINT_PTR kTimerTop = 4;
+        constexpr UINT kTopMs = 500;   // how soon it comes back above an always-on-top window that opened
 
         constexpr float kPadDip = 26.f;       // shadow room around the panel
         constexpr float kShowMs = 240.f;
@@ -163,6 +193,10 @@ namespace sd
 
     Shelf::~Shelf()
     {
+        if (m_foregroundHook)
+            UnhookWinEvent(m_foregroundHook);
+        if (g_shelf == this)
+            g_shelf = nullptr;
         if (m_hwnd)
             Save();   // on exit, so it comes back where it was left
         *m_alive = false;
@@ -185,6 +219,9 @@ namespace sd
             return false;
         }
         m_worker = std::make_unique<JobQueue>(1, JobQueue::Apartment::Sta);   // shell thumbnails want an STA
+        g_shelf = this;
+        m_foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, OnForeground, 0, 0,
+                                           WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
         // The app's drop target, as the wheel has: CF_HDROP and a browser's or mail app's virtual files.
         m_dropTarget = Microsoft::WRL::Make<DropTarget>(m_hwnd.get(), static_cast<IDropSink*>(this), MakeDragImageHelper());
@@ -950,9 +987,11 @@ namespace sd
                 m_scroll = m_scrollTarget;
             }
             SetTimer(m_hwnd.get(), kTimerCheck, kCheckMs, nullptr);
+            SetTimer(m_hwnd.get(), kTimerTop, kTopMs, nullptr);
             Render();
             ShowWindow(m_hwnd.get(), SW_SHOWNOACTIVATE);
         }
+        StayOnTop();
         if (peek)
         {
             WantOpen(true);
@@ -961,11 +1000,42 @@ namespace sd
         Animate();
     }
 
+    void CALLBACK Shelf::OnForeground(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD)
+    {
+        if (g_shelf)
+            g_shelf->StayOnTop();
+    }
+
+    void Shelf::StayOnTop()
+    {
+        const HWND hwnd = m_hwnd.get();
+        if (!hwnd || !m_visible || m_hiding)
+            return;
+        if ((GetAsyncKeyState(VK_LBUTTON) | GetAsyncKeyState(VK_RBUTTON)) & 0x8000)
+            return;   // a drag: ShiftDrop's own wheel and top panel go above the shelf
+        // Is any other app's window above it, where it is? Our own (a menu, a tooltip, the wheel) may be.
+        RECT mine{};
+        GetWindowRect(hwnd, &mine);
+        const DWORD self = GetCurrentProcessId();
+        bool covered = false;
+        for (HWND above = GetWindow(hwnd, GW_HWNDPREV); above && !covered; above = GetWindow(above, GW_HWNDPREV))
+        {
+            DWORD process = 0;
+            GetWindowThreadProcessId(above, &process);
+            RECT theirs{}, both{};
+            covered = process != self && Showing(above) && !PassingUi(above) && GetWindowRect(above, &theirs) &&
+                      IntersectRect(&both, &mine, &theirs);
+        }
+        if (covered)
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    }
+
     void Shelf::Hide()
     {
         if (!m_visible)
             return;
         KillTimer(m_hwnd.get(), kTimerCheck);
+        KillTimer(m_hwnd.get(), kTimerTop);
         KillTimer(m_hwnd.get(), kTimerFold);
         m_hiding = true;
         if (!m_motion)
@@ -1621,6 +1691,8 @@ namespace sd
                 OnFrame();
             else if (wParam == kTimerCheck)
                 CheckFiles();
+            else if (wParam == kTimerTop)
+                StayOnTop();   // an always-on-top window that opened without coming forward
             else if (wParam == kTimerFold)
             {
                 KillTimer(hwnd, kTimerFold);
