@@ -290,6 +290,15 @@ TEST(Updates, OnlyThisRepositorysDownloads)
         EXPECT_FALSE(IsReleaseDownload(bad)) << Narrow(bad);
 }
 
+TEST(Updates, RetriesOnlyWhatMayPassByItself)
+{
+    for (unsigned long status : { 408ul, 429ul, 500ul, 502ul, 503ul, 504ul })
+        EXPECT_TRUE(IsWorthRetrying(status)) << status;
+    for (unsigned long status : { 200ul, 301ul, 400ul, 401ul, 403ul, 404ul, 410ul })
+        EXPECT_FALSE(IsWorthRetrying(status)) << status;
+    static_assert(std::size(kRetryWaitMs) == kTries - 1);
+}
+
 TEST(Updates, TheNotesAsPlainText)
 {
     const auto r = ParseRelease(kLatest);

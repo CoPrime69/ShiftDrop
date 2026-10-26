@@ -29,8 +29,27 @@ namespace sd::updates::http
             WinHttpSetOption(h, option, &value, sizeof(value));
         }
 
-        bool Fetch(const std::wstring& url, const wchar_t* accept, uint64_t maxBytes, const Sink& sink, std::wstring& error)
+        // The host that answered: after a redirect, GitHub's file host rather than github.com.
+        std::wstring AnsweringHost(HINTERNET request, const std::wstring& asked)
         {
+            DWORD size = 0;
+            WinHttpQueryOption(request, WINHTTP_OPTION_URL, nullptr, &size);
+            std::wstring url(size / sizeof(wchar_t), L'\0');
+            if (url.empty() || !WinHttpQueryOption(request, WINHTTP_OPTION_URL, url.data(), &size))
+                return asked;
+            url.resize(wcsnlen(url.c_str(), url.size()));
+            URL_COMPONENTS parts{ sizeof(parts) };
+            parts.dwHostNameLength = static_cast<DWORD>(-1);
+            if (!WinHttpCrackUrl(url.c_str(), 0, 0, &parts) || !parts.lpszHostName)
+                return asked;
+            return std::wstring(parts.lpszHostName, parts.dwHostNameLength);
+        }
+
+        // One try. `again` says whether a failure may pass by itself: no answer, a dropped
+        // connection, or an answer such as GitHub's 502/503/504.
+        bool FetchOnce(const std::wstring& url, const wchar_t* accept, uint64_t maxBytes, const Sink& sink, std::wstring& error, bool& again)
+        {
+            again = false;
             URL_COMPONENTS parts{ sizeof(parts) };
             parts.dwHostNameLength = parts.dwUrlPathLength = parts.dwExtraInfoLength = static_cast<DWORD>(-1);
             if (!WinHttpCrackUrl(url.c_str(), 0, 0, &parts) || parts.nScheme != INTERNET_SCHEME_HTTPS)
@@ -81,6 +100,7 @@ namespace sd::updates::http
                 !WinHttpReceiveResponse(request.get(), nullptr))
             {
                 const DWORD code = GetLastError();
+                again = true;
                 error = code == ERROR_WINHTTP_NAME_NOT_RESOLVED || code == ERROR_WINHTTP_CANNOT_CONNECT || code == ERROR_WINHTTP_TIMEOUT
                             ? std::format(L"Couldn’t reach {} ({})", host, code)
                             : std::format(L"The request to {} failed ({})", host, code);
@@ -91,7 +111,8 @@ namespace sd::updates::http
                                 WINHTTP_NO_HEADER_INDEX);
             if (status != 200)
             {
-                error = std::format(L"{} answered {}", host, status);
+                error = std::format(L"{} answered {}", AnsweringHost(request.get(), host), status);
+                again = IsWorthRetrying(status);
                 return false;
             }
             std::vector<char> buffer(64 * 1024);
@@ -102,6 +123,7 @@ namespace sd::updates::http
                 if (!WinHttpReadData(request.get(), buffer.data(), static_cast<DWORD>(buffer.size()), &read))
                 {
                     error = std::format(L"The download from {} broke off ({})", host, GetLastError());
+                    again = true;
                     return false;
                 }
                 if (read == 0)
@@ -119,15 +141,40 @@ namespace sd::updates::http
                 }
             }
         }
+
+        // FetchOnce, tried again after a short wait when the failure may pass by itself (GitHub
+        // answering 502/503/504 now and then, a connection that dropped). `restart` empties what the
+        // sink got from a failed try.
+        bool Fetch(const std::wstring& url, const wchar_t* accept, uint64_t maxBytes, const Sink& sink, const std::function<bool()>& restart,
+                   std::wstring& error)
+        {
+            for (int attempt = 0;; ++attempt)
+            {
+                bool again = false;
+                if (FetchOnce(url, accept, maxBytes, sink, error, again))
+                    return true;
+                if (!again || attempt + 1 >= kTries || !restart())
+                    return false;
+                log::Warn(L"updater: {}; trying again", error);
+                Sleep(kRetryWaitMs[attempt]);
+            }
+        }
     }
 
     bool Get(const std::wstring& url, const wchar_t* accept, uint64_t maxBytes, std::string& body, std::wstring& error)
     {
         body.clear();
-        return Fetch(url, accept, maxBytes, [&](const char* data, DWORD size) {
-            body.append(data, size);
-            return true;
-        }, error);
+        return Fetch(
+            url, accept, maxBytes,
+            [&](const char* data, DWORD size) {
+                body.append(data, size);
+                return true;
+            },
+            [&] {
+                body.clear();
+                return true;
+            },
+            error);
     }
 
     bool Download(const std::wstring& url, const std::wstring& path, uint64_t maxBytes, std::wstring& error)
@@ -138,10 +185,14 @@ namespace sd::updates::http
             error = std::format(L"Couldn’t create {} ({})", path, GetLastError());
             return false;
         }
-        const bool ok = Fetch(url, L"application/octet-stream", maxBytes, [&](const char* data, DWORD size) {
-            DWORD written = 0;
-            return WriteFile(file.get(), data, size, &written, nullptr) && written == size;
-        }, error);
+        const bool ok = Fetch(
+            url, L"application/octet-stream", maxBytes,
+            [&](const char* data, DWORD size) {
+                DWORD written = 0;
+                return WriteFile(file.get(), data, size, &written, nullptr) && written == size;
+            },
+            [&] { return SetFilePointer(file.get(), 0, nullptr, FILE_BEGIN) == 0 && SetEndOfFile(file.get()); },
+            error);
         file.reset();
         if (!ok)
             DeleteFileW(path.c_str());

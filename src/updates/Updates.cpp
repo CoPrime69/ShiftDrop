@@ -185,6 +185,11 @@ namespace sd::updates
                std::count(rest.begin(), rest.end(), L'/') == 1;
     }
 
+    bool IsWorthRetrying(unsigned long status)
+    {
+        return status == 408 || status == 429 || (status >= 500 && status <= 599);
+    }
+
     namespace
     {
         std::wstring Text(const nlohmann::json& j, const char* key)

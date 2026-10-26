@@ -5,6 +5,12 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Fixed
+
+- Updates: a download or check that GitHub answers with a passing error (such as 504, common for a few
+  minutes after a release) is tried twice more before it's reported as failed, and the message names
+  the server that actually answered.
+
 ## [0.7.2] - 2026-10-26
 
 ### Added
