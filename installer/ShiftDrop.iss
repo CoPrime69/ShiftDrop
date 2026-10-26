@@ -38,6 +38,8 @@
 #endif
 ; Must match SD_NAME in src/Brand.h: the exe, the settings folder and the Run value are all named after it.
 #define AppName "ShiftDrop"
+; The privacy policy the welcome page links to (the website's, kept with the code signing policy).
+#define PrivacyURL "https://getshiftdrop.vercel.app/privacy.html"
 
 [Setup]
 ; AppId identifies the install for upgrades and uninstall; never change it.
@@ -83,7 +85,7 @@ RestartApplications=no
 [Messages]
 ; The welcome and finish pages. The name and version come from the defines above, like everywhere
 ; else in this script.
-WelcomeLabel2=Setup will install {#AppName} {#AppVersion} on this PC. It runs offline and needs no account. Works on Windows 10 and 11.
+WelcomeLabel2=Setup will install {#AppName} {#AppVersion} on this PC. It runs offline and needs no account; only the update check goes online, to GitHub. Works on Windows 10 and 11.
 FinishedLabel=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
 FinishedLabelNoIcons=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
 
@@ -156,6 +158,30 @@ begin
   SavedChoice := GetIniString('Startup', 'StartWithWindows', '', ExpandConstant('{localappdata}\{#AppName}\settings.ini'));
   HadShellMenu := RegKeyExists(HKCU, 'Software\Classes\Directory\shell\{#AppName}');
   Result := True;
+end;
+
+procedure OpenPrivacyPolicy(Sender: TObject);
+var
+  Code: Integer;
+begin
+  ShellExecAsOriginalUser('open', '{#PrivacyURL}', '', '', SW_SHOWNORMAL, ewNoWait, Code);
+end;
+
+procedure InitializeWizard;
+var
+  Link: TNewStaticText;
+begin
+  // The welcome page links to the privacy policy, under its text.
+  WizardForm.WelcomeLabel2.AdjustHeight;
+  Link := TNewStaticText.Create(WizardForm);
+  Link.Parent := WizardForm.WelcomePage;
+  Link.Left := WizardForm.WelcomeLabel2.Left;
+  Link.Top := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(12);
+  Link.Caption := 'Privacy policy';
+  Link.Font.Color := clHotLight;
+  Link.Font.Style := [fsUnderline];
+  Link.Cursor := crHand;
+  Link.OnClick := @OpenPrivacyPolicy;
 end;
 
 function HasSavedChoice: Boolean;

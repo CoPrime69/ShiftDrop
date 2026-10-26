@@ -594,7 +594,9 @@ jobs:
             '',
             "The installer isn't code-signed yet, so Windows SmartScreen may warn the first time you run it (""Windows protected your PC""): choose **More info**, then **Run anyway**.",
             '',
-            "SHA-256 of ShiftDrop-Setup-$version.exe: ``$setupHash``. SHA256SUMS.txt lists every file in this release."
+            "SHA-256 of ShiftDrop-Setup-$version.exe: ``$setupHash``. SHA256SUMS.txt lists every file in this release.",
+            '',
+            '[Code signing policy](https://getshiftdrop.vercel.app/code-signing.html) | [Privacy policy](https://getshiftdrop.vercel.app/privacy.html)'
           )
           $text = $notes -join "`n"
           if ($text -match '(?i)cl[a]ude|anthr[o]pic') { throw 'The release notes mention a name they must not; nothing was published.' }

@@ -5,6 +5,10 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- Setup's welcome page links to the privacy policy and says that only the update check goes online.
+
 ### Fixed
 
 - Settings › Updates: once a check finds an update, Check now turns into Update now, so the update
