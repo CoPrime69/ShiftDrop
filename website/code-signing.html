@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code signing policy · ShiftDrop</title>
+  <meta name="description" content="How ShiftDrop releases are built and signed, and who approves them.">
+  <meta name="theme-color" content="#F6F7F9">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://getshiftdrop.vercel.app/code-signing.html">
+  <link rel="preload" href="assets/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/css/site.css?v=25">
+  <script src="assets/js/theme.js?v=25"></script>
+  <script type="module" src="assets/js/site.js?v=25"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="lockup" href="./" aria-label="ShiftDrop home">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>
+        <span class="wordmark">ShiftDrop</span>
+      </a>
+      <nav class="nav" aria-label="Sections">
+        <a href="./#how">How it works</a>
+        <a href="./#features">Features</a>
+        <a href="./#editors">Editors</a>
+        <a href="./#privacy">Privacy</a>
+        <a href="./#formats">Formats</a>
+        <a href="./#faq">FAQ</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" class="icon-link theme-toggle" data-theme-toggle aria-label="Switch to dark mode"><span data-icon="moon" data-icon-class="icon theme-moon"></span><span data-icon="sun" data-icon-class="icon theme-sun"></span></button>
+        <a class="star-link" href="https://github.com/CoPrime69/ShiftDrop" aria-label="Star ShiftDrop on GitHub" target="_blank" rel="noopener"><span data-icon="github"></span><span class="star-label"><span data-icon="star"></span>Star</span><span class="star-count" data-stars hidden></span></a>
+        <a class="button button-ink button-small" href="./#download">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="doc">
+    <div class="wrap doc-wrap">
+      <p class="doc-kicker mono">Policy</p>
+      <h1 class="h2">Code signing policy</h1>
+      <p class="doc-lede">How ShiftDrop's Windows releases are built and signed, who approves a signed release, and what the signed programs do on your PC.</p>
+
+      <section>
+        <h2>Signing</h2>
+        <p class="doc-callout"><strong>Free code signing provided by <a href="https://about.signpath.io" target="_blank" rel="noopener">SignPath.io</a>, certificate by <a href="https://signpath.org" target="_blank" rel="noopener">SignPath Foundation</a>.</strong></p>
+        <p>ShiftDrop is applying to the SignPath Foundation's program for open-source projects. Until signing is in place, releases are published unsigned, and Windows SmartScreen may ask you to confirm before the installer runs: choose <em>More info</em>, then <em>Run anyway</em>.</p>
+      </section>
+
+      <section>
+        <h2>What is signed</h2>
+        <ul>
+          <li>The installer, <span class="mono">ShiftDrop-Setup-&lt;version&gt;.exe</span>, published on the <a href="https://github.com/CoPrime69/ShiftDrop/releases" target="_blank" rel="noopener">GitHub releases page</a>.</li>
+          <li>The programs built from this project's source and installed by it: <span class="mono">ShiftDrop.exe</span>, <span class="mono">ShiftDrop-Updater.exe</span> and <span class="mono">ShiftDropWorker.exe</span>.</li>
+        </ul>
+        <p>The installer also carries <span class="mono">ffmpeg.exe</span>, an unmodified LGPL build of <a href="https://ffmpeg.org" target="_blank" rel="noopener">FFmpeg</a>, fetched at a pinned version and checked against its SHA-256. It is third-party software and isn't signed under this policy.</p>
+      </section>
+
+      <section>
+        <h2>How a release is built</h2>
+        <ul>
+          <li>Every release is built by <a href="https://github.com/CoPrime69/ShiftDrop/actions" target="_blank" rel="noopener">GitHub Actions</a> from the public source on the <span class="mono">main</span> branch. Nothing built on a personal computer is ever signed.</li>
+          <li>An approver listed below approves each signing request by hand, after the release's build and tests have passed.</li>
+          <li>Each release's <span class="mono">SHA256SUMS.txt</span> lists the installer's hash, so you can check the file you downloaded.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Team roles</h2>
+        <div class="doc-table">
+          <table>
+            <thead><tr><th scope="col">Role</th><th scope="col">What it means</th><th scope="col">Members</th></tr></thead>
+            <tbody>
+              <tr><td>Committers and reviewers</td><td>May change the source. They review every change from anyone else, such as a pull request, before it is merged.</td><td><a href="https://github.com/CoPrime69" target="_blank" rel="noopener">CoPrime69</a></td></tr>
+              <tr><td>Approvers</td><td>Approve each signing request, after checking that the release came from this repository's build.</td><td><a href="https://github.com/CoPrime69" target="_blank" rel="noopener">CoPrime69</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Every team member uses multi-factor authentication on GitHub and on SignPath.</p>
+      </section>
+
+      <section>
+        <h2>Privacy</h2>
+        <p>ShiftDrop transfers no information about you, your files or your settings to other networked systems. Its only network use is a check for a new version: a separate program asks GitHub for the latest release, and you can turn it off in <em>Settings › Updates</em>. The full details are in the <a href="privacy.html">privacy policy</a>.</p>
+      </section>
+
+      <section>
+        <h2>Installing and removing</h2>
+        <p>The installer puts ShiftDrop in your user profile, with no admin rights, and asks before it adds ShiftDrop to Windows startup and to the right-click menu. To remove it, open <em>Settings › Apps › Installed apps</em>, find ShiftDrop and choose <em>Uninstall</em>. That removes the program, its startup entry and its right-click entry. Your settings and history in <span class="mono">%LOCALAPPDATA%\ShiftDrop</span> stay; delete that folder to remove them too.</p>
+      </section>
+
+      <section>
+        <h2>Reporting a problem</h2>
+        <p>If you think a signed ShiftDrop file is harmful, or wasn't built from this project, report it privately as described in <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <div class="footer-brand">
+        <a class="lockup" href="./" aria-label="ShiftDrop home">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><g transform="translate(2 1.02)"><path class="mark-page" d="M18 8H29A20 20 0 0 0 49 28V51A7 7 0 0 1 42 58H18A7 7 0 0 1 11 51V15A7 7 0 0 1 18 8Z" transform="rotate(-8 30 33)"/><path class="mark-slice" d="M30.14 1.55H46.39Q49.39 1.55 49.39 4.55V20.8A19.25 19.25 0 0 1 30.14 1.55Z"/></g></svg>
+          <span class="wordmark">ShiftDrop</span>
+        </a>
+        <p>Free, open-source file tools for Windows 10 and 11. Everything runs on your PC.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <div>
+          <h3>Get it</h3>
+          <a href="https://github.com/CoPrime69/ShiftDrop/releases/latest" data-download target="_blank" rel="noopener">Download</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/CHANGELOG.md" target="_blank" rel="noopener">What's new</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/releases" target="_blank" rel="noopener">All releases</a>
+        </div>
+        <div>
+          <h3>Project</h3>
+          <a href="https://github.com/CoPrime69/ShiftDrop" target="_blank" rel="noopener">Source code</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/issues/new/choose" target="_blank" rel="noopener">Report a problem</a>
+          <a href="https://github.com/CoPrime69/ShiftDrop/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+        </div>
+        <div>
+          <h3>Policies</h3>
+          <a href="privacy.html">Privacy</a>
+          <a href="code-signing.html">Code signing policy</a>
+        </div>
+      </nav>
+    </div>
+    <div class="wrap footer-small">
+      <p>Made by <a href="https://github.com/CoPrime69" target="_blank" rel="noopener">CoPrime</a>.</p>
+      <p>Windows is a trademark of Microsoft. ShiftDrop isn't made by or affiliated with Microsoft.</p>
+    </div>
+  </footer>
+</body>
+</html>
