@@ -5,6 +5,8 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-26
+
 ### Fixed
 
 - Updates: a download or check that GitHub answers with a passing error (such as 504, common for a few
@@ -154,7 +156,8 @@ The first public release.
 - Office exports run on their own thread, so Move and Copy never wait behind them.
 - Dropping a ZIP on the ZIP slice is skipped instead of crashing.
 
-[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.3
 [0.7.2]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.2
 [0.7.1]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.1
 [0.7.0]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.0
