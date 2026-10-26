@@ -779,3 +779,32 @@ kbd {
 @media (max-width: 374px) {
   .site-header .wordmark { display: none; }
 }
+
+/* Policy pages: one readable column. */
+.doc { padding-block: clamp(48px, 8vw, 104px) 0; }
+.doc-wrap { max-width: 760px; }
+.doc-kicker { font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+.doc-lede { margin-top: 20px; font-size: 1.1875rem; color: var(--text-2); max-width: 62ch; }
+.doc section { margin-top: clamp(48px, 6vw, 72px); }
+.doc h2 { font: 600 1.5rem/1.25 var(--font-display); letter-spacing: -0.015em; margin-bottom: 16px; text-wrap: balance; }
+.doc p, .doc li { color: var(--text-2); max-width: 68ch; }
+.doc p + p, .doc ul + p, .doc p + ul, .doc .doc-table + p { margin-top: 14px; }
+.doc ul { display: grid; gap: 12px; padding-left: 1.2em; list-style: disc; }
+.doc li::marker { color: var(--accent); }
+.doc strong { color: var(--text); font-weight: 600; }
+.doc a { color: var(--accent); }
+.doc .mono { font-size: 0.9em; overflow-wrap: anywhere; }
+.doc-callout { padding: 18px 20px; border-radius: var(--radius-panel); background: color-mix(in srgb, var(--tide) 8%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tide) 35%, transparent); }
+.doc-callout strong { font-weight: 500; }
+.doc-table { overflow-x: auto; border-radius: var(--radius-panel); box-shadow: inset 0 0 0 1px var(--border); }
+.doc table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+.doc th, .doc td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.doc th { font-weight: 600; color: var(--text); background: var(--surface-2); }
+.doc td { color: var(--text-2); }
+.doc tr:last-child td { border-bottom: 0; }
+.doc td:first-child { color: var(--text); font-weight: 500; white-space: nowrap; }
+.doc-updated { margin-top: 28px; font-size: 0.8125rem; color: var(--text-3); }
+@media (max-width: 640px) {
+  .doc td:first-child { white-space: normal; }
+  .doc th, .doc td { padding: 12px; }
+}
