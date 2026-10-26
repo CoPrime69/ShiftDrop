@@ -2,6 +2,8 @@
 
 The ShiftDrop website: plain HTML, CSS and JavaScript, with nothing to build. Vercel publishes this folder
 (the project's Root Directory) to https://getshiftdrop.vercel.app whenever main changes.
+`vercel.json` keeps Vercel quiet on GitHub: it posts no comments on pull requests or commits, and a push
+that doesn't change this folder builds nothing.
 
 To preview it, serve the folder (ES modules don't load from `file://`):
 
