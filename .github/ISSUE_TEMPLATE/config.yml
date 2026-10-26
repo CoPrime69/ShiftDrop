@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security problem
     url: https://github.com/CoPrime69/ShiftDrop/security/advisories/new
     about: Please report vulnerabilities privately, not in a public issue.
+  - name: Ask a question
+    url: https://github.com/CoPrime69/ShiftDrop/discussions
+    about: How do I…? Is this possible? Ask in Discussions; issues are for bugs and feature requests.
