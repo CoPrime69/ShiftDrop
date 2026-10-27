@@ -5,6 +5,8 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-10-27
+
 ### Added
 
 - Setup shows a short privacy page and has a box to turn off the daily update check (the one thing
@@ -165,7 +167,8 @@ The first public release.
 - Office exports run on their own thread, so Move and Copy never wait behind them.
 - Dropping a ZIP on the ZIP slice is skipped instead of crashing.
 
-[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/CoPrime69/ShiftDrop/compare/v0.7.4...HEAD
+[0.7.4]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.4
 [0.7.3]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.3
 [0.7.2]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.2
 [0.7.1]: https://github.com/CoPrime69/ShiftDrop/releases/tag/v0.7.1
