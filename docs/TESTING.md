@@ -806,6 +806,13 @@ result to the Desktop (or the folder chosen below); the copy is deleted when the
    account. Works on Windows 10 and 11." with this build's version.
    Setup.exe has the new app icon; the welcome and finish pages show the dark side picture with the
    tilted page, and the inner pages the small mark at the top right, sharp at 100%, 150% and 200%.
+   The next page, "ShiftDrop and your privacy", says only the update check goes online, to GitHub, and
+   links the full privacy policy.
+   - [ ] The tasks page has a ticked "Check GitHub once a day for a new version of ShiftDrop". Untick it on
+     a fresh install: Settings › Updates shows **Off** and nothing goes online. Ticked: it shows the
+     default. Reinstalling after choosing a mode in Settings doesn't show the box and keeps that mode
+   - [ ] File Explorer › ShiftDropWorker.exe (in `engines`) › Properties › Details: Product name ShiftDrop
+     and the same product version as ShiftDrop.exe
 2. The wizard shows the folder (`%LOCALAPPDATA%\Programs\ShiftDrop`) and a ticked "Start ShiftDrop when I
    sign in to Windows". The last page says "Drag any file and press Shift to open the wheel. ShiftDrop
    lives in the tray." with "Start ShiftDrop" ticked; Finish: the tray icon appears. Untick it on another

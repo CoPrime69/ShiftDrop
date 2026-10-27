@@ -337,9 +337,10 @@ target_link_libraries(ShiftDrop PRIVATE shiftdrop_core shiftdrop_winrt shiftdrop
 # separate small exe (no UI, COM or shell code) so the sandboxed image holds only the parsers. It
 # lives in "engines" next to ffmpeg.exe; every build copies it there so the build folder runs like
 # an install.
-add_executable(ShiftDropWorker WIN32 src/sandbox/WorkerExe.cpp)
+add_executable(ShiftDropWorker WIN32 src/sandbox/WorkerExe.cpp src/Worker.rc)
 target_compile_options(ShiftDropWorker PRIVATE ${SHIFTDROP_OPTIONS})
 target_link_libraries(ShiftDropWorker PRIVATE shiftdrop_core)
+add_dependencies(ShiftDropWorker shiftdrop_version)   # Worker.rc includes Version.h
 add_dependencies(ShiftDrop ShiftDropWorker)
 add_custom_command(TARGET ShiftDropWorker POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShiftDropWorker>/engines"

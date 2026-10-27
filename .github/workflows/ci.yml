@@ -212,6 +212,7 @@ jobs:
         run: |
           ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop.exe -Changelog -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
           ./scripts/check-version.ps1 -Exe build/ci/ShiftDrop-Updater.exe -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
+          ./scripts/check-version.ps1 -Exe build/ci/ShiftDropWorker.exe -Commit '${{ github.event.pull_request.head.sha || github.sha }}' -Release:$${{ needs.reuse.outputs.release == 'true' }}
 
       - uses: actions/upload-artifact@v7
         if: ${{ !inputs.cache-only }}

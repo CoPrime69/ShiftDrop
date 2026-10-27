@@ -1,0 +1,9 @@
+ShiftDrop and your privacy
+
+ShiftDrop works on your PC. It has no account, no telemetry and no ads, and it never uploads your files, your settings or anything about you.
+
+The one thing that goes online is the update check. Once a day, a separate program, ShiftDrop-Updater.exe, asks GitHub for the latest ShiftDrop release, and when you choose to update it downloads that release's installer from GitHub. The request carries no cookies, no sign-in and no identifiers. Like any website, GitHub sees your IP address; the GitHub Privacy Statement covers how GitHub handles it.
+
+You can turn the update check off on a later page of this setup, or at any time in ShiftDrop's Settings > Updates.
+
+The full privacy policy: https://getshiftdrop.vercel.app/privacy.html

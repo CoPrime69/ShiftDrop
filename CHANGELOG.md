@@ -5,6 +5,15 @@ until 1.0, a minor version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- Setup shows a short privacy page and has a box to turn off the daily update check (the one thing
+  ShiftDrop sends online), as code signing through SignPath asks.
+
+### Fixed
+
+- ShiftDropWorker.exe states its product name and version in its file details, like the other programs.
+
 ## [0.7.3] - 2026-10-26
 
 ### Fixed
