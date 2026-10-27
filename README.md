@@ -104,7 +104,7 @@ Share (the Windows share sheet), Remove metadata, and Zip (one ZIP of everything
    rights and nothing else to install. It adds a Start menu entry and can start ShiftDrop when you
    sign in.
 
-The installer isn't code-signed yet (see [Code signing](#code-signing)), so Windows SmartScreen may
+The installer isn't code-signed yet (see [Code signing policy](#code-signing-policy)), so Windows SmartScreen may
 say "Windows protected your PC". Choose **More info**, then **Run anyway**.
 
 ShiftDrop needs Windows 10 22H2 or Windows 11, 64-bit. To uninstall, use Settings > Apps. Your
@@ -215,15 +215,17 @@ the rules the code keeps (offline, no GPL, never overwrite a file) and how a new
 Please follow the [code of conduct](CODE_OF_CONDUCT.md), and report security problems privately as
 described in [SECURITY.md](SECURITY.md).
 
-## Code signing
+## Code signing policy
 
-Releases are unsigned for now. When you run the installer, Windows SmartScreen may say "Windows
-protected your PC": choose **More info**, then **Run anyway**. Code signing will be added in a later
-release.
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org). ShiftDrop is applying to their program for open-source
+projects; until then releases are unsigned, and Windows SmartScreen may say "Windows protected your
+PC": choose **More info**, then **Run anyway**. The full policy, with who builds, reviews and approves
+each signed release, is at https://getshiftdrop.vercel.app/code-signing.html.
 
 Privacy: this program transfers no information about you to other networked systems. Its only
 network use is the daily check for a new version, which asks GitHub for the latest release and can be
-turned off in Settings › Updates. See [Privacy](#privacy).
+turned off during setup or in Settings › Updates. See [Privacy](#privacy).
 
 ## Licence
 

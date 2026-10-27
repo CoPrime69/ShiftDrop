@@ -67,6 +67,9 @@ MinVersion=10.0.19045
 OutputDir=..\build\installer
 OutputBaseFilename={#AppName}-Setup-{#AppVersion}
 SetupIconFile=..\src\ShiftDrop.ico
+; The privacy policy in short, shown as its own page before the install (the update check is the one
+; thing that goes online, and the tasks page lets it be turned off).
+InfoBeforeFile=privacy.txt
 UninstallDisplayIcon={app}\{#AppName}.exe
 UninstallDisplayName={#AppName}
 WizardStyle=modern
@@ -85,7 +88,7 @@ RestartApplications=no
 [Messages]
 ; The welcome and finish pages. The name and version come from the defines above, like everywhere
 ; else in this script.
-WelcomeLabel2=Setup will install {#AppName} {#AppVersion} on this PC. It runs offline and needs no account; only the update check goes online, to GitHub. Works on Windows 10 and 11.
+WelcomeLabel2=Setup will install {#AppName} {#AppVersion} on this PC. It runs offline and needs no account; only the update check goes online, to GitHub, and you can turn it off during setup or later in Settings. Works on Windows 10 and 11.
 FinishedLabel=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
 FinishedLabelNoIcons=Drag any file and press Shift to open the wheel. {#AppName} lives in the tray.
 
@@ -96,6 +99,9 @@ Name: startup; Description: "Start {#AppName} when I sign in to Windows"; Check:
 ; The right-click entry for files and folders (per user, HKCU\Software\Classes). Same rule: an upgrade
 ; keeps whatever the tray menu last chose.
 Name: shellmenu; Description: "Add ""{#AppName}..."" to the right-click menu of files and folders"; Check: not HasSavedChoice
+; The one thing that goes online (see the privacy policy), so it can be turned off here. Shown until
+; the app has saved an update choice of its own (Settings › Updates).
+Name: updates; Description: "Check GitHub once a day for a new version of {#AppName}"; Check: not HasSavedUpdateMode
 
 [Dirs]
 ; Settings, history, recipes and logs. Kept on uninstall: they are the user's data.
@@ -127,6 +133,8 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; AppUserMode
 ; Same key the app reads (startup::Choice). Written only when there is no saved choice yet.
 Filename: "{localappdata}\{#AppName}\settings.ini"; Section: "Startup"; Key: "StartWithWindows"; String: "1"; Tasks: startup; Check: not HasSavedChoice
 Filename: "{localappdata}\{#AppName}\settings.ini"; Section: "Startup"; Key: "StartWithWindows"; String: "0"; Tasks: not startup; Check: not HasSavedChoice
+; Same key the app reads (updates::LoadMode). Ticked leaves the app's default.
+Filename: "{localappdata}\{#AppName}\settings.ini"; Section: "Updates"; Key: "Mode"; String: "off"; Tasks: not updates; Check: not HasSavedUpdateMode
 
 [Registry]
 ; The exact value the app writes itself (startup::Enable), so the app sees it as already correct.
@@ -150,12 +158,14 @@ Filename: "{app}\{#AppName}.exe"; Parameters: "--unregister-shell"; Flags: runhi
 [Code]
 var
   SavedChoice: String;
+  SavedUpdateMode: String;
   HadShellMenu: Boolean;
 
 function InitializeSetup: Boolean;
 begin
   // Read once, before [INI] runs, so every Check below sees the state from before this install.
   SavedChoice := GetIniString('Startup', 'StartWithWindows', '', ExpandConstant('{localappdata}\{#AppName}\settings.ini'));
+  SavedUpdateMode := GetIniString('Updates', 'Mode', '', ExpandConstant('{localappdata}\{#AppName}\settings.ini'));
   HadShellMenu := RegKeyExists(HKCU, 'Software\Classes\Directory\shell\{#AppName}');
   Result := True;
 end;
@@ -187,6 +197,11 @@ end;
 function HasSavedChoice: Boolean;
 begin
   Result := SavedChoice <> '';
+end;
+
+function HasSavedUpdateMode: Boolean;
+begin
+  Result := SavedUpdateMode <> '';
 end;
 
 function ShellMenuWanted: Boolean;
