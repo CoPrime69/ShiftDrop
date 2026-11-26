@@ -1,5 +1,5 @@
 #pragma once
-#include <windows.h>
+#include "platform/SecureWipe.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -9,8 +9,9 @@
 namespace sd
 {
     // Text that must not linger in memory, such as an archive's password. It lives in one fixed
-    // buffer that is never reallocated or copied (only moved), and is wiped with SecureZeroMemory
-    // (which the compiler may not optimise away) when it is cleared, reassigned or destroyed.
+    // buffer that is never reallocated or copied (only moved), and is wiped with WipeSecret
+    // (SecureZeroMemory on Windows, which the compiler may not optimise away) when it is cleared,
+    // reassigned or destroyed.
     template <class Char, size_t Capacity>
     class BasicSecret
     {
@@ -60,7 +61,7 @@ namespace sd
         void Clear()
         {
             if (m_data)
-                SecureZeroMemory(m_data.get(), (Capacity + 1) * sizeof(Char));
+                platform::WipeSecret(m_data.get(), (Capacity + 1) * sizeof(Char));
             m_size = 0;
         }
 

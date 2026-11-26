@@ -1,7 +1,5 @@
 #include "ErrorText.h"
-
-#include <shobjidl.h>
-#include <wil/resource.h>
+#include "platform/Errors.h"
 
 #include <format>
 
@@ -19,14 +17,6 @@ namespace sd
         return text;
     }
 
-    std::wstring SystemMessage(HRESULT hr)
-    {
-        wil::unique_hlocal_string msg;
-        FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                       static_cast<DWORD>(hr), 0, reinterpret_cast<LPWSTR>(&msg), 0, nullptr);
-        return TrimMessage(msg ? msg.get() : L"");
-    }
-
     std::wstring HResultText(HRESULT hr)
     {
         return HexCode(hr) + L" " + SystemMessage(hr);
@@ -34,7 +24,7 @@ namespace sd
 
     std::wstring HResultMessage(HRESULT hr)
     {
-        if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || hr == COPYENGINE_E_USER_CANCELLED)
+        if (platform::IsCancelledCode(hr))
             return L"cancelled";
         auto text = SystemMessage(hr);
         while (!text.empty() && text.back() == L'.')
