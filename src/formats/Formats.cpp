@@ -1,3 +1,4 @@
+#include "Action.h"
 #include "ImageHooks.h"
 #include "formats/Avif.h"
 #include "formats/Heic.h"
@@ -32,5 +33,11 @@ namespace sd
             if (const char* id = hook->EncodedFormat(); id && formatId == id)
                 return hook;
         return nullptr;
+    }
+
+    bool HookCanEncode(std::string_view formatId)
+    {
+        const auto* hook = EncodeHookFor(formatId);
+        return hook && hook->CanEncode(nullptr);
     }
 }

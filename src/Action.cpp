@@ -1,5 +1,4 @@
 #include "Action.h"
-#include "ImageHooks.h"
 #include "Media.h"
 #include "Strings.h"
 
@@ -55,8 +54,7 @@ namespace sd
         const auto* own = FormatOfExtension(ext);
         if (!own || !own->windowsCodec)
             return own;
-        const auto* hook = EncodeHookFor(own->id);
-        return KeptFormatOf(ext, hook && hook->CanEncode(nullptr));
+        return KeptFormatOf(ext, HookCanEncode(own->id));
     }
 
     ActionRegistry::ActionRegistry()
