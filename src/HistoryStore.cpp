@@ -3,9 +3,9 @@
 #include "PathUtil.h"
 #include "Recipe.h"
 #include "Utf.h"
+#include "platform/Clock.h"
 
 #include <sqlite3.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <format>
@@ -47,9 +47,8 @@ namespace sd
 
         std::string NowLocal()
         {
-            SYSTEMTIME t{};
-            GetLocalTime(&t);
-            return std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+            const auto t = platform::LocalTimeNow();
+            return std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
         }
 
         constexpr const char* kSchema = R"(

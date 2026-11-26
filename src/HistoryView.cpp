@@ -1,7 +1,6 @@
 #include "HistoryView.h"
 #include "Strings.h"
-
-#include <windows.h>
+#include "platform/Clock.h"
 
 #include <algorithm>
 #include <format>
@@ -129,9 +128,8 @@ namespace sd::history
 
     LocalTime LocalNow()
     {
-        SYSTEMTIME t{};
-        GetLocalTime(&t);   // RunRecord::started is local time too
-        return { std::chrono::year_month_day{ std::chrono::year{ t.wYear }, std::chrono::month{ t.wMonth }, std::chrono::day{ t.wDay } }, t.wHour, t.wMinute };
+        const auto t = platform::LocalTimeNow();   // RunRecord::started is local time too
+        return { std::chrono::year_month_day{ std::chrono::year{ t.year }, std::chrono::month{ t.month }, std::chrono::day{ t.day } }, t.hour, t.minute };
     }
 
     std::wstring WhenText(std::wstring_view started, const LocalTime& now)

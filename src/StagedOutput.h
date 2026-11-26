@@ -75,7 +75,7 @@ namespace sd
         std::wstring m_path;
         std::wstring m_error;
         int64_t m_item = 0;
-        ULONGLONG m_started;
+        uint64_t m_started;   // platform::MonotonicMilliseconds()
         bool m_done = false;
     };
 

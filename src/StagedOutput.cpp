@@ -4,6 +4,7 @@
 #include "Log.h"
 #include "OutputPath.h"
 #include "Strings.h"
+#include "platform/Clock.h"
 
 #include <shlwapi.h>
 
@@ -37,7 +38,7 @@ namespace sd
     }
 
     StagedOutput::StagedOutput(HistoryStore* history, int64_t runId, const std::wstring& source, bool folder, const OutputPlace& place)
-        : m_history(history), m_source(source), m_namedAfter(source), m_folder(folder), m_started(GetTickCount64())
+        : m_history(history), m_source(source), m_namedAfter(source), m_folder(folder), m_started(platform::MonotonicMilliseconds())
     {
         if (!place.folder.empty() || !place.stem.empty())
         {
@@ -103,7 +104,8 @@ namespace sd
         if (!m_folder)
             sha = Sha256File(finalPath, &result.size);
         if (m_history)
-            m_history->FinishItem(m_item, status::Done, finalPath, result.size, sha, L"", static_cast<int64_t>(GetTickCount64() - m_started));
+            m_history->FinishItem(m_item, status::Done, finalPath, result.size, sha, L"",
+                                  static_cast<int64_t>(platform::MonotonicMilliseconds() - m_started));
         return result;
     }
 
@@ -116,7 +118,7 @@ namespace sd
         result.skipped = cancelled;
         if (m_history && m_item)
             m_history->FinishItem(m_item, cancelled ? status::Skipped : status::Failed, L"", 0, "", result.error,
-                                  static_cast<int64_t>(GetTickCount64() - m_started));
+                                  static_cast<int64_t>(platform::MonotonicMilliseconds() - m_started));
         return result;
     }
 

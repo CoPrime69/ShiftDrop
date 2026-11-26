@@ -88,6 +88,7 @@ add_library(shiftdrop_core STATIC
   src/TempPath.cpp
   # The Win32 side of shared code, behind small seams (src/platform/*.h)
   src/platform/win/AccentColour.cpp
+  src/platform/win/Clock.cpp
   src/platform/win/Errors.cpp
   src/platform/win/Ini.cpp
   src/platform/win/SecureWipe.cpp
