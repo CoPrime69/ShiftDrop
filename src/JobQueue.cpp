@@ -1,10 +1,7 @@
 #include "JobQueue.h"
 #include "Engine.h"
 #include "Log.h"
-
-#include <windows.h>
-#include <objbase.h>
-#include <wil/resource.h>
+#include "platform/Threads.h"
 
 #include <algorithm>
 #include <cstring>
@@ -59,9 +56,7 @@ namespace sd
     void JobQueue::Run(std::stop_token stop)
     {
         // An STA thread here never hosts objects other apartments call into, so it needs no message pump.
-        const HRESULT hr = CoInitializeEx(nullptr, m_apartment == Apartment::Sta ? COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE
-                                                                                 : COINIT_MULTITHREADED);
-        auto uninit = wil::scope_exit([hr] { if (SUCCEEDED(hr)) CoUninitialize(); });
+        const platform::ComApartmentForThread com(m_apartment == Apartment::Sta);
 
         while (!stop.stop_requested())
         {
@@ -75,10 +70,16 @@ namespace sd
                 m_tasks.pop_front();
                 ++m_running;
             }
-            auto done = wil::scope_exit([this] {
-                std::scoped_lock lock(m_mutex);
-                --m_running;
-            });
+            // The task no longer counts as running once it ends, however it ends.
+            struct Finished
+            {
+                JobQueue* queue;
+                ~Finished()
+                {
+                    std::scoped_lock lock(queue->m_mutex);
+                    --queue->m_running;
+                }
+            } done{ this };
             try
             {
                 task(stop);

@@ -96,6 +96,7 @@ add_library(shiftdrop_core STATIC
   src/platform/win/Staging.cpp
   src/platform/win/StagingStream.cpp   # staging files as COM streams, for the WIC encoders
   src/platform/win/Text.cpp
+  src/platform/win/Threads.cpp
   src/Ffmpeg.cpp
   src/FileActions.cpp
   src/FileMove.cpp
