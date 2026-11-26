@@ -1,7 +1,7 @@
 #pragma once
 #include "HistoryStore.h"
+#include "platform/WinTypes.h"
 
-#include <windows.h>
 #include <objidl.h>
 #include <wrl/client.h>
 

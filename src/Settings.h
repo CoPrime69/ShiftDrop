@@ -1,8 +1,7 @@
 #pragma once
 #include "Accent.h"
 #include "OutputPath.h"
-
-#include <windows.h>
+#include "platform/WinTypes.h"
 
 #include <array>
 #include <span>

@@ -1,5 +1,6 @@
 #pragma once
-#include <windows.h>
+#include "platform/WinTypes.h"
+
 #include <objidl.h>
 #include <wrl/client.h>
 

@@ -1,7 +1,6 @@
 #pragma once
 #include "Secret.h"
-
-#include <windows.h>
+#include "platform/WinTypes.h"
 
 #include <cstdint>
 #include <functional>

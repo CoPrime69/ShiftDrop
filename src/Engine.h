@@ -3,8 +3,7 @@
 #include "HistoryStore.h"
 #include "Recipe.h"
 #include "StagedOutput.h"
-
-#include <windows.h>
+#include "platform/WinTypes.h"
 
 #include <functional>
 #include <memory>
