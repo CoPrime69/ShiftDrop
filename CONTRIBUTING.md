@@ -26,7 +26,8 @@ These hold everywhere. A pull request that breaks one won't be merged, however u
 - **Offline.** No network calls, no telemetry, no update checks, no downloads at run time. CI fails
   if `ShiftDrop.exe` or `ShiftDropWorker.exe` imports a networking DLL.
 - **No GPL or AGPL code**, linked in or bundled. Permissive licences (MIT, BSD, Apache-2.0, zlib) are
-  fine. LGPL is only allowed for `ffmpeg.exe`, which runs as a separate program.
+  fine. LGPL is only allowed for `ffmpeg.exe`, which runs as a separate program, and, on Linux, for
+  libraries the distro provides (such as GTK4) that are linked dynamically and never bundled.
 - **No machine-learning models** bundled or downloaded. Windows' own OCR and face detection are fine,
   because they ship with Windows.
 - **Never overwrite or lose a file.** Every output goes through `StagedOutput` (or `OutputPath`'s
