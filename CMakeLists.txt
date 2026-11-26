@@ -431,6 +431,9 @@ if(SHIFTDROP_TESTS)
     tests/SettingsTests.cpp
     tests/UpdatesTests.cpp
     tests/VersionTests.cpp
+    # The cases of HelperTests and OutputPathTests that need Windows (Win32 calls, COM streams)
+    tests/platform/win/WinHelperTests.cpp
+    tests/platform/win/WinOutputPathTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
   # TestUtil.h's helpers that need WIC or the sandbox (PlatformTestUtil.h)
