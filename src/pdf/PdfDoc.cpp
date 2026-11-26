@@ -1,6 +1,7 @@
 #include "pdf/PdfDoc.h"
 #include "PathUtil.h"
 #include "Utf.h"
+#include "platform/StdioFile.h"
 
 #include <qpdf/QPDFAcroFormDocumentHelper.hh>
 #include <qpdf/QPDFExc.hh>
@@ -80,7 +81,7 @@ namespace sd::pdf
 
     std::unique_ptr<QPDF> OpenPdf(const std::wstring& path, std::wstring& error)
     {
-        FILE* file = _wfopen(path.c_str(), L"rb");
+        FILE* file = platform::OpenFileToRead(path);
         if (!file)
         {
             error = L"cannot open the file";
@@ -108,7 +109,7 @@ namespace sd::pdf
     bool WritePdf(QPDF& pdf, const std::wstring& path, const WriteOptions& options, std::wstring& error, std::stop_token stop,
                   const ProgressFn& progress)
     {
-        FILE* file = _wfopen(path.c_str(), L"wb");
+        FILE* file = platform::OpenFileToWrite(path);
         if (!file)
         {
             error = L"cannot write next to the source";

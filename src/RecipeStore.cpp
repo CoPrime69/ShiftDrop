@@ -4,9 +4,6 @@
 #include "Log.h"
 #include "Utf.h"
 
-#include <windows.h>
-#include <wil/resource.h>
-
 #include <algorithm>
 #include <filesystem>
 #include <format>
