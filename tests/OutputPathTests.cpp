@@ -2,6 +2,7 @@
 #include "PathUtil.h"
 #include "StagedOutput.h"
 #include "TestUtil.h"
+#include "platform/win/StagingStream.h"
 #include "preview/Prediction.h"
 
 using namespace sd;

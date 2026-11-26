@@ -22,5 +22,10 @@ namespace sd
         {
             return hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || hr == COPYENGINE_E_USER_CANCELLED;
         }
+
+        HRESULT LastErrorCode()
+        {
+            return HRESULT_FROM_WIN32(GetLastError());
+        }
     }
 }

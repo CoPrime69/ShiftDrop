@@ -1,8 +1,8 @@
 #include "OutputPath.h"
 #include "PathUtil.h"
 #include "Strings.h"
-
-#include <shlwapi.h>
+#include "platform/Errors.h"
+#include "platform/Staging.h"
 
 #include <algorithm>
 #include <atomic>
@@ -124,16 +124,22 @@ namespace sd
 
     HRESULT MakeOutputFolder(const std::wstring& folder)
     {
-        if (CreateDirectoryW(folder.c_str(), nullptr))
+        if (platform::CreateNewFolder(folder))
             return S_OK;
-        const DWORD err = GetLastError();
-        if (err != ERROR_ALREADY_EXISTS)
-            return HRESULT_FROM_WIN32(err);
+        const HRESULT err = platform::LastErrorCode();
+        if (err != HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS))
+            return err;
         // A file of that name is in the way: it is never replaced.
         return IsFolder(folder) ? S_OK : HRESULT_FROM_WIN32(ERROR_DIRECTORY);
     }
 
-    HRESULT CreateStaging(const std::wstring& source, std::wstring& stagingPath, Microsoft::WRL::ComPtr<IStream>& stream)
+    HRESULT ReserveStaging(const std::wstring& source, std::wstring& stagingPath)
+    {
+        return CreateStagingFile(source, stagingPath, platform::CreateNewFile);
+    }
+
+    HRESULT CreateStagingFile(const std::wstring& source, std::wstring& stagingPath,
+                              const std::function<HRESULT(const std::wstring& candidate)>& createNew)
     {
         const std::filesystem::path src(source);
         const std::filesystem::path folder(OutputFolder(source));
@@ -143,9 +149,7 @@ namespace sd
         for (int attempt = 0; attempt < 16; ++attempt)
         {
             const auto candidate = (folder / StagingName(src.stem().wstring())).wstring();
-            // fCreate=TRUE + STGM_FAILIFTHERE: only ever creates a new file.
-            const HRESULT hr = SHCreateStreamOnFileEx(candidate.c_str(), STGM_WRITE | STGM_SHARE_DENY_WRITE | STGM_FAILIFTHERE,
-                                                      FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, stream.ReleaseAndGetAddressOf());
+            const HRESULT hr = createNew(candidate);   // only ever creates a new file
             if (SUCCEEDED(hr))
             {
                 stagingPath = candidate;
@@ -178,14 +182,14 @@ namespace sd
         for (int n = 1; n < 1000; ++n)
         {
             const auto candidate = (folder / OutputName(naming, stem, suffix, n, extension)).wstring();
-            if (MoveFileExW(stagingPath.c_str(), candidate.c_str(), MOVEFILE_WRITE_THROUGH))
+            if (platform::RenameWithoutReplacing(stagingPath, candidate))
             {
                 finalPath = candidate;
                 return S_OK;
             }
-            const DWORD err = GetLastError();
-            if (err != ERROR_ALREADY_EXISTS && err != ERROR_FILE_EXISTS)
-                return HRESULT_FROM_WIN32(err);
+            const HRESULT err = platform::LastErrorCode();
+            if (err != HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS) && err != HRESULT_FROM_WIN32(ERROR_FILE_EXISTS))
+                return err;
         }
         return HRESULT_FROM_WIN32(ERROR_FILE_EXISTS);
     }

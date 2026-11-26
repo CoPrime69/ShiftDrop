@@ -5,8 +5,8 @@
 #include "OutputPath.h"
 #include "Strings.h"
 #include "platform/Clock.h"
-
-#include <shlwapi.h>
+#include "platform/Errors.h"
+#include "platform/Staging.h"
 
 #include <filesystem>
 #include <format>
@@ -25,12 +25,12 @@ namespace sd
             for (int attempt = 0; attempt < 16; ++attempt)
             {
                 const auto candidate = (dir / StagingName(src.stem().wstring())).wstring();
-                if (CreateDirectoryW(candidate.c_str(), nullptr))
+                if (platform::CreateNewFolder(candidate))
                 {
                     path = candidate;
                     return true;
                 }
-                if (GetLastError() != ERROR_ALREADY_EXISTS)
+                if (platform::LastErrorCode() != HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS))
                     return false;
             }
             return false;
@@ -53,12 +53,12 @@ namespace sd
         if (folder)
         {
             if (!CreateStagingFolder(m_namedAfter, m_path))
-                m_error = std::format(L"cannot write next to the source: {}", HResultText(HRESULT_FROM_WIN32(GetLastError())));
+                m_error = std::format(L"cannot write next to the source: {}", HResultText(platform::LastErrorCode()));
         }
         else
         {
-            Microsoft::WRL::ComPtr<IStream> reserve;   // reserves a unique name; closed so the engine can open it
-            if (const HRESULT hr = CreateStaging(m_namedAfter, m_path, reserve); FAILED(hr))
+            // Reserves a unique name; the file is closed again so the engine can open it.
+            if (const HRESULT hr = ReserveStaging(m_namedAfter, m_path); FAILED(hr))
             {
                 m_path.clear();
                 m_error = std::format(L"cannot write next to the source: {}", HResultText(hr));
@@ -78,15 +78,6 @@ namespace sd
     {
         if (!m_path.empty())
             RemoveStaging(m_path);
-    }
-
-    HRESULT StagedOutput::OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const
-    {
-        if (m_path.empty() || m_folder)
-            return E_UNEXPECTED;
-        // fCreate=FALSE: the file was made new by CreateStaging, so this only ever opens our own file.
-        return SHCreateStreamOnFileEx(m_path.c_str(), STGM_WRITE | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, FALSE, nullptr,
-                                      stream.ReleaseAndGetAddressOf());
     }
 
     ItemResult StagedOutput::Commit(std::wstring_view suffix, std::wstring_view extension)
@@ -129,12 +120,11 @@ namespace sd
             return false;
         std::error_code ec;
         const bool removed = std::filesystem::is_directory(path, ec) ? std::filesystem::remove_all(path, ec) > 0 && !ec
-                                                                      : DeleteFileW(path.c_str()) != FALSE;
-        // A "ShiftDrop" output folder made for this output alone goes too (RemoveDirectory only
-        // removes an empty folder).
+                                                                      : platform::RemoveFile(path);
+        // A "ShiftDrop" output folder made for this output alone goes too (only if it is empty).
         const auto parent = std::filesystem::path(path).parent_path();
         if (removed && CurrentOutputNaming() == OutputNaming::Subfolder && EqualsNoCase(parent.filename().wstring(), kOutputSubfolder))
-            RemoveDirectoryW(parent.c_str());
+            platform::RemoveFolderIfEmpty(parent.wstring());
         return removed;
     }
 
