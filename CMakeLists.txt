@@ -91,6 +91,7 @@ add_library(shiftdrop_core STATIC
   src/platform/win/Clock.cpp
   src/platform/win/Errors.cpp
   src/platform/win/Ini.cpp
+  src/platform/win/Process.cpp
   src/platform/win/SecureWipe.cpp
   src/platform/win/SettingsPath.cpp
   src/platform/win/Staging.cpp
@@ -431,6 +432,8 @@ if(SHIFTDROP_TESTS)
     tests/VersionTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
+  # TestUtil.h's helpers that need WIC or the sandbox (PlatformTestUtil.h)
+  target_include_directories(shiftdrop_tests PRIVATE tests/platform/win)
   # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.
   target_compile_definitions(shiftdrop_tests PRIVATE SHIFTDROP_FFMPEG_COMPONENTS="${CMAKE_SOURCE_DIR}/scripts/ffmpeg-components.txt"
     SHIFTDROP_VERSION_FILE="${CMAKE_SOURCE_DIR}/VERSION")   # VersionTests reads it
