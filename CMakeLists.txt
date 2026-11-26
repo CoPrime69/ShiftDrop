@@ -86,9 +86,12 @@ add_library(shiftdrop_core STATIC
   src/PathUtil.cpp
   src/Strings.cpp
   src/TempPath.cpp
-  # The Win32 side of those helpers, behind small seams (src/platform/*.h)
+  # The Win32 side of shared code, behind small seams (src/platform/*.h)
+  src/platform/win/AccentColour.cpp
   src/platform/win/Errors.cpp
+  src/platform/win/Ini.cpp
   src/platform/win/SecureWipe.cpp
+  src/platform/win/SettingsPath.cpp
   src/platform/win/Text.cpp
   src/Ffmpeg.cpp
   src/FileActions.cpp
