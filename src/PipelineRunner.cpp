@@ -5,6 +5,7 @@
 #include "StagedOutput.h"
 #include "Utf.h"
 #include "formats/Frames.h"
+#include "platform/win/StagingStream.h"
 
 #include <windows.h>
 #include <wrl/client.h>
@@ -214,7 +215,7 @@ namespace sd
         const auto* format = recipe.OutputFormatFor(LowerExtension(source));
         std::wstring error;
         Microsoft::WRL::ComPtr<IStream> stream;
-        HRESULT hr = out.OpenStream(stream);
+        HRESULT hr = OpenStagingStream(out, stream);
         if (SUCCEEDED(hr))
             hr = RunImageRecipe(recipe, source, stream.Get(), stop, error, format);
         else

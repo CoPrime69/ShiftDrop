@@ -2,6 +2,7 @@
 #include "Log.h"
 #include "PanelLayout.h"
 #include "Strings.h"
+#include "platform/Ini.h"
 
 #include <algorithm>
 
@@ -37,11 +38,6 @@ namespace sd
         return Ring::Convert;
     }
 
-    std::wstring SettingsPath()
-    {
-        return log::AppDataFolder() + L"\\settings.ini";
-    }
-
     namespace
     {
         bool ParseKey(std::wstring_view key, UINT& vk, std::wstring& name)
@@ -58,24 +54,23 @@ namespace sd
     Settings LoadSettings()
     {
         const auto path = SettingsPath();
-        wchar_t probe[2]{};
-        if (!GetPrivateProfileStringW(L"Gesture", nullptr, L"", probe, ARRAYSIZE(probe), path.c_str()))
+        if (!platform::IniSectionHasKeys(path, L"Gesture"))
         {
             // First run (the installer may already have written [Startup]): write the defaults so the
             // user can see what is configurable.
-            WritePrivateProfileStringW(L"Gesture", L"Convert", L"Shift", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"Tools", L"None", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"Files", L"None", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"; Allowed", L"Shift | Ctrl | Alt | None  (the Win key is not supported)", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"KeysVersion", L"2", path.c_str());
+            platform::WriteIniValue(path, L"Gesture", L"Convert", L"Shift");
+            platform::WriteIniValue(path, L"Gesture", L"Tools", L"None");
+            platform::WriteIniValue(path, L"Gesture", L"Files", L"None");
+            platform::WriteIniValue(path, L"Gesture", L"; Allowed", L"Shift | Ctrl | Alt | None  (the Win key is not supported)");
+            platform::WriteIniValue(path, L"Gesture", L"KeysVersion", L"2");
         }
-        else if (GetPrivateProfileIntW(L"Gesture", L"KeysVersion", 1, path.c_str()) < 2)
+        else if (platform::ReadIniNumber(path, L"Gesture", L"KeysVersion", 1) < 2)
         {
             // Files from 0.5.0 and earlier wrote Tools=Ctrl and Files=Alt. Shift is now the only key
             // (sections switch by scrolling), so those two are turned off once; a later hand edit stays.
-            WritePrivateProfileStringW(L"Gesture", L"Tools", L"None", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"Files", L"None", path.c_str());
-            WritePrivateProfileStringW(L"Gesture", L"KeysVersion", L"2", path.c_str());
+            platform::WriteIniValue(path, L"Gesture", L"Tools", L"None");
+            platform::WriteIniValue(path, L"Gesture", L"Files", L"None");
+            platform::WriteIniValue(path, L"Gesture", L"KeysVersion", L"2");
             log::Info(L"settings: Ctrl and Alt no longer open wheels; Shift and scrolling reach every section");
         }
 
@@ -83,11 +78,10 @@ namespace sd
         const wchar_t* keys[kRingCount] = { L"Convert", L"Tools", L"Reduce", L"Files" };
         for (int i = 0; i < kRingCount; ++i)
         {
-            wchar_t buf[32]{};
-            GetPrivateProfileStringW(L"Gesture", keys[i], L"", buf, ARRAYSIZE(buf), path.c_str());
+            auto buf = platform::ReadIniString(path, L"Gesture", keys[i], L"", 32);
             // The first versions used TriggerKey for the only wheel there was.
             if (i == 0 && !buf[0])
-                GetPrivateProfileStringW(L"Gesture", L"TriggerKey", L"", buf, ARRAYSIZE(buf), path.c_str());
+                buf = platform::ReadIniString(path, L"Gesture", L"TriggerKey", L"", 32);
             if (!buf[0])
                 continue;   // keep the default
             UINT vk = 0;
@@ -119,9 +113,8 @@ namespace sd
 
     Appearance LoadAppearance(const std::wstring& path)
     {
-        wchar_t size[16]{}, style[16]{};
-        GetPrivateProfileStringW(L"Appearance", L"Size", L"auto", size, ARRAYSIZE(size), path.c_str());
-        GetPrivateProfileStringW(L"Appearance", L"Style", L"solid", style, ARRAYSIZE(style), path.c_str());
+        const auto size = platform::ReadIniString(path, L"Appearance", L"Size", L"auto", 16);
+        const auto style = platform::ReadIniString(path, L"Appearance", L"Style", L"solid", 16);
         Appearance a;   // no key, or a value it doesn't know: Auto
         if (EqualsNoCase(size, L"medium"))
             a.size = WheelSize::Medium;
@@ -138,10 +131,10 @@ namespace sd
     void SaveAppearance(const Appearance& a, const std::wstring& path)
     {
         const wchar_t* sizes[] = { L"auto", L"small", L"medium", L"large" };
-        WritePrivateProfileStringW(L"Appearance", L"Size", sizes[static_cast<int>(a.size)], path.c_str());
-        WritePrivateProfileStringW(L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid", path.c_str());
+        platform::WriteIniValue(path, L"Appearance", L"Size", sizes[static_cast<int>(a.size)]);
+        platform::WriteIniValue(path, L"Appearance", L"Style", a.style == Style::Glass ? L"glass" : L"solid");
         // Older versions could hide the pointer over the wheel; the setting is gone, so is its key.
-        WritePrivateProfileStringW(L"Appearance", L"HideCursor", nullptr, path.c_str());
+        platform::DeleteIniValue(path, L"Appearance", L"HideCursor");
     }
 
     float SizeScale(WheelSize size, float dpiScale, float monitorHeightPx)
@@ -165,8 +158,7 @@ namespace sd
 
     VirtualOutput LoadVirtualOutput()
     {
-        wchar_t value[16]{};
-        GetPrivateProfileStringW(L"Output", L"VirtualFiles", L"desktop", value, ARRAYSIZE(value), SettingsPath().c_str());
+        const auto value = platform::ReadIniString(SettingsPath(), L"Output", L"VirtualFiles", L"desktop", 16);
         for (int i = 0; i < 3; ++i)
             if (EqualsNoCase(value, kVirtualOutputs[i]))
                 return static_cast<VirtualOutput>(i);
@@ -176,7 +168,7 @@ namespace sd
 
     void SaveVirtualOutput(VirtualOutput choice)
     {
-        WritePrivateProfileStringW(L"Output", L"VirtualFiles", kVirtualOutputs[static_cast<int>(choice)], SettingsPath().c_str());
+        platform::WriteIniValue(SettingsPath(), L"Output", L"VirtualFiles", kVirtualOutputs[static_cast<int>(choice)]);
     }
 
     namespace
@@ -189,8 +181,7 @@ namespace sd
 
     int IniChoice(const std::wstring& path, const wchar_t* section, const wchar_t* key, std::span<const wchar_t* const> names, int fallback)
     {
-        wchar_t value[32]{};
-        GetPrivateProfileStringW(section, key, names[static_cast<size_t>(fallback)], value, ARRAYSIZE(value), path.c_str());
+        const auto value = platform::ReadIniString(path, section, key, names[static_cast<size_t>(fallback)], 32);
         for (size_t i = 0; i < names.size(); ++i)
             if (EqualsNoCase(value, names[i]))
                 return static_cast<int>(i);
@@ -206,13 +197,10 @@ namespace sd
         p.theme = static_cast<ThemeChoice>(IniChoice(path, L"Appearance", L"Theme", kThemes, 0));
         p.terminal = static_cast<TerminalChoice>(IniChoice(path, L"FileActions", L"Terminal", kTerminals, 0));
         p.naming = static_cast<OutputNaming>(IniChoice(path, L"Output", L"Naming", kNamings, 0));
-        std::wstring command(2048, L'\0');
-        command.resize(GetPrivateProfileStringW(L"FileActions", L"TerminalCommand", L"", command.data(), static_cast<DWORD>(command.size()),
-                                                path.c_str()));
-        p.terminalCommand = std::move(command);
+        p.terminalCommand = platform::ReadIniString(path, L"FileActions", L"TerminalCommand", L"", 2048);
         p.accent = accent::Load(path);
         // Text that is not a number reads as 0, and 0 or less as the default rather than the smallest size.
-        const int size = static_cast<int>(GetPrivateProfileIntW(L"Appearance", L"PanelSize", panel::kSizeDefaultPercent, path.c_str()));
+        const int size = static_cast<int>(platform::ReadIniNumber(path, L"Appearance", L"PanelSize", panel::kSizeDefaultPercent));
         p.panelSize = size > 0 ? panel::SizePercent(size) : panel::kSizeDefaultPercent;
         if (p.panelSize != size)
             log::Warn(L"settings: [Appearance] PanelSize={} is not {} to {} in steps of {}; using {}", size, panel::kSizeMinPercent,
@@ -224,16 +212,16 @@ namespace sd
 
     void SavePreferences(const Preferences& p, const std::wstring& path)
     {
-        WritePrivateProfileStringW(L"Appearance", L"Theme", kThemes[static_cast<int>(p.theme)], path.c_str());
-        WritePrivateProfileStringW(L"FileActions", L"Terminal", kTerminals[static_cast<int>(p.terminal)], path.c_str());
+        platform::WriteIniValue(path, L"Appearance", L"Theme", kThemes[static_cast<int>(p.theme)]);
+        platform::WriteIniValue(path, L"FileActions", L"Terminal", kTerminals[static_cast<int>(p.terminal)]);
         // A value enclosed in quotes loses them when read back ("C:\term.exe" -d "{folder}"), so such
         // a command is stored inside another pair.
         const auto& c = p.terminalCommand;
         const bool enclosed = c.size() >= 2 && c.front() == c.back() && (c.front() == L'"' || c.front() == L'\'');
         const auto command = enclosed ? L"\"" + c + L"\"" : c;
-        WritePrivateProfileStringW(L"FileActions", L"TerminalCommand", command.c_str(), path.c_str());
-        WritePrivateProfileStringW(L"Output", L"Naming", kNamings[static_cast<int>(p.naming)], path.c_str());
-        WritePrivateProfileStringW(L"Appearance", L"PanelSize", std::to_wstring(panel::SizePercent(p.panelSize)).c_str(), path.c_str());
+        platform::WriteIniValue(path, L"FileActions", L"TerminalCommand", command.c_str());
+        platform::WriteIniValue(path, L"Output", L"Naming", kNamings[static_cast<int>(p.naming)]);
+        platform::WriteIniValue(path, L"Appearance", L"PanelSize", std::to_wstring(panel::SizePercent(p.panelSize)).c_str());
         accent::Save(p.accent, path);
     }
 }

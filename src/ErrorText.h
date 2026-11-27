@@ -1,5 +1,5 @@
 #pragma once
-#include <windows.h>
+#include "platform/WinTypes.h"
 
 #include <string>
 #include <string_view>

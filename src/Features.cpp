@@ -1,7 +1,6 @@
 #include "Features.h"
 #include "Utf.h"
-
-#include <windows.h>
+#include "platform/Ini.h"
 
 #include <vector>
 
@@ -57,13 +56,11 @@ namespace sd
         const auto path = SettingsPath();
         Features f;
         for (int i = 0; i < kRingCount; ++i)
-            f.sections[static_cast<size_t>(i)] = GetPrivateProfileIntW(L"Features", kSectionKeys[i], 1, path.c_str()) != 0;
+            f.sections[static_cast<size_t>(i)] = platform::ReadIniNumber(path, L"Features", kSectionKeys[i], 1) != 0;
         if (f.SectionsOn() == 0)
             f.sections[0] = true;   // a wheel with no section cannot open
         // Every recipe id could be off at once: size the buffer for that, not for a typical line.
-        std::vector<wchar_t> buf(32 * 1024);
-        GetPrivateProfileStringW(L"Features", L"Off", L"", buf.data(), static_cast<DWORD>(buf.size()), path.c_str());
-        f.off = SplitIds(Narrow(buf.data()));
+        f.off = SplitIds(Narrow(platform::ReadIniString(path, L"Features", L"Off", L"", 32 * 1024)));
         return f;
     }
 
@@ -71,7 +68,7 @@ namespace sd
     {
         const auto path = SettingsPath();
         for (int i = 0; i < kRingCount; ++i)
-            WritePrivateProfileStringW(L"Features", kSectionKeys[i], f.sections[static_cast<size_t>(i)] ? L"1" : L"0", path.c_str());
-        WritePrivateProfileStringW(L"Features", L"Off", Widen(JoinIds(f.off)).c_str(), path.c_str());
+            platform::WriteIniValue(path, L"Features", kSectionKeys[i], f.sections[static_cast<size_t>(i)] ? L"1" : L"0");
+        platform::WriteIniValue(path, L"Features", L"Off", Widen(JoinIds(f.off)).c_str());
     }
 }

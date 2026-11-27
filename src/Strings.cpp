@@ -1,7 +1,5 @@
 #include "Strings.h"
 
-#include <windows.h>
-
 #include <cwctype>
 
 namespace sd
@@ -40,11 +38,6 @@ namespace sd
         while (!s.empty() && ws(s.back()))
             s.remove_suffix(1);
         return s;
-    }
-
-    bool EqualsNoCase(std::wstring_view a, std::wstring_view b)
-    {
-        return CompareStringOrdinal(a.data(), static_cast<int>(a.size()), b.data(), static_cast<int>(b.size()), TRUE) == CSTR_EQUAL;
     }
 
     std::vector<std::wstring> SearchWords(std::wstring_view query)

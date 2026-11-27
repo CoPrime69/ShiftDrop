@@ -1,13 +1,13 @@
 #include "Accent.h"
 #include "Log.h"
 #include "Settings.h"
-
-#include <windows.h>
+#include "platform/Ini.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cwctype>
 #include <format>
+#include <iterator>
 
 namespace sd::accent
 {
@@ -17,7 +17,7 @@ namespace sd::accent
         constexpr const wchar_t* kIds[] = { L"tide", L"blue", L"purple", L"pink", L"red", L"orange", L"green", L"graphite", L"custom", L"windows" };
         constexpr const wchar_t* kNames[] = { L"Tide", L"Blue", L"Purple", L"Pink", L"Red", L"Orange", L"Green", L"Graphite",
                                               L"Custom colour", L"Windows accent colour" };
-        static_assert(ARRAYSIZE(kIds) == static_cast<size_t>(Choice::Windows) + 1 && ARRAYSIZE(kNames) == ARRAYSIZE(kIds));
+        static_assert(std::size(kIds) == static_cast<size_t>(Choice::Windows) + 1 && std::size(kNames) == std::size(kIds));
 
         // Fill, on dark, on light; each checked by Readable() in the unit tests. The light tones are the
         // brand kit's swatches (App Windows › Accent colour), the dark ones its tones on dark.
@@ -125,16 +125,12 @@ namespace sd::accent
     {
         Setting s;
         // The list first: as many colours as were added, so the buffer grows until the value fits.
-        std::wstring list(256, L'\0');
-        for (;;)
+        std::wstring list;
+        for (size_t capacity = 256;; capacity *= 2)
         {
-            const DWORD n = GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", list.data(), static_cast<DWORD>(list.size()), path.c_str());
-            if (n + 2 < list.size())
-            {
-                list.resize(n);
+            list = platform::ReadIniString(path, L"Appearance", L"AccentCustoms", L"", capacity);
+            if (list.size() + 2 < capacity)
                 break;
-            }
-            list.resize(list.size() * 2);
         }
         for (size_t at = 0; at <= list.size();)
         {
@@ -150,8 +146,7 @@ namespace sd::accent
                 log::Warn(L"settings: [Appearance] AccentCustoms has '{}', not a colour like #12A58E; skipping it", trimmed);
             at = end + 1;
         }
-        wchar_t custom[32]{};
-        GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", custom, ARRAYSIZE(custom), path.c_str());
+        const auto custom = platform::ReadIniString(path, L"Appearance", L"AccentCustom", L"", 32);
         if (uint32_t rgb = 0; custom[0] && ParseHex(custom, rgb))
         {
             s.custom = rgb;
@@ -172,12 +167,18 @@ namespace sd::accent
 
     void Save(const Setting& s, const std::wstring& path)
     {
-        WritePrivateProfileStringW(L"Appearance", L"Accent", kIds[static_cast<int>(s.choice)], path.c_str());
-        WritePrivateProfileStringW(L"Appearance", L"AccentCustom", s.custom == kNoColour ? nullptr : ToHex(s.custom).c_str(), path.c_str());
+        platform::WriteIniValue(path, L"Appearance", L"Accent", kIds[static_cast<int>(s.choice)]);
+        if (s.custom == kNoColour)
+            platform::DeleteIniValue(path, L"Appearance", L"AccentCustom");
+        else
+            platform::WriteIniValue(path, L"Appearance", L"AccentCustom", ToHex(s.custom).c_str());
         std::wstring list;
         for (const uint32_t rgb : s.customs)
             list += (list.empty() ? L"" : L",") + ToHex(rgb);
-        WritePrivateProfileStringW(L"Appearance", L"AccentCustoms", list.empty() ? nullptr : list.c_str(), path.c_str());
+        if (list.empty())
+            platform::DeleteIniValue(path, L"Appearance", L"AccentCustoms");
+        else
+            platform::WriteIniValue(path, L"Appearance", L"AccentCustoms", list.c_str());
     }
 
     double Contrast(uint32_t a, uint32_t b)
@@ -257,20 +258,5 @@ namespace sd::accent
     Variants Current()
     {
         return Resolve(g_setting, g_setting.choice == Choice::Windows ? WindowsRgb() : 0);
-    }
-
-    uint32_t WindowsRgb()
-    {
-        // Explorer's AccentColorMenu (0xAABBGGRR) is the colour Windows uses for selection; DWM's
-        // colorization colour (0xAARRGGBB, what DwmGetColorizationColor returns) is the fallback.
-        DWORD value = 0, size = sizeof(value);
-        if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent", L"AccentColorMenu", RRF_RT_REG_DWORD,
-                         nullptr, &value, &size) == ERROR_SUCCESS)
-            return ((value & 0xFF) << 16) | (value & 0xFF00) | ((value >> 16) & 0xFF);
-        size = sizeof(value);
-        if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\DWM", L"ColorizationColor", RRF_RT_REG_DWORD, nullptr, &value,
-                         &size) == ERROR_SUCCESS)
-            return value & 0xFFFFFF;
-        return 0x0067C0;   // Windows' default blue
     }
 }

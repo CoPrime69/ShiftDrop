@@ -1,9 +1,6 @@
 #pragma once
 #include "HistoryStore.h"
-
-#include <windows.h>
-#include <objidl.h>
-#include <wrl/client.h>
+#include "platform/WinTypes.h"
 
 #include <cstdint>
 #include <string>
@@ -56,9 +53,7 @@ namespace sd
         bool Ready() const { return !m_path.empty(); }
         const std::wstring& Error() const { return m_error; }
         const std::wstring& Path() const { return m_path; }   // staging path to write
-        // Opens the (empty, reserved) staging file for an encoder that writes to a stream. Release
-        // the stream before Commit or Fail, which rename or delete the file.
-        HRESULT OpenStream(Microsoft::WRL::ComPtr<IStream>& stream) const;
+        bool IsFolderOutput() const { return m_folder; }       // Path() is a folder to fill, not a file
 
         // Renames into place, hashes, records Done. On a rename error returns a failed result.
         ItemResult Commit(std::wstring_view suffix, std::wstring_view extension);
@@ -75,7 +70,7 @@ namespace sd
         std::wstring m_path;
         std::wstring m_error;
         int64_t m_item = 0;
-        ULONGLONG m_started;
+        uint64_t m_started;   // platform::MonotonicMilliseconds()
         bool m_done = false;
     };
 

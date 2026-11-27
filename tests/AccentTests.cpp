@@ -1,6 +1,7 @@
 #include "Accent.h"
 #include "Settings.h"
 #include "TestUtil.h"
+#include "platform/Ini.h"
 
 #include <format>
 
@@ -175,11 +176,8 @@ TEST(Accent, SavedWithTheOtherPreferences)
         EXPECT_EQ(back.theme, ThemeChoice::Dark);
         EXPECT_EQ(back.panelSize, 160);
     }
-    wchar_t value[32]{};
-    GetPrivateProfileStringW(L"Appearance", L"Accent", L"", value, ARRAYSIZE(value), ini.c_str());
-    EXPECT_EQ(std::wstring(value), L"windows");
-    GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str());
-    EXPECT_EQ(std::wstring(value), L"#336699");
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"Accent", L"", 32), L"windows");
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustom", L"", 32), L"#336699");
 
     // The colour of your own stays while a preset is chosen, so Custom brings it back.
     auto p = LoadPreferences(ini);
@@ -189,10 +187,10 @@ TEST(Accent, SavedWithTheOtherPreferences)
     // Without one, there is no key.
     p.accent = { Choice::Green };
     SavePreferences(p, ini);
-    EXPECT_EQ(GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str()), 0u);
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustom", L"", 32), L"");
     EXPECT_EQ(LoadPreferences(ini).accent, accent::Setting{ Choice::Green });
     // Names are read whatever their case.
-    WritePrivateProfileStringW(L"Appearance", L"Accent", L"GRAPHITE", ini.c_str());
+    platform::WriteIniValue(ini, L"Appearance", L"Accent", L"GRAPHITE");
     EXPECT_EQ(LoadPreferences(ini).accent.choice, Choice::Graphite);
 }
 
@@ -246,11 +244,8 @@ TEST(Accent, ColoursOfYourOwnAreAList)
     p.accent = a;
     SavePreferences(p, ini);
     EXPECT_EQ(LoadPreferences(ini).accent, a);
-    wchar_t value[128]{};
-    GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", value, ARRAYSIZE(value), ini.c_str());
-    EXPECT_EQ(std::wstring(value), L"#7C4DFF,#112233,#A0B0C0");
-    GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str());
-    EXPECT_EQ(std::wstring(value), L"#A0B0C0");
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustoms", L"", 128), L"#7C4DFF,#112233,#A0B0C0");
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustom", L"", 128), L"#A0B0C0");
 
     // A hand-edited list: spaces, a bad colour and a repeat are skipped; the colour in use joins it.
     WriteText(ini, "[Appearance]\r\nAccent=blue\r\nAccentCustoms= #010203 ,nope,#010203,,#0A0B0C\r\nAccentCustom=#FFFFFF\r\n");
@@ -268,8 +263,8 @@ TEST(Accent, ColoursOfYourOwnAreAList)
     p.accent = accent::DeleteCustom(accent::Setting{ Choice::Green, accent::kNoColour, { 0x123456 } }, 0, true);
     EXPECT_EQ(p.accent, accent::Setting{ Choice::Green });
     SavePreferences(p, ini);
-    EXPECT_EQ(GetPrivateProfileStringW(L"Appearance", L"AccentCustoms", L"", value, ARRAYSIZE(value), ini.c_str()), 0u);
-    EXPECT_EQ(GetPrivateProfileStringW(L"Appearance", L"AccentCustom", L"", value, ARRAYSIZE(value), ini.c_str()), 0u);
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustoms", L"", 128), L"");
+    EXPECT_EQ(platform::ReadIniString(ini, L"Appearance", L"AccentCustom", L"", 128), L"");
 }
 
 TEST(Accent, DeletingTheColourInUseFallsBack)

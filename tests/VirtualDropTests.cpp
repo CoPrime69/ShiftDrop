@@ -6,6 +6,7 @@
 #include "TestUtil.h"
 #include "Utf.h"
 #include "VirtualDrop.h"
+#include "platform/win/StagingStream.h"
 #include "preview/Prediction.h"
 
 #include <shlobj.h>

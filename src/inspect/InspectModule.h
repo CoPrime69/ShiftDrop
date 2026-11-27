@@ -1,7 +1,6 @@
 #pragma once
 #include "Engine.h"
-
-#include <windows.h>
+#include "platform/WinTypes.h"
 
 #include <memory>
 #include <string>

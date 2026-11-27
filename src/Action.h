@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 // The action model (ADR 0004). An *action* is one step an engine can perform; a *recipe* (Recipe.h)
@@ -82,4 +83,7 @@ namespace sd
     // The same, asking the format's encoder hook (ImageHooks.h) whether it can write here. HEIC's
     // answer is detected once, a moment after start, then cached; JPG until it is known.
     const ImageFormatInfo* KeptFormatOf(const std::wstring& lowerExtension);
+    // Can an encoder hook (ImageHooks.h, in src/formats) write `formatId` on this PC now? False when no
+    // hook writes that format, even if the image pipeline itself does (PNG, JPG...).
+    bool HookCanEncode(std::string_view formatId);
 }
