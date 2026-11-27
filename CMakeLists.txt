@@ -436,8 +436,9 @@ if(SHIFTDROP_TESTS)
     tests/platform/win/WinOutputPathTests.cpp
   )
   target_compile_options(shiftdrop_tests PRIVATE ${SHIFTDROP_OPTIONS})
-  # TestUtil.h's helpers that need WIC or the sandbox (PlatformTestUtil.h)
-  target_include_directories(shiftdrop_tests PRIVATE tests/platform/win)
+  # tests: TestUtil.h for the test files in tests/platform/win. tests/platform/win: TestUtil.h's
+  # helpers that need WIC or the sandbox (PlatformTestUtil.h).
+  target_include_directories(shiftdrop_tests PRIVATE tests tests/platform/win)
   # What the bundled ffmpeg.exe is built with; FfmpegComponentsTests checks it covers every argument builder.
   target_compile_definitions(shiftdrop_tests PRIVATE SHIFTDROP_FFMPEG_COMPONENTS="${CMAKE_SOURCE_DIR}/scripts/ffmpeg-components.txt"
     SHIFTDROP_VERSION_FILE="${CMAKE_SOURCE_DIR}/VERSION")   # VersionTests reads it
