@@ -7,8 +7,11 @@
 # 2. Otherwise the pinned full LGPL build from BtbN/FFmpeg-Builds (https://github.com/BtbN/FFmpeg-Builds),
 #    "win64-lgpl" variant: no GPL parts (no x264/x265). It has everything ShiftDrop needs and much
 #    more, so it is about three times the size. The zip is checked against a pinned SHA-256, so a
-#    changed or tampered download fails the build. To update, pick a newer win64-lgpl zip from that
-#    project's releases and change the three values below. -Btbn forces this path (CI uses it to
+#    changed or tampered download fails the build. BtbN deletes its daily builds after about two
+#    weeks but keeps the last build of each month, so pin a month-end "autobuild-YYYY-MM-<last day>"
+#    release: its zip URL stays up. To update, pick a newer month-end win64-lgpl-8.x zip, copy its
+#    sha256 from the release page (GitHub shows it beside each asset) and change the three values
+#    below. -Btbn forces this path (CI uses it to
 #    time the two builds against each other).
 param(
     [string]$Out = "build/engines",
@@ -31,9 +34,9 @@ if (-not $Btbn -and (Test-Path (Join-Path $Custom 'ffmpeg.exe'))) {
     exit 0
 }
 
-$Url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-20-13-08/ffmpeg-n8.1.3-18-g46d899d7a0-win64-lgpl-8.1.zip'
-$Sha256 = '26634a5e06429c4f51ed08ba518923f928c5e4a49ed0ee62f701e035227b91a7'
-$Version = 'n8.1.3-18-g46d899d7a0'   # FFmpeg's own version string for this build (see NOTICE below)
+$Url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n8.1.3-27-g8dca1586f4-win64-lgpl-8.1.zip'
+$Sha256 = 'd4c2a42673917b4a97104a3e9f082729a9730796b98664e37c0b7eba6c6c613d'
+$Version = 'n8.1.3-27-g8dca1586f4'   # FFmpeg's own version string for this build (see NOTICE below)
 
 $zipName = Split-Path $Url -Leaf
 $zip = Join-Path $Downloads $zipName
