@@ -1,0 +1,32 @@
+name: macOS
+
+# Builds and tests the Mac prototype (shiftdrop-macos). A separate workflow from ci.yml, and only for
+# changes under shiftdrop-macos/, so the Windows build and its checks are untouched.
+on:
+  pull_request:
+    paths: ['shiftdrop-macos/**', '.github/workflows/macos.yml']
+  push:
+    branches: [main]
+    paths: ['shiftdrop-macos/**', '.github/workflows/macos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  swift:
+    runs-on: macos-latest   # Apple Silicon
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # Only libwebp is needed to compile and test; the ffmpeg build (about 10 minutes) is for packaging the app.
+      - name: Build libwebp
+        run: |
+          brew install cmake ninja
+          shiftdrop-macos/scripts/build-libwebp-macos.sh
+      - name: swift build
+        working-directory: shiftdrop-macos/app
+        run: swift build
+      - name: swift test
+        working-directory: shiftdrop-macos/app
+        run: swift test
